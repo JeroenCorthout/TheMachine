@@ -905,6 +905,94 @@ html{scrollbar-gutter:stable}#review-summary{margin:0 0 14px}#model-usage:not(:e
 a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;line-height:1.2;min-height:34px;box-sizing:border-box;vertical-align:middle}
 .settings-list a.head-link,.settings-list a.btn-link{flex:0 0 auto;align-self:center;padding:0 14px}
 @media(max-width:560px){main{padding-left:16px;padding-right:16px}article{padding:var(--sp-4)}.card{padding-left:var(--sp-4)}.card::before{top:18px}.fleet-box{padding:var(--sp-4)}h1{font-size:22px}.avatar{width:48px;height:48px}}
+/* Card chat (#chat=<id>): the card's whole story as a conversation, with the task list beside it (a drawer on a phone).
+   One body size and one small size; quiet surfaces; the accent only on the one action that matters. */
+.card h3 a.title-link{color:inherit;text-decoration:none}.card h3 a.title-link:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.card .saved-feedback[data-chat-open]{cursor:pointer}
+body.chat-open main{max-width:calc(var(--measure) + 340px)}body.chat-open #suggestion-summary,body.chat-open #suggestion-stats,body.chat-open #first-look,body.chat-open #needs-you{display:none}
+.chat-layout{--chat-body:.95rem;--chat-meta:.75rem;display:grid;grid-template-columns:240px minmax(0,1fr);gap:28px;align-items:start}
+.chat-side{position:sticky;top:12px;max-height:calc(100dvh - 24px);overflow:auto;display:grid;gap:2px;padding-right:4px}
+.chat-side .scope-filter{margin:0 0 10px;justify-self:start}
+.chat-side h3{display:flex;justify-content:space-between;margin:12px 0 4px;font:var(--fw-medium) var(--fs-xs,.75rem)/1.2 var(--sans);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.chat-side a{display:block;padding:7px 10px;border-radius:10px;color:var(--text);text-decoration:none;font-size:.9rem;line-height:1.3;overflow-wrap:anywhere}
+.chat-side a:hover{background:var(--sunken)}.chat-side a[aria-current]{background:var(--c-accent-tint);font-weight:600}
+.chat-main{display:flex;flex-direction:column;min-height:calc(100dvh - 40px);font-size:var(--chat-body);line-height:1.45}
+.chat-head{position:sticky;top:0;z-index:6;display:flex;align-items:flex-start;gap:4px;padding:10px 0;background:var(--bg);border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent)}
+.chat-back,.chat-menu>summary{display:grid;place-items:center;flex:none;width:36px;height:36px;margin-top:-5px;border-radius:50%;color:var(--text);text-decoration:none;cursor:pointer}
+.chat-back:hover,.chat-menu>summary:hover,.chat-menu[open]>summary{background:var(--sunken)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
+.chat-title{flex:1;min-width:0;margin:2px 0 0;font:600 1rem/1.35 var(--sans);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.chat-menu{position:relative;flex:none;margin:0}.chat-menu>summary{list-style:none}.chat-menu>summary::-webkit-details-marker{display:none}.chat-menu>summary::before,.chat-menu>summary::after{content:none}
+.chat-menu-list{position:absolute;right:0;top:calc(100% + 4px);z-index:7;display:flex;flex-direction:column;min-width:190px;padding:6px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 12px 30px #0004}
+.chat-menu-list>*{justify-content:flex-start;width:100%;min-height:38px;margin:0;padding:8px 12px;border:0;border-radius:9px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
+.chat-menu-list>*:hover{background:var(--sunken)}.chat-layout [data-chat-drawer]{display:none}
+.chat-panel{margin:12px 0 0;padding:0;background:none;box-shadow:none;border:0}.chat-panel:empty{display:none}
+.chat-log{display:flex;flex-direction:column;padding:4px 0 20px;flex:1}.chat-log>*{margin-top:14px}.chat-log>.cont{margin-top:3px}.chat-log>.chat-draft,.chat-log>.chat-options{margin-top:6px}
+.chat-day{align-self:center;margin-top:20px!important;font-size:var(--chat-meta);color:var(--muted);font-weight:500}
+.chat-msg{display:flex;flex-direction:column;align-items:flex-start;max-width:min(82%,62ch)}.chat-msg.you{align-self:flex-end;align-items:flex-end}
+.bubble{padding:8px 12px;border-radius:18px;background:var(--surface);overflow-wrap:anywhere}
+.chat-msg.machine .bubble,.chat-msg.them .bubble{border-bottom-left-radius:6px}.chat-msg.you .bubble{background:var(--c-accent-tint);border-bottom-right-radius:6px}
+.chat-msg.cont.machine .bubble,.chat-msg.cont.them .bubble{border-top-left-radius:6px}.chat-msg.cont.you .bubble{border-top-right-radius:6px}
+.chat-source .bubble{background:var(--sunken)}.chat-source.you .bubble{background:var(--c-accent-tint)}
+.chat-from{display:flex;gap:10px;align-items:baseline;justify-content:space-between;margin:0 0 2px;font-size:var(--chat-meta);color:var(--muted)}.chat-from span{font-weight:600;color:var(--text)}.chat-from .chat-time{float:none;margin:0}
+.bubble p,.bubble ul,.bubble ol{margin:0}.bubble p+p,.bubble p+ul,.bubble p+ol,.bubble ul+p,.bubble ol+p{margin-top:6px}.bubble ul,.bubble ol{padding-left:20px}
+.chat-time{float:right;margin:5px 0 -3px 10px;font-size:var(--chat-meta);color:var(--muted);line-height:1.5;font-variant-numeric:tabular-nums}
+.chat-clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}.chat-source .chat-clamp{-webkit-line-clamp:3}.chat-clamp.open{display:block}.chat-clamp p+p{margin-top:6px}
+#chat-log button.link,.chat-status button.link{display:inline;min-height:0;margin:0;padding:0;border:0;background:none;box-shadow:none;color:var(--c-accent);font:500 var(--chat-meta)/1.5 var(--sans);cursor:pointer}
+#chat-log button.link:hover,.chat-status button.link:hover{text-decoration:underline}
+.chat-more,.chat-source .read-original{margin:4px 14px 0 0!important}
+.chat-noted{margin:3px 8px 0;font-size:var(--chat-meta);color:var(--muted)}
+/* The card's own message: what it is about, what it needs, and its decision as a row of choices */
+.chat-card .bubble{max-width:100%}.chat-ask{margin-top:8px}.chat-ask .ask-line{margin:0;font-weight:400}.chat-ask .ask-line>span{display:block;font-weight:600}.chat-ask .ask-q p{margin:2px 0}
+.chat-ask .reason-chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}.chat-ask .reason{min-height:30px;padding:4px 12px;font-size:.85rem}
+.chat-options{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.chat-options.under{align-self:flex-start}
+.chat-options>*{min-height:32px;margin:0;padding:5px 13px;border-radius:999px;font-size:.85rem;white-space:nowrap}
+.chat-options>.ghost{background:none;border:1px solid var(--border);color:var(--text);box-shadow:none}.chat-options>.ghost:hover{background:var(--sunken)}
+.chat-card-send{margin-top:6px}.chat-card-send>*{min-height:32px;padding:5px 14px;border-radius:999px;font-size:.85rem}
+.chat-agent{max-width:min(92%,62ch)}.chat-agent .agent-job{margin:0;padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid color-mix(in srgb,var(--border) 70%,transparent)}
+.chat-agent .agent-job .note{margin:0}.chat-agent .actions,.chat-agent .agent-tools{margin:8px 0 0}
+/* Steps, taps and day lines are metadata: small, muted, no surface */
+.chat-work{align-self:flex-start;margin-left:4px}
+.chat-steps{font-size:var(--chat-meta);color:var(--muted)}.chat-steps summary{cursor:pointer;list-style:none;font-weight:400}.chat-steps summary::-webkit-details-marker{display:none}
+.chat-steps summary::before{content:none}.chat-steps summary::after{content:' ›'}.chat-steps[open] summary::after{content:' ‹'}.chat-steps ol{margin:4px 0 2px;padding-left:18px}
+.chat-event{align-self:center;max-width:88%;margin-top:8px;font-size:var(--chat-meta);line-height:1.4;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums}.chat-event.mine{align-self:flex-end;margin-right:6px;text-align:right}
+.chat-log>.chat-event.cont{margin-top:2px}
+.chat-event details{margin:0;padding:0;border:0;background:none;font:inherit}.chat-event summary{cursor:pointer;list-style:none;font:inherit;color:inherit;padding:0;margin:0}.chat-event summary::-webkit-details-marker{display:none}.chat-event summary::before{content:none}.chat-event summary::after{content:' ›'}.chat-event details[open] summary::after{content:' ‹'}
+.chat-event ol{margin:2px 0 0;padding:0;list-style:none}
+/* A draft, inline after the reply that wrote it */
+.chat-draft{align-self:flex-start;width:min(92%,62ch);padding:10px 12px;border-radius:14px;background:var(--surface);border:1px solid color-mix(in srgb,var(--border) 70%,transparent)}
+.chat-draft:not(.current){opacity:.8}
+.chat-draft-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin:0 0 4px;font-size:var(--chat-meta);color:var(--muted)}.chat-draft-head span:first-child{font-weight:600;color:var(--text)}
+.chat-draft-subject{margin:0 0 2px;font-weight:600}
+.chat-draft-foot{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between;margin:6px 0 0}.chat-draft-foot>span{display:flex;gap:14px}
+.chat-draft-foot>button{min-height:32px;margin:0 0 0 auto;padding:5px 14px;border-radius:999px;font-size:.85rem}
+.chat-diff{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--sunken);white-space:pre-wrap;font-size:.88rem}
+.chat-diff ins{background:color-mix(in srgb,var(--c-accent) 22%,transparent);text-decoration:none;border-radius:3px}.chat-diff del{color:var(--muted);text-decoration:line-through}
+.chat-links{align-self:flex-start;display:flex;gap:14px;font-size:.85rem;margin-left:4px}
+.chat-note{align-self:center;text-align:center;margin:12px 0;font-size:var(--chat-meta);color:var(--muted)}
+.typing{display:inline-flex;gap:4px;padding:4px 0}.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:typing 1.2s infinite}.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes typing{0%,60%,100%{opacity:.3}30%{opacity:1}}
+/* The bottom: one compact area, a status line, at most two suggestions, a slim composer */
+.chat-compose{position:sticky;bottom:0;z-index:5;padding:6px 0 calc(8px + env(safe-area-inset-bottom));background:var(--bg)}
+.chat-status{display:flex;gap:6px;align-items:baseline;justify-content:center;font-size:var(--chat-meta);color:var(--muted);line-height:1.5}.chat-status:empty{display:none}.chat-status:not(:empty){margin:0 0 6px}
+.chat-picks{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}.chat-picks:empty,.chat-picks[hidden]{display:none}
+.chat-say{flex:none;width:auto;min-height:28px;margin:0;padding:3px 11px;border:1px solid var(--border);border-radius:999px;background:none;box-shadow:none;color:var(--text);font:400 .82rem/1.3 var(--sans);white-space:nowrap;cursor:pointer}.chat-say:hover{background:var(--sunken)}
+.chat-box{display:flex;align-items:flex-end;gap:6px;padding:3px 3px 3px 14px;border-radius:21px;background:var(--surface);border:1px solid color-mix(in srgb,var(--border) 80%,transparent)}
+.chat-box:focus-within{border-color:var(--c-accent)}
+.chat-box textarea{flex:1;min-height:0;height:22px;max-height:160px;margin:7px 0;padding:0;border:0;background:none;resize:none;box-shadow:none;outline:none;line-height:22px;font-size:1rem}
+.chat-send{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0;padding:0;border:0;border-radius:50%;background:var(--c-accent);color:var(--on-accent,#fff);box-shadow:none;cursor:pointer}.chat-send svg{width:17px;height:17px}
+.chat-send:disabled{background:var(--sunken);color:var(--muted);cursor:default}
+@media(max-width:860px){
+  .chat-layout{grid-template-columns:minmax(0,1fr)}
+  body.chat-open main>header,body.chat-open main>nav,body.chat-open .site-footer{display:none}
+  body.chat-open main{padding-top:0}
+  .chat-main{min-height:100dvh}
+  .chat-head{margin:0 -16px;padding:8px 8px 8px 6px}
+  .chat-layout [data-chat-drawer]{display:flex}
+  .chat-msg{max-width:86%}
+  .chat-side{position:fixed;inset:0 auto 0 0;z-index:30;width:min(300px,85vw);max-height:none;padding:16px;background:var(--bg);box-shadow:var(--shadow-pop);transform:translateX(-105%);transition:transform .2s}
+  .chat-layout.drawer .chat-side{transform:none}
+  .chat-layout.drawer::before{content:'';position:fixed;inset:0;z-index:29;background:#0006}
+}
 @media(prefers-reduced-motion:reduce){*{transition-duration:0s!important;animation-duration:0s!important}}
 </style>
 <main><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div></div><div class="head-side"><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -1122,7 +1210,7 @@ const viewIn=s.browser_view&&!smart.some(a=>a.browser)?[{kind:'open',browser:tru
 const smartButtons=s.status==='prepared'?[...smart,...viewIn].map(a=>a.kind==='handoff'?(canHandoff(s)?`<button class="primary" data-fleet-handoff="${esc(s.id)}">${esc(a.label||'Hand off')}</button>`:''):a.kind==='open'&&a.browser?`<a class="open${finalStep(s)?' primary':''}" href="${esc(state.browser_link||'#')}" target="_blank" rel="noopener" data-browser-show="${esc(s.id)}"${a.site?` title="${esc(a.site)}, in your Machine’s browser"`:''}>${esc(a.label)} ↗</a>`:a.kind==='open'?`<a class="open" href="${esc(safeURL(a.url))}" target="_blank" rel="noreferrer">${esc(a.label)} ↗</a>`:!(a.kind==='finish'&&(a.state||s.action_status)?.status==='done')&&!sendBusy(a.state||s.action_status)?`<button class="primary" data-id="${s.id}" data-smart="${a.revision}">${esc(sendLabel(a)||(a.kind==='prepare'?'Prepare next step':'Review and send'))}</button>`:'').join(''):'';
 // A merged fix stays reversible for a day.
 const unmerge=['prepared','completed'].includes(s.status)&&smart.some(a=>a.kind==='merge'&&Date.parse((a.state||s.action_status)?.undo_until||'')>Date.now())?`<button data-id="${s.id}" data-unmerge="1">Undo merge</button>`:'';
-return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div>${time(s.created_at,true)}</div><h3>${esc(s.title)}</h3>${statusLine}${cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${s.latest_feedback?`<div class="saved-feedback"><div class="row"><strong>${s.latest_feedback.choice==='other'?'You asked':'Your note'}</strong>${time(s.latest_feedback.created_at,true)}</div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
+return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div>${time(s.created_at,true)}</div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${statusLine}${cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>${s.latest_feedback.choice==='other'?'You asked':'Your note'}</strong>${time(s.latest_feedback.created_at,true)}</div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
 }
 // Success notices clear themselves after a few seconds; errors stay until the next notice.
 let noticeTimer;const notice=(text,error=false)=>{const n=$('#notice');n.textContent=text;n.className=error?'error':'';clearTimeout(noticeTimer);if(text&&!error)noticeTimer=setTimeout(()=>{if(n.textContent===text)n.textContent=''},4500)};
@@ -1843,6 +1931,7 @@ $('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:s
 $('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
 // Snoozed cards are out of the way by choice: folded by default, open state kept across refreshes.
 +(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed this week</span><span class="count">${recent.length}</span></summary>${recent.map(suggestionCard).join('')||'<p class="muted">Nothing finished or dismissed this week.</p>'}${older?`<p class="muted">${older} older ${older===1?'item is':'items are'} under Feedback.</p>`:''}</details>`;
+{const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)$('#suggestions').innerHTML=chatView(c,[[ready,'Ready'],[needs.filter(x=>typeof x!=='string'),'To decide'],[preparing,'Preparing'],[later,'Later'],[recent,'Done']])}
 for(const[id,v]of Object.entries(drafts)){const t=document.getElementById(id);if(t){t.value=v;t.classList.add('filled')}}
 for(const id of moreOpen){const menu=document.getElementById(id)?.querySelector('.more-actions');if(menu)menu.open=true}
 fleetSync();
@@ -1978,12 +2067,186 @@ const c=document.getElementById('task-'+target.id);if(!c)return;
 for(let parent=c.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
 history.replaceState(null,'',location.pathname+location.search);
 c.scrollIntoView({block:'center',behavior:'smooth'});c.classList.remove('flash');void c.offsetWidth;c.classList.add('flash')}
+// Card chat (#chat=<id>): a card's whole story as a conversation, strictly by time: the messages it is about, what the
+// Machine did (its steps folded into one quiet line before each reply) and the drafts it wrote, what you said and
+// what went out. The card's buttons sit in a slim bar above the message box. A message is a Change (the same decide
+// path, so the card, Telegram and learning stay in step). Read through the service only (card_chat), about once a
+// second while the card's run is going.
+let chatId=null,chat=null,chatTimer=null,chatDrawer=false;
+const chatOpen=()=>chatId&&state.suggestions?.find(s=>s.id===chatId)||null;
+// The browser's own locale, except an English browser outside the US reads dates the British way (24 h, "Thu 22 Oct").
+const CHAT_LOCALE=(()=>{try{const l=navigator.language||'en',tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';return /^en(-US)?$/i.test(l)&&!/^America\//.test(tz)?'en-GB':l}catch{return undefined}})();
+const chatHM=at=>new Date(at).toLocaleTimeString(CHAT_LOCALE,{hour:'2-digit',minute:'2-digit'});
+const chatDayOf=at=>{const d=new Date(at),t=new Date();t.setHours(0,0,0,0);const n=Math.round((t-new Date(d).setHours(0,0,0,0))/864e5);
+ return n===0?'Today':n===1?'Yesterday':d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})})};
+// Light markdown for a reply: paragraphs, lists, headings as bold lines, **bold**, *italic* and links.
+function chatMarkdown(text){const out=[];let list=null,para=[];
+ const inline=t=>format(t).replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g,'$1<em>$2</em>');
+ const flush=()=>{if(para.length)out.push(`<p>${para.map(inline).join('<br>')}</p>`);para=[];if(list)out.push(`<${list.tag}>${list.items.map(i=>`<li>${inline(i)}</li>`).join('')}</${list.tag}>`);list=null};
+ for(const line of String(text||'').split('\n')){const b=/^\s*[-*•]\s+(.*)$/.exec(line),n=/^\s*\d+[.)]\s+(.*)$/.exec(line),h=/^\s*#{1,6}\s+(.*)$/.exec(line);
+  if(!line.trim()){flush();continue}
+  if(b||n){const tag=b?'ul':'ol';if(para.length||list&&list.tag!==tag)flush();list??={tag,items:[]};list.items.push((b||n)[1]);continue}
+  if(list)flush();para.push(h?`**${h[1].replace(/\*\*/g,'')}**`:line)}
+ flush();return out.join('')}
+// What changed between two versions of a draft, word by word.
+function chatDiff(a,b){const x=String(a).split(/(\s+)/),y=String(b).split(/(\s+)/);if(x.length*y.length>400000)return null;
+ const m=x.length,n=y.length,L=Array.from({length:m+1},()=>new Uint16Array(n+1));
+ for(let i=m-1;i>=0;i--)for(let j=n-1;j>=0;j--)L[i][j]=x[i]===y[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
+ const out=[];let i=0,j=0;const push=(k,t)=>{const l=out.at(-1);l&&l[0]===k?l[1]+=t:out.push([k,t])};
+ while(i<m&&j<n){if(x[i]===y[j]){push('=',x[i]);i++;j++}else if(L[i+1][j]>=L[i][j+1])push('-',x[i++]);else push('+',y[j++])}
+ while(i<m)push('-',x[i++]);while(j<n)push('+',y[j++]);
+ return out.map(([k,t])=>k==='='?esc(t):k==='-'?(t.trim()?`<del>${esc(t)}</del>`:''):`<ins>${esc(t)}</ins>`).join('')}
+// The card's own pieces for the chat, taken from the card as the dashboard draws it, so they stay the same.
+function chatParts(s){const t=document.createElement('template');t.innerHTML=suggestionCard(s,'Chat');const card=t.content.querySelector('article');
+ const acts=[...(card?.querySelector(':scope>.actions')?.children||[])].flatMap(n=>n.matches('details.more-actions')?[...n.querySelector('.more-menu').children]:[n])
+  .filter(n=>!['change','answer','cancel-change'].includes(n.dataset.choice));
+ // A snoozed card's way back is Unsnooze; a closed one's is Reopen or Undo: a text button on the status line
+ const back=s.status==='snoozed'?acts.find(n=>n.dataset.choice==='accept'):closed(s)?acts.find(n=>['reopen','undo'].includes(n.dataset.choice)):null;
+ if(back){back.className='link chat-inline';if(s.status==='snoozed')back.textContent='Unsnooze'}
+ const lead=back?null:acts.find(n=>n.classList.contains('primary'))||null,rest=acts.filter(n=>n!==lead&&n!==back);
+ const decide=rest.filter(n=>['complete','snooze','reject','accept','retry'].includes(n.dataset.choice)||n.dataset.smart!=null);
+ const status=card?.querySelector('.status-line:not(.ask-line)')?.textContent.trim()||card?.querySelector('.card-badges .chip')?.textContent.trim()||'';
+ const body=card?.querySelector('.body');body?.classList.remove('clamp');
+ const panel=[...(card?.querySelectorAll('.change-editor:not([class*="answer"]),.fleet-handoff-form,.agent-form')||[])].filter(n=>!n.querySelector('[id^="feedback-"]')).map(n=>n.outerHTML).join('')
+  +(['blocked','running','starting'].includes(s.preparation_status)&&s.preparation_browser?`<p class="note">${browserLink(s.id,s.preparation_browser)}</p>`:'');
+ const html=n=>n?.outerHTML||'';
+ return {lead:html(lead),send:!!lead?.dataset.smart,back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,4).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
+  status,intro:body?.innerHTML||'',ask:html(card?.querySelector('.ask-line')),agent:html(card?.querySelector('.agent-job')),
+  links:card?.querySelector('.foot-links')?.innerHTML||'',panel}}
+const chatOpenSet=new Set();  // what is unfolded (steps, long messages, drafts, diffs, repeated taps), kept through a poll
+const chatFold=(key,cls,summary,body)=>`<details class="${cls}" data-fold-key="${esc(key)}"${chatOpenSet.has(key)?' open':''}><summary>${summary}</summary>${body}</details>`;
+const chatLong=(t,lines=4)=>String(t||'').split('\n').length>lines||String(t||'').length>lines*70;
+const CHAT_VIA={email:'Email',gmail:'Email',slack:'Slack',linkedin:'LinkedIn',whatsapp:'WhatsApp',telegram:'Telegram',x:'X',calendar:'Calendar',intercom:'Intercom',github:'GitHub',android:'Phone'};
+const chatVia=v=>CHAT_VIA[v]||(v&&v!=='signal'?v[0].toUpperCase()+v.slice(1):'');
+// Whose side an item is on: the owner's messages and taps on the right, the Machine and the people it is about on the left.
+const chatSide=i=>i.kind==='you'||i.kind==='event'&&i.mine||i.kind==='source'&&i.mine?'you':i.kind==='event'?'mid':'them';
+function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…</p>';const p=s?chatParts(s):{},out=[];let day='',side='';
+ const items=[...(chat.items||[])];
+ // The card itself opens the conversation when no run has said anything yet: what it is about and what it needs
+ if(s&&!items.some(i=>i.kind==='reply'))items.push({kind:'card',at:Date.parse(s.created_at)||0});
+ // A coding agent's job that is still going or waits on you: its live block from the card, with its buttons
+ const live=s?.agent_job&&p.agent?s.agent_job:null;if(live)items.push({kind:'agentlive',at:Date.parse(live.updated_at||live.started_at)||Date.now()});
+ if(live)for(let n=items.length-1;n>=0;n--)if(items[n].kind==='agent'&&items[n].id===live.id)items.splice(n,1);
+ items.sort((a,b)=>(a.at||0)-(b.at||0));
+ // The same tap again and again (five snoozes in a row) is one line with a count, unfolded for the times
+ const rows=[];for(const i of items){const l=rows.at(-1);if(i.kind==='event'&&l?.kind==='event'&&l.text===i.text&&!!l.mine===!!i.mine)l.times.push(i.at),l.at=i.at;else rows.push(i.kind==='event'?{...i,times:[i.at]}:i)}
+ const stamp=at=>{if(!at)return;const d=chatDayOf(at);if(d!==day){day=d;side='';out.push(`<div class="chat-day">${esc(d)}</div>`)}};
+ const tm=at=>at?`<time class="chat-time" datetime="${new Date(at).toISOString()}" title="${esc(new Date(at).toLocaleString(CHAT_LOCALE))}">${chatHM(at)}</time>`:'';
+ const push=(i,html)=>{const sd=chatSide(i);out.push(html.replace('class="chat-','class="'+(sd===side?'cont ':'')+'chat-'));side=sd};
+ const sent=new Set(items.filter(i=>i.kind==='event'&&i.sent).map(i=>i.sent.trim()));
+ const drafts=items.flatMap(i=>i.kind==='reply'?(i.drafts||[]):[]),newest=drafts.at(-1);let prev=null;
+ // The decision buttons go on the Machine's latest message when the card is waiting on one (a Send goes on its draft)
+ const open=s&&!closed(s)&&s.status!=='snoozed'&&!chat.active&&!['queued','starting','running'].includes(s.preparation_status);
+ const lastMachine=rows.findLastIndex(i=>i.kind==='reply'||i.kind==='card');
+ const options=(n,onDraft)=>open&&n===lastMachine&&p.options&&!(p.send&&onDraft)?`<div class="chat-options">${p.options}</div>`:'';
+ const clamp=(k,html,long,more='More')=>long?`<div class="chat-clamp${chatOpenSet.has(k)?' open':''}">${html}</div><button type="button" class="link chat-more" data-unclamp="${k}">${chatOpenSet.has(k)?'Less':more}</button>`:html;
+ rows.forEach((i,n)=>{stamp(i.at);const k=n+':'+i.kind;
+  if(i.kind==='source'){const via=chatVia(i.via),who=[i.mine?'You':i.from,via].filter(Boolean).map(esc).join(' · ')||'Message';
+   // Several messages in a row from the same person: their name on the first, the link to the thread on the last
+   const same=j=>j?.kind==='source'&&j.from===i.from&&j.mine===i.mine&&chatDayOf(j.at)===chatDayOf(i.at),first=!same(rows[n-1]),last=!same(rows[n+1]);
+   const body=clamp(k,i.text?chatMarkdown(i.text):`<p>${esc(i.title)}</p>`,chatLong(i.text,3));
+   push(i,`<div class="chat-msg ${i.mine?'you':'them'} chat-source"><div class="bubble">${first?`<div class="chat-from"><span>${who}</span>${tm(i.at)}</div>${body}`:body+tm(i.at)}${last&&hasOriginal(s)&&!i.mine?`<button type="button" class="link read-original" data-id="${s.id}" data-original="read">Read the thread</button>`:''}</div></div>`)}
+  else if(i.kind==='card'){const hasDraft=s.status==='prepared'&&p.send;
+   push(i,`<div class="chat-msg machine chat-card"><div class="bubble">${p.intro||`<p>${esc(s.title)}</p>`}${p.ask?`<div class="chat-ask">${p.ask}</div>`:''}${tm(i.at)}</div>${options(n,hasDraft)}${hasDraft?`<div class="chat-card-send">${p.lead}</div>`:''}</div>`)}
+  else if(i.kind==='agentlive')push(i,`<div class="chat-msg machine chat-agent">${p.agent}</div>`);
+  else if(i.kind==='agent')push(i,`<div class="chat-msg machine"><div class="bubble"><div class="chat-from"><span>${esc(i.name)}</span>${tm(i.at)}</div>${clamp(k,chatMarkdown(i.text),chatLong(i.text))}</div></div>`);
+  else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
+  else if(i.kind==='event'){const c=i.times.length,line=c>1?`${esc(i.text)} ${c} times · ${chatHM(i.at)}`:`${esc(i.text)} · ${chatHM(i.at)}`;
+   push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line,`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line}</div>`)}
+  else if(i.kind==='you')push(i,`<div class="chat-msg you"><div class="bubble">${chatMarkdown(i.text)}${tm(i.at)}</div></div>`);
+  else if(i.kind==='reply'){const ds=i.drafts||[];
+   push(i,`<div class="chat-msg machine"><div class="bubble">${chatMarkdown(i.text)}${tm(i.at)}</div>${i.noted?'<small class="chat-noted">Noted for next time</small>':''}${ds.length?'':options(n,false)}</div>`);
+   ds.forEach((d,m)=>{const dk=k+':d'+m,went=sent.has(d.body.trim()),last=d===newest&&!went&&s?.status==='prepared';
+    const before=prev&&prev.kind===d.kind&&!sent.has(prev.body.trim())&&prev.body!==d.body?chatDiff(prev.body,d.body):null;prev=d;
+    const to=d.to.length?' to '+d.to.join(', '):'',what=d.reply?'Reply':d.kind==='email'||d.kind==='email_demo'?'Email':'Message';
+    const links=[chatLong(d.body)?`<button type="button" class="link" data-unclamp="${dk}">${chatOpenSet.has(dk)?'Less':'Show all'}</button>`:'',before?`<button type="button" class="link" data-unclamp="${dk}:diff">${chatOpenSet.has(dk+':diff')?'Hide changes':'Show what changed'}</button>`:''].filter(Boolean).join('');
+    out.push(`<div class="chat-draft${went?' went':''}${last?' current':''}"><div class="chat-draft-head"><span>${what}${esc(to)}</span>${went?'<span>Sent</span>':last?'':'<span>Earlier draft</span>'}</div>${d.subject&&!d.reply?`<div class="chat-draft-subject">${esc(d.subject)}</div>`:''}<div class="chat-clamp${chatOpenSet.has(dk)?' open':''}">${chatMarkdown(d.body)}</div>
+     ${before&&chatOpenSet.has(dk+':diff')?`<div class="chat-diff">${before}</div>`:''}${links||last&&p.send?`<div class="chat-draft-foot"><span>${links}</span>${last&&p.send?p.lead:''}</div>`:''}</div>`)});
+   if(ds.length)out.push(options(n,true).replace('class="chat-options"','class="chat-options under"'))}});
+ // A result with files: its links under the last reply
+ if(p.links&&!drafts.length&&s?.status==='prepared')out.push(`<div class="chat-links">${p.links}</div>`);
+ if(chat.active)out.push(chat.live?.text?`<div class="chat-msg machine chat-live"><div class="bubble">${chatMarkdown(chat.live.text)}</div></div>`:'<div class="chat-msg machine chat-live"><div class="bubble typing" role="status" aria-label="Working"><i></i><i></i><i></i></div></div>');
+ if(chat.unavailable)out.push('<p class="chat-note">I can’t read all of this chat right now.</p>');
+ return out.join('')}
+// At most two things to say, from what the card holds; tapping one fills the message box.
+function chatSuggestions(s){if(!chat||chat.active||closed(s))return [];const items=chat.items||[],src=items.filter(i=>i.kind==='source'&&!i.mine).at(-1),who=src?.from?.split(/\s/)[0];
+ const draft=s.status==='prepared'&&items.some(i=>i.drafts?.length);
+ return (draft?['Make it shorter',who?`What did ${who} ask?`:'Make it warmer']:[who?`What did ${who} ask?`:'What happened so far?','What do you need?']).slice(0,2)}
+const chatPicks=s=>chatSuggestions(s).map(t=>`<button type="button" class="chat-say" data-chat-say="${esc(t)}">${esc(t)}</button>`).join('');
+// Suggestions show while nothing has been said yet, or while you are writing
+const chatPicksShown=()=>!(chat?.items||[]).some(i=>i.kind==='you')||document.activeElement?.id==='chat-input';
+const BACK='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>';
+const SEND='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4.5l7 7-1.4 1.4-4.6-4.6V20h-2V8.3l-4.6 4.6L5 11.5z"/></svg>';
+const DOTS='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></svg>';
+const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}):d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
+// One small line over the message box: where the card stands, with its one way back (Unsnooze, Reopen) as a text button
+function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…':s.status==='snoozed'?(s.snoozed_until?'Snoozed until '+chatUntil(s.snoozed_until):'Snoozed')
+  :closed(s)?label(s.status):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':s.preparation_status==='blocked'?p.status:'';
+ return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
+function chatView(s,groups){const p=chatParts(s),open=!closed(s);
+ const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
+ return `<div class="chat-layout${chatDrawer?' drawer':''}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title">${esc(s.title)}</h2>
+  <details class="chat-menu" id="chat-menu"><summary aria-label="More actions" title="More actions">${DOTS}</summary><div class="chat-menu-list" role="group" aria-label="More actions">${p.rest}<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button></div></details></header>
+ <article id="task-${s.id}" class="chat-panel">${p.panel}</article><div class="chat-log" id="chat-log" aria-live="polite">${chatLog(s)}</div>
+ <div class="chat-compose"><div class="chat-status" id="chat-status">${chatStatus(s,p)}</div>${open?`<div class="chat-picks" id="chat-picks"${chatPicksShown()?'':' hidden'}>${chatPicks(s)}</div><div class="chat-box"><textarea id="chat-input" rows="1" aria-label="Message" placeholder="Message" enterkeyhint="send"></textarea><button type="button" class="chat-send" data-chat-send aria-label="Send" title="Send" disabled>${SEND}</button></div>`:''}</div></div></div>`}
+function chatGrow(t){if(!t)return;t.style.height='22px';t.style.height=Math.min(160,t.scrollHeight)+'px';const b=$('[data-chat-send]');if(b)b.disabled=!t.value.trim()}
+// On open: the latest at the bottom, nothing cut off under the header; a short chat just sits under the header.
+function chatScrollStart(){const log=$('#chat-log');if(!log)return;const end=()=>scrollTo(0,document.documentElement.scrollHeight);
+ scrollTo(0,0);const bar=$('.chat-compose')?.getBoundingClientRect().top||innerHeight;if((log.lastElementChild?.getBoundingClientRect().bottom||0)<=bar)return;end();
+ // What is cut off under the header: a sliver of a message is pushed out of view with a little room at the bottom
+ const head=$('.chat-head')?.getBoundingClientRect().bottom||0,cut=[...log.children].find(n=>{const b=n.getBoundingClientRect();return b.top<head&&b.bottom>head});
+ if(!cut)return;const b=cut.getBoundingClientRect(),shown=b.bottom-head;if(shown<Math.min(90,b.height/2)){log.style.paddingBottom=(20+shown+4)+'px';end()}}
+function paintChat(){const log=$('#chat-log'),s=chatOpen();if(!log||!s)return;const end=innerHeight+scrollY>=document.documentElement.scrollHeight-80;log.innerHTML=chatLog(s);
+ const st=$('#chat-status');if(st)st.innerHTML=chatStatus(s);const menu=$('#chat-menu');if(menu&&!menu.open)menu.querySelector('.chat-menu-list').innerHTML=chatParts(s).rest+`<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button>`;
+ const picks=$('#chat-picks');if(picks){picks.innerHTML=chatPicks(s);picks.hidden=!chatPicksShown()}
+ if(end&&chat?.items?.length&&chat.active)scrollTo(0,document.documentElement.scrollHeight)}
+async function chatPoll(){clearTimeout(chatTimer);const id=chatId;if(!id)return;
+ if(!document.hidden&&!$('#inbox').hidden)try{const r=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_chat',args:{suggestion_id:id,...(chat?.cursor&&chat.items?{cursor:chat.cursor}:{})}})});
+  if(id!==chatId)return;const was=chat?.active,first=!chat;const keep=r.unchanged||r.unavailable&&chat?.items?.length;chat={...r,items:keep?chat.items:r.items,cursor:(keep?chat.cursor:r.cursor)||null};paintChat();if(first){requestAnimationFrame(chatScrollStart);setTimeout(chatScrollStart,150)}if(was&&!r.active)refresh()}catch(e){if(id===chatId&&!chat){chat={items:[],unavailable:true};paintChat()}}
+ if(id===chatId)chatTimer=setTimeout(chatPoll,chat?.active?1000:10000)}
+// Whether this page put the open chat on the history (so back can take it off again instead of adding an entry)
+let chatPushed=false;
+function openChatLink(){if(!state.suggestions)return;const m=/^#chat=([a-f0-9]{16})$/.exec(location.hash),id=m&&state.suggestions.some(s=>s.id===m[1])?m[1]:null;
+ if(id===chatId)return;const was=chatId;chatId=id;chat=null;chatDrawer=false;chatOpenSet.clear();clearTimeout(chatTimer);if(!id)chatPushed=false;
+ if(id){document.querySelector('nav [data-tab="inbox"]').click();render();scrollTo(0,0);chatPoll()}else{render();if(was)document.getElementById('task-'+was)?.scrollIntoView({block:'center'})}}
+// A chat opens only on a real tap: not on the tap that stops a fling, nor on one that ends a scroll or a drag.
+let chatScrolledAt=0,chatDown=null;
+addEventListener('scroll',()=>{chatScrolledAt=Date.now()},{passive:true});
+document.addEventListener('pointerdown',e=>{chatDown={x:e.clientX,y:e.clientY,at:Date.now(),scrolled:Date.now()-chatScrolledAt<250}},{passive:true,capture:true});
+const chatRealTap=e=>!(chatDown&&(chatDown.scrolled||Math.hypot(e.clientX-chatDown.x,e.clientY-chatDown.y)>8));
+function chatGo(id){if(!chatId){history.pushState(null,'',location.pathname+location.search+'#chat='+id);chatPushed=true}else history.replaceState(null,'',location.pathname+location.search+'#chat='+id);openChatLink()}
+// In-page links, also when the page's base is another path; the "You asked" note opens the chat too.
+$('#suggestions').addEventListener('click',e=>{const a=e.target.closest('a[href^="#chat="],a[href^="#card="]'),note=!a&&e.target.closest('[data-chat-open]');
+ if(note&&!e.target.closest('a,button')){if(chatRealTap(e))chatGo(note.dataset.chatOpen);return}
+ if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const href=a.getAttribute('href');
+ if(a.hasAttribute('data-chat-back')){if(chatPushed){history.back();return}history.replaceState(null,'',location.pathname+location.search+href);openChatLink();openCardLink();return}
+ if(href.startsWith('#chat=')){if(chatRealTap(e)||chatId)chatGo(href.slice(6));return}
+ location.hash=href});
+$('#suggestions').addEventListener('toggle',e=>{const k=e.target.dataset?.foldKey;if(k==null||!e.target.closest('#chat-log'))return;e.target.open?chatOpenSet.add(k):chatOpenSet.delete(k)},true);
+$('#suggestions').addEventListener('input',e=>{if(e.target.id==='chat-input')chatGrow(e.target)});
+$('#suggestions').addEventListener('focusin',e=>{if(e.target.id==='chat-input'&&$('#chat-picks'))$('#chat-picks').hidden=false});
+$('#suggestions').addEventListener('focusout',e=>{if(e.target.id!=='chat-input')return;setTimeout(()=>{const p=$('#chat-picks');if(p&&!p.contains(document.activeElement))p.hidden=!chatPicksShown()},150)});
+// Enter sends with a keyboard; on a touch screen Enter is a new line and the button sends.
+$('#suggestions').addEventListener('keydown',e=>{if(e.target.id!=='chat-input'||e.key!=='Enter'||e.shiftKey||e.isComposing||e.ctrlKey||e.metaKey||matchMedia('(pointer: coarse)').matches)return;e.preventDefault();$('[data-chat-send]')?.click()});
+$('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
+ const layout=e.target.closest('.chat-layout');if(e.target===layout&&chatDrawer){chatDrawer=false;layout.classList.remove('drawer');return}
+ if(e.target.closest('[data-chat-drawer]')){chatDrawer=!chatDrawer;layout.classList.toggle('drawer',chatDrawer);e.target.closest('[data-chat-drawer]').setAttribute('aria-expanded',chatDrawer);e.target.closest('details')?.removeAttribute('open');return}
+ if(e.target.closest('.chat-menu-list button'))setTimeout(()=>$('#chat-menu')?.removeAttribute('open'));
+ const scope=e.target.closest('.chat-side [data-scope]');if(scope){e.stopPropagation();scopeFilter=scope.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render();return}
+ const un=e.target.closest('[data-unclamp]');if(un){e.stopPropagation();const k=un.dataset.unclamp;chatOpenSet.has(k)?chatOpenSet.delete(k):chatOpenSet.add(k);paintChat();return}
+ const b=e.target.closest('button');const input=$('#chat-input');
+ // A quick pick or a suggestion fills the message box.
+ if(b&&(b.dataset.choice==='pick'||b.dataset.chatSay!=null)&&input){e.stopPropagation();input.value=b.dataset.pick??b.dataset.chatSay;chatGrow(input);input.focus();return}
+ if(!b?.hasAttribute('data-chat-send'))return;e.stopPropagation();const s=chatOpen(),text=input?.value.trim();if(!s||!text){input?.focus();return}b.disabled=true;
+ try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'decide',args:{suggestion_id:s.id,choice:'other',feedback:text,decision_id:'chat-'+crypto.randomUUID()}})});
+  input.value='';chatGrow(input);chat={...(chat||{}),items:[...(chat?.items||[]),{kind:'you',text,at:Date.now()}],active:true,cursor:null};changing.delete(s.id);await refresh();paintChat();scrollTo(0,document.documentElement.scrollHeight);chatPoll()}
+ catch(err){toast(err.message,true);b.disabled=false}},true);
 // Links to a tab or a sub-tab: #events, #graph, #graph=roles, #connections, #connections=chat (and the tabs' own ids).
 const TAB_LINKS={inbox:'inbox',suggestions:'inbox',events:'events',graph:'people',people:'people',feedback:'feedback',connections:'health',health:'health'};
 function showTab(tab,pane){if(tab==='people'&&pane){graphPane=pane;localStorage.setItem('graph-pane',pane);graphNode='';$('#people-query').value=''}
  if(tab==='health'&&pane){healthPane=pane==='phone'?'other':pane;healthPicked=true}document.querySelector(`nav [data-tab="${tab}"]`)?.click();if(tab==='health')renderHealthTabs()}
 function openTabLink(){const st=/^#settings(?:[/=]([a-z]+))?$/.exec(location.hash);if(st){if($('#settings').hidden||st[1]&&st[1]!==settingsNow)showSettings(st[1]);return}const m=/^#([a-z]+)(?:=([a-z]+))?$/.exec(location.hash);if(!m||!TAB_LINKS[m[1]])return;history.replaceState(null,'',location.pathname+location.search);showTab(TAB_LINKS[m[1]],m[2])}
-window.addEventListener('hashchange',()=>{openSnoozeLink();openResultLink();openCardLink();openFleetLink();openTabLink()});
+window.addEventListener('hashchange',()=>{openChatLink();openSnoozeLink();openResultLink();openCardLink();openFleetLink();openTabLink()});
 function noteSplit(n){if(!n)return'';const parts=[['style','style'],['fact','missing facts'],['continue','keep going'],['new_ask','new asks'],['unsorted','not sorted']].filter(([k])=>n[k]);
 return parts.length?`<div class="notes-split"><span>Your Change notes</span><div>${parts.map(([k,t])=>`<span class="chip t-${{style:'lavender',fact:'amber',continue:'orange',new_ask:'mint',unsorted:'muted'}[k]}">${n[k]} ${t}</span>`).join('')}</div></div>`:''}
 function trendChart(trend){let rows=trend?.[trendView];if(!rows)return'';const first=rows.findIndex(r=>r.worth_it+r.dismissed+r.open);rows=first<0?rows.slice(-1):rows.slice(first);const daily=trendView==='daily';
@@ -1997,7 +2260,7 @@ return `<div class="trend"><div class="trend-head"><span>% worth it per ${daily?
 <div class="trend-legend"><span><b></b>Worth it</span><span><b class="no"></b>Not needed</span><span>Height: cards decided</span>${rows.some(r=>r.changes?.length)?'<span><i class="mark">◆</i>Rules changed</span>':''}</div></div>`}
 $('#quality').addEventListener('click',e=>{const b=e.target.closest('[data-trend]');if(!b)return;trendView=b.dataset.trend;localStorage.setItem('trend-view',trendView);render()});
 let refreshes=0;
-async function refresh(){refreshes++;try{state=await request('api/status');render();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);if(refreshFailed){notice('');refreshFailed=false}return true}catch(e){refreshFailed=true;notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
+async function refresh(){refreshes++;try{state=await request('api/status');render();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);if(refreshFailed){notice('');refreshFailed=false}return true}catch(e){refreshFailed=true;notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
 // On a phone the tab row scrolls sideways: a fade shows on the side with more tabs, and the current tab scrolls into view.
 function navFade(){const n=$('nav'),max=n.scrollWidth-n.clientWidth;n.classList.toggle('more-left',n.scrollLeft>2);n.classList.toggle('more-right',n.scrollLeft<max-2)}
 $('nav').addEventListener('scroll',navFade,{passive:true});addEventListener('resize',navFade);navFade();
@@ -2007,6 +2270,8 @@ $('#suggestions').oninput=e=>{if(e.target.tagName==='TEXTAREA')e.target.classLis
 async function saveDecision(id,choice,feedback='',answer=false){
 const saved=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'decide',args:{suggestion_id:id,choice,feedback,decision_id:crypto.randomUUID()}})});
 changing.delete(id);await refresh();
+// A Change carries on as a conversation: the card's chat opens, with the reply on its way. (An answer stays on the card.)
+if(choice==='other'&&!answer&&!chatId){chatGo(id);return}
 if(['complete','reject'].includes(choice))toast(saved?.status==='completed'?'Marked done':'Marked not needed',false,id);else toast(answer?'Thanks. I’ll carry on.':({accept:'I’ll prepare it.',other:'Changes saved.',retry:'Trying again.',undo:'Undone.',reopen:'Reopened.'})[choice]||'Saved.');
 }
 document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.more-actions[open]'))if(!m.contains(e.target)||e.target.closest('.more-menu button'))m.open=false});

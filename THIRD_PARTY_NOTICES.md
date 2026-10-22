@@ -30,6 +30,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Node packages
+
+The installer installs these from npm at the exact versions in `package-lock.json` (`npm ci`, no install scripts). The card chat uses them to read a card's session from the OpenClaw Gateway. Each package ships its own licence.
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `@openclaw/gateway-client` | 2026.8.1 | MIT, OpenClaw Foundation |
+| `@openclaw/gateway-protocol` | 2026.8.1 | MIT, OpenClaw Foundation |
+| `ws` | 8.21.3 | MIT |
+| `ipaddr.js` | 2.5.0 | MIT |
+| `typebox` | 1.3.16 | MIT |
+
 ## Optional tools
 
 Installed from their own package sources only when you use the feature that needs them. Each keeps its own licence and copyright notice.

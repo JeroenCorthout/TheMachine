@@ -711,6 +711,31 @@ def install_cli(paths):
     warn_path(paths)
 
 
+def node_packages_current(root=ROOT):
+    """Every package in package-lock.json is installed at its locked version."""
+    try:
+        packages = json.loads((root / 'package-lock.json').read_text())['packages']
+        return all(json.loads((root / path / 'package.json').read_text()).get('version') == entry.get('version')
+                   for path, entry in packages.items() if path)
+    except (OSError, ValueError, KeyError, AttributeError):
+        return False
+
+
+def install_node_packages(node, root=ROOT):
+    """The pinned Node packages beside the app (package-lock.json: the Gateway's official client for card chat).
+    npm ci only when they don't match the lock, with no install scripts. Not fatal: without them only the card
+    chat view is unavailable."""
+    if not (root / 'package-lock.json').exists() or node_packages_current(root):
+        return True
+    npm = npm_beside(node)
+    result = run([npm, 'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], cwd=str(root)) if npm else None
+    if not result or result.returncode or not node_packages_current(root):
+        say('  warn  could not install the Node packages (npm ci); card chat stays unavailable until the next install')
+        return False
+    say('Node packages: installed (package-lock.json)')
+    return True
+
+
 def warn_path(paths):
     folders = [Path(p).expanduser() for p in os.environ.get('PATH', '').split(os.pathsep) if p]
     if paths.cli.parent not in folders:
@@ -1081,6 +1106,7 @@ def main(argv=None):
         return 1
     setup_secrets(config, facts, paths)
     install_cli(paths)
+    install_node_packages(facts['node'])
     plugin_ok = args.skip_plugin or install_plugin(facts, reload=not args.no_start, stamp=paths.data / 'plugin-installed')
     if not plugin_ok:
         return 1

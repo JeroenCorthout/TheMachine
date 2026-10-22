@@ -1,0 +1,208 @@
+"""Card chat: card_chat reads the card's own session through the Gateway helper and shows it as a conversation (the
+owner's own notes from the service, never the service prompts; steps and replies redacted), and a chat message is the
+Change path with a short follow-up prompt."""
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('card_chat_assistant', Path(__file__).with_name('assistant.py'))
+a = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(a)
+
+
+def row(role, content, run, ms):
+    return {'role': role, 'content': content, 'timestamp': ms, '__openclaw': {'runId': run, 'seq': ms}}
+
+
+class CardChat(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = a.Store(Path(self.temp.name) / 'events.sqlite')
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'one', 'kind': 'gmail.message', 'occurred_at': a.now(),
+                                             'title': 'Evidence', 'body': 'Actual evidence', 'metadata': {}, 'deleted': False}], None)
+        self.sid = self.store.suggest('task', 'Reply to the venue', 'I can draft this.', [1])['id']
+        self.app = object.__new__(a.App)
+        self.app.store = self.store
+        self.app.config = {'accounts': [], 'database': str(Path(self.temp.name) / 'events.sqlite')}
+        self.calls = []
+
+    def gateway(self, result):
+        return patch.object(self.app, 'card_chat_gateway', side_effect=lambda request: self.calls.append(request) or result)
+
+    def job(self):
+        with self.store.connect() as db:
+            return dict(db.execute('SELECT * FROM preparations WHERE suggestion_id=?', (self.sid,)).fetchone())
+
+    def test_items_show_the_owner_and_the_agent_never_the_prompts(self):
+        messages = [
+            row('user', [{'type': 'text', 'text': 'Prepare suggestion abc. Preparation job ID: 123. /home/someone/x'}], 'r1', 1000),
+            row('assistant', [{'type': 'thinking', 'thinking': 'secret plan'},
+                              {'type': 'toolCall', 'name': 'browser', 'arguments': {'title': 'Opening /home/someone/notes.txt'}},
+                              {'type': 'toolCall', 'name': 'exec', 'arguments': {}}], 'r1', 2000),
+            row('toolResult', [{'type': 'text', 'text': 'tool output'}], 'r1', 2500),
+            row('assistant', [{'type': 'text', 'text': 'Drafted it. Key api_key=xxxxxxxxxx at /tmp/draft.md'}], 'r1', 3000),
+            row('user', [{'type': 'text', 'text': 'This continues the SAME session'}], 'r2', 5000),
+            row('assistant', [{'type': 'text', 'text': 'Shorter now.'}], 'r2', 6000),
+        ]
+        owner = [{'kind': 'you', 'text': 'Do it', 'button': True, 'at': 1000}, {'kind': 'you', 'text': 'Make it shorter', 'button': False, 'at': 5000}]
+        items = a.chat_items(messages, owner)
+        self.assertEqual([i['kind'] for i in items], ['you', 'steps', 'reply', 'you', 'reply'])
+        self.assertEqual(items[1]['steps'], ['Opening …', a.STEP_NAMES.get('exec', 'Working')])
+        self.assertEqual(items[2]['text'], 'Drafted it. Key api_key=[redacted] at …')
+        text = json.dumps(items)
+        for hidden in ('Prepare suggestion', 'SAME session', 'secret plan', 'tool output', '/home/', 'xxxxxxxxxx'):
+            self.assertNotIn(hidden, text)
+
+    def test_learning_internals_stay_out_and_say_noted(self):
+        msgs = [row('assistant', [{'type': 'text', 'text': 'Saved the reply.'}], 'r1', 1000),
+                row('assistant', [{'type': 'text', 'text': '\U0001F4BE Learned: updated `some-skill` (Capture it.). Say "undo" to revert this skill change.'}], 'r1', 2000),
+                row('assistant', [{'type': 'text', 'text': '\u2705 Found it in `the-file`.'}], 'r2', 3000),
+                {'role': 'assistant', 'content': [{'type': 'text', 'text': 'Late.'}], 'timestamp': 'x', '__openclaw': {'runId': 'r3', 'recordTimestampMs': 4000}}]
+        items = a.chat_items(msgs, [])
+        self.assertEqual([i['kind'] for i in items], ['reply', 'reply', 'reply'])
+        self.assertTrue(items[0]['noted'])  # "Noted for next time" on the reply the learning came with
+        self.assertNotIn('noted', items[1])
+        self.assertNotIn('skill', json.dumps(items))
+        self.assertEqual(items[1]['text'], 'Found it in the-file.')
+        self.assertEqual(items[2]['at'], 4000)
+
+    def test_steps_come_before_the_reply_and_saved_results_win(self):
+        msgs = [row('assistant', [{'type': 'toolCall', 'name': 'exec', 'arguments': {}}], 'r1', 3000),
+                row('assistant', [{'type': 'text', 'text': 'Free text the run also wrote.'}], 'r1', 4000)]
+        saved = {'r1': [{'kind': 'reply', 'text': 'Drafted the reply.', 'drafts': [{'kind': 'email', 'body': 'Hi'}], 'at': 2000}],
+                 'gone': [{'kind': 'reply', 'text': 'An older result.', 'drafts': [], 'at': 500}]}
+        items = a.chat_items(msgs, [{'kind': 'source', 'text': 'Can you help?', 'at': 100}, {'kind': 'you', 'text': 'Shorter', 'at': 1000}], saved)
+        self.assertEqual([(i['kind'], i.get('text')) for i in items],
+                         [('source', 'Can you help?'), ('reply', 'An older result.'), ('you', 'Shorter'), ('steps', None), ('reply', 'Drafted the reply.')])
+        self.assertLess(items[3]['at'], items[4]['at'])
+
+    def test_the_service_side_tells_who_wrote_what_sent_and_tapped(self):
+        with self.store.connect() as db:
+            db.execute("UPDATE events SET metadata=? WHERE source_id='one'", (json.dumps({'from': 'Doe, Alex <alex@example.com>'}),))
+        self.store.decide(self.sid, 'snooze', '', 'z1', 'dashboard')
+        self.store.decide(self.sid, 'accept', '', 'a1', 'telegram')
+        job = {'job_id': 'job1'}
+        draft = {'kind': 'email', 'to': ['alex@example.com'], 'subject': 'Re: Evidence', 'body': 'Hi Alex, done.', 'thread_id': 't1'}
+        with self.store.connect() as db:
+            db.execute("INSERT INTO preparation_runs(job_id,suggestion_id,session_job_id,status,started_at) VALUES('job1',?,'job1','ok',?)", (self.sid, a.now()))
+            db.execute('INSERT INTO preparation_calls(job_id,call_id,tool,params,started_at) VALUES(?,?,?,?,?)',
+                       (job['job_id'], 'c1', 'assistant_signals', json.dumps({'action': 'prepare', 'args': {
+                           'suggestion_id': self.sid, 'body': 'Drafted it. See [notes](file:///x/notes.md).', 'next_actions': [draft]}}), a.now()))
+            db.execute('INSERT INTO preparation_calls(job_id,call_id,tool,params,error,started_at) VALUES(?,?,?,?,?,?)',
+                       (job['job_id'], 'c2', 'assistant_signals', json.dumps({'action': 'prepare', 'args': {'suggestion_id': self.sid, 'body': 'Failed one'}}), 'bad', a.now()))
+            for n, (source, status) in enumerate((('dashboard', 'sent'), ('auto', 'failed'))):
+                db.execute('INSERT INTO action_jobs(id,suggestion_id,revision,payload,status,created_at,updated_at,approval_id,source,rfc_message_id) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                           (f'j{n}', self.sid, f'r{n}', json.dumps(draft), status, a.now(), a.now(), 'ap', source, ''))
+            owner, results = self.app.card_chat_service(db, self.sid)
+        source = owner[0]
+        self.assertEqual((source['kind'], source['from'], source['via'], source['text']), ('source', 'Alex Doe', 'email', 'Actual evidence'))
+        events = [(i['text'], i.get('mine')) for i in owner if i['kind'] == 'event']
+        self.assertEqual(events, [('Snoozed', True), ('Do it in Telegram', True), ('Sent to Alex', True), ('Didn’t go out to Alex', False)])
+        self.assertEqual(next(i for i in owner if i.get('sent'))['sent'], 'Hi Alex, done.')
+        [result] = results[job['job_id']]
+        self.assertEqual(result['text'], 'Drafted it. See notes.')
+        self.assertEqual([(d['to'], d['body'], d['reply']) for d in result['drafts']], [(['Alex'], 'Hi Alex, done.', True)])
+
+    def test_names_read_as_people_say_them(self):
+        self.assertEqual(a.chat_person('Lee, Sam'), 'Sam Lee')
+        self.assertEqual(a.chat_person('"Alex Doe"'), 'Alex Doe')
+        self.assertEqual(a.chat_person('Acme, Inc, Sales'), 'Acme, Inc, Sales')
+
+    def test_a_tap_taken_back_at_once_is_left_out(self):
+        for n, (choice, at) in enumerate((('complete', '2026-01-01T10:00:00+00:00'), ('reopen', '2026-01-01T10:00:20+00:00'),
+                                          ('snooze', '2026-01-01T11:00:00+00:00'), ('reject', '2026-01-01T12:00:00+00:00'), ('undo', '2026-01-01T12:00:05+00:00'))):
+            with self.store.connect() as db:
+                db.execute("INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,'','dashboard',?)", (f'd{n}', self.sid, choice, at))
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, self.sid)
+        self.assertEqual([i['text'] for i in owner if i['kind'] == 'event'], ['Snoozed'])
+
+    def test_a_conversation_source_names_who_the_card_is_about(self):
+        body = 'Can you confirm the plan?\n1792672698 · Fin · conversation_attribute_updated_by_admin:\n1792673603 · Sam Lee · note: Hi there, we need your call.\nThanks\n1792674070 · Owner Person · note: ask why'
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'two', 'kind': 'intercom.conversation', 'occurred_at': a.now(),
+                                             'title': 'Plan', 'body': body, 'metadata': {'from': ''}, 'deleted': False}], None)
+        with self.store.connect() as db:
+            event = db.execute("SELECT id FROM events WHERE source_id='two'").fetchone()['id']
+        sid = self.store.suggest('plan', 'Sam needs your call on the plan', 'Sam asks.', [event])['id']
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, sid)
+        self.assertEqual({k: owner[0][k] for k in ('from', 'via', 'text', 'at')},
+                         {'from': 'Sam Lee', 'via': 'intercom', 'text': 'Hi there, we need your call.\nThanks', 'at': 1792673603000})
+
+    def test_card_chat_reads_the_cards_session_with_its_own_notes(self):
+        with self.gateway({}):
+            empty = self.app.card_chat(self.sid)
+        self.assertEqual((empty['session'], empty['active']), (False, False))
+        self.assertEqual([(i['kind'], i['text']) for i in empty['items']], [('source', 'Actual evidence')])  # the card starts at its source
+        self.assertEqual(self.calls, [])  # no session yet: nothing to ask the Gateway
+        self.store.decide(self.sid, 'other', 'Make it shorter', 'chat-1', 'dashboard')
+        job = self.job()
+        with self.store.connect() as db:  # a send is shown by its action's own label, not as a decision too
+            db.execute("INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES('s1',?,'send','','dashboard',?)", (self.sid, a.now()))
+        history = {'messages': [row('assistant', [{'type': 'text', 'text': 'On it.'}], job['job_id'], a.chat_ms(a.now()) + 1000)],
+                   'deltaCursor': 'cur1', 'hasMore': False, 'inFlightRun': {'runId': job['job_id'], 'text': 'Writing to /home/x/y'}}
+        with self.gateway(history):
+            chat = self.app.card_chat(self.sid)
+        self.assertEqual(self.calls[0]['session_key'], 'agent:main:assistant-review-preparation-' + job['session_job_id'])
+        self.assertEqual((self.calls[0]['limit'], self.calls[0]['cursor']), (a.CHAT_HISTORY_LIMIT, None))
+        self.assertTrue(chat['active'])
+        self.assertEqual(chat['cursor'], 'cur1')
+        self.assertEqual(chat['live'], {'text': 'Writing to …'})
+        self.assertEqual([(i['kind'], i['text']) for i in chat['items']], [('source', 'Actual evidence'), ('you', 'Make it shorter'), ('reply', 'On it.')])
+        # Polling with the cursor: nothing new is just "unchanged", with the live reply
+        with self.gateway({'kind': 'delta', 'messages': [], 'deltaCursor': 'cur2', 'inFlightRun': {'text': 'Writing more'}}):
+            delta = self.app.card_chat(self.sid, 'cur1')
+        self.assertEqual((delta['unchanged'], delta['cursor'], delta['live']), (True, 'cur2', {'text': 'Writing more'}))
+        self.assertNotIn('items', delta)
+        with self.gateway({'error': 'unavailable'}):
+            down = self.app.card_chat(self.sid)
+        self.assertTrue(down['unavailable'])
+        self.assertEqual(down['items'][1]['text'], 'Make it shorter')
+
+    def test_card_chat_refuses_what_is_not_a_card(self):
+        for bad in ('', '../x', 'ABCDEF0123456789', '0' * 16):
+            with self.assertRaises(ValueError):
+                self.app.card_chat(bad)
+        with self.assertRaises(ValueError):
+            self.app.card_chat(self.sid, 'x' * 5000)
+
+    def test_card_chat_is_an_owner_dashboard_action(self):
+        self.assertIn('card_chat', a.OWNER_ACTIONS)
+        with self.gateway({}):
+            self.assertEqual(self.app.action('card_chat', {'suggestion_id': self.sid, 'source': 'dashboard'}, owner_dashboard=True)['session'], False)
+
+    def test_a_chat_message_gets_a_short_follow_up_prompt(self):
+        self.store.decide(self.sid, 'accept', '', 'click', 'telegram')
+        calls = []
+        self.app.preparation_step(lambda r: calls.append(r) or {'status': 'admitted'})
+        first = next(c['message'] for c in calls if c.get('message'))
+        self.assertIn('the owner tapped Do it', first)
+        with self.store.connect() as db:
+            db.execute("UPDATE preparation_runs SET status='ok',finished_at=?", (a.now(),))
+            db.execute("UPDATE preparations SET status='done'")
+            db.execute("UPDATE suggestions SET status='prepared'")
+        self.store.decide(self.sid, 'other', 'Make it shorter', 'chat-' + 'a' * 36, 'dashboard')
+        calls.clear()
+        self.app.preparation_step(lambda r: calls.append(r) or {'status': 'admitted'})
+        chat = next(c['message'] for c in calls if c.get('message'))
+        self.assertIn('wrote to you in the chat', chat)
+        self.assertIn('This continues the SAME session', chat)
+        self.assertNotIn('the owner tapped Do it', chat)
+        self.assertLess(len(chat), len(first))
+        # A Change from the card itself keeps the full prompt
+        with self.store.connect() as db:
+            db.execute("UPDATE preparation_runs SET status='ok',finished_at=?", (a.now(),))
+            db.execute("UPDATE preparations SET status='done'")
+            db.execute("UPDATE suggestions SET status='prepared'")
+        self.store.decide(self.sid, 'other', 'Another note', 'd-change', 'dashboard')
+        calls.clear()
+        self.app.preparation_step(lambda r: calls.append(r) or {'status': 'admitted'})
+        self.assertNotIn('wrote to you in the chat', next(c['message'] for c in calls if c.get('message')))
+
+
+if __name__ == '__main__':
+    unittest.main()

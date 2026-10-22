@@ -37,6 +37,8 @@ jobs:
           npm install --global openclaw@${{ matrix.openclaw }}
           npx --yes --package=playwright@1.63.0 playwright install --with-deps chromium
           printf 'OPENCLAW_PACKAGE_DIR=%s/openclaw\n' "$(npm root -g)" >> "$GITHUB_ENV"
+      - name: Install the pinned Node packages
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
       - name: Select Chromium
         run: |
           node --input-type=module -e 'const {chromium}=await import(process.env.OPENCLAW_PACKAGE_DIR+"/node_modules/playwright-core/index.mjs"); console.log("CHROMIUM_PATH="+chromium.executablePath())' >> "$GITHUB_ENV"
@@ -74,6 +76,8 @@ jobs:
           npm install --global openclaw@2026.10.5
           npx --yes --package=playwright@1.63.0 playwright install chromium
           printf 'OPENCLAW_PACKAGE_DIR=%s/openclaw\n' "$(npm root -g)" >> "$GITHUB_ENV"
+      - name: Install the pinned Node packages
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
       - name: Select Chromium
         run: |
           node --input-type=module -e 'import {pathToFileURL} from "node:url"; const {chromium}=await import(pathToFileURL(process.env.OPENCLAW_PACKAGE_DIR+"/node_modules/playwright-core/index.mjs").href); console.log("CHROMIUM_PATH="+chromium.executablePath())' >> "$GITHUB_ENV"

@@ -79,6 +79,11 @@ def main():
         print('Node.js is required; see README prerequisites.', file=sys.stderr)
         return 1
     node = subprocess.check_output([node,'-p','process.execPath'],text=True).strip()
+    if not (ROOT / 'node_modules' / '@openclaw' / 'gateway-client').is_dir():  # the pinned packages (package-lock.json), as the installer does
+        npm = shutil.which('npm')
+        if not npm or subprocess.run([npm, 'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], cwd=ROOT).returncode:
+            print('npm ci failed: the pinned Node packages are needed for the tests.', file=sys.stderr)
+            return 1
     cache = Path.home() / '.cache'
     cache.mkdir(exist_ok=True)
     # A HOME under /tmp would exercise the service's forbidden PrivateTmp attachment path.

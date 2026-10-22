@@ -392,7 +392,7 @@ class SourceError(Exception):
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import'}
@@ -6827,6 +6827,171 @@ def preparation_steps(job_id, agent_db=None, limit=4):
     return steps[::-1]
 
 
+# A card's chat (dashboard #chat=<id>): the card's own preparation session, read with chat.history through
+# chat-history-run.mjs, shown as a conversation. The owner's side comes from this app's decisions, never from the long
+# service prompts in the transcript; the agent's side is its replies and its steps, in the owner's words.
+CHAT_HISTORY_LIMIT = 200
+CHAT_OWNER_WORDS = {'accept': 'Do it', 'retry': 'Try again', 'complete': 'Marked done', 'reject': 'Not needed',
+                    'snooze': 'Snoozed', 'reopen': 'Reopened', 'undo': 'Undone'}
+# A tap that the next one takes back within a minute (done then reopened, snoozed then unsnoozed), or that Undo took
+# back, is left out, both.
+CHAT_UNDONE = {('complete', 'reopen'), ('reject', 'reopen'), ('snooze', 'unsnooze')}
+# A conversation event's parts, one per line: "<unix time> · <author> · <part kind>: <text>"
+CHAT_PART = re.compile(r'^(\d{9,11}) · ([^·\n]{1,120}) · ([\w.-]{1,60}):[ \t]?(.*)$', re.M)
+CHAT_AGENTS = {'claude': 'Claude Code', 'codex': 'Codex'}
+CHAT_SENT = {'email': 'email', 'email_demo': 'email', 'linkedin': 'message', 'slack': 'message', 'x': 'post', 'whatsapp': 'message'}
+CHAT_SECRETS = (
+    (re.compile(r'-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----'), '[redacted private key]'),
+    (re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'), '[redacted token]'),
+    (re.compile(r'\b(?:xox[abcdeoprs]|xapp)-[A-Za-z0-9-]{10,}|\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|glpat-[A-Za-z0-9_-]{20,})'), '[redacted token]'),
+    (re.compile(r'\bsk-(?:ant-|proj-|svcacct-)?[A-Za-z0-9_-]{20,}|\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}|\bya29\.[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b'), '[redacted token]'),
+    (re.compile(r'bot\d+:[A-Za-z0-9_-]{20,}|\b\d{8,10}:AA[A-Za-z0-9_-]{30,}'), '[redacted token]'),
+    (re.compile(r'(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}'), r'\1 [redacted]'),
+    (re.compile(r'(?i)\b(password|passwd|passphrase|client[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token)(["\']?\s*[:=]\s*["\']?)(?!\[redacted)[^\s"\'`,;&<>]{6,}'), r'\1\2[redacted]'),
+)
+CHAT_PATHS = re.compile(r'(?:~|/home|/tmp|/var|/Users|/root|/opt)/[^\s,;:)"\'”]+')
+CHAT_IDS = re.compile(r'\b(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{20,}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b')
+
+
+def chat_text(text, step=False, chars=4000):
+    """What the chat may show of the agent's words: no secrets and no local paths; a step line also without long IDs
+    (the card's Technical details rule). Replies keep their links."""
+    text = str(text or '')
+    for shape, replacement in CHAT_SECRETS:
+        text = shape.sub(replacement, text)
+    text = CHAT_PATHS.sub('…', text)
+    if step:
+        text = CHAT_IDS.sub('…', ' '.join(text.split()))
+    return text.strip()[:chars]
+
+
+# The agent's own bookkeeping, never shown in the chat: a learned or saved skill or memory line ("💾 Learned: updated
+# `some-skill` (…). Say "undo" to revert this skill change."). The chat only says it was noted.
+CHAT_LEARNED = re.compile(r'^\W*(?:learned|learnt|remembered|saved to memory|memory updated|skill (?:updated|saved|created))\b|\bskill change\b', re.I)
+CHAT_MARKER = re.compile(r'^[^\w\s"\'“‘(\[*_#>`~-]+\s*', re.M)  # an emoji or symbol a line starts with
+
+
+def chat_reply(text):
+    """(text, noted) of one reply: its learning lines left out (noted says there were some), no emoji markers at the
+    start of lines and no code ticks around names."""
+    kept, noted = [], False
+    for part in re.split(r'\n\s*\n', str(text or '')):
+        if CHAT_LEARNED.search(part.strip()):
+            noted = True
+            continue
+        kept.append(CHAT_MARKER.sub('', part.replace('`', '')))
+    return '\n\n'.join(p for p in kept if p.strip()).strip(), noted
+
+
+def chat_draft(action):
+    """A draft in a saved result, for the chat: what goes out and to whom (no account or thread handles)."""
+    if not isinstance(action, dict) or action.get('kind') not in CHAT_SENT or not isinstance(action.get('body'), str):
+        return None
+    to = action.get('to')
+    to = [str(t) for t in to] if isinstance(to, list) else [str(to)] if to else []
+    return {'kind': action['kind'], 'to': [clamp(t, 200) for t in to[:10]], 'subject': clamp(str(action.get('subject') or ''), 300),
+            'body': chat_text(action['body'], chars=8000), 'reply': bool(action.get('in_reply_to') or action.get('thread_id'))}
+
+
+def chat_excerpt(body, subject=''):
+    """The new part of a message: its quoted history and signature left out, the first lines kept."""
+    text = split_quoted_history(str(body or ''), subject)[0]
+    lines = [line.rstrip() for line in text.replace('\r', '').split('\n') if not line.lstrip().startswith('>')]
+    text = re.split(r'\n-- ?\n', '\n'.join(lines))[0]
+    return chat_text(re.sub(r'\n{3,}', '\n\n', text).strip(), chars=1500)
+
+
+def chat_person(name):
+    """A display name as people say it: "Lee, Sam" is Sam Lee."""
+    name = str(name or '').strip(' "\'')
+    match = re.fullmatch(r'([^,@]{1,60}),\s*([^,@]{1,60})', name)
+    return f'{match[2].strip()} {match[1].strip()}' if match else name
+
+
+def chat_name(address, names, fallback=''):
+    """Who a draft goes to, by first name when a source message names them; a chat handle that is no email address
+    (a WhatsApp or Slack ID) is the person the card is about (`fallback`)."""
+    found = names.get(_address(address))
+    if found:
+        return found.split()[0]
+    email = re.fullmatch(r'[^\s@<>]+@[\w.-]+\.[a-z]{2,}', _address(address) or '') and not re.search(r'@(s\.whatsapp\.net|g\.us|lid)$', _address(address))
+    return _address(address) if email else (fallback.split() or [_address(address) or str(address)])[0]
+
+
+def chat_ms(value):
+    try:
+        return int(dt.datetime.fromisoformat(str(value)).timestamp() * 1000)
+    except ValueError:
+        return 0
+
+
+def chat_items(messages, owner, results=None):
+    """The conversation, strictly by time: the owner's own notes and taps and the card's source messages (`owner`,
+    from the service), each run's saved results (`results`, by job ID, from the service: what it said and the drafts
+    it left) and, from the run's own session, the steps it took before them. A run's free text shows only when it
+    saved no result. User rows in the transcript are the service's prompts and are never shown; tool results,
+    thinking and nested tool rows neither; learning lines only as a "noted" mark on that run's reply."""
+    results = results or {}
+    items = [dict(o) for o in owner]
+    runs, order = {}, []
+    number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
+    for message in messages if isinstance(messages, list) else []:
+        if not isinstance(message, dict) or message.get('role') != 'assistant' or not isinstance(message.get('content'), list):
+            continue
+        meta = message.get('__openclaw') if isinstance(message.get('__openclaw'), dict) else {}
+        at = next((v for v in (message.get('timestamp'), meta.get('recordTimestampMs')) if number(v)), 0)
+        key = str(meta.get('runId') or '')
+        if key not in runs:
+            runs[key] = {'steps': [], 'at': at, 'texts': [], 'noted': False}
+            order.append(key)
+        run = runs[key]
+        for part in message['content']:
+            if not isinstance(part, dict):
+                continue
+            if part.get('type') == 'toolCall':
+                arguments = part.get('arguments') if isinstance(part.get('arguments'), dict) else {}
+                title = arguments.get('title') if isinstance(arguments.get('title'), str) else ''
+                title = chat_text(title, step=True, chars=120) or STEP_NAMES.get(part.get('name'), 'Working')
+                if run['steps'][-1:] != [title]:
+                    run['steps'].append(title)
+                run['at'] = run['at'] or at
+            elif part.get('type') == 'text' and str(part.get('text') or '').strip():
+                text, noted = chat_reply(chat_text(part['text']))
+                run['noted'] = run['noted'] or noted
+                if text:
+                    if run['texts'] and run['texts'][-1]['at'] >= at - 60000:
+                        run['texts'][-1]['text'] = (run['texts'][-1]['text'] + '\n\n' + text)[:8000]
+                    else:
+                        run['texts'].append({'kind': 'reply', 'text': text, 'at': at})
+    for key in order:
+        run = runs[key]
+        saved = [dict(r) for r in results.get(key, [])]
+        replies = saved or run['texts']
+        if run['steps']:
+            first = min([run['at']] + [r['at'] for r in replies if r['at']]) if run['at'] or replies else 0
+            items.append({'kind': 'steps', 'steps': run['steps'][-30:], 'at': max(0, (first or 0) - 1)})
+        if run['noted']:  # a learning turn of its own belongs to the reply before it
+            target = replies[-1] if replies else next((i for i in reversed(items) if i['kind'] == 'reply'), None)
+            if target is not None:
+                target['noted'] = True
+        items.extend(replies)
+    for key, saved in results.items():  # a run whose session is gone: its results still show
+        if key not in runs:
+            items.extend(dict(r) for r in saved)
+    rank = {'source': 0, 'you': 1, 'event': 1, 'steps': 2}
+    return sorted(items, key=lambda i: (i['at'], rank.get(i['kind'], 3)))
+
+
+def chat_prompt(job, config=None):
+    """The next turn of a card's chat, in the session that already has the card's full context: a short message, so
+    a long chat doesn't resend that context with every reply. Only the job's own handles change from turn to turn."""
+    j, sid = job['job_id'], job['suggestion_id']
+    return f'''The owner wrote to you in the chat of suggestion {sid}. Their message is the latest Change note (latest_feedback, source dashboard), and it is their authorization as before. This is a preparation task: answer it, or do what it asks, under the preparation rules and the instructions earlier in this session (if they are no longer in context, read tools/personal-assistant/PREPARATION.md). A question about the thread, the people or the context is answered from the evidence (events, preparation_history, memory), and the card's current draft and next_actions stay as they are unless the message asks to change them. When you change a draft, the body says concretely what changed. Preparation job ID: {j}.
+- Browser lease owner: assistant-{j[:8]} (python3 {browser_lease_script(config)} claim --owner assistant-{j[:8]} --minutes 30 --wait 10).
+- Attachments folder: {WORKSPACE}/data/assistant-attachments/{j}/
+- Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<your reply or result, short>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it.'''
+
+
 # What a review's own tool calls say it is doing, in the owner's words. Only names and card titles (what a card already
 # shows) come from the call itself; never message text or search words.
 REVIEW_STEPS = {'begin_analysis': 'Taking the next signals to review', 'analysis_page': 'Reading the signals',
@@ -9385,6 +9550,8 @@ class App:
             if result.get('handled') and not result.get('cancelled'):
                 result.update(duplicate=True,card_confirmation_only=True)
             return result
+        if name == 'card_chat':
+            return self.card_chat(args.get('suggestion_id'), args.get('cursor'))
         if name == 'decide':
             if args.get('choice') == 'reopen' and not owner_dashboard:
                 raise ValueError('Use the owner dashboard to reopen a completed item')
@@ -10391,32 +10558,37 @@ class App:
                 if step['kind']=='finish':job['finish']=step
             with self.store.connect() as db:
                 job['ahead']=bool(db.execute('SELECT early FROM suggestions WHERE id=?',(job['suggestion_id'],)).fetchone()[0])
-            self.store.note_rule_files(RULE_FILES)
-            try:style=self.store.style_text(job['suggestion_id'])
-            except Exception as error:  # a draft without the owner's voice beats no preparation
-                LOG.error('style context error=%s',type(error).__name__);style=''
-            known=embeddings.settings(self.config)  # what was learned that this card needs, not all of it
-            request['message']=preparation_prompt(job,self.store.facts_for(job['suggestion_id'],'fact',known),self.config,'' if style else self.store.draft_edits_text(),
-                                                  self.store.facts_for(job['suggestion_id'],'draft',known),style)
-            try:
-                lines=self.graph_lines(job['suggestion_id'])
-                if len(request['message'])+len(lines)<19000:request['message']+=lines  # the runner refuses over 20,000
-            except Exception as error:LOG.error('graph lines error=%s',type(error).__name__)
-            if getattr(self, 'fleet', None):
+            # A chat message (dashboard chat, decision chat-…) in a session that already has the card's context: a short
+            # follow-up turn instead of the full card context again, so long chats stay cheap.
+            if str(job.get('decision_id') or '').startswith('chat-') and request['session_job_id']!=job['job_id'] and not job.get('finish') and not job['ahead']:
+                request['message']=chat_prompt(job,self.config)
+            else:
+                self.store.note_rule_files(RULE_FILES)
+                try:style=self.store.style_text(job['suggestion_id'])
+                except Exception as error:  # a draft without the owner's voice beats no preparation
+                    LOG.error('style context error=%s',type(error).__name__);style=''
+                known=embeddings.settings(self.config)  # what was learned that this card needs, not all of it
+                request['message']=preparation_prompt(job,self.store.facts_for(job['suggestion_id'],'fact',known),self.config,'' if style else self.store.draft_edits_text(),
+                                                      self.store.facts_for(job['suggestion_id'],'draft',known),style)
                 try:
-                    lines=self.fleet.lines(job['suggestion_id'])
-                    if len(request['message'])+len(lines)<19000:request['message']+=lines
-                except Exception as error:LOG.error('fleet lines error=%s',type(error).__name__)
-            if embeddings.settings(self.config):
-                try:
-                    lines=self.related_lines(job['suggestion_id'])
-                    if len(request['message'])+len(lines)<19500:request['message']+=lines  # the runner refuses over 20,000
-                except Exception as error:LOG.error('related error=%s',type(error).__name__)
-            if getattr(self,'skills',None) and not job.get('finish'):
-                try:  # "There's a skill for this": an installed one that isn't ready, or one on ClawHub (the agent can search it)
-                    lines=self.skills.hint_prompt(clawhub=True)
-                    if lines and len(request['message'])+len(lines)<18500:request['message']+='\n\n'+lines
-                except Exception as error:LOG.error('skill hint error=%s',type(error).__name__)
+                    lines=self.graph_lines(job['suggestion_id'])
+                    if len(request['message'])+len(lines)<19000:request['message']+=lines  # the runner refuses over 20,000
+                except Exception as error:LOG.error('graph lines error=%s',type(error).__name__)
+                if getattr(self, 'fleet', None):
+                    try:
+                        lines=self.fleet.lines(job['suggestion_id'])
+                        if len(request['message'])+len(lines)<19000:request['message']+=lines
+                    except Exception as error:LOG.error('fleet lines error=%s',type(error).__name__)
+                if embeddings.settings(self.config):
+                    try:
+                        lines=self.related_lines(job['suggestion_id'])
+                        if len(request['message'])+len(lines)<19500:request['message']+=lines  # the runner refuses over 20,000
+                    except Exception as error:LOG.error('related error=%s',type(error).__name__)
+                if getattr(self,'skills',None) and not job.get('finish'):
+                    try:  # "There's a skill for this": an installed one that isn't ready, or one on ClawHub (the agent can search it)
+                        lines=self.skills.hint_prompt(clawhub=True)
+                        if lines and len(request['message'])+len(lines)<18500:request['message']+='\n\n'+lines
+                    except Exception as error:LOG.error('skill hint error=%s',type(error).__name__)
             if request['session_job_id'] != job['job_id']:
                 request['message']+='\nThis continues the SAME session, with earlier work in context. Before changing anything in an app, read assistant_signals preparation_history (offset 0, then any next_offset): a compact list of earlier calls. Summaries are shortened: when reconciling a call, request preparation_history with its call_ref, offset 0 and any next_offset for exact saved parameters and receipts. If detail_complete=false, check the retained transcript or original app for the missing suffix. Do not repeat an external step that already happened; check uncertain ones against the app first. If the owner\'s latest note asks for something different (a rewrite, another approach), do that. Saving your result or a blocker is always allowed.'
         result=runner(request)
@@ -10603,6 +10775,139 @@ class App:
         return {'status': job['status'], 'started_at': job['started_at'], 'steps': steps,
                 'browser': {**waiting, 'link': browser_link(self.config)} if waiting else None,
                 'peek': running and self.peek_target(job['job_id']) is not None}
+
+    def card_chat(self, suggestion_id, cursor=None):
+        """The chat view of one card (chat_items): read-only. While its run is going the dashboard asks about once a
+        second with the last `cursor`; `unchanged` then means only the live reply (if any) moved."""
+        if not re.fullmatch(r'[a-f0-9]{16}', str(suggestion_id or '')):
+            raise ValueError('Unknown suggestion')
+        if cursor is not None and (not isinstance(cursor, str) or len(cursor) > 4000):
+            raise ValueError('Invalid cursor')
+        with self.store.connect() as db:
+            if not db.execute('SELECT 1 FROM suggestions WHERE id=?', (suggestion_id,)).fetchone():
+                raise ValueError('Unknown suggestion')
+            job = db.execute('SELECT job_id,session_job_id,status FROM preparations WHERE suggestion_id=?', (suggestion_id,)).fetchone()
+            owner, results = self.card_chat_service(db, suggestion_id)
+        active = bool(job) and job['status'] in ('queued', 'starting', 'running')
+        result = {'session': bool(job), 'active': active, 'status': job['status'] if job else None}
+        if not job:
+            return {**result, 'items': chat_items([], owner, results), 'cursor': None}
+        found = self.card_chat_gateway({'session_key': 'agent:main:assistant-review-preparation-' + (job['session_job_id'] or job['job_id']),
+                                        'cursor': cursor, 'limit': CHAT_HISTORY_LIMIT})
+        if not isinstance(found, dict) or found.get('error') or not isinstance(found.get('messages', []), list):
+            return {**result, 'items': chat_items([], owner, results), 'cursor': None, 'unavailable': True}
+        flight = found.get('inFlightRun') if isinstance(found.get('inFlightRun'), dict) else None
+        result['live'] = {'text': chat_text(flight.get('text'), chars=8000)} if flight and active else None
+        result['cursor'] = found.get('deltaCursor') if isinstance(found.get('deltaCursor'), str) else None
+        if found.get('kind') == 'delta':
+            return {**result, 'unchanged': True}
+        return {**result, 'items': chat_items(found.get('messages'), owner, results), 'more': bool(found.get('hasMore'))}
+
+    def card_chat_service(self, db, suggestion_id):
+        """What the service itself knows of a card's chat: the source messages, the owner's notes and taps, what
+        went out, and each preparation's saved results (by job ID)."""
+        row = db.execute('SELECT event_ids FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+        try:
+            ids = [int(i) for i in json.loads(row['event_ids'])[:20]]
+        except (ValueError, TypeError):
+            ids = []
+        names, owner, kinds = {}, [], {}
+        title = (db.execute('SELECT title FROM suggestions WHERE id=?', (suggestion_id,)).fetchone() or {'title': ''})['title'] or ''
+        for r in db.execute('SELECT id,kind,metadata FROM events WHERE id IN (' + ','.join('?' * len(ids)) + ')', ids) if ids else []:
+            m = json.loads(r['metadata'])
+            kinds[r['id']] = r['kind']
+            name = chat_person(str(m.get('sender_display') or '').strip() or str(m.get('from') or '').split('<')[0])
+            if _address(m.get('from')) and name and '@' not in name and not m.get('from_me'):
+                names[_address(m.get('from'))] = name
+        for v in self.store.event_views(ids) if ids else []:
+            kind = kinds.get(v.get('event_id'), '')
+            via = v['kind'] if v['kind'] != 'signal' else kind.split('.')[0]
+            who, at, text = chat_person(v['from'].split('<')[0]) or v['from'], chat_ms(v['occurred_at']), None
+            parts = [p for p in CHAT_PART.finditer(v['body'] or '') if p[4].strip()]
+            if parts:  # a conversation (Intercom, a thread): the part it is about, by whom the card names, else the latest
+                me = str(self.config.get('owner_name') or '').strip().lower()
+                named = [p for p in parts if p[2].split()[0].lower() in title.lower()]
+                pick = (named or [p for p in parts if p[2].strip().lower() != me] or parts)[-1]
+                rest = (v['body'] or '')[pick.end():]
+                after = CHAT_PART.search(rest)
+                who, at = chat_person(pick[2]), int(pick[1]) * 1000
+                text = chat_excerpt(pick[4] + rest[:after.start() if after else None], '')
+            text = chat_excerpt(v['body'], v['title']) if text is None else text
+            if text or v['title']:
+                owner.append({'kind': 'source', 'from': clamp(who, 120), 'via': via, 'title': clamp(v['title'], 200),
+                              'text': text, 'mine': v['from'] == 'You', 'at': at})
+        runs = [r['started_at'] for r in db.execute('SELECT started_at FROM preparation_runs WHERE suggestion_id=?', (suggestion_id,))]
+        about = max(((i['at'], i['from']) for i in owner if i['kind'] == 'source' and not i['mine'] and i['from']), default=(0, ''))[1]  # the latest who wrote
+        for r in db.execute("SELECT choice,feedback,source,created_at FROM decisions WHERE suggestion_id=? AND source IN ('dashboard','telegram') "
+                            'ORDER BY rowid', (suggestion_id,)):
+            at, via = chat_ms(r['created_at']), (' in Telegram' if r['source'] == 'telegram' else '')
+            if r['choice'] == 'other':
+                owner.append({'kind': 'you', 'text': clamp(r['feedback'], 5000), 'via': r['source'], 'at': at})
+            elif r['choice'] in CHAT_OWNER_WORDS:  # a send shows as what went out, below
+                why = ': ' + clamp(r['feedback'], 300) if r['choice'] == 'reject' and r['feedback'] else ''
+                taps = [i for i in owner if i.get('choice')]
+                ran = any(0 <= chat_ms(t) - at < 120000 for t in runs)  # Do it on a snoozed card brings it back and starts it
+                choice = 'unsnooze' if r['choice'] == 'accept' and taps and taps[-1]['choice'] == 'snooze' and not ran else r['choice']
+                if taps and (choice == 'undo' or (taps[-1]['choice'], choice) in CHAT_UNDONE and at - taps[-1]['at'] < 60000):
+                    owner.remove(taps[-1])
+                    continue
+                owner.append({'kind': 'event', 'text': ('Unsnoozed' if choice == 'unsnooze' else CHAT_OWNER_WORDS[choice]) + via + why,
+                              'choice': choice, 'mine': True, 'at': at})
+        for r in db.execute('SELECT payload,status,source,created_at FROM action_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)):
+            try:
+                payload = json.loads(r['payload'])
+            except ValueError:
+                continue
+            draft = chat_draft(payload)
+            if draft:
+                to = ', '.join(chat_name(t, names, about) for t in draft['to'][:3]) or (about.split() or ['them'])[0]
+                text = {'sent': f'Sent to {to}', 'cancelled': 'Send cancelled', 'failed': f'Didn’t go out to {to}'}.get(r['status'], f'Sending to {to}…')
+                owner.append({'kind': 'event', 'text': text, 'sent': draft['body'] if r['status'] == 'sent' else None,
+                              'mine': r['source'] != 'auto' and r['status'] != 'failed', 'at': chat_ms(r['created_at'])})
+            elif isinstance(payload.get('label'), str) and payload['label'].strip():
+                owner.append({'kind': 'event', 'text': clamp(payload['label'], 120), 'mine': True, 'at': chat_ms(r['created_at'])})
+        # Each preparation's own saved results: what it said and the drafts it left, in the order it saved them.
+        results = {}
+        for r in db.execute("SELECT c.job_id,c.params,c.started_at,c.error FROM preparation_calls c JOIN preparation_runs p ON p.job_id=c.job_id "
+                            "WHERE p.suggestion_id=? AND c.tool='assistant_signals' ORDER BY c.started_at", (suggestion_id,)):
+            try:
+                params = json.loads(r['params'])
+            except (ValueError, TypeError):
+                continue
+            args = params.get('args') if isinstance(params, dict) and isinstance(params.get('args'), dict) else {}
+            if r['error'] or params.get('action') != 'prepare' or args.get('suggestion_id') != suggestion_id:
+                continue
+            actions = args.get('next_actions') if isinstance(args.get('next_actions'), list) else [args.get('next_action')]
+            text = chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(args.get('body'))))[0]
+            drafts = [d for d in map(chat_draft, actions) if d][:3]
+            for d in drafts:
+                d['to'] = [chat_name(t, names, about) for t in d['to']]
+            results.setdefault(r['job_id'], []).append({'kind': 'reply', 'text': text, 'drafts': drafts,
+                                                       'at': chat_ms(r['started_at'])})
+        # Work handed to a coding agent (Hand to Claude Code / Codex): when it went, and what came back
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_jobs'").fetchone():
+            for r in db.execute('SELECT id,tool,status,summary,error,created_at,updated_at,finished_at FROM agent_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)):
+                name = CHAT_AGENTS.get(r['tool'], str(r['tool']).capitalize())
+                owner.append({'kind': 'event', 'text': 'Handed to ' + name, 'mine': True, 'at': chat_ms(r['created_at'])})
+                end = chat_ms(r['finished_at'] or r['updated_at'])
+                if r['status'] == 'result' and str(r['summary'] or '').strip():
+                    owner.append({'kind': 'agent', 'id': r['id'], 'name': name, 'text': chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(r['summary'], chars=4000)))[0], 'at': end})
+                elif r['status'] in ('failed', 'cancelled'):
+                    owner.append({'kind': 'event', 'text': f"{name} {'stopped' if r['status'] == 'failed' else 'cancelled'}", 'at': end})
+        for i in owner:
+            i.pop('choice', None)
+        return owner, results
+
+    def card_chat_gateway(self, request):
+        """chat-history-run.mjs: the Gateway's chat.history for one preparation session; {'error'} when unavailable."""
+        env = {**node_env(self.config), 'ASSISTANT_STATE_DIR': str(Path(self.config['database']).expanduser().resolve().parent),
+               'OPENCLAW_CONFIG_PATH': str(Path(self.config.get('openclaw_config') or Path.home() / '.openclaw' / 'openclaw.json').expanduser())}
+        try:
+            result = subprocess.run([node_bin(self.config), str(ROOT / 'chat-history-run.mjs')], env=env,
+                                    input=encoded(request), capture_output=True, text=True, timeout=20)
+            return json.loads(result.stdout) if result.returncode == 0 else {'error': 'unavailable'}
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            return {'error': 'unavailable'}
 
     def peek_target(self, job_id):
         """(DevTools address, target ID) of the tab a running preparation is on now (peek_tab), in the browser this
@@ -12016,7 +12321,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','revise_draft','forget_fact','promise_close','graph_role','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

@@ -192,14 +192,17 @@ assert.equal(layout.overflow,false,`Overflow at ${width}px: `+JSON.stringify(awa
 await page.setViewportSize({width:390,height:844});
 await page.screenshot({path:'/tmp/261011-assistant-scheduled-card.png',fullPage:true});
 assert.equal(await page.locator('#suggestions textarea').count(),0);
-await tap(page.locator('#task-'+ids[0]),'Change');await page.locator('#feedback-'+ids[0]).fill('Please make this shorter');await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('#feedback-'+ids[0]).waitFor({state:'detached'});assert.equal(posts.at(-1).feedback,'Please make this shorter');
+await tap(page.locator('#task-'+ids[0]),'Change');await page.locator('#feedback-'+ids[0]).fill('Please make this shorter');await page.getByRole('button',{name:'Save changes',exact:true}).click();await page.locator('#feedback-'+ids[0]).waitFor({state:'detached'});assert.equal(posts.filter(p=>'feedback' in p).at(-1).feedback,'Please make this shorter');
+// A Change carries on in the card's chat; back to the list
+await page.locator('.chat-head').waitFor();assert.equal(new URL(page.url()).hash,'#chat='+ids[0]);await page.evaluate(()=>{location.hash=''});await page.locator('#task-'+ids[0]).waitFor();
 // Success notices clear after a few seconds; errors stay.
 await page.evaluate(()=>notice('Saved.'));assert.equal(await page.locator('#notice').textContent(),'Saved.');await page.waitForFunction(()=>$('#notice').textContent==='',null,{timeout:7000});
 await page.evaluate(()=>notice('Broke.',true));await page.waitForTimeout(5000);assert.equal(await page.locator('#notice').textContent(),'Broke.');await page.evaluate(()=>notice(''));
 // Ctrl+Enter in the change box saves like the Save changes button; plain Enter adds a new line.
 {const card=page.locator('#task-'+ids[0]);await tap(card,'Change');const box=card.locator('#feedback-'+ids[0]);
 await box.fill('First line');await box.press('Enter');await box.pressSequentially('Second line');assert.equal(await box.inputValue(),'First line\nSecond line');
-const before=posts.length;await box.press('Control+Enter');await box.waitFor({state:'detached'});assert.equal(posts.length,before+1);assert.equal(posts.at(-1).feedback,'First line\nSecond line');}
+const said=()=>posts.filter(p=>'feedback' in p),before=said().length;await box.press('Control+Enter');await box.waitFor({state:'detached'});assert.equal(said().length,before+1);assert.equal(said().at(-1).feedback,'First line\nSecond line');
+await page.locator('.chat-head').waitFor();await page.evaluate(()=>{location.hash=''});await page.locator('#task-'+ids[0]).waitFor();}
 {const menu=page.locator('#task-'+ids[1]+' .more-actions');await menu.locator('summary').click();await page.evaluate(()=>refresh());assert.equal(await menu.getAttribute('open'),'','a refresh keeps an opened More menu open');await menu.locator('summary').click();}
 {const card=page.locator('#task-'+ids[1]);const before=posts.length;await tap(card,'Not needed');assert.equal(posts.length,before);
 await card.getByText('Why isn’t this needed?').waitFor();await card.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await card.getByText('Why isn’t this needed?').count(),0);
