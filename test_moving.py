@@ -262,6 +262,22 @@ class Moving(unittest.TestCase):
                 self.assertRaisesRegex(moving.MoveError, 'Wrong export code or passphrase'):
             moving.import_(path, config_path, passphrase='not the right one', workspace=space, openclaw_home=claw)
 
+    def test_the_decrypted_export_is_read_only_inside_the_import_folder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            inside, outside = base / 'import', base / 'outside.tar.gz'
+            inside.mkdir()
+            outside.write_bytes(b'\x1f\x8b secret')
+            for path in [base / 'import/../outside.tar.gz', outside, Path('/etc/passwd'), inside / '..']:
+                with self.subTest(path=str(path)), self.assertRaisesRegex(moving.MoveError, 'not in the import folder'):
+                    moving._head(path, inside)
+            (inside / moving.DECRYPTED_NAME).symlink_to(outside)
+            with self.assertRaisesRegex(moving.MoveError, 'could not be read'):
+                moving._head(inside / moving.DECRYPTED_NAME, inside)
+            (inside / moving.DECRYPTED_NAME).unlink()
+            (inside / moving.DECRYPTED_NAME).write_bytes(b'PK\x03\x04rest')
+            self.assertEqual(moving._head(inside / moving.DECRYPTED_NAME, inside), b'PK\x03\x04')
+
     @unittest.skipUnless(HAS_OPENSSL, 'openssl not installed')
     def test_no_plain_copy_is_left_when_packing_fails(self):
         with patch.object(moving, 'readme', side_effect=RuntimeError('disk full')):

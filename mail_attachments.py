@@ -98,10 +98,13 @@ def _write(path, data, scrub=False):
     old, temp = None, None
     try:
         if scrub:
-            try:
-                old = open(path, 'r+b')
+            try:  # the old file itself, never what a symlink in its place points to (os.replace swaps only the link)
+                old = os.fdopen(os.open(path, os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0)), 'r+b')
             except FileNotFoundError:
                 pass
+            except OSError:
+                if not path.is_symlink():
+                    raise
         fd, name = tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)
         temp = Path(name)
         with os.fdopen(fd, 'wb') as out:
@@ -146,10 +149,20 @@ def from_email(path, config):
     return message_seal.is_sealed_file(real) or bool(base and real.is_relative_to(base.resolve()))
 
 
+def plain_name(name):
+    """An attachment's file name as given, when it is only a name: no folder, no '..', nothing absolute."""
+    name = str(name or '')
+    if (not name or name in ('.', '..') or name != Path(name).name or '\\' in name or '\0' in name
+            or Path(name).is_absolute() or re.match(r'^[A-Za-z]:', name)):
+        raise ValueError('Give the attachment a plain file name')
+    return name
+
+
 def save(config, folder, name, data):
     """Keep one attachment the app fetched from an email for a run: sealed in the job's folder when protection is on,
     with a readable copy for the run in the private folder. Returns {'saved': what the run reads, 'sealed': at rest}."""
     folder = Path(folder)
+    name = plain_name(name)
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     seal = sealer(config)
     if not seal:

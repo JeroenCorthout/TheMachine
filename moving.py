@@ -344,20 +344,38 @@ def _open_file(path, config):
     return message_seal.Sealer(key).open_bytes(path.read_bytes())
 
 
-def _decrypt(archive_path, plain, passphrase):
-    """Opens an encrypted export with the passphrase as typed, then as an export code is written. The cipher has no
-    integrity check, so a wrong passphrase sometimes (about 1 in 256) "decrypts" to noise: only a result that starts like
-    an archive counts, the rest is a wrong passphrase, not a damaged export."""
+DECRYPTED_NAME = 'export.tar.gz'
+
+
+def _decrypt(archive_path, folder, passphrase):
+    """Opens an encrypted export with the passphrase as typed, then as an export code is written, into `folder` (the
+    import's private temp folder) under a fixed name; returns that path. The cipher has no integrity check, so a wrong
+    passphrase sometimes (about 1 in 256) "decrypts" to noise: only a result that starts like an archive counts, the
+    rest is a wrong passphrase, not a damaged export."""
+    folder = Path(folder).resolve()
+    plain = folder / DECRYPTED_NAME  # never a name from the archive or the caller, so it can't point elsewhere
     for attempt in dict.fromkeys(p for p in (passphrase, _code_form(passphrase)) if p):
         try:
             _openssl(['-in', str(archive_path), '-out', str(plain)], attempt, decrypt=True)
         except MoveError:
             continue
-        with open(plain, 'rb') as file:
-            head = file.read(4)
+        head = _head(plain, folder)
         if head[:2] == b'\x1f\x8b' or head == b'PK\x03\x04':  # gzip or zip
-            return
+            return plain
     raise MoveError('Wrong export code or passphrase, or the file is damaged')
+
+
+def _head(path, folder, size=4):
+    """The first bytes of a file directly in `folder`, never through a symlink."""
+    path = Path(path)
+    if path.parent.resolve() != Path(folder).resolve() or path.name in ('', '.', '..'):
+        raise MoveError('The decrypted export is not in the import folder')
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    except OSError:
+        raise MoveError('The decrypted export could not be read') from None
+    with os.fdopen(fd, 'rb') as file:
+        return file.read(size)
 
 
 def _openssl(args, passphrase, decrypt=False):
@@ -496,8 +514,7 @@ def _import(archive_path, config_path, passphrase=None, workspace=None, openclaw
         if archive_path.name.endswith('.enc'):
             if not passphrase:
                 raise MoveError('This export is encrypted; give its export code or passphrase')
-            plain = temp / 'export.tar.gz'
-            _decrypt(archive_path, plain, passphrase)
+            plain = _decrypt(archive_path, temp, passphrase)
         unpacked = temp / 'export'
         try:
             with (zipfile.ZipFile(plain) if zipfile.is_zipfile(plain) else tarfile.open(plain, 'r:gz')) as archive:

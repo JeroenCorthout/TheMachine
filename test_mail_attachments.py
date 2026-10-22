@@ -61,6 +61,30 @@ class Files(unittest.TestCase):
                 self.assertEqual(original.read(), b'\0' * len(CANARY))
             self.assertEqual(path.read_bytes(), b'encrypted replacement')
 
+    def test_scrub_never_follows_a_symlink_to_another_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            outside = Path(folder) / 'outside.txt'
+            outside.write_bytes(CANARY)
+            inside = Path(folder) / 'job-1'
+            inside.mkdir()
+            link = inside / 'invoice.pdf'
+            link.symlink_to(outside)
+            mail_attachments._write(link, b'encrypted replacement', scrub=True)
+            self.assertEqual(outside.read_bytes(), CANARY)  # the target is neither scrubbed nor overwritten
+            self.assertFalse(link.is_symlink())
+            self.assertEqual(link.read_bytes(), b'encrypted replacement')
+
+    def test_attachment_names_are_plain_names_only(self):
+        for name in ['invoice.pdf', 'Q3 report.v2.pdf', '..hidden']:
+            self.assertEqual(mail_attachments.plain_name(name), name)
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            for name in ['../escape.pdf', '../../etc/passwd', '/etc/passwd', 'a/b.pdf', '..', '.', '',
+                         '..\\escape.pdf', 'C:evil.pdf', 'nul\0.pdf']:
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'plain file name'):
+                    mail_attachments.save({}, base / 'job-1', name, CANARY)
+            self.assertEqual([p for p in base.rglob('*') if p.is_file()], [])
+
 
 class AtRest(unittest.TestCase):
     def setUp(self):
