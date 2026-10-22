@@ -1,0 +1,1050 @@
+"""Hand a card's job to Claude Code or Codex (docs/agents.md).
+
+The owner opens Hand to Claude Code (or Hand to Codex) on a card, reads and edits the brief, and sends it. The card then
+shows the job: Sent, Running, a Result (the summary, the files it made or changed, the diff, links) or Failed. From a
+result the owner marks the card done, asks for changes (a follow-up in the same session) or hands it off again.
+
+Where a job runs (`place`):
+- `local`: the CLI on this computer, `claude -p --output-format stream-json` or `codex exec --json`, in a folder of
+  its own (`<database folder>/agent-jobs/<id>/work`) with the brief and the card's files. The owner's own CLI config,
+  plugins, MCP servers and permission settings apply as they are: nothing is added (no bypass flags) and nothing is
+  taken away. A follow-up resumes the same session (`claude --resume`, `codex exec resume`).
+- `remote` (Claude, hosted Machines): the job is queued into the owner's own Claude session on their paired computer
+  (`claude -p --cloud <session>`), with the unmodified `claude` the owner signed in through Anthropic's own flow. Its
+  result comes back through The Machine's claude.ai connector (`report_result`), with a token for that job only.
+- `cloud` (Codex, hosted Machines): `codex cloud exec`, polled with `codex cloud status` and `codex cloud diff`. It runs
+  in Codex cloud, not on the owner's computer, and the card says so.
+
+Credentials stay with the CLIs: this module never reads, copies or stores them. Transcripts and results stay in the job
+folder, readable only by the owner's account. Config (`agents` in config.json, all optional):
+    {"claude": {"command": "claude", "place": "local", "session": "<session id>", "device": "Laptop"},
+     "codex": {"command": "codex", "place": "local", "env": "<Codex cloud environment id>"},
+     "max_parallel": 2, "timeout_minutes": 30}
+`"agents": false` turns the card actions off. Without config, a CLI found on PATH (or in ~/.local/bin) shows its action.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import hmac
+import json
+import logging
+import os
+from pathlib import Path
+import re
+import secrets
+import shutil
+import signal
+import subprocess
+import threading
+import time
+
+LOG = logging.getLogger('personal-assistant')
+TOOLS = {'claude': 'Claude Code', 'codex': 'Codex'}
+PLACES = {'claude': ('local', 'remote'), 'codex': ('local', 'cloud')}
+ACTIVE = ('sent', 'running', 'waiting')
+BRIEF_MAX = 12000
+ASK_MAX = 4000
+SUMMARY_MAX = 20000
+DIFF_MAX = 200_000
+FILES_MAX = 50
+TRANSCRIPT_MAX = 20 * 1024 * 1024
+DRAFT_FILE = 'draft.md'
+URL = re.compile(r'https?://[^\s<>()"\'`\]]+')
+SCHEMA = '''CREATE TABLE IF NOT EXISTS agent_jobs(id TEXT PRIMARY KEY,suggestion_id TEXT NOT NULL,tool TEXT NOT NULL,place TEXT NOT NULL,
+  status TEXT NOT NULL,brief TEXT NOT NULL,asks TEXT,session_id TEXT,url TEXT,progress TEXT,summary TEXT,diff TEXT,files TEXT,
+  error TEXT,error_kind TEXT,turns INTEGER NOT NULL DEFAULT 1,outcome TEXT,token_hash TEXT,created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,started_at TEXT,finished_at TEXT,draft_updated INTEGER);
+CREATE INDEX IF NOT EXISTS agent_jobs_card ON agent_jobs(suggestion_id,created_at);'''
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def settings(config):
+    value = config.get('agents')
+    return value if isinstance(value, dict) else ({} if value is None else None)
+
+
+def find(name, command=None):
+    """The CLI's path: as configured, else on PATH, else in ~/.local/bin (where the official installers put it)."""
+    if command:
+        path = Path(os.path.expanduser(str(command)))
+        return str(path) if path.is_absolute() and os.access(path, os.X_OK) else shutil.which(str(command))
+    return shutil.which(name) or shutil.which(name, path=str(Path.home() / '.local/bin'))
+
+
+def tools(config):
+    """The tools this Machine can hand jobs to, with where they run: [{id, name, place, device?}]. A hosted Machine
+    (one with a manage_url) has no local CLI of the owner's: there Claude needs its paired session and Codex its cloud
+    environment set up first."""
+    found = settings(config)
+    if found is None:
+        return []
+    hosted = bool(config.get('manage_url'))
+    out = []
+    for tool, name in TOOLS.items():
+        own = found.get(tool)
+        if own is False:
+            continue
+        own = own if isinstance(own, dict) else {}
+        place = own.get('place') or ('remote' if tool == 'claude' else 'cloud') if hosted else own.get('place') or 'local'
+        if place not in PLACES[tool] or not find(tool, own.get('command')):
+            continue
+        if place == 'remote' and not own.get('session') or place == 'cloud' and not own.get('env'):
+            continue
+        entry = {'id': tool, 'name': name, 'place': place}
+        if place == 'remote':
+            entry['device'] = str(own.get('device') or 'your computer')[:60]
+        out.append(entry)
+    return out
+
+
+def plain(text):
+    return re.sub(r'\[([^\]\n]*)\]\((https?://[^)\s]+)\)', r'\1 (\2)', str(text or ''))
+
+
+def brief_for(card, drafts=(), links=(), files=(), messages=()):
+    """The job as the owner first sees it: the task, what the card prepared, its links and files, and what done looks
+    like. They edit it before it goes."""
+    lines = [str(card.get('title') or 'A task from The Machine').strip(), '']
+    body = plain(card.get('body')).strip()
+    if body:
+        lines += ['What this is about:', body[:4000], '']
+    if drafts:
+        lines.append('Prepared on the card:')
+        for d in list(drafts)[:5]:
+            to = d.get('to_name') or d.get('to_email') or ', '.join(d.get('to') or [])
+            head = (d.get('label') or d.get('kind') or 'Draft') + (f' (to {to})' if to else '')
+            lines.append(f'- {head}: ' + plain(d.get('body') or d.get('message') or '')[:1500].replace('\n', '\n  '))
+        lines.append('')
+    if links:
+        lines += ['Links:', *[f'- {u}' for u in list(dict.fromkeys(links))[:10]], '']
+    names = [*[f'card/{Path(f).name}' for f in files], *(['card/messages.md'] if messages else [])]
+    if names:
+        lines += ['Files from the card, in your folder: ' + ', '.join(names), '']
+    if drafts:
+        lines += [f'If you rewrite the message prepared above, save only its new text (no To or Subject lines) in {DRAFT_FILE}: '
+                  'it replaces the draft on the card, which I check and send myself.', '']
+    lines += ['Done looks like: a short summary of what you did and found, with any files you made in this folder.', '',
+              'Leave anything that sends, publishes, pays or submits for me: prepare it and say what is left.']
+    return '\n'.join(lines).strip()[:BRIEF_MAX]
+
+
+def kill(proc):
+    """Stop a job's process and everything it started (its own process group)."""
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    try:
+        proc.wait(5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+class Stopped(Exception):
+    def __init__(self, kind, message):
+        super().__init__(message)
+        self.kind = kind
+
+
+def git(folder, *args, check=True):
+    """Git in a job folder only, never the owner's own git config, hooks or signing."""
+    env = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
+    return subprocess.run(['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'user.name=The Machine', '-c', 'user.email=machine@localhost',
+                           '-c', 'commit.gpgsign=false', '-c', 'core.quotepath=false', *args], cwd=folder, env=env, capture_output=True,
+                          text=True, timeout=60, check=check)
+
+
+# ------------------------------------------------------------------ runners: one turn of a job
+
+class Local:
+    """A turn with the CLI on this computer. Yields progress lines; returns (session_id, summary)."""
+    def __init__(self, command):
+        self.command = command
+
+    def argv(self, job, resume):
+        raise NotImplementedError
+
+    def run(self, job, prompt, resume, folder, transcript, timeout, on_progress, on_session, procs):
+        argv = self.argv(job, resume)
+        with open(transcript, 'ab') as log, open(str(transcript) + '.err', 'ab') as err:
+            proc = subprocess.Popen(argv, cwd=folder, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
+                                    start_new_session=True, env={**os.environ, 'NO_COLOR': '1'})
+            procs[job['id']] = proc
+            timer = threading.Timer(timeout, lambda: (setattr(proc, 'timed_out', True), kill(proc)))
+            timer.daemon = True
+            timer.start()
+            state = {'session': resume, 'summary': '', 'error': '', 'size': 0}
+            try:
+                try:
+                    proc.stdin.write(prompt.encode())
+                    proc.stdin.close()
+                except (BrokenPipeError, OSError):
+                    pass
+                for raw in proc.stdout:
+                    if state['size'] < TRANSCRIPT_MAX:
+                        log.write(raw)
+                        state['size'] += len(raw)
+                    try:
+                        event = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if isinstance(event, dict):
+                        line = self.event(event, state)
+                        if state['session'] and state['session'] != resume:
+                            on_session(state['session'])
+                            resume = state['session']
+                        if line:
+                            on_progress(line)
+                proc.wait()
+            finally:
+                timer.cancel()
+                procs.pop(job['id'], None)
+                proc.stdout.close()
+        if getattr(proc, 'cancelled', False):
+            raise Stopped('cancelled', 'Cancelled')
+        if getattr(proc, 'timed_out', False):
+            raise Stopped('timeout', f'Stopped after {round(timeout / 60)} minutes')
+        if state['error'] or proc.returncode:
+            raise Stopped('failed', state['error'] or self.stderr_hint(transcript) or f'{TOOLS[job["tool"]]} stopped (exit {proc.returncode})')
+        return state['session'], state['summary']
+
+    @staticmethod
+    def stderr_hint(transcript):
+        try:
+            text = Path(str(transcript) + '.err').read_text(errors='replace')[-4000:]
+        except OSError:
+            return ''
+        lines = [x.strip() for x in text.splitlines() if x.strip() and not x.startswith(('at ', '    '))]
+        return lines[-1][:300] if lines else ''
+
+
+class LocalClaude(Local):
+    def argv(self, job, resume):
+        # The owner's own settings decide permissions, plugins and MCP servers: no --permission-mode, no --bare.
+        return [self.command, '-p', '--output-format', 'stream-json', '--verbose', *(['--resume', resume] if resume else [])]
+
+    @staticmethod
+    def event(event, state):
+        kind = event.get('type')
+        if event.get('session_id') and not state['session']:
+            state['session'] = str(event['session_id'])[:120]
+        if kind == 'assistant':
+            parts = (event.get('message') or {}).get('content') or []
+            for part in parts if isinstance(parts, list) else []:
+                if part.get('type') == 'tool_use':
+                    target = (part.get('input') or {})
+                    detail = target.get('file_path') or target.get('description') or target.get('pattern') or target.get('url') or ''
+                    return (f"{part.get('name')}: {Path(str(detail)).name if target.get('file_path') else detail}" if detail else str(part.get('name')))[:160]
+                if part.get('type') == 'text' and str(part.get('text') or '').strip():
+                    return str(part['text']).strip().splitlines()[0][:160]
+        if kind == 'result':
+            state['session'] = str(event.get('session_id') or state['session'] or '')[:120] or None
+            if event.get('is_error') or event.get('subtype') not in (None, 'success'):
+                state['error'] = str(event.get('result') or event.get('subtype') or 'Claude Code stopped')[:500]
+            else:
+                state['summary'] = str(event.get('result') or '')
+        return None
+
+
+class LocalCodex(Local):
+    def __init__(self, command, git_ok=True):
+        super().__init__(command)
+        self.git_ok = git_ok
+
+    def argv(self, job, resume):
+        # The owner's own ~/.codex config decides model, sandbox and approvals. Only without git (no repository for
+        # the job folder) does it skip Codex's git check, which is about the folder, not about permissions.
+        check = [] if self.git_ok else ['--skip-git-repo-check']
+        if resume:
+            return [self.command, 'exec', 'resume', *check, '--json', resume, '-']
+        return [self.command, 'exec', *check, '--json', '-']
+
+    @staticmethod
+    def event(event, state):
+        kind = event.get('type')
+        if kind == 'thread.started' and event.get('thread_id'):
+            state['session'] = str(event['thread_id'])[:120]
+        item = event.get('item') if isinstance(event.get('item'), dict) else {}
+        if kind == 'item.completed' and item.get('type') == 'agent_message':
+            text = str(item.get('text') or '').strip()
+            if text:
+                state['summary'] = text
+                return text.splitlines()[0][:160]
+        if kind == 'item.started' and item.get('type') == 'command_execution':
+            return ('Running ' + str(item.get('command') or ''))[:160]
+        if kind == 'item.completed' and item.get('type') == 'file_change':
+            names = [Path(str(c.get('path') or '')).name for c in item.get('changes') or [] if isinstance(c, dict)]
+            return ('Changed ' + ', '.join(n for n in names if n))[:160] if names else None
+        if kind in ('turn.failed', 'error'):
+            error = event.get('error') if isinstance(event.get('error'), dict) else {}
+            state['error'] = str(error.get('message') or event.get('message') or 'Codex stopped')[:500]
+        return None
+
+
+# ------------------------------------------------------------------ runners the owner also sees in their own apps
+
+class Untrusted(Exception):
+    """`claude --bg` won't start in a folder the owner hasn't trusted: the job runs with `claude -p` instead."""
+
+
+class Handle:
+    """What cancel and the timeout stop for a job that isn't one child process: `stop()` ends it where it runs."""
+    def __init__(self, stop):
+        self.stop, self.cancelled, self.timed_out = stop, False, False
+
+
+def stop_proc(proc):
+    """Cancel or time out a job: its own way (Handle.stop) or its process group."""
+    if hasattr(proc, 'stop'):
+        try:
+            proc.stop()
+        except Exception as error:  # noqa: BLE001
+            LOG.warning('agent job stop error=%s', type(error).__name__)
+    else:
+        kill(proc)
+
+
+def claude_transcript(session_id):
+    """Claude Code's own transcript of a session (~/.claude/projects/<folder>/<session id>.jsonl, see its docs on
+    sessions): where the background session's last words are read from."""
+    if not re.fullmatch(r'[0-9a-f-]{36}', str(session_id or '')):
+        return None
+    found = sorted((Path.home() / '.claude' / 'projects').glob(f'*/{session_id}.jsonl'))
+    return found[0] if found else None
+
+
+def last_words(transcript, since):
+    """The last thing Claude said in a transcript, written at or after `since` (epoch seconds): the turn's summary."""
+    text = None
+    try:
+        with open(transcript, encoding='utf-8', errors='replace') as lines:
+            for line in lines:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict) or entry.get('type') != 'assistant':
+                    continue
+                try:
+                    at = dt.datetime.fromisoformat(str(entry.get('timestamp')).replace('Z', '+00:00')).timestamp()
+                except ValueError:
+                    continue
+                if at < since - 2:
+                    continue
+                parts = (entry.get('message') or {}).get('content') or []
+                said = '\n'.join(str(p.get('text') or '') for p in parts if isinstance(p, dict) and p.get('type') == 'text').strip()
+                if said:
+                    text = said
+    except OSError:
+        return None
+    return text
+
+
+class BackgroundClaude:
+    """A turn as a Claude Code background session (`claude --bg --name <card>`, see Claude Code's agent view docs):
+    the owner sees it in `claude agents` and, with Remote Control on for all sessions, at claude.ai/code and in the
+    Claude apps, where they can watch it and carry on. The Machine follows it with `claude agents --json --all`, the
+    supported way to read session state, and reads the result from the session's transcript."""
+    POLL = 3
+
+    def __init__(self, command):
+        self.command = command
+
+    def agents(self):
+        out = subprocess.run([self.command, 'agents', '--json', '--all'], capture_output=True, text=True, timeout=30,
+                             stdin=subprocess.DEVNULL, env={**os.environ, 'NO_COLOR': '1'})
+        try:
+            found = json.loads(out.stdout or '[]')
+        except ValueError:
+            return []
+        return [e for e in (found if isinstance(found, list) else found.get('sessions') or []) if isinstance(e, dict)]
+
+    def entry(self, short=None, session=None):
+        for e in self.agents():
+            if e.get('kind') == 'background' and (short and e.get('id') == short or session and e.get('sessionId') == session):
+                return e
+        return None
+
+    def run(self, job, prompt, resume, folder, transcript, timeout, on_progress, on_session, procs):
+        name = (str(job.get('brief') or '').strip().splitlines() or ['A job from The Machine'])[0][:80]
+        argv = [self.command, *(['--resume', resume] if resume else []), '--bg', *([] if resume else ['--name', name]), '--', prompt]
+        started = time.time()
+        out = subprocess.run(argv, cwd=folder, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL,
+                             env={**os.environ, 'NO_COLOR': '1'})
+        said = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', (out.stdout or '') + '\n' + (out.stderr or ''))
+        with open(transcript, 'a', encoding='utf-8') as log:
+            log.write(said[-20000:])
+        if 'not trusted' in said.lower():
+            raise Untrusted()
+        found = re.search(r'backgrounded\s*·\s*([0-9a-f]{6,})', said)
+        if out.returncode or not found:
+            lines = [x.strip() for x in said.splitlines() if x.strip()]
+            raise Stopped('failed', (lines[-1] if lines else f'Claude Code stopped (exit {out.returncode})')[:300])
+        return self.watch(job, found.group(1), started, timeout, on_progress, on_session, procs)
+
+    def watch(self, job, short, started, timeout, on_progress, on_session, procs):
+        handle = Handle(lambda: subprocess.run([self.command, 'stop', short], capture_output=True, timeout=60, stdin=subprocess.DEVNULL))
+        procs[job['id']] = handle
+        session, seen_working, last = None, False, None
+        try:
+            while True:
+                if handle.cancelled:
+                    raise Stopped('cancelled', 'Cancelled')
+                if time.time() - started > timeout:
+                    handle.timed_out = True
+                    stop_proc(handle)
+                    raise Stopped('timeout', f'Stopped after {round(timeout / 60)} minutes')
+                e = self.entry(short=short)
+                if e is None:
+                    raise Stopped('failed', 'The Claude Code session is gone')
+                if e.get('sessionId') and e['sessionId'] != session:
+                    session = str(e['sessionId'])[:120]
+                    on_session(session)
+                state, detail = e.get('state'), str(e.get('detail') or '').strip()
+                if state == 'working':
+                    seen_working = True
+                    line = detail
+                elif state == 'blocked':
+                    line = 'Waiting for you in Claude' + (': ' + detail if detail else '')
+                else:
+                    line = None
+                if line and line != last:
+                    on_progress(line[:160])
+                    last = line
+                if state in ('failed', 'stopped'):
+                    raise Stopped('cancelled' if handle.cancelled else 'failed', detail or f'Claude Code {state}')
+                if state == 'done':
+                    path = claude_transcript(session)
+                    words = last_words(path, started) if path else None
+                    if words is not None or seen_working and time.time() - started > 20:
+                        return session, words or detail or 'Done.'
+                time.sleep(self.POLL)
+        finally:
+            procs.pop(job['id'], None)
+
+    def link(self, session):
+        """Its page at claude.ai/code: read from Claude Code's own job state (not a stable file, so only for the
+        link; without it the session is still in the list there under the card's name)."""
+        e = self.entry(session=session)
+        bridge = None
+        if e and e.get('id'):
+            try:
+                bridge = json.loads((Path.home() / '.claude' / 'jobs' / str(e['id']) / 'state.json').read_text()).get('bridgeSessionId')
+            except (OSError, ValueError, AttributeError):
+                bridge = None
+        return 'https://claude.ai/code/' + bridge if bridge and re.fullmatch(r'cse_[A-Za-z0-9]{8,64}', str(bridge)) else 'https://claude.ai/code'
+
+
+class NoAppServer(Exception):
+    """This Codex has no app server to talk to: the job runs with `codex exec` instead."""
+
+
+class AppServerCodex:
+    """A turn through `codex app-server` (stdio, Codex's documented app-server protocol): the thread is an ordinary
+    Codex thread named after the card, so it shows up in the Codex app next to the owner's own threads, opens with
+    codex://threads/<id> and can be continued there. `codex exec` threads are hidden from that list."""
+    def __init__(self, command):
+        self.command = command
+
+    def run(self, job, prompt, resume, folder, transcript, timeout, on_progress, on_session, procs):
+        with open(transcript, 'ab') as log, open(str(transcript) + '.err', 'ab') as err:
+            proc = subprocess.Popen([self.command, 'app-server', '--listen', 'stdio://'], cwd=folder, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=err, start_new_session=True, env={**os.environ, 'NO_COLOR': '1'})
+            procs[job['id']] = proc
+            timer = threading.Timer(timeout, lambda: (setattr(proc, 'timed_out', True), kill(proc)))
+            timer.daemon = True
+            timer.start()
+            state = {'size': 0, 'n': 0, 'summary': '', 'error': '', 'status': None}
+            try:
+                return self.talk(proc, log, state, job, prompt, resume, folder, on_progress, on_session, timeout)
+            finally:
+                timer.cancel()
+                procs.pop(job['id'], None)
+                kill(proc)
+                for pipe in (proc.stdin, proc.stdout):
+                    try:
+                        pipe.close()
+                    except OSError:
+                        pass
+
+    def talk(self, proc, log, state, job, prompt, resume, folder, on_progress, on_session, timeout):
+        def send(message):
+            proc.stdin.write((json.dumps(message) + '\n').encode())
+            proc.stdin.flush()
+
+        def read():
+            raw = proc.stdout.readline()
+            if not raw:
+                return None
+            if state['size'] < TRANSCRIPT_MAX:
+                log.write(raw)
+                state['size'] += len(raw)
+            try:
+                found = json.loads(raw)
+            except ValueError:
+                return {}
+            return found if isinstance(found, dict) else {}
+
+        def call(method, params):
+            state['n'] += 1
+            want = state['n']
+            send({'jsonrpc': '2.0', 'id': want, 'method': method, 'params': params})
+            while True:
+                m = read()
+                if m is None:
+                    raise EOFError
+                if m.get('id') == want and 'method' not in m:
+                    if m.get('error'):
+                        raise ValueError(str((m['error'] or {}).get('message') or 'error')[:300])
+                    return m.get('result') or {}
+                self.handle(m, send, state, on_progress)
+
+        def stopped():
+            if getattr(proc, 'cancelled', False):
+                return Stopped('cancelled', 'Cancelled')
+            if getattr(proc, 'timed_out', False):
+                return Stopped('timeout', f'Stopped after {round(timeout / 60)} minutes')
+            return None
+
+        try:
+            call('initialize', {'clientInfo': {'name': 'the_machine', 'title': 'The Machine', 'version': '1'}})
+        except (EOFError, ValueError, OSError):
+            raise stopped() or NoAppServer() from None
+        try:
+            send({'jsonrpc': '2.0', 'method': 'initialized'})
+            # The owner's own ~/.codex config decides model, sandbox and approvals: nothing is passed to change them.
+            thread = call('thread/resume', {'threadId': resume}) if resume else call('thread/start', {'cwd': str(folder)})
+            thread_id = str(((thread.get('thread') or {}).get('id')) or resume or '')[:120]
+            if not thread_id:
+                raise Stopped('failed', 'Codex did not start a thread')
+            on_session(thread_id)
+            if not resume:
+                name = (str(job.get('brief') or '').strip().splitlines() or ['A job from The Machine'])[0][:80]
+                call('thread/name/set', {'threadId': thread_id, 'name': name})
+            call('turn/start', {'threadId': thread_id, 'input': [{'type': 'text', 'text': prompt}]})
+            while state['status'] is None:
+                m = read()
+                if m is None:
+                    raise EOFError
+                self.handle(m, send, state, on_progress)
+        except (EOFError, OSError, ValueError) as error:
+            raise stopped() or Stopped('failed', state['error'] or (str(error) if isinstance(error, ValueError) else '') or
+                                        Local.stderr_hint(log.name) or 'Codex stopped') from None
+        if stopped():
+            raise stopped()
+        if state['status'] != 'completed':
+            raise Stopped('cancelled' if state['status'] == 'interrupted' else 'failed', state['error'] or f'Codex {state["status"]}')
+        return thread_id, state['summary']
+
+    @staticmethod
+    def handle(m, send, state, on_progress):
+        method, params = m.get('method'), m.get('params') if isinstance(m.get('params'), dict) else {}
+        if method and 'id' in m:
+            # A question for whoever runs the turn. Nobody is there to answer it here, as with `codex exec`: an
+            # approval is declined (the agent carries on without it), anything else is not supported.
+            if method.endswith('requestApproval') or method in ('applyPatchApproval', 'execCommandApproval'):
+                send({'jsonrpc': '2.0', 'id': m['id'], 'result': {'decision': 'decline' if method.endswith('requestApproval') else 'denied'}})
+                on_progress('Declined a step that needed approval')
+            elif method == 'mcpServer/elicitation/request':
+                send({'jsonrpc': '2.0', 'id': m['id'], 'result': {'action': 'decline'}})
+            else:
+                send({'jsonrpc': '2.0', 'id': m['id'], 'error': {'code': -32601, 'message': 'Not supported by The Machine'}})
+            return
+        item = params.get('item') if isinstance(params.get('item'), dict) else {}
+        if method == 'item/started' and item.get('type') == 'commandExecution':
+            on_progress(('Running ' + str(item.get('command') or ''))[:160])
+        elif method == 'item/completed' and item.get('type') == 'fileChange':
+            names = [Path(str(c.get('path') or '')).name for c in item.get('changes') or [] if isinstance(c, dict)]
+            if any(names):
+                on_progress(('Changed ' + ', '.join(n for n in names if n))[:160])
+        elif method == 'item/completed' and item.get('type') == 'agentMessage':
+            text = str(item.get('text') or '').strip()
+            if text:
+                state['summary'] = text
+                on_progress(text.splitlines()[0][:160])
+        elif method == 'error':
+            error = params.get('error') if isinstance(params.get('error'), dict) else {}
+            state['error'] = str(error.get('message') or params.get('message') or '')[:500]
+        elif method == 'turn/completed':
+            turn = params.get('turn') if isinstance(params.get('turn'), dict) else {}
+            state['status'] = str(turn.get('status') or 'completed')
+            error = turn.get('error') if isinstance(turn.get('error'), dict) else {}
+            if error.get('message'):
+                state['error'] = str(error['message'])[:500]
+
+
+def app_link(runner, session):
+    """Where the owner opens the job in their own app: the Codex app's thread, the Claude Code session's page."""
+    if isinstance(runner, AppServerCodex) and re.fullmatch(r'[0-9a-f-]{36}', str(session or '')):
+        return 'codex://threads/' + session
+    if isinstance(runner, BackgroundClaude):
+        try:
+            return runner.link(session)
+        except (OSError, subprocess.SubprocessError):
+            return 'https://claude.ai/code'
+    return None
+
+
+APP_LINK = re.compile(r'(https://\S+|codex://threads/[0-9a-f-]{36})')
+
+
+# ------------------------------------------------------------------ the jobs
+
+class AgentJobs:
+    def __init__(self, connect, config, root, card=None, close_card=None, revise=None):
+        """`connect`: the Store's connection. `root`: where job folders go. `card(suggestion_id)` gives what a brief is
+        made of ({card, drafts, links, files, messages}); `close_card(suggestion_id)` marks the card done;
+        `revise(suggestion_id, text)` puts a job's rewritten message in the card's draft (True when it did)."""
+        self.connect, self.config, self.root = connect, config, Path(root)
+        self.card, self.close_card, self.revise = card, close_card, revise
+        own = settings(config) or {}
+        self.limit = threading.BoundedSemaphore(max(1, min(int(own.get('max_parallel') or 2), 8)))
+        self.timeout = max(60, min(int(float(own.get('timeout_minutes') or 30) * 60), 6 * 3600))
+        self.procs, self.lock = {}, threading.Lock()
+        with self.connect() as db:
+            db.executescript(SCHEMA)
+            if 'draft_updated' not in {r[1] for r in db.execute('PRAGMA table_info(agent_jobs)')}:
+                db.execute('ALTER TABLE agent_jobs ADD COLUMN draft_updated INTEGER')
+
+    # -- what the dashboard shows
+    def tools(self):
+        return tools(self.config)
+
+    def tool(self, tool_id):
+        found = next((t for t in self.tools() if t['id'] == tool_id), None)
+        if not found:
+            raise ValueError(f'{TOOLS.get(tool_id, "That tool")} is not available on this Machine')
+        return found
+
+    def view(self, row):
+        files = json.loads(row['files'] or '[]')
+        asks = json.loads(row['asks'] or '[]')
+        out = {k: row[k] for k in ('id', 'tool', 'place', 'status', 'progress', 'summary', 'error', 'error_kind', 'turns', 'outcome',
+                                   'created_at', 'updated_at', 'started_at', 'finished_at')}
+        out['draft_updated'] = bool(row['draft_updated'])
+        out['can_follow_up'] = bool(row['session_id']) and row['place'] != 'cloud'
+        url = row['url'] if APP_LINK.fullmatch(row['url'] or '') else None
+        out.update(name=TOOLS.get(row['tool'], row['tool']), files=files, has_diff=bool(row['diff']), url=url,
+                   app=('Open in Codex' if url.startswith('codex://') else 'Open in Codex cloud' if row['place'] == 'cloud'
+                        else 'Open in Claude' if 'claude.ai' in url else 'Open') if url else None,
+                   links=list(dict.fromkeys(URL.findall(row['summary'] or '')))[:10], ask=asks[-1]['text'] if asks else None)
+        if row['place'] == 'remote':
+            out['device'] = str(((settings(self.config) or {}).get('claude') or {}).get('device') or 'your computer')[:60]
+        return out
+
+    def latest(self, db, suggestion_ids):
+        ids = [str(i) for i in suggestion_ids]
+        rows = {}
+        for n in range(0, len(ids), 500):
+            chunk = ids[n:n + 500]
+            for r in db.execute(f"SELECT * FROM agent_jobs WHERE suggestion_id IN ({','.join('?' * len(chunk))}) ORDER BY created_at", chunk):
+                rows[r['suggestion_id']] = r
+        return rows
+
+    def annotate(self, db, suggestions):
+        rows = self.latest(db, [s['id'] for s in suggestions])
+        for s in suggestions:
+            if s['id'] in rows:
+                s['agent_job'] = self.view(rows[s['id']])
+
+    def live(self):
+        """The jobs still going and those finished in the last minutes, for the dashboard to follow without a full refresh."""
+        since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=10)).isoformat()
+        with self.connect() as db:
+            rows = db.execute("SELECT * FROM agent_jobs WHERE status IN ('sent','running','waiting') OR updated_at>=? ORDER BY created_at", (since,)).fetchall()
+        return {'jobs': {r['suggestion_id']: self.view(r) for r in rows}}
+
+    # -- what the owner does
+    def draft(self, suggestion_id):
+        parts = self.card(str(suggestion_id)) if self.card else None
+        if not parts:
+            raise ValueError('No such card')
+        return {'suggestion_id': str(suggestion_id), 'tools': self.tools(),
+                'brief': brief_for(parts['card'], parts.get('drafts') or (), parts.get('links') or (), parts.get('files') or (), parts.get('messages') or '')}
+
+    def start(self, suggestion_id, tool_id, brief):
+        tool = self.tool(tool_id)
+        brief = str(brief or '').strip()
+        if not brief:
+            raise ValueError('Write what the job is')
+        if len(brief) > BRIEF_MAX:
+            raise ValueError('The brief is too long')
+        parts = self.card(str(suggestion_id)) if self.card else None
+        if not parts:
+            raise ValueError('No such card')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            busy = db.execute(f"SELECT tool FROM agent_jobs WHERE suggestion_id=? AND status IN ({','.join('?' * len(ACTIVE))})",
+                              (str(suggestion_id), *ACTIVE)).fetchone()
+            if busy:
+                raise ValueError(f'{TOOLS.get(busy["tool"])} is already on this card')
+            job_id = 'aj_' + secrets.token_hex(8)
+            at = now()
+            # Anything earlier on this card that the owner didn't close was handed off again.
+            db.execute("UPDATE agent_jobs SET outcome='again',updated_at=? WHERE suggestion_id=? AND outcome IS NULL", (at, str(suggestion_id)))
+            db.execute('INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,asks,turns,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                       (job_id, str(suggestion_id), tool['id'], tool['place'], 'sent', brief, '[]', 1, at, at))
+        try:
+            self.prepare_folder(job_id, brief, parts)
+        except OSError as error:
+            self.finish(job_id, 'failed', error='I could not make the job folder', error_kind='folder')
+            LOG.error('agent job folder error=%s', type(error).__name__)
+            return self.get(job_id)
+        self.launch(job_id, brief, resume=None)
+        return self.get(job_id)
+
+    def follow_up(self, job_id, text):
+        text = str(text or '').strip()
+        if not text:
+            raise ValueError('Say what should change')
+        if len(text) > ASK_MAX:
+            raise ValueError('That is too long')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+            if not row:
+                raise ValueError('No such job')
+            if row['status'] in ACTIVE:
+                raise ValueError('It is still working on it')
+            if not row['session_id']:
+                raise ValueError('This job has no session to continue. Hand it off again instead.')
+            if row['outcome'] in ('done', 'again'):
+                raise ValueError('This job is closed')
+            self.tool(row['tool'])
+            asks = json.loads(row['asks'] or '[]') + [{'at': now(), 'text': text}]
+            db.execute("UPDATE agent_jobs SET status='sent',asks=?,turns=turns+1,progress=NULL,error=NULL,error_kind=NULL,outcome=NULL,"
+                       'updated_at=?,started_at=NULL,finished_at=NULL WHERE id=?', (json.dumps(asks[-20:], ensure_ascii=False), now(), row['id']))
+        self.launch(row['id'], text, resume=row['session_id'])
+        return self.get(row['id'])
+
+    def retry(self, job_id):
+        """A job that failed before it had a session: the same brief again, as a new turn."""
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+        if not row or row['status'] not in ('failed', 'cancelled'):
+            raise ValueError('Nothing to try again')
+        self.tool(row['tool'])
+        asks = json.loads(row['asks'] or '[]')
+        prompt, resume = (asks[-1]['text'], row['session_id']) if asks and row['session_id'] else (row['brief'], None)
+        with self.connect() as db:
+            db.execute("UPDATE agent_jobs SET status='sent',progress=NULL,error=NULL,error_kind=NULL,outcome=NULL,updated_at=?,started_at=NULL,finished_at=NULL WHERE id=?",
+                       (now(), row['id']))
+        self.launch(row['id'], prompt, resume=resume)
+        return self.get(row['id'])
+
+    def cancel(self, job_id):
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+        if not row or row['status'] not in ACTIVE:
+            raise ValueError('Nothing to cancel')
+        runner = self.runner(row)
+        if hasattr(runner, 'cancel'):
+            runner.cancel(row)  # a cloud task is stopped where it runs, if it can be
+        with self.lock:
+            proc = self.procs.get(row['id'])
+            if proc:
+                proc.cancelled = True
+        if proc:
+            stop_proc(proc)
+        self.finish(row['id'], 'cancelled', error='Cancelled', error_kind='cancelled', only_if=ACTIVE)
+        return self.get(row['id'])
+
+    def set_outcome(self, job_id, outcome):
+        if outcome not in ('done', 'set_aside'):
+            raise ValueError('Unknown outcome')
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+            if not row or row['status'] in ACTIVE:
+                raise ValueError('Nothing to close')
+            db.execute('UPDATE agent_jobs SET outcome=?,updated_at=? WHERE id=?', (outcome, now(), row['id']))
+        return self.get(row['id'])
+
+    def card_closed(self, suggestion_id):
+        """The owner marked the card done: its job's result was what they needed (learning reads the outcome)."""
+        with self.connect() as db:
+            db.execute("UPDATE agent_jobs SET outcome='done',updated_at=? WHERE suggestion_id=? AND outcome IS NULL AND status='result'",
+                       (now(), str(suggestion_id)))
+
+    def get(self, job_id):
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+        if not row:
+            raise ValueError('No such job')
+        return self.view(row)
+
+    def diff(self, job_id):
+        with self.connect() as db:
+            row = db.execute('SELECT diff FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+        if not row or not row['diff']:
+            raise ValueError('No changes to show')
+        return row['diff']
+
+    def file(self, job_id, relative):
+        """A file the job made or changed, only one its result lists and only inside its own folder."""
+        with self.connect() as db:
+            row = db.execute('SELECT files FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+        if not row or relative not in [f['path'] for f in json.loads(row['files'] or '[]')]:
+            raise ValueError('Not a file of this job')
+        folder = self.work(str(job_id)).resolve()
+        found = (folder / relative)
+        if found.is_symlink() or not found.resolve().is_relative_to(folder) or not found.is_file():
+            raise ValueError('Not a file of this job')
+        if found.stat().st_size > 10 * 1024 * 1024:
+            raise ValueError('This file is too large to open here')
+        return found
+
+    # -- running
+    def folder(self, job_id):
+        if not re.fullmatch(r'aj_[0-9a-f]{16}', str(job_id)):
+            raise ValueError('No such job')
+        return self.root / str(job_id)
+
+    def work(self, job_id):
+        return self.folder(job_id) / 'work'
+
+    def prepare_folder(self, job_id, brief, parts):
+        work = self.work(job_id)
+        work.mkdir(parents=True, exist_ok=False, mode=0o700)
+        (work / 'BRIEF.md').write_text(brief + '\n')
+        card = work / 'card'
+        for source in parts.get('files') or ():
+            source = Path(source)
+            if source.is_file() and not source.is_symlink() and source.stat().st_size <= 20 * 1024 * 1024:
+                card.mkdir(exist_ok=True, mode=0o700)
+                shutil.copyfile(source, card / source.name)
+        if parts.get('messages'):
+            card.mkdir(exist_ok=True, mode=0o700)
+            (card / 'messages.md').write_text(parts['messages'])
+        # A Claude Code background session would move into a git worktree of the folder before editing; here the
+        # folder is the job's own, so it edits in place (worktree.bgIsolation, a project setting of this folder only).
+        (work / '.claude').mkdir(exist_ok=True, mode=0o700)
+        (work / '.claude' / 'settings.json').write_text(json.dumps({'worktree': {'bgIsolation': 'none'}}) + '\n')
+        if shutil.which('git'):
+            try:
+                git(work, 'init', '-q')
+                git(work, 'add', '-A')
+                git(work, 'commit', '-q', '--allow-empty', '-m', 'The card, as handed off')
+            except (subprocess.SubprocessError, OSError) as error:
+                LOG.warning('agent job git error=%s', type(error).__name__)
+                shutil.rmtree(work / '.git', ignore_errors=True)
+
+    def runner(self, row):
+        own = (settings(self.config) or {}).get(row['tool']) or {}
+        command = find(row['tool'], own.get('command') if isinstance(own, dict) else None)
+        if not command:
+            raise Stopped('missing', f'{TOOLS[row["tool"]]} is not installed here any more')
+        if row['place'] == 'local':
+            # Where the owner also sees it: a Claude Code background session, a thread in the Codex app. The plain
+            # `claude -p` / `codex exec` runs stay for when those can't start (an untrusted folder, an older Codex)
+            # or when the config says `"background": false` / `"app_server": false`.
+            if row['tool'] == 'claude':
+                return BackgroundClaude(command) if own.get('background', True) is not False else LocalClaude(command)
+            return AppServerCodex(command) if own.get('app_server', True) is not False else LocalCodex(command, bool(shutil.which('git')))
+        import agent_remote  # phase 2: the owner's paired computer (Claude) or Codex cloud
+        return agent_remote.runner(row, command, own, self)
+
+    def launch(self, job_id, prompt, resume):
+        threading.Thread(target=self.turn, args=(job_id, prompt, resume), daemon=True, name='agent-job').start()
+
+    def turn(self, job_id, prompt, resume):
+        with self.limit:
+            with self.connect() as db:
+                row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (job_id,)).fetchone()
+            if not row or row['status'] != 'sent':
+                return  # cancelled while it waited for a free slot
+            try:
+                runner = self.runner(row)
+                with self.connect() as db:
+                    db.execute("UPDATE agent_jobs SET status=?,started_at=COALESCE(started_at,?),updated_at=? WHERE id=? AND status='sent'",
+                               ('waiting' if row['place'] == 'remote' else 'running', now(), now(), job_id))
+                turn_no = row['turns']
+                transcript = self.folder(job_id) / f'turn-{turn_no}.jsonl'
+                session, summary = self.run_turn(runner, row, prompt, resume, transcript)
+            except Stopped as stop:
+                self.finish(job_id, 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind)
+                return
+            except Exception as error:  # noqa: BLE001 - a job never takes the service down
+                LOG.error('agent job error=%s', type(error).__name__)
+                self.finish(job_id, 'failed', error='Something went wrong running it', error_kind='internal')
+                return
+            if summary is None:
+                return  # a remote job: its result comes back through the connector
+            self.result(job_id, session, summary)
+
+    def run_turn(self, runner, row, prompt, resume, transcript):
+        job_id = row['id']
+        own = (settings(self.config) or {}).get(row['tool']) or {}
+        on_progress = lambda line: self.progress(job_id, line)
+
+        def on_session(sid, runner=runner):
+            self.session(job_id, sid, app_link(runner, sid))
+        try:
+            return runner.run(dict(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress, on_session, self.procs)
+        except (Untrusted, NoAppServer) as why:
+            LOG.info('agent job fallback=%s', type(why).__name__)
+            command = runner.command
+            plain = LocalClaude(command) if isinstance(why, Untrusted) else LocalCodex(command, bool(shutil.which('git')))
+            with self.connect() as db:
+                db.execute('UPDATE agent_jobs SET url=NULL WHERE id=?', (job_id,))
+            return plain.run(dict(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress,
+                             lambda sid: self.session(job_id, sid), self.procs)
+
+    def progress(self, job_id, line):
+        with self.connect() as db:
+            db.execute("UPDATE agent_jobs SET progress=?,status=CASE WHEN status='waiting' THEN 'running' ELSE status END,updated_at=? "
+                       "WHERE id=? AND status IN ('running','waiting')", (str(line)[:200], now(), job_id))
+
+    def session(self, job_id, session_id, link=None):
+        with self.connect() as db:
+            db.execute('UPDATE agent_jobs SET session_id=?,url=COALESCE(?,url),updated_at=? WHERE id=?', (str(session_id)[:120], link, now(), job_id))
+
+    def changes(self, job_id):
+        """What the job made or changed in its folder since it was handed off: (files, diff)."""
+        work = self.work(job_id)
+        if not (work / '.git').is_dir():
+            files = [{'path': str(p.relative_to(work)), 'size': p.stat().st_size} for p in sorted(work.rglob('*'))
+                     if p.is_file() and not p.is_symlink() and p.relative_to(work).parts[0] not in ('card', '.claude') and p.name != 'BRIEF.md']
+            return files[:FILES_MAX], ''
+        try:
+            git(work, 'add', '-A')
+            names = git(work, 'diff', '--cached', '--name-status', '--no-renames', 'HEAD').stdout.splitlines()
+            diff = git(work, 'diff', '--cached', '--stat', '-p', 'HEAD').stdout
+        except (subprocess.SubprocessError, OSError) as error:
+            LOG.warning('agent job diff error=%s', type(error).__name__)
+            return [], ''
+        files = []
+        for line in names:
+            status, _, path = line.partition('\t')
+            found = work / path
+            if status != 'D' and found.is_file() and not found.is_symlink():
+                files.append({'path': path, 'size': found.stat().st_size})
+        if len(diff) > DIFF_MAX:
+            diff = diff[:DIFF_MAX] + '\n… (cut here; the full changes are in the job folder)\n'
+        return files[:FILES_MAX], diff
+
+    def result(self, job_id, session, summary, files=None, diff=None):
+        if files is None:
+            files, diff = self.changes(job_id)
+        updated = self.take_draft(job_id, files)
+        with self.connect() as db:
+            db.execute("UPDATE agent_jobs SET status='result',session_id=COALESCE(?,session_id),summary=?,files=?,diff=?,progress=NULL,"
+                       "error=NULL,error_kind=NULL,draft_updated=?,updated_at=?,finished_at=? WHERE id=? AND status IN ('running','waiting','sent')",
+                       (session, str(summary or 'Done, without a summary.')[:SUMMARY_MAX], json.dumps(files), diff or None,
+                        1 if updated else None, now(), now(), job_id))
+
+    def take_draft(self, job_id, files):
+        """A message the job rewrote (draft.md, made or changed this turn) becomes the card's draft. The owner still
+        reads it there and sends it with the card's own Send."""
+        if not self.revise or DRAFT_FILE not in [f['path'] for f in files]:
+            return False
+        found = self.work(job_id) / DRAFT_FILE
+        try:
+            if found.is_symlink() or found.stat().st_size > 50_000:
+                return False
+            text = found.read_text(errors='replace').strip()
+        except OSError:
+            return False
+        taken = self.folder(job_id) / 'draft.taken'  # only a draft.md that changed since the last turn took it
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        try:
+            if not text or taken.read_text().strip() == digest:
+                return False
+        except OSError:
+            if not text:
+                return False
+        with self.connect() as db:
+            row = db.execute('SELECT suggestion_id FROM agent_jobs WHERE id=?', (job_id,)).fetchone()
+        try:
+            done = bool(row and self.revise(row['suggestion_id'], text))
+            if done:
+                taken.write_text(digest + '\n')
+            return done
+        except Exception as error:  # noqa: BLE001 - the result still shows; the draft stays as it was
+            LOG.warning('agent job draft error=%s', type(error).__name__)
+            return False
+
+    def finish(self, job_id, status, error=None, error_kind=None, only_if=None):
+        with self.connect() as db:
+            where = f" AND status IN ({','.join('?' * len(only_if))})" if only_if else ''
+            db.execute(f'UPDATE agent_jobs SET status=?,error=?,error_kind=?,progress=NULL,updated_at=?,finished_at=? WHERE id=?{where}',
+                       (status, error, error_kind, now(), now(), job_id, *(only_if or ())))
+
+    def recover(self):
+        """After a restart: a local job that was running has stopped with the service; one still waiting for a slot
+        goes on. Remote and cloud jobs carry on where they run."""
+        with self.connect() as db:
+            running = db.execute("SELECT * FROM agent_jobs WHERE status='running' AND place='local'").fetchall()
+            waiting = db.execute("SELECT * FROM agent_jobs WHERE status='sent'").fetchall()
+            going = db.execute("SELECT * FROM agent_jobs WHERE status IN ('running','waiting') AND place!='local'").fetchall()
+        for row in running:
+            if row['tool'] == 'claude' and (row['url'] or '').startswith('https://claude.ai/code') and row['session_id']:
+                # A Claude Code background session runs on without The Machine: follow it again.
+                try:
+                    runner = self.runner(row)
+                    found = runner.entry(session=row['session_id']) if isinstance(runner, BackgroundClaude) else None
+                except (Stopped, OSError, subprocess.SubprocessError):
+                    found = None
+                if found and found.get('id'):
+                    threading.Thread(target=self.rewatch, args=(runner, dict(row), found['id']), daemon=True, name='agent-job').start()
+                    continue
+            self.finish(row['id'], 'failed', error='The Machine restarted while it ran. Try again.', error_kind='restart')
+        for row in waiting:
+            asks = json.loads(row['asks'] or '[]')
+            self.launch(row['id'], asks[-1]['text'] if asks and row['session_id'] else row['brief'], row['session_id'] if asks else None)
+        for row in going:
+            try:
+                runner = self.runner(row)
+            except Stopped:
+                continue
+            if hasattr(runner, 'resume_watch'):
+                runner.resume_watch(row)
+
+    def rewatch(self, runner, row, short):
+        try:
+            since = dt.datetime.fromisoformat(row['started_at']).timestamp() if row['started_at'] else time.time()
+            session, summary = runner.watch(row, short, since, self.timeout, lambda line: self.progress(row['id'], line),
+                                            lambda sid: self.session(row['id'], sid), self.procs)
+        except Stopped as stop:
+            self.finish(row['id'], 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind)
+            return
+        except Exception as error:  # noqa: BLE001
+            LOG.error('agent job error=%s', type(error).__name__)
+            self.finish(row['id'], 'failed', error='Something went wrong following it', error_kind='internal')
+            return
+        self.result(row['id'], session, summary)
+
+    # -- the result connector (phase 2): a token per job, only for posting that job's result
+    def token(self, job_id):
+        token = secrets.token_urlsafe(24)
+        with self.connect() as db:
+            db.execute('UPDATE agent_jobs SET token_hash=? WHERE id=?', (hashlib.sha256(token.encode()).hexdigest(), job_id))
+        return token
+
+    def report(self, job_id, token, summary, diff='', links=()):
+        """A result posted for a remote job through The Machine's connector: only with that job's own token, once
+        per turn (a later report for the same turn replaces the summary while the card hasn't moved on)."""
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
+        if not row or not row['token_hash'] or not hmac.compare_digest(row['token_hash'], hashlib.sha256(str(token).encode()).hexdigest()):
+            raise ValueError('Not a job this token can report on')
+        if row['status'] not in ('waiting', 'running', 'result') or row['outcome']:
+            raise ValueError('This job is closed')
+        summary = str(summary or '').strip()
+        if not summary:
+            raise ValueError('Say what was done')
+        extra = '\n'.join(u for u in links if isinstance(u, str) and u.startswith('https://'))[:4000]
+        diff = str(diff or '')
+        self.result(row['id'], None, (summary + ('\n\n' + extra if extra else ''))[:SUMMARY_MAX], files=[], diff=diff[:DIFF_MAX])
+        with self.connect() as db:  # also when the card already showed this turn's result
+            db.execute("UPDATE agent_jobs SET summary=?,diff=?,updated_at=? WHERE id=? AND status='result' AND outcome IS NULL",
+                       ((summary + ('\n\n' + extra if extra else ''))[:SUMMARY_MAX], diff[:DIFF_MAX] or None, now(), row['id']))
+        return {'ok': True}

@@ -528,9 +528,9 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
                            r'description|note|content|feedback|reason|detail|view|info|items|context|rule|state|transcript|quote|evidence|message$')
         with tempfile.TemporaryDirectory() as temp:
             store = assistant.Store(Path(temp) / 'events.sqlite')
-            import discovery, fleet, fleet_requests, network, skills
+            import agent_jobs, discovery, fleet, fleet_requests, network, skills
             with store.connect() as db:
-                for module in (network, fleet, skills, fleet_requests, discovery):
+                for module in (network, fleet, skills, fleet_requests, discovery, agent_jobs):
                     db.executescript(module.SCHEMA)
                 fleet.Fleet.ensure_schema(db) if hasattr(fleet.Fleet, 'ensure_schema') else None
                 for (table,) in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'event_search%'"):

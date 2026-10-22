@@ -3,7 +3,7 @@ installs and baking it into the product (`python3 learnings.py --database ...`, 
 command).
 
 In: feedback and the rules, facts and per-channel voices learned from it, the owner's profile and notes (USER.md, MEMORY.md, memory/),
-skills and proposals, how reviews, preparations and cards went (states, error codes, times), roles learned for people
+skills and proposals, how reviews, preparations, cards and Claude Code or Codex jobs went (states, error codes, times), roles learned for people
 in counts, code faults, which sources are on and how they sync.
 Never: what messages say (subjects, bodies, metadata beyond counts, card text, drafts, tool results; see
 message_seal.py), names or addresses of people, tokens. The database is read without the message key and only the
@@ -33,6 +33,7 @@ TABLES = {
     'voices': ('channel', 'text', 'source', 'updated_at'),
     'draft_edits': ('suggestion_id', 'kind', 'source', 'created_at'),
     'deliveries': ('suggestion_id', 'status', 'error', 'updated_at', 'needs_edit'),
+    'agent_jobs': ('suggestion_id', 'tool', 'place', 'status', 'error_kind', 'turns', 'outcome', 'created_at', 'updated_at', 'started_at', 'finished_at'),
     'action_jobs': ('suggestion_id', 'status', 'source', 'error', 'created_at', 'updated_at', "json_extract(payload,'$.kind') AS kind"),
     'preparations': ('suggestion_id', 'status', 'reason', 'error', 'attempts', 'auto_retries', 'created_at', 'started_at', 'updated_at'),
     'preparation_runs': ('job_id', 'status', 'started_at', 'finished_at', 'history_read'),

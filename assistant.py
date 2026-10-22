@@ -45,6 +45,8 @@ import mail_attachments
 import message_seal
 import enrichment
 import fleet
+import agent_jobs
+import mimetypes
 import work_removal
 import skills
 import task_invites
@@ -412,6 +414,9 @@ SKILL_ACTIONS = {'skill_save', 'skill_get', 'skill_toggle', 'skill_delete', 'ski
                  'skill_import_run', 'skill_import_install', 'skill_import_signin'}
 OWNER_ACTIONS |= SKILL_ACTIONS
 # Bigger requests only for these (an uploaded skill export, the Find my skills turn's report), marked X-Upload: skill-import.
+# Hand to Claude Code / Hand to Codex (agent_jobs.py): the owner's own, from their dashboard only.
+AGENT_ACTIONS = {'agent_draft', 'agent_send', 'agent_follow_up', 'agent_retry', 'agent_cancel', 'agent_outcome'}
+OWNER_ACTIONS |= AGENT_ACTIONS
 UPLOAD_ACTIONS, UPLOAD_REQUEST_BYTES = {'skill_import_upload', 'skill_import_report', 'skills_found'}, 9 * 1024 * 1024
 # A merged fix to The Machine can be undone this long; one it merged by itself undoes itself when
 # its code version records an error within AUTO_UNDO_NEW, or the fault it fixed comes back.
@@ -3963,7 +3968,8 @@ class Store:
         with self.connect() as db:
             edits = {}
             scope = ' AND EXISTS(SELECT 1 FROM json_each(s.account_ids) WHERE value IN (' + ','.join('?' for _ in accounts) + '))' if accounts is not None else ''
-            for r in db.execute('SELECT e.*,s.title FROM draft_edits e JOIN suggestions s ON s.id=e.suggestion_id WHERE e.created_at>=?' + scope + ' ORDER BY e.created_at', (since, *(sorted(accounts) if accounts is not None else []))):
+            # A draft Claude Code or Codex rewrote (source 'agent') is not the owner's own edit: it teaches nothing.
+            for r in db.execute("SELECT e.*,s.title FROM draft_edits e JOIN suggestions s ON s.id=e.suggestion_id WHERE e.created_at>=? AND e.source!='agent'" + scope + ' ORDER BY e.created_at', (since, *(sorted(accounts) if accounts is not None else []))):
                 first = edits.setdefault(r['suggestion_id'], {'title': r['title'], 'before': r['before_body'], 'before_subject': r['before_subject'], 'at': r['created_at']})
                 first.update(after=r['after_body'], after_subject=r['after_subject'], at=r['created_at'], kind=r['kind'], source=r['source'])
             edited_revisions = {r[0] for r in db.execute('SELECT new_revision FROM draft_edits')}
@@ -8510,6 +8516,9 @@ class App:
         # Skills (skills.py): the owner's how-tos, written to the OpenClaw workspace; shared ones come in through the Fleet.
         self.skills = skills.Skills(self.store.connect, config.get('openclaw_workspace') or WORKSPACE, self.fleet, config=config)
         self.skills.finder = self.skills_find_start
+        # Hand to Claude Code / Hand to Codex on a card (agent_jobs.py): only where the tool is there to hand to.
+        self.agents = agent_jobs.AgentJobs(self.store.connect, config, Path(config['database']).parent / 'agent-jobs',
+                                           card=self.agent_card, revise=self.agent_revise) if agent_jobs.settings(config) is not None else None
         if self.fleet:
             self.fleet.skills = self.skills
 
@@ -8538,6 +8547,57 @@ class App:
         if len(locks) > 4 * self.MESSAGE_CACHE:
             locks.clear()  # at worst one message is read twice
         return account, message
+
+    def agent_card(self, suggestion_id):
+        """What a Claude Code or Codex brief is made of: the card, its drafts, links, result files and source messages."""
+        with self.store.connect() as db:
+            row = db.execute('SELECT * FROM suggestions WHERE id=?', (str(suggestion_id),)).fetchone()
+            if not row:
+                return None
+            card = dict(row)
+            extra = self.store.suggestion_result(card, db)
+        actions = extra.get('next_actions') or []
+        drafts = [a for a in actions if a.get('body') or a.get('message')]
+        links = [*extra.get('original_urls', []), *[a['url'] for a in actions if a.get('kind') == 'open' and str(a.get('url') or '').startswith('https://')]]
+        files = [WORKSPACE / f['path'] for f in extra.get('result_files', [])]
+        try:
+            views = self.store.originals(card['id'])[:5]
+        except (ValueError, sqlite3.Error):
+            views = []
+        messages = '\n\n'.join(f"## {v['title'] or v['kind']}\nFrom: {v['from']}\nWhen: {v['occurred_at']}" + (f"\nLink: {v['url']}" if v.get('url') else '')
+                                 + '\n\n' + str(v['body'] or '')[:6000] for v in views)
+        return {'card': card, 'drafts': drafts, 'links': links, 'files': files, 'messages': messages}
+
+    def agent_revise(self, suggestion_id, text):
+        """A message Claude Code or Codex rewrote (its draft.md) becomes the card's draft under a new revision, when the
+        card has exactly one message draft: the owner still reads it there and sends it with the card's own Send."""
+        with self.store.connect() as db:
+            row = db.execute('SELECT status,next_action FROM suggestions WHERE id=?', (str(suggestion_id),)).fetchone()
+        if not row or row['status'] != 'prepared' or not row['next_action']:
+            return False
+        current = json.loads(row['next_action'])
+        actions = current.get('actions') if current.get('kind') == 'menu' else [current]
+        editable = [a for a in actions or [] if isinstance(a, dict) and a.get('kind') in ('email', 'linkedin', 'slack', 'x', 'whatsapp') and a.get('revision')]
+        if len(editable) != 1:
+            return False
+        return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text).get('status') == 'revised'
+
+    def agent_action(self, name, args):
+        if not self.agents:
+            raise ValueError('Handing off to Claude Code or Codex is off on this Machine')
+        if name == 'agent_draft':
+            return self.agents.draft(args['suggestion_id'])
+        if name == 'agent_send':
+            return self.agents.start(args['suggestion_id'], args['tool'], args.get('brief'))
+        if name == 'agent_follow_up':
+            return self.agents.follow_up(args['job_id'], args.get('text'))
+        if name == 'agent_retry':
+            return self.agents.retry(args['job_id'])
+        if name == 'agent_cancel':
+            return self.agents.cancel(args['job_id'])
+        if name == 'agent_outcome':
+            return self.agents.set_outcome(args['job_id'], args.get('outcome'))
+        raise ValueError('Unknown operation')
 
     def originals(self, suggestion_id, event_id=''):
         """Source messages for the dashboard, with Gmail attachments looked up live (read-only):
@@ -8783,6 +8843,10 @@ class App:
             return {'id': proposal_id, 'url': root.rstrip('/') + '/approval?id=' + proposal_id}
         if name in SKILL_ACTIONS or name in ('skill_propose', 'skill_import_report'):
             return self.skill_action(name, args)
+        if name in AGENT_ACTIONS:  # Hand to Claude Code / Codex: the owner's own, from the dashboard only
+            if not owner_dashboard:
+                raise ValueError('Hand off to Claude Code or Codex from the dashboard')
+            return self.agent_action(name, args)
         if name in ('events', 'related') and selected in ('all', ['all']):
             selected = accounts  # search everything, asked for explicitly
         if name in ['events', 'begin_analysis', 'related'] and (not selected or not set(selected) <= set(accounts)):
@@ -8831,6 +8895,13 @@ class App:
                 pass
             for suggestion in result.get('suggestions', []):
                 suggestion['snooze_choices'] = snooze_choices(self.is_work(suggestion.get('account_ids')))
+            if getattr(self, 'agents', None):
+                try:
+                    result['agent_tools'] = self.agents.tools()
+                    with self.store.connect() as db:
+                        self.agents.annotate(db, result.get('suggestions', []))
+                except (sqlite3.Error, ValueError) as error:
+                    LOG.error('agent jobs status error=%s', type(error).__name__)
             if getattr(self, 'fleet', None):
                 try:
                     result['fleet'] = self.fleet.summary()
@@ -9279,6 +9350,8 @@ class App:
             result=self.store.decide(args['suggestion_id'], args['choice'], args.get('feedback', ''),
                                      args['decision_id'], source, args.get('snooze_hours', 24),
                                      args.get('snoozed_until'), args.get('snooze_option'),terminal_job,self.is_work_suggestion(args['suggestion_id']))
+            if args['choice'] == 'complete' and getattr(self, 'agents', None):
+                self.agents.card_closed(args['suggestion_id'])  # its Claude Code or Codex result did the job
             if args['choice'] == 'accept':
                 try:self.apply_skill_clusters()
                 except Exception as error:LOG.error('skill from notes error=%s',type(error).__name__)
@@ -11739,6 +11812,34 @@ class App:
                             self.output(200, app.graph_action({'limit': 15}))
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'Not in the graph'})
+                elif path.path == '/api/agent-jobs':  # polled while a Claude Code or Codex job runs: small, unlike /api/status
+                    self.output(200, app.agents.live() if getattr(app, 'agents', None) else {'jobs': {}})
+                elif path.path in ('/api/agent-diff', '/api/agent-file'):
+                    args = urllib.parse.parse_qs(path.query)
+                    try:
+                        if not getattr(app, 'agents', None):
+                            raise ValueError('off')
+                        if path.path == '/api/agent-diff':
+                            self.output(200, app.agents.diff(args.get('job', [''])[0]), 'text/plain')
+                            return
+                        found = app.agents.file(args.get('job', [''])[0], args.get('path', [''])[0])
+                        data = found.read_bytes()
+                    except (ValueError, OSError):
+                        self.output(404, {'error': 'Not available'})
+                        return
+                    mime = mimetypes.guess_type(found.name)[0] or 'application/octet-stream'
+                    inline = mime in ATTACHMENT_INLINE or mime in ('text/plain', 'text/markdown', 'text/csv')
+                    self.send_response(200)
+                    self.send_header('Content-Type', (mime + ('; charset=utf-8' if mime.startswith('text/') else '')) if inline else 'application/octet-stream')
+                    self.send_header('Content-Disposition', ('inline' if inline else 'attachment') + "; filename*=UTF-8''" + urllib.parse.quote(found.name))
+                    self.send_header('Content-Length', str(len(data)))
+                    self.send_header('Cache-Control', 'no-store')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.send_header('Referrer-Policy', 'no-referrer')
+                    self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'" + ('' if mime == 'application/pdf' else '; sandbox'))
+                    self.end_headers()
+                    try:self.wfile.write(data)
+                    except (BrokenPipeError, ConnectionResetError):self.close_connection = True
                 elif path.path == '/api/reviews/live':  # polled while a review runs: small, unlike /api/status
                     self.output(200, app.review_live())
                 elif path.path == '/api/progress':
@@ -11864,7 +11965,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','revise_draft','forget_fact','promise_close','graph_role','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','revise_draft','forget_fact','promise_close','graph_role','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
@@ -11881,6 +11982,11 @@ class App:
 
         server = http.server.ThreadingHTTPServer(('127.0.0.1', self.config.get('port', 8787)), Handler)
         watch_faults(self.store)
+        if getattr(self, 'agents', None):
+            try:
+                self.agents.recover()  # a job that ran when the service stopped, or one still waiting for a slot
+            except Exception as error:  # noqa: BLE001 - never stops the service
+                LOG.error('agent jobs recover error=%s', type(error).__name__)
         if getattr(self, 'skills', None):
             self.skills.sync()  # the workspace has the skills that are on, also after edits made while this was off
         signal.signal(signal.SIGTERM, lambda *_: self.stop.set())

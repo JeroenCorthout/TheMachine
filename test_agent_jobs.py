@@ -1,0 +1,376 @@
+"""Hand to Claude Code / Hand to Codex (agent_jobs.py): with stand-in `claude` and `codex` commands that do what the
+real ones do (a background session with `claude agents --json`, the Codex app server's JSON-RPC, and the plain
+stream-json / exec --json runs they fall back to). No real CLI, no network."""
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
+import textwrap
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+import agent_jobs
+import test_ux as ux
+a = ux.a
+
+FAKE_CLAUDE = r"""#!PYTHON
+import datetime, json, os, signal, sys, time, uuid
+from pathlib import Path
+args = sys.argv[1:]
+home = Path(os.environ['HOME'])
+states = home / 'fake-claude'
+states.mkdir(exist_ok=True)
+def log(**more):
+    open(os.environ['AJ_LOG'], 'a').write(json.dumps({'tool': 'claude', 'args': args, 'cwd': os.getcwd(), **more}) + '\n')
+if args[:1] == ['agents']:
+    print(json.dumps([json.loads(f.read_text()) for f in sorted(states.glob('*.json'))]))
+    sys.exit(0)
+if args[:1] == ['stop']:
+    log()
+    f = states / (args[1] + '.json')
+    state = json.loads(f.read_text())
+    state['state'] = 'stopped'
+    f.write_text(json.dumps(state))
+    try:
+        os.kill(state['pid'], signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    sys.exit(0)
+if '--bg' in args:
+    prompt = args[args.index('--') + 1]
+    log(prompt=prompt)
+    if os.environ.get('AJ_UNTRUSTED'):
+        print('Workspace not trusted. Run `claude` in ' + os.getcwd() + ' once and accept the trust prompt, then retry.')
+        sys.exit(1)
+    session = args[args.index('--resume') + 1] if '--resume' in args else str(uuid.uuid4())
+    short = session[:8]
+    name = args[args.index('--name') + 1] if '--name' in args else 'resumed'
+    f = states / (short + '.json')
+    def put(**state):
+        f.write_text(json.dumps({'id': short, 'kind': 'background', 'sessionId': session, 'name': name, 'cwd': os.getcwd(), 'pid': os.getpid(), **state}))
+    if os.fork():
+        time.sleep(0.1)
+        print('backgrounded · ' + short + ' · ' + name)
+        sys.exit(0)
+    os.setsid()
+    devnull = os.open(os.devnull, os.O_RDWR)
+    for fd in (0, 1, 2):
+        os.dup2(devnull, fd)
+    put(state='working', detail='Writing summary.md')
+    if 'sleep' in prompt:
+        time.sleep(60)
+    if 'fail' in prompt:
+        put(state='failed', detail='It broke')
+        sys.exit(0)
+    if 'needs you' in prompt:
+        put(state='blocked', detail='Allow Bash?')
+        time.sleep(0.5)
+    time.sleep(0.2)
+    open('summary.md', 'w').write('Summary of the card\n' + ('More\n' if '--resume' in args else ''))
+    if 'draft' in prompt:
+        open('draft.md', 'w').write('Hi Sam,\n\nHere are the numbers.\n')
+    project = home / '.claude' / 'projects' / '-job'
+    project.mkdir(parents=True, exist_ok=True)
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+    with open(project / (session + '.jsonl'), 'a') as t:
+        t.write(json.dumps({'type': 'user', 'timestamp': at, 'message': {'content': prompt}}) + '\n')
+        t.write(json.dumps({'type': 'assistant', 'timestamp': at, 'message': {'content': [{'type': 'text', 'text': 'Wrote [summary.md](' + os.getcwd() + '/summary.md). See https://example.com/x'}]}}) + '\n')
+    put(state='done', detail='wrote summary.md')
+    sys.exit(0)
+prompt = sys.stdin.read()
+log(prompt=prompt)
+if 'sleep' in prompt:
+    time.sleep(60)
+session = args[args.index('--resume') + 1] if '--resume' in args else 'sess-1'
+print(json.dumps({'type': 'system', 'subtype': 'init', 'session_id': session}), flush=True)
+print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'name': 'Write', 'input': {'file_path': os.getcwd() + '/summary.md'}}]}, 'session_id': session}), flush=True)
+if 'fail' in prompt:
+    print(json.dumps({'type': 'result', 'subtype': 'error_during_execution', 'is_error': True, 'result': 'It broke', 'session_id': session}))
+    sys.exit(1)
+open('summary.md', 'w').write('Summary of the card\n' + ('More\n' if '--resume' in args else ''))
+print(json.dumps({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'Wrote summary.md. See https://example.com/x', 'session_id': session}))
+"""
+THREAD = '01a16539-9d4a-7d83-9620-9203de5acb75'
+FAKE_CODEX = r"""#!PYTHON
+import json, os, sys
+args = sys.argv[1:]
+def log(**more):
+    open(os.environ['AJ_LOG'], 'a').write(json.dumps({'tool': 'codex', 'args': args, 'cwd': os.getcwd(), **more}) + '\n')
+if args[:1] == ['app-server']:
+    if os.environ.get('AJ_NO_APPSERVER'):
+        sys.exit(2)
+    out = lambda m: (sys.stdout.write(json.dumps(m) + '\n'), sys.stdout.flush())
+    calls = []
+    for line in sys.stdin:
+        m = json.loads(line)
+        if 'method' not in m:
+            calls.append({'answer': m.get('result')})
+            continue
+        calls.append({'method': m['method'], 'params': m.get('params')})
+        if 'id' not in m:
+            continue
+        method, params = m['method'], m.get('params') or {}
+        if method == 'thread/start':
+            out({'id': m['id'], 'result': {'thread': {'id': 'THREAD'}}})
+        elif method == 'thread/resume':
+            out({'id': m['id'], 'result': {'thread': {'id': params['threadId']}}})
+        elif method == 'turn/start':
+            prompt = params['input'][0]['text']
+            out({'id': m['id'], 'result': {'turn': {'id': 't1', 'status': 'inProgress'}}})
+            if 'approve' in prompt:
+                out({'id': 99, 'method': 'item/commandExecution/requestApproval', 'params': {'command': 'rm -rf x'}})
+                calls.append({'answer': json.loads(sys.stdin.readline()).get('result')})
+            out({'method': 'item/started', 'params': {'item': {'type': 'commandExecution', 'command': 'printf hi > out.txt'}}})
+            open('out.txt', 'w').write('hi')
+            out({'method': 'item/completed', 'params': {'item': {'type': 'agentMessage', 'text': 'Wrote out.txt.'}}})
+            out({'method': 'turn/completed', 'params': {'turn': {'id': 't1', 'status': 'failed' if 'fail' in prompt else 'completed', 'error': {'message': 'It broke'} if 'fail' in prompt else None}}})
+            log(calls=calls)
+        else:
+            out({'id': m['id'], 'result': {}})
+    sys.exit(0)
+prompt = sys.stdin.read()
+log(prompt=prompt)
+thread = args[args.index('resume') + 2] if 'resume' in args else 'thread-1'
+print(json.dumps({'type': 'thread.started', 'thread_id': thread}), flush=True)
+print(json.dumps({'type': 'item.started', 'item': {'type': 'command_execution', 'command': 'printf hi > out.txt'}}), flush=True)
+open('out.txt', 'w').write('hi')
+print(json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'Wrote out.txt.'}}), flush=True)
+print(json.dumps({'type': 'turn.completed', 'usage': {}}))
+""".replace('THREAD', THREAD)
+
+
+def wait(jobs, job_id, done=('result', 'failed', 'cancelled'), seconds=20):
+    end = time.time() + seconds
+    while time.time() < end:
+        job = jobs.get(job_id)
+        if job['status'] in done:
+            return job
+        time.sleep(0.05)
+    raise AssertionError('job still ' + jobs.get(job_id)['status'])
+
+
+class AgentJobs(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(lambda: [t.join(10) for t in threading.enumerate() if t.name == 'agent-job'])
+        root = Path(self.tmp.name)
+        self.bin = root / 'bin'
+        self.bin.mkdir()
+        for name, body in (('claude', FAKE_CLAUDE), ('codex', FAKE_CODEX)):
+            path = self.bin / name
+            path.write_text(body.replace('PYTHON', sys.executable))
+            path.chmod(path.stat().st_mode | stat.S_IXUSR)
+        self.log = root / 'calls.jsonl'
+        env = patch.dict(os.environ, {'PATH': f'{self.bin}{os.pathsep}{os.environ["PATH"]}', 'AJ_LOG': str(self.log), 'HOME': str(root / 'home')})
+        env.start()
+        self.addCleanup(env.stop)
+        (root / 'home').mkdir()
+        poll = patch.object(agent_jobs.BackgroundClaude, 'POLL', 0.05)
+        poll.start()
+        self.addCleanup(poll.stop)
+        self.revised = []
+        self.store = a.Store(root / 'events.sqlite', protect=True)
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm1', 'kind': 'gmail.message', 'occurred_at': '2026-10-20T08:00:00+00:00',
+                                             'title': 'Quarterly numbers', 'body': 'Can you sum up the numbers?', 'deleted': False,
+                                             'metadata': {'from': 'sam@client.example', 'thread_id': 't1', 'labels': ['INBOX'],
+                                                          'source_url': 'https://mail.example/t1'}}])
+        with self.store.connect() as db:
+            event_id = db.execute('SELECT id FROM events').fetchone()[0]
+        self.sid = self.store.suggest('numbers', 'Sum up the quarterly numbers', 'Sam asks for a summary.', [event_id])['id']
+        self.config = {'database': str(root / 'events.sqlite'), 'accounts': [], 'agents': {'timeout_minutes': 1}}
+
+    def jobs(self, **config):
+        self.config['agents'].update(config)
+        card = lambda sid: {'card': {'title': 'Sum up the quarterly numbers', 'body': 'Sam asks for a summary.'}, 'drafts': self.drafts,
+                            'links': ['https://mail.example/t1'], 'files': [], 'messages': '## Quarterly numbers\nCan you sum up the numbers?'} if sid == self.sid else None
+        return agent_jobs.AgentJobs(self.store.connect, self.config, Path(self.tmp.name) / 'agent-jobs', card=card,
+                                    revise=lambda sid, text: self.revised.append((sid, text)) or True)
+
+    drafts = []
+
+    def calls(self, tool=None):
+        found = [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+        return [c for c in found if tool is None or c['tool'] == tool]
+
+    def test_only_tools_that_are_there_show(self):
+        self.assertEqual([t['id'] for t in agent_jobs.tools(self.config)], ['claude', 'codex'])
+        self.assertEqual(agent_jobs.tools({'agents': False}), [])
+        self.assertEqual(agent_jobs.tools({'agents': {'codex': False}})[0]['id'], 'claude')
+        with patch.dict(os.environ, {'PATH': '/nonexistent'}), patch.object(Path, 'home', return_value=Path('/nonexistent')):
+            self.assertEqual(agent_jobs.tools({}), [])
+        # A hosted Machine: Claude only with the owner's paired session, Codex only with its cloud environment.
+        hosted = {'manage_url': 'https://app.example/m', 'agents': {}}
+        self.assertEqual(agent_jobs.tools(hosted), [])
+        hosted['agents'] = {'claude': {'session': 'cse_1', 'device': 'Laptop'}, 'codex': {'env': 'env_1'}}
+        self.assertEqual(agent_jobs.tools(hosted), [{'id': 'claude', 'name': 'Claude Code', 'place': 'remote', 'device': 'Laptop'},
+                                                    {'id': 'codex', 'name': 'Codex', 'place': 'cloud'}])
+
+    def test_brief_has_the_task_links_files_and_what_done_looks_like(self):
+        draft = self.jobs().draft(self.sid)
+        self.assertIn('Sum up the quarterly numbers', draft['brief'])
+        self.assertIn('https://mail.example/t1', draft['brief'])
+        self.assertIn('card/messages.md', draft['brief'])
+        self.assertIn('Done looks like', draft['brief'])
+        with self.assertRaises(ValueError):
+            self.jobs().draft('nope')
+
+    def test_claude_runs_as_a_background_session_and_a_follow_up_resumes_it(self):
+        jobs = self.jobs()
+        job = jobs.start(self.sid, 'claude', 'Summarize the card into summary.md')
+        self.assertIn(job['status'], ('sent', 'running'))
+        job = wait(jobs, job['id'])
+        self.assertEqual(job['status'], 'result', job)
+        self.assertIn('summary.md', job['summary'])
+        self.assertEqual(job['links'], ['https://example.com/x'])
+        self.assertEqual([f['path'] for f in job['files']], ['summary.md'])
+        self.assertTrue(job['has_diff'])
+        self.assertIn('+Summary of the card', jobs.diff(job['id']))
+        # A named background session, so it shows in the owner's Claude apps: no permission mode, no bypass.
+        call = self.calls('claude')[0]
+        self.assertEqual(call['args'][:3], ['--bg', '--name', 'Summarize the card into summary.md'])
+        self.assertEqual(call['args'][-2:], ['--', 'Summarize the card into summary.md'])
+        self.assertEqual(job['app'], 'Open in Claude')
+        self.assertTrue(job['url'].startswith('https://claude.ai/code'))
+        self.assertTrue(job['can_follow_up'])
+        work = Path(call['cwd'])
+        self.assertEqual(work, Path(self.tmp.name) / 'agent-jobs' / job['id'] / 'work')
+        self.assertEqual((work / 'BRIEF.md').read_text().strip(), 'Summarize the card into summary.md')
+        self.assertIn('sum up the numbers', (work / 'card/messages.md').read_text())
+        self.assertEqual(json.loads((work / '.claude/settings.json').read_text()), {'worktree': {'bgIsolation': 'none'}})
+        self.assertEqual(jobs.file(job['id'], 'summary.md'), (work / 'summary.md').resolve())
+        for bad in ('../turn-1.jsonl', 'BRIEF.md', '/etc/passwd'):
+            with self.assertRaises(ValueError):
+                jobs.file(job['id'], bad)
+        session = job['session_id'] if 'session_id' in job else None
+        job = jobs.follow_up(job['id'], 'Add one more line')
+        job = wait(jobs, job['id'])
+        self.assertEqual(job['status'], 'result', job)
+        self.assertEqual(job['turns'], 2)
+        self.assertEqual(job['ask'], 'Add one more line')
+        args = self.calls('claude')[1]['args']
+        self.assertEqual(args[0], '--resume')
+        self.assertNotIn('--name', args)
+        self.assertIn('+More', jobs.diff(job['id']))
+
+    def test_claude_falls_back_to_print_mode_when_the_folder_is_not_trusted(self):
+        with patch.dict(os.environ, {'AJ_UNTRUSTED': '1'}):
+            jobs = self.jobs()
+            job = wait(jobs, jobs.start(self.sid, 'claude', 'Summarize the card into summary.md')['id'])
+        self.assertEqual(job['status'], 'result', job)
+        self.assertEqual(job['summary'], 'Wrote summary.md. See https://example.com/x')
+        self.assertEqual(self.calls('claude')[1]['args'], ['-p', '--output-format', 'stream-json', '--verbose'])
+        self.assertFalse(job.get('url'))
+        jobs = self.jobs(claude={'background': False})
+        wait(jobs, jobs.follow_up(job['id'], 'More')['id'])
+        self.assertEqual(self.calls('claude')[-1]['args'], ['-p', '--output-format', 'stream-json', '--verbose', '--resume', 'sess-1'])
+
+    def test_a_rewritten_draft_goes_back_on_the_card_once(self):
+        self.drafts = [{'kind': 'email', 'to': 'sam@client.example', 'subject': 'Numbers', 'body': 'Hi Sam'}]
+        jobs = self.jobs()
+        self.assertIn('draft.md', jobs.draft(self.sid)['brief'])
+        job = wait(jobs, jobs.start(self.sid, 'claude', 'Rewrite the draft')['id'])
+        self.assertEqual(self.revised, [(self.sid, 'Hi Sam,\n\nHere are the numbers.')])
+        self.assertTrue(job['draft_updated'])
+        job = wait(jobs, jobs.follow_up(job['id'], 'Shorter draft')['id'])
+        self.assertEqual(len(self.revised), 1)  # unchanged draft.md: the owner's own edits stay
+        self.assertFalse(job['draft_updated'])
+
+    def test_codex_runs_in_the_app_server_so_the_thread_shows_in_the_codex_app(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt, approve this')['id'])
+        self.assertEqual(job['status'], 'result', job)
+        self.assertEqual(job['summary'], 'Wrote out.txt.')
+        self.assertEqual([f['path'] for f in job['files']], ['out.txt'])
+        call = self.calls('codex')[0]
+        self.assertEqual(call['args'], ['app-server', '--listen', 'stdio://'])
+        methods = [c.get('method') for c in call['calls'] if 'method' in c]
+        self.assertEqual(methods[:3], ['initialize', 'initialized', 'thread/start'])
+        self.assertIn('thread/name/set', methods)
+        self.assertIn({'answer': {'decision': 'decline'}}, call['calls'])  # nothing is approved on the owner's behalf
+        self.assertEqual(job['url'], 'codex://threads/' + THREAD)
+        self.assertEqual(job['app'], 'Open in Codex')
+        wait(jobs, jobs.follow_up(job['id'], 'Again')['id'])
+        resume = [c for c in self.calls('codex')[1]['calls'] if c.get('method') == 'thread/resume']
+        self.assertEqual(resume[0]['params']['threadId'], THREAD)
+
+    def test_codex_falls_back_to_exec_without_the_app_server(self):
+        with patch.dict(os.environ, {'AJ_NO_APPSERVER': '1'}):
+            jobs = self.jobs()
+            job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt')['id'])
+            self.assertEqual(job['status'], 'result', job)
+            self.assertEqual(self.calls('codex')[0]['args'], ['exec', '--json', '-'])
+            jobs = self.jobs(codex={'app_server': False})
+            wait(jobs, jobs.follow_up(job['id'], 'Again')['id'])
+            self.assertEqual(self.calls('codex')[-1]['args'], ['exec', 'resume', '--json', 'thread-1', '-'])
+
+    def test_one_job_per_card_at_a_time_and_cancel_stops_it(self):
+        jobs = self.jobs()
+        job = jobs.start(self.sid, 'claude', 'sleep a while')
+        with self.assertRaisesRegex(ValueError, 'already on this card'):
+            jobs.start(self.sid, 'codex', 'Something else')
+        for _ in range(100):
+            if self.calls():
+                break
+            time.sleep(0.05)
+        job = jobs.cancel(job['id'])
+        self.assertEqual(job['status'], 'cancelled')
+        self.assertEqual(wait(jobs, job['id'])['status'], 'cancelled')
+        with self.assertRaises(ValueError):
+            jobs.cancel(job['id'])
+
+    def test_a_failure_shows_and_can_be_tried_again(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'claude', 'this will fail')['id'])
+        self.assertEqual((job['status'], job['error']), ('failed', 'It broke'))
+        with patch.object(jobs, 'launch') as launch:
+            jobs.retry(job['id'])
+        launch.assert_called_once_with(job['id'], 'this will fail', resume=None)
+
+    def test_a_job_that_takes_too_long_stops(self):
+        jobs = self.jobs()
+        jobs.timeout = 1
+        job = wait(jobs, jobs.start(self.sid, 'claude', 'sleep now')['id'])
+        self.assertEqual((job['status'], job['error_kind']), ('failed', 'timeout'))
+
+    def test_a_restart_fails_running_jobs_and_restarts_waiting_ones(self):
+        jobs = self.jobs()
+        with patch.object(jobs, 'launch'):
+            job = jobs.start(self.sid, 'claude', 'Summarize')
+        with self.store.connect() as db:
+            db.execute("UPDATE agent_jobs SET status='running' WHERE id=?", (job['id'],))
+        with patch.object(jobs, 'launch') as launch:
+            jobs.recover()
+        self.assertEqual(jobs.get(job['id'])['error_kind'], 'restart')
+        launch.assert_not_called()
+
+    def test_the_brief_and_result_are_sealed_at_rest(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'claude', 'Summarize the card into summary.md')['id'])
+        import sqlite3
+        raw = sqlite3.connect(self.config['database']).execute('SELECT brief,summary,diff FROM agent_jobs WHERE id=?', (job['id'],)).fetchone()
+        self.assertTrue(all(isinstance(v, bytes) for v in raw), raw)
+
+    def test_dashboard_only_and_marking_the_card_done_closes_the_job(self):
+        app = object.__new__(a.App)
+        app.store, app.config = self.store, {'accounts': []}
+        app.agents = self.jobs()
+        with self.assertRaisesRegex(ValueError, 'from the dashboard'):
+            app.action('agent_send', {'suggestion_id': self.sid, 'tool': 'claude', 'brief': 'x'})
+        job = wait(app.agents, app.action('agent_send', {'suggestion_id': self.sid, 'tool': 'claude', 'brief': 'Summarize'}, owner_dashboard=True)['id'])
+        status = {'suggestions': [{'id': self.sid}]}
+        with self.store.connect() as db:
+            app.agents.annotate(db, status['suggestions'])
+        self.assertEqual(status['suggestions'][0]['agent_job']['status'], 'result')
+        app.store.decide(self.sid, 'complete', '', 'd1', 'dashboard')
+        app.agents.card_closed(self.sid)
+        self.assertEqual(app.agents.get(job['id'])['outcome'], 'done')
+        self.assertIn('agent_send', a.OWNER_ACTIONS)
+
+
+if __name__ == '__main__':
+    unittest.main()
