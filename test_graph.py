@@ -573,5 +573,111 @@ class Graph(unittest.TestCase):
         self.assertNotIn('card "Answer Ann"', lines)  # the task itself
 
 
+def linkedin(days_ago, conv, name, text, mine=False, headline=None):
+    n = next(counter)
+    return {'account_id': 'li', 'source_id': f'l{n}', 'kind': 'linkedin.message', 'occurred_at': at(days_ago), 'title': name, 'body': text,
+            'deleted': False, 'metadata': {'conversation_id': conv, 'chat_name': name, 'from_me': mine, 'from': 'You' if mine else name,
+                                           'headline': headline, 'group': False}}
+
+
+class StatedOrganisations(unittest.TestCase):
+    """Where someone works: from a work address, or as a source states it, read by a review with the words that say it."""
+    add, build, node, ids = Graph.add, Graph.build, Graph.node, Graph.ids
+
+    def setUp(self):
+        Graph.setUp(self)
+        self.app.graph_build = self.build
+        self.store.accounts = CONFIG['accounts'] + [{'id': 'li', 'service': 'linkedin'}]
+        self.store.owner_user_ids = set()
+
+    def robin(self):
+        first = linkedin(7, 'c-robin', 'Robin Vale', "We're sharing early access to our API with friends of Globex.", headline='Engineering at Globex')
+        mine = linkedin(6, 'c-robin', 'Robin Vale', 'Would Globex be interested?', mine=True, headline='Engineering at Globex')
+        later = linkedin(5, 'c-robin', 'Robin Vale', "I'll have someone on our API team schedule something", headline='Engineering at Globex')
+        self.add(first, mine, later, linkedin(4, 'c-robin', 'Robin Vale', 'Thanks!', mine=True, headline='Engineering at Globex'))
+        return self.ids([first['source_id'], mine['source_id'], later['source_id']])
+
+    def test_a_linkedin_headline_is_kept_and_a_review_links_them_to_the_organisation_it_states(self):
+        first, mine, later = self.robin()
+        self.add(mail(3, 'Gra Ham <graham@globex.ai>', 'sam@acme.com'), mail(2, 'Sam <sam@acme.com>', 'Gra Ham <graham@globex.ai>', ('SENT',)))
+        self.build()
+        node = 'li:c-robin'
+        view = self.node(node)
+        self.assertEqual((self.app.graph_action({'node_id': node})['headline'], view['org']), ('Engineering at Globex', None))  # shown as is, never parsed by rule
+        asked = self.store.role_text('run1', limit=10)
+        self.assertIn('Where they work', asked)
+        self.assertIn('LinkedIn headline: "Engineering at Globex"', asked)
+        self.assertNotIn('Where they work', self.store.role_text('run2', limit=10))  # asked once a month at most
+        with self.assertRaisesRegex(ValueError, 'event_id and quote'):
+            self.app.graph_action({'node_id': node, 'org': 'Globex'})
+        with self.assertRaisesRegex(ValueError, 'words copied'):
+            self.app.graph_action({'node_id': node, 'org': 'Globex', 'event_id': later, 'quote': 'Globex employee'})
+        with self.assertRaisesRegex(ValueError, "not the owner's message"):
+            self.app.graph_action({'node_id': node, 'org': 'Globex', 'event_id': mine, 'quote': 'Would Globex be interested'})
+        self.app.graph_action({'node_id': node, 'org': 'Globex', 'event_id': later, 'quote': 'Engineering at Globex'})
+        found = self.app.graph_action({'node_id': node})
+        self.assertEqual((found['org'], found['org_name'], found['org_by'], found['org_via'], found['org_at'], found['org_event_id']),
+                         ('org:globex.ai', 'globex.ai', 'review', 'LinkedIn headline', at(5), later))
+        self.assertIn(('li:c-robin', 'member'), [(l['id'], l['link']) for l in self.app.graph_action({'node_id': 'org:globex.ai'})['links']])
+        with self.store.connect() as db:
+            self.assertIn('at globex.ai', graph.context_lines(db, [later]))
+        self.assertNotIn('Where they work', self.store.role_text('run3', limit=10))
+
+    def test_an_organisation_only_a_source_states_stands_on_its_own_and_is_never_looked_up(self):
+        first, _, _ = self.robin()
+        self.build()
+        self.app.graph_action({'node_id': 'li:c-robin', 'org': 'Globex', 'event_id': first, 'quote': 'friends of Globex'})
+        found = self.app.graph_action({'node_id': 'li:c-robin'})
+        self.assertEqual((found['org'], found['org_name'], found['org_via']), ('org:named:globex', 'Globex', 'LinkedIn'))
+        org = self.node('org:named:globex')
+        self.assertEqual((org['name'], org['domain'], org['signals']), ('Globex', None, 1))
+        with self.store.connect() as db:
+            self.assertEqual(enrichment.due(db, NOW.isoformat(), 10), [])
+            with self.assertRaisesRegex(ValueError, 'email domain'):
+                graph.hide_warmup(db, 'org:named:globex', True, 'agent', NOW.isoformat())
+            db.execute('ROLLBACK')
+
+    def test_the_owner_word_stays_and_a_work_address_wins_over_a_review(self):
+        first, _, later = self.robin()
+        sig = mail(3, 'Ann Bell <ann.bell@gmail.com>', 'sam@acme.com', title='Hello')
+        sig['body'] = 'Thanks for the call.\n\nAnn Bell\nHead of Operations, Initech'
+        self.add(sig, mail(2, 'Sam <sam@acme.com>', 'Ann Bell <ann.bell@gmail.com>', ('SENT',)),
+                 kim := mail(3, 'Kim <kim@client.com>', 'sam@acme.com'), mail(2, 'Sam <sam@acme.com>', 'Kim <kim@client.com>', ('SENT',)))
+        self.build()
+        sig_id, kim_id = self.ids([sig['source_id'], kim['source_id']])
+        self.app.graph_action({'node_id': 'email:ann.bell@gmail.com', 'org': 'Initech', 'event_id': sig_id, 'quote': 'Head of Operations, Initech'})
+        ann = self.app.graph_action({'node_id': 'email:ann.bell@gmail.com'})
+        self.assertEqual((ann['org_name'], ann['org_via'], ann['org_quote']), ('Initech', 'email', 'Head of Operations, Initech'))
+        self.app.graph_action({'node_id': 'email:kim@client.com', 'org': 'Globex', 'event_id': kim_id, 'quote': 'Hello'})
+        self.assertEqual((self.node('email:kim@client.com')['org'], self.node('email:kim@client.com')['org_by']), ('org:client.com', 'email'))
+        self.app.action('graph_person_org', {'node_id': 'li:c-robin', 'org': 'Initech'}, owner_dashboard=True)
+        said = self.app.graph_action({'node_id': 'li:c-robin', 'org': 'Globex', 'event_id': later, 'quote': 'Engineering at Globex'})
+        self.assertEqual((self.node('li:c-robin')['org'], self.node('li:c-robin')['org_by']), ('org:named:initech', 'owner'))
+        self.assertEqual(self.node('email:ann.bell@gmail.com')['org'], 'org:named:initech')  # one Initech, two people
+        self.app.action('graph_person_org', {'node_id': 'email:ann.bell@gmail.com', 'org': 'Acme'}, owner_dashboard=True)
+        self.assertEqual((self.node('email:ann.bell@gmail.com')['org'], self.node('email:ann.bell@gmail.com')['colleague']), (None, True))
+        self.app.action('graph_person_org', {'node_id': 'li:c-robin', 'org': ''}, owner_dashboard=True)
+        self.assertIsNone(self.node('li:c-robin')['org'])
+        with self.assertRaisesRegex(ValueError, 'Only the owner'):
+            self.app.action('graph_person_org', {'node_id': 'li:c-robin', 'org': 'Globex'})
+
+    def test_one_organisations_turn_backfills_from_what_is_stored(self):
+        self.robin()
+        self.build()
+        self.app.config = {**CONFIG, 'review_worker': {'enabled': True}}
+        started = self.app.orgs_backfill_step()
+        self.assertEqual(started['people'], 1)
+        self.assertIsNone(self.app.orgs_backfill_step())  # one at a time, once
+        page = self.store.profile_evidence(1, a.PROFILE_SESSION_PREFIX + started['run_id'])
+        self.assertEqual(page['people'][0]['linkedin_headline'], 'Engineering at Globex')
+        self.assertTrue(all(m['from'] != 'the owner' for m in page['people'][0]['messages']))
+        with self.store.connect() as db:
+            db.execute("UPDATE profile_runs SET status='ok' WHERE run_id=?", (started['run_id'],))
+        self.assertIsNone(self.app.orgs_backfill_step())
+        prompt = a.orgs_prompt(started['run_id'], page['pages'])
+        self.assertIn('states it plainly', prompt)
+        self.assertNotIn('{', prompt.split('graph args')[0])
+
+
 if __name__ == '__main__':
     unittest.main()

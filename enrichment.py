@@ -178,7 +178,7 @@ def due(db, now, limit):
     retry = (current - dt.timedelta(hours=RETRY_HOURS)).isoformat()
     rows = db.execute("SELECT n.id,json_extract(n.info,'$.domain') domain,n.strength,json_extract(n.info,'$.paying') paying FROM graph_nodes n "
                       "LEFT JOIN org_profiles p ON p.domain=json_extract(n.info,'$.domain') "
-                      "WHERE n.kind='org' AND (p.domain IS NULL OR (p.status NOT IN ('error','wrong') AND p.fetched_at<?) OR (p.status='error' AND p.fetched_at<?))",
+                      "WHERE n.kind='org' AND json_extract(n.info,'$.domain') IS NOT NULL AND (p.domain IS NULL OR (p.status NOT IN ('error','wrong') AND p.fetched_at<?) OR (p.status='error' AND p.fetched_at<?))",
                       (fresh, retry)).fetchall()
     if not rows or limit <= 0:
         return []

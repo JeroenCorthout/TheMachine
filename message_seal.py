@@ -54,12 +54,12 @@ SEALED_KEY = 'mc1_sealed'
 PLAIN_METADATA = frozenset({'thread_id', 'from', 'to', 'labels', 'notification_key_hash', 'user_id', 'from_me',
                             'channel_id', 'chat_id', 'conversation_id'})
 # Text the app derives from messages: card text and the drafts behind it, edits, what a preparation's tools returned,
-# a review's own summary, what teammates' Machines asked and answered, the line a role was read from, promises (what
+# a review's own summary, what teammates' Machines asked and answered, the line a role or an organisation was read from, promises (what
 # and the note closing one), and the messages a profile, roles or skills run was given. JSON columns keep the named
 # keys in the clear. Not here, on purpose: columns the app matches in SQL, and what the Machine learned (facts, rules,
 # feedback, skills, profile, voices, roles), which support may read (docs/configuration.md).
 DERIVED = {'suggestions': ('title', 'body', 'handled_hint'), 'feedback_prompts': ('title',),
-           'person_roles': ('quote',), 'promises': ('what', 'note'), 'profile_runs': ('evidence',),
+           'person_roles': ('quote',), 'person_orgs': ('quote',), 'promises': ('what', 'note'), 'profile_runs': ('evidence',),
            'draft_edits': ('before_subject', 'before_body', 'after_subject', 'after_body'),
            'graph_unnamed': ('titles',), 'preparation_calls': ('params', 'result'), 'analyses': ('summary',),
            'fleet_in': ('question', 'draft'), 'fleet_out': ('question', 'answer'), 'network_replies': ('body',)}

@@ -16,7 +16,9 @@ a labelled one and shares a person with it is probably part of it too (weaker, u
 confirms). Threads that read alike and share people, but nobody named, are offered to a review as
 possibly one piece of work. People and organisations get a role (what they are to the owner), said
 by the owner or by a review that read it in a message (kept with the line it came from, so the owner
-can confirm it); the sources only give hints. People can be related to each other ("assistant of",
+can confirm it); the sources only give hints. A person's organisation comes from their work email domain, or
+from a source that states it plainly (their LinkedIn headline, an email signature, them saying where they work),
+read by a review and kept with that line, where and when it was said; nothing is guessed. People can be related to each other ("assistant of",
 "introduced by"). Going quiet compares the silence with that person's own usual gap. Messages are
 never deleted; links that faded away are just not stored."""
 from __future__ import annotations
@@ -62,6 +64,9 @@ CREATE TABLE IF NOT EXISTS graph_relations(a TEXT NOT NULL,b TEXT NOT NULL,relat
 CREATE TABLE IF NOT EXISTS org_edits(domain TEXT PRIMARY KEY,fields TEXT NOT NULL,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS hidden_domains(domain TEXT PRIMARY KEY,hidden INTEGER NOT NULL,source TEXT NOT NULL,event_id INTEGER,
   name TEXT,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS person_orgs(identifier TEXT PRIMARY KEY,org TEXT NOT NULL,org_id TEXT,source TEXT NOT NULL,via TEXT,event_id INTEGER,
+  quote TEXT,said_at TEXT,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS graph_org_asks(identifier TEXT PRIMARY KEY,run_id TEXT,asked_at TEXT NOT NULL);
 '''
 RECHECK_DAYS = 90       # a review's role is read again after this, when there was contact since
 HALF_LIFE = {'person': 60, 'pair': 45, 'project_person': 45, 'project': 21}
@@ -481,6 +486,7 @@ def _build(db, config, now):
     crm_names, paying_names = {}, {}
     appears = collections.defaultdict(set)  # identifier -> where they show up: a hint for a review, never a role
     owner_events = set()
+    headlines = set()  # LinkedIn conversations whose person has a headline (read at view time: it stays sealed in the signal)
     for event_id, account_id, kind, at, m in signals:
         if kind == 'gmail.message' and m.get('message-id'):
             if m['message-id'] in seen_message_ids:
@@ -505,6 +511,8 @@ def _build(db, config, now):
         found = [t for t in touches(kind, m, owner, wrote_to) if not (t[0].startswith('email:') and t[0].rsplit('@', 1)[1] in warmup)]
         if not found:
             continue
+        if kind == 'linkedin.message' and isinstance(m.get('headline'), str) and m['headline'].strip() and not m.get('group'):
+            headlines.add('li:' + str(m['conversation_id']))
         per_event[event_id] = (kind, at, account_id, m, found)
         if any(role in ('owner', 'met') for _, _, _, role in found):
             owner_events.add(event_id)
@@ -669,6 +677,8 @@ def _build(db, config, now):
     profiles = {r['domain']: json.loads(r['profile']) for r in db.execute("SELECT domain,profile FROM org_profiles WHERE profile IS NOT NULL AND status!='wrong'")}
     wrong = {r[0] for r in db.execute("SELECT domain FROM org_profiles WHERE status='wrong'")}
     edits = {r['domain']: json.loads(r['fields']) for r in db.execute('SELECT domain,fields FROM org_edits')}
+    stated_rows = {r['identifier']: dict(r) for r in db.execute('SELECT * FROM person_orgs')}
+    stated = {}  # person node -> the statement of where they work, when no work address says it
     surnames = {n.split()[-1] for n in owner.names if len(n.split()) >= 2}
     for node, value in strength.items():
         if value < FLOOR:
@@ -689,7 +699,13 @@ def _build(db, config, now):
         since = (current.astimezone(tz).date() - last_day[node]).days if node in last_day else None
         quiet = bool(usual and len(roles[node]['owner']) >= 2 and since is not None and max(14, 3 * usual) < since < 365)
         domains = sorted({i.split('@', 1)[1] for i in group if i.startswith('email:')} - FREEMAIL - owner.domains)
-        if domains:
+        said_org = max((stated_rows[i] for i in group if i in stated_rows),
+                       key=lambda r: (r['source'] == 'owner', r['said_at'] or '', r['created_at'], r['identifier'] == node), default=None)
+        if said_org and said_org['source'] != 'owner' and domains:
+            said_org = None  # a work address says it already
+        if said_org and said_org['org']:
+            stated[node] = said_org
+        elif domains and not said_org:
             members[domains[0]].append((node, value))
         colleague = any(i.startswith('email:') and i.rsplit('@', 1)[1] in owner.domains for i in group)
         role_id = max((i for i in group if i in role_rows), key=lambda i: (role_rows[i]['source'] == 'owner', role_rows[i].get('checked_at') or role_rows[i]['created_at'], i == node), default=None)
@@ -698,19 +714,55 @@ def _build(db, config, now):
         hints = sorted(set().union(*(appears.get(i, ()) for i in group))) + (["an address at the owner's own domain"] if colleague else []) \
             + (["in the owner's Slack"] if any(i.startswith('slack:') for i in group) else []) \
             + (["shares the owner's surname"] if full and surnames & set(full.split()[1:]) else [])
-        info = {'ids': sorted({shown_id(i, x_names) for i in group}), 'org': ('org:' + domains[0]) if domains else None,
+        info = {'ids': sorted({shown_id(i, x_names) for i in group}), 'org': ('org:' + domains[0]) if domains and not said_org else None,
+                'org_by': 'email' if domains and not said_org else None, 'has_headline': any(i in headlines for i in group),
                 'wrote': len(roles[node]['owner']), 'heard': len(roles[node]['them']), 'met': len(roles[node]['met']),
                 'accounts': sorted(accounts[node]), 'next_meeting': next_meeting[node].isoformat() if node in next_meeting else None,
                 'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk}
         nodes.append((node, 'person', name[:200], round(value, 4), last_day[node].isoformat() if node in last_day else None,
-                      len(node_events[node]), usual, int(quiet), None, json.dumps(info)))
+                      len(node_events[node]), usual, int(quiet), None, info))
+    # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
+    def org_name(domain):
+        return (named.get('org:' + domain) or crm_names.get(domain) or paying_names.get(domain)
+                or ({**(profiles.get(domain) or {}), **edits.get(domain, {})}).get('name') or domain)
+    by_org_name = {}
+    for domain in sorted(members):
+        by_org_name.setdefault(folded_words(org_name(domain)), domain)
+    for domain in sorted(members):  # "Acme" is acme.com when no organisation is called that
+        by_org_name.setdefault(folded_words(domain.split('.')[0]), domain)
+    named_orgs = collections.defaultdict(list)
+    infos = {n[0]: n[9] for n in nodes}
+    own = {folded_words(d.split('.')[0]) for d in owner.domains}
+    for node, said_org in stated.items():
+        value = strength[node]
+        if folded_words(said_org['org']) in own:
+            infos[node]['colleague'] = True  # the owner's own company, as with an address at the owner's domain
+            continue
+        given = str(said_org['org_id'] or '')
+        domain = given[4:] if given.startswith('org:') and given[4:] in members else by_org_name.get(folded_words(said_org['org']))
+        if domain:
+            members[domain].append((node, value))
+            org_id = 'org:' + domain
+        else:
+            org_id = 'org:named:' + '-'.join(folded_words(said_org['org']).split())[:80]
+            named_orgs[org_id].append((node, value, said_org['org']))
+        infos[node].update(org=org_id, org_by=said_org['source'] if said_org['source'] == 'owner' else 'review', org_name=said_org['org'],
+                           org_via=said_org['via'], org_event_id=said_org['event_id'], org_at=said_org['said_at'])  # the quote stays sealed
+    nodes = [n[:9] + (json.dumps(n[9]),) if isinstance(n[9], dict) else n for n in nodes]
     kept = {n[0] for n in nodes}
+    for org_id, people in named_orgs.items():
+        role, role_by = said.get(org_id, (None, None))
+        nodes.append((org_id, 'org', (named.get(org_id) or collections.Counter(p[2] for p in people).most_common(1)[0][0])[:200],
+                      round(sum(v for _, v, _ in people), 4), max((last_day[p].isoformat() for p, _, _ in people if p in last_day), default=None),
+                      len(people), None, 0, None, json.dumps({'domain': None, 'role': role, 'role_by': role_by, 'paying': False, 'profile': None,
+                                                              'edited': [], 'wrong': False, 'stated': True})))
+        for node, value, _ in people:
+            links.append((node, org_id, 'member', round(value, 4), None))
     for domain, people in members.items():
         total = sum(v for _, v in people)
         role, role_by = said.get('org:' + domain, (None, None))
         profile = {**(profiles.get(domain) or {}), **edits.get(domain, {})} or None  # what the owner wrote wins
-        nodes.append(('org:' + domain, 'org', (named.get('org:' + domain) or crm_names.get(domain) or paying_names.get(domain)
-                                               or (profile or {}).get('name') or domain)[:200], round(total, 4),
+        nodes.append(('org:' + domain, 'org', org_name(domain)[:200], round(total, 4),
                       max((last_day[p].isoformat() for p, _ in people if p in last_day), default=None), len(people), None, 0, None,
                       json.dumps({'domain': domain, 'role': role, 'role_by': role_by, 'paying': domain in paying_names, 'profile': profile,
                                   'edited': sorted(edits.get(domain, {})), 'wrong': domain in wrong})))
@@ -805,7 +857,8 @@ def node_view(row, links=None):
                     usual_gap_days=row['gap_days'], wrote_days=info.get('wrote'), heard_days=info.get('heard'), met_days=info.get('met'),
                     next_meeting=info.get('next_meeting'), colleague=info.get('colleague'), role=info.get('role'),
                     role_by=info.get('role_by'), role_id=info.get('role_id'), hints=info.get('hints', []),
-                    seen_only=bool(info.get('seen_only')), relations=info.get('relations', []))
+                    seen_only=bool(info.get('seen_only')), relations=info.get('relations', []), org_by=info.get('org_by'),
+                    org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'))
     elif row['kind'] == 'org':
         view.update(role=info.get('role'), role_by=info.get('role_by'), domain=info.get('domain'), profile=info.get('profile'),
                     about=enrichment.summary(info.get('profile')), edited=info.get('edited', []), wrong=bool(info.get('wrong')))
@@ -861,6 +914,8 @@ def person_evidence(db, node_id, owner, limit=8):
             item['attendees'] = len(m.get('attendees') or m.get('contacts') or ())
         else:
             item.update({'from': 'the owner' if sent else str(m.get('from') or m.get('chat_name') or '')[:120], 'text': excerpt(r['body'])})
+            if r['kind'] == 'linkedin.message' and m.get('headline') and not m.get('group'):
+                item['their_linkedin_headline'] = str(m['headline'])[:200]
         out.append(item)
     return out
 
@@ -973,6 +1028,19 @@ def overview(db, limit=12):
             'warmup': hidden_list(db)}
 
 
+def headline(db, node_id):
+    """A person's latest LinkedIn headline, their own words about themselves, read from their signals."""
+    for (metadata,) in db.execute("SELECT e.metadata FROM graph_events g JOIN events e ON e.id=g.event_id WHERE g.node_id=? "
+                                  "AND e.kind='linkedin.message' AND e.deleted=0 ORDER BY e.occurred_at DESC LIMIT 20", (node_id,)):
+        try:
+            m = json.loads(metadata or '{}')
+        except ValueError:
+            continue
+        if isinstance(m.get('headline'), str) and m['headline'].strip() and not m.get('group'):
+            return ' '.join(m['headline'].split())[:200]
+    return None
+
+
 def detail(db, node_id, events=12):
     row = db.execute('SELECT * FROM graph_nodes WHERE id=?', (node_id,)).fetchone()
     if not row:
@@ -985,6 +1053,16 @@ def detail(db, node_id, events=12):
     said = db.execute('SELECT quote,event_id,created_at FROM person_roles WHERE identifier=?', (view.get('role_id') or node_id,)).fetchone()
     if said and view.get('role'):
         view.update(role_quote=said['quote'], role_event_id=said['event_id'], role_set_at=said['created_at'][:10])
+    if row['kind'] == 'person':
+        view['headline'] = headline(db, node_id) if json.loads(row['info'] or '{}').get('has_headline') else None
+        if view.get('org'):
+            org = db.execute('SELECT name FROM graph_nodes WHERE id=?', (view['org'],)).fetchone()
+            view['org_name'] = org['name'] if org else None
+        if view.get('org_by') == 'review':
+            ids = json.loads(row['info'] or '{}').get('identifiers') or [node_id]
+            said_org = db.execute(f"SELECT quote FROM person_orgs WHERE identifier IN ({','.join('?' for _ in ids)}) AND event_id=?",
+                                  (*ids, view.get('org_event_id'))).fetchone()
+            view['org_quote'] = said_org['quote'] if said_org else None
     if row['kind'] == 'org':
         view['people_roles'] = [{'id': r['id'], 'name': r['name'], 'role': json.loads(r['info']).get('role')} for r in db.execute(
             "SELECT n.id,n.name,n.info FROM graph_links l JOIN graph_nodes n ON n.id=l.a WHERE l.b=? AND l.kind='member' ORDER BY n.strength DESC LIMIT 12", (node_id,))]
@@ -1193,6 +1271,62 @@ def set_role(db, node_id, role, source, now, event_id=None, quote=None):
     return {'role': role or None}
 
 
+VIA = {'linkedin.message': 'LinkedIn', 'gmail.message': 'email', 'salesflare.email': 'email', 'calendar.event': 'calendar', 'slack.message': 'Slack',
+       'whatsapp.message': 'WhatsApp', 'x.dm': 'X', 'x.mention': 'X', 'intercom.conversation': 'Intercom', 'github.notification': 'GitHub'}
+
+
+def set_org(db, node_id, org, source, now, event_id=None, quote=None):
+    """Say where someone works, only as a source states it: their LinkedIn headline, an email signature, them
+    saying so ("I'm on the API team at Acme"). Never from who they talk to or what about. A review gives the
+    signal (event_id) and the words that say it (quote, copied from that message or its sender's headline);
+    both are kept with where and when it was said. org is a name or an org:… node_id. The owner's word stays
+    until the owner changes it; an empty org from the owner says they have none to show."""
+    if not db.in_transaction:
+        db.execute('BEGIN IMMEDIATE')
+    row = db.execute("SELECT id,name,info FROM graph_nodes WHERE id=? AND kind='person'", (str(node_id or ''),)).fetchone()
+    if not row:
+        raise ValueError('org goes with a person node_id from graph results')
+    org, org_id = ' '.join(str(org or '').split()), None
+    if org.startswith('org:'):
+        found = db.execute("SELECT id,name FROM graph_nodes WHERE id=? AND kind='org'", (org,)).fetchone()
+        if not found:
+            raise ValueError('Unknown organisation node_id; give its name instead')
+        org, org_id = found['name'], found['id']
+    if len(org) > 100 or (not org and source != 'owner'):
+        raise ValueError('org is the organisation\'s name as the source states it ("Acme"), up to 100 characters, or an org:… node_id')
+    current = db.execute('SELECT * FROM person_orgs WHERE identifier=?', (row['id'],)).fetchone()
+    if current and current['source'] == 'owner' and source != 'owner':
+        return {'org': current['org'] or None, 'kept': 'The owner set this organisation; it stays.'}
+    quote = ' '.join(str(quote or '').split())[:200] or None
+    via = said_at = None
+    if source != 'owner':
+        if event_id is None or not quote:
+            raise ValueError('org needs event_id and quote: the signal that states it and the words that say it')
+        found = db.execute('SELECT e.kind,e.title,e.body,e.metadata,e.occurred_at FROM graph_events g JOIN events e ON e.id=g.event_id '
+                           'WHERE g.event_id=? AND g.node_id=?', (int(event_id), row['id'])).fetchone()
+        if not found:
+            raise ValueError('event_id must be one of their own signals (see graph node_id)')
+        try:
+            meta = json.loads(found['metadata'] or '{}')
+        except ValueError:
+            meta = {}
+        headline = str(meta.get('headline') or '') if found['kind'] == 'linkedin.message' and not meta.get('group') else ''
+        words = folded_words(quote.strip('"\'…. '))
+        if words and words in folded_words(headline):
+            via = 'LinkedIn headline'
+        elif meta.get('from_me') is True or 'SENT' in (meta.get('labels') or ()):
+            raise ValueError('quote their own words (or their LinkedIn headline), not the owner\'s message')
+        elif words and words in folded_words(f"{found['title']} {found['body']}"):
+            via = VIA.get(found['kind'], found['kind'].split('.')[0])
+        else:
+            raise ValueError('quote must be words copied from that message, or from their LinkedIn headline on it')
+        said_at = str(found['occurred_at'])
+    db.execute('INSERT OR REPLACE INTO person_orgs(identifier,org,org_id,source,via,event_id,quote,said_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)',
+               (row['id'], org, org_id, source, via, event_id if source != 'owner' else None, quote if source != 'owner' else None,
+                said_at or now, now))
+    return {'org': org or None}
+
+
 def hidden(db):
     """Domains whose mail is an email warm-up tool's traffic, kept out of the graph."""
     return {r[0] for r in db.execute('SELECT domain FROM hidden_domains WHERE hidden=1')}
@@ -1214,8 +1348,8 @@ def hide_warmup(db, node_id, warmup, source, now, event_id=None):
     domain = domain.strip().lower()
     row = db.execute("SELECT name FROM graph_nodes WHERE id=? AND kind='org'", ('org:' + domain,)).fetchone()
     current = db.execute('SELECT * FROM hidden_domains WHERE domain=?', (domain,)).fetchone()
-    if not row and not (source == 'owner' and current):
-        raise ValueError('warmup needs an organisation node_id (org:…) from graph results')
+    if (not row and not (source == 'owner' and current)) or domain.startswith('named:'):
+        raise ValueError('warmup needs an organisation node_id (org:…) with an email domain from graph results')
     if current and current['source'] == 'owner' and source != 'owner':
         return {'warmup': bool(current['hidden']), 'kept': 'The owner decided about this organisation; it stays.'}
     if source != 'owner' and event_id is not None:
