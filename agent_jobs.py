@@ -17,9 +17,10 @@ Where a job runs (`place`):
 
 Credentials stay with the CLIs: this module never reads, copies or stores them. Transcripts and results stay in the job
 folder, readable only by the owner's account. Config (`agents` in config.json, all optional):
-    {"claude": {"command": "claude", "place": "local", "session": "<session id>", "device": "Laptop"},
+    {"claude": {"command": "claude", "place": "local", "config_dir": "~/.claude-other", "session": "<session id>", "device": "Laptop"},
      "codex": {"command": "codex", "place": "local", "env": "<Codex cloud environment id>"},
      "max_parallel": 2, "timeout_minutes": 30}
+`config_dir` points the jobs' Claude Code at another config folder (CLAUDE_CONFIG_DIR, another account) and only them.
 `"agents": false` turns the card actions off. Without config, a CLI found on PATH (or in ~/.local/bin) shows its action.
 """
 from __future__ import annotations
@@ -174,10 +175,21 @@ def git(folder, *args, check=True):
 
 # ------------------------------------------------------------------ runners: one turn of a job
 
+def claude_dir(config_dir=None):
+    """Claude Code's config folder: the jobs' own `config_dir`, else CLAUDE_CONFIG_DIR, else ~/.claude."""
+    found = config_dir or os.environ.get('CLAUDE_CONFIG_DIR')
+    return Path(os.path.expanduser(str(found))) if found else Path.home() / '.claude'
+
+
+def run_env(config_dir=None):
+    return {**os.environ, 'NO_COLOR': '1', **({'CLAUDE_CONFIG_DIR': str(claude_dir(config_dir))} if config_dir else {})}
+
+
 class Local:
     """A turn with the CLI on this computer. Yields progress lines; returns (session_id, summary)."""
-    def __init__(self, command):
+    def __init__(self, command, config_dir=None):
         self.command = command
+        self.config_dir = config_dir
 
     def argv(self, job, resume):
         raise NotImplementedError
@@ -186,7 +198,7 @@ class Local:
         argv = self.argv(job, resume)
         with open(transcript, 'ab') as log, open(str(transcript) + '.err', 'ab') as err:
             proc = subprocess.Popen(argv, cwd=folder, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
-                                    start_new_session=True, env={**os.environ, 'NO_COLOR': '1'})
+                                    start_new_session=True, env=run_env(self.config_dir))
             procs[job['id']] = proc
             timer = threading.Timer(timeout, lambda: (setattr(proc, 'timed_out', True), kill(proc)))
             timer.daemon = True
@@ -322,12 +334,12 @@ def stop_proc(proc):
         kill(proc)
 
 
-def claude_transcript(session_id):
+def claude_transcript(session_id, config_dir=None):
     """Claude Code's own transcript of a session (~/.claude/projects/<folder>/<session id>.jsonl, see its docs on
     sessions): where the background session's last words are read from."""
     if not re.fullmatch(r'[0-9a-f-]{36}', str(session_id or '')):
         return None
-    found = sorted((Path.home() / '.claude' / 'projects').glob(f'*/{session_id}.jsonl'))
+    found = sorted((claude_dir(config_dir) / 'projects').glob(f'*/{session_id}.jsonl'))
     return found[0] if found else None
 
 
@@ -368,12 +380,13 @@ class BackgroundClaude:
     supported way to read session state, and reads the result from the session's transcript."""
     POLL = 3
 
-    def __init__(self, command):
+    def __init__(self, command, config_dir=None):
         self.command = command
+        self.config_dir = config_dir
 
     def agents(self):
         out = subprocess.run([self.command, 'agents', '--json', '--all'], capture_output=True, text=True, timeout=30,
-                             stdin=subprocess.DEVNULL, env={**os.environ, 'NO_COLOR': '1'})
+                             stdin=subprocess.DEVNULL, env=run_env(self.config_dir))
         try:
             found = json.loads(out.stdout or '[]')
         except ValueError:
@@ -393,7 +406,7 @@ class BackgroundClaude:
         argv = [self.command, *(['--resume', resume] if resume else []), '--bg', '--settings', RC_ON, *([] if resume else ['--name', name]), '--', prompt]
         started = time.time()
         out = subprocess.run(argv, cwd=folder, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL,
-                             env={**os.environ, 'NO_COLOR': '1'})
+                             env=run_env(self.config_dir))
         said = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', (out.stdout or '') + '\n' + (out.stderr or ''))
         with open(transcript, 'a', encoding='utf-8') as log:
             log.write(said[-20000:])
@@ -406,7 +419,8 @@ class BackgroundClaude:
         return self.watch(job, found.group(1), started, timeout, on_progress, on_session, procs)
 
     def watch(self, job, short, started, timeout, on_progress, on_session, procs):
-        handle = Handle(lambda: subprocess.run([self.command, 'stop', short], capture_output=True, timeout=60, stdin=subprocess.DEVNULL))
+        handle = Handle(lambda: subprocess.run([self.command, 'stop', short], capture_output=True, timeout=60, stdin=subprocess.DEVNULL,
+                                                     env=run_env(self.config_dir)))
         procs[job['id']] = handle
         session, seen_working, last = None, False, None
         try:
@@ -437,7 +451,7 @@ class BackgroundClaude:
                 if state in ('failed', 'stopped'):
                     raise Stopped('cancelled' if handle.cancelled else 'failed', detail or f'Claude Code {state}')
                 if state == 'done':
-                    path = claude_transcript(session)
+                    path = claude_transcript(session, self.config_dir)
                     words = last_words(path, started) if path else None
                     if words is not None or seen_working and time.time() - started > 20:
                         return session, words or detail or 'Done.'
@@ -452,7 +466,7 @@ class BackgroundClaude:
         bridge = None
         if e and e.get('id'):
             try:
-                bridge = json.loads((Path.home() / '.claude' / 'jobs' / str(e['id']) / 'state.json').read_text()).get('bridgeSessionId')
+                bridge = json.loads((claude_dir(self.config_dir) / 'jobs' / str(e['id']) / 'state.json').read_text()).get('bridgeSessionId')
             except (OSError, ValueError, AttributeError):
                 bridge = None
         return 'https://claude.ai/code/' + bridge if bridge and re.fullmatch(r'cse_[A-Za-z0-9]{8,64}', str(bridge)) else 'https://claude.ai/code'
@@ -874,7 +888,8 @@ class AgentJobs:
             # `claude -p` / `codex exec` runs stay for when those can't start (an untrusted folder, an older Codex)
             # or when the config says `"background": false` / `"app_server": false`.
             if row['tool'] == 'claude':
-                return BackgroundClaude(command) if own.get('background', True) is not False else LocalClaude(command)
+                home = own.get('config_dir') if isinstance(own.get('config_dir'), str) else None
+                return BackgroundClaude(command, home) if own.get('background', True) is not False else LocalClaude(command, home)
             server = None if own.get('command') else desktop_codex()
             return AppServerCodex(command, server) if own.get('app_server', True) is not False else LocalCodex(command, bool(shutil.which('git')))
         import agent_remote  # phase 2: the owner's paired computer (Claude) or Codex cloud
@@ -920,7 +935,7 @@ class AgentJobs:
         except (Untrusted, NoAppServer) as why:
             LOG.info('agent job fallback=%s', type(why).__name__)
             command = runner.command
-            plain = LocalClaude(command) if isinstance(why, Untrusted) else LocalCodex(command, bool(shutil.which('git')))
+            plain = LocalClaude(command, getattr(runner, 'config_dir', None)) if isinstance(why, Untrusted) else LocalCodex(command, bool(shutil.which('git')))
             with self.connect() as db:
                 db.execute('UPDATE agent_jobs SET url=NULL WHERE id=?', (job_id,))
             return plain.run(dict(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress,

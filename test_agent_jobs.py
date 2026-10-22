@@ -25,7 +25,7 @@ home = Path(os.environ['HOME'])
 states = home / 'fake-claude'
 states.mkdir(exist_ok=True)
 def log(**more):
-    open(os.environ['AJ_LOG'], 'a').write(json.dumps({'tool': 'claude', 'args': args, 'cwd': os.getcwd(), **more}) + '\n')
+    open(os.environ['AJ_LOG'], 'a').write(json.dumps({'tool': 'claude', 'args': args, 'cwd': os.getcwd(), 'config_dir': os.environ.get('CLAUDE_CONFIG_DIR'), **more}) + '\n')
 if args[:1] == ['agents']:
     print(json.dumps([json.loads(f.read_text()) for f in sorted(states.glob('*.json'))]))
     sys.exit(0)
@@ -73,7 +73,7 @@ if '--bg' in args:
     open('summary.md', 'w').write('Summary of the card\n' + ('More\n' if '--resume' in args else ''))
     if 'draft' in prompt:
         open('draft.md', 'w').write('Hi Sam,\n\nHere are the numbers.\n')
-    project = home / '.claude' / 'projects' / '-job'
+    project = Path(os.environ.get('CLAUDE_CONFIG_DIR') or home / '.claude') / 'projects' / '-job'
     project.mkdir(parents=True, exist_ok=True)
     at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
     with open(project / (session + '.jsonl'), 'a') as t:
@@ -169,6 +169,7 @@ class AgentJobs(unittest.TestCase):
         env = patch.dict(os.environ, {'PATH': f'{self.bin}{os.pathsep}{os.environ["PATH"]}', 'AJ_LOG': str(self.log), 'HOME': str(root / 'home')})
         env.start()
         self.addCleanup(env.stop)
+        os.environ.pop('CLAUDE_CONFIG_DIR', None)  # the owner's own; patch.dict puts it back
         (root / 'home').mkdir()
         app = patch.object(agent_jobs, 'DESKTOP_CODEX', ())  # never the real Codex app's codex
         app.start()
@@ -261,6 +262,14 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual(args[0], '--resume')
         self.assertNotIn('--name', args)
         self.assertIn('+More', jobs.diff(job['id']))
+
+    def test_claude_jobs_can_use_their_own_config_dir(self):
+        other = Path(self.tmp.name) / 'claude-other'
+        jobs = self.jobs(claude={'config_dir': str(other)})
+        job = wait(jobs, jobs.start(self.sid, 'claude', 'Summarize the card into summary.md')['id'])
+        self.assertEqual(job['status'], 'result', job)
+        self.assertIn('summary.md', job['summary'])  # read from the transcript in that config dir
+        self.assertEqual({c['config_dir'] for c in self.calls('claude')}, {str(other)})
 
     def test_claude_falls_back_to_print_mode_when_the_folder_is_not_trusted(self):
         with patch.dict(os.environ, {'AJ_UNTRUSTED': '1'}):
