@@ -162,5 +162,42 @@ class FastFirstLook(unittest.TestCase):
             self.assertIsNone(db.execute("SELECT 1 FROM milestones WHERE name LIKE 'first_%'").fetchone())
 
 
+    def test_once_reviews_are_on_the_first_review_is_a_quick_one_at_once_then_the_rest(self):
+        self.app.config.update(review_worker={'enabled': True}, delivery_enabled=True)
+        bootstrap = {'mode': 'bootstrap', 'base_history': '1', 'after': 0}
+        self.store.commit_page('work', bootstrap, [signal(f'new{n}') for n in range(25)] + [signal(f'old{n}', hours_ago=24 * 4) for n in range(5)])
+        self.assertEqual(self.step(Runner('admitted')), 'admitted')  # mail still coming in, only 30 signals: still at once
+        run = self.runs()[0]
+        self.assertEqual((run['preview'], run['auto'], run['window_hours'], run['budget'], run['planned']), (0, 1, 48, 20, 20))
+        quick = self.claim(run['run_id'])
+        self.assertEqual(len(quick), 20)
+        with self.store.connect() as db:
+            self.assertFalse({e for (e,) in db.execute("SELECT id FROM events WHERE source_id LIKE 'old%'")} & set(quick))  # the newest only
+        self.assertEqual(self.step(Runner('ok'), 2), 'ok')
+        with self.store.connect() as db:
+            report = a.first_cards_report(db, self.app.config['accounts'])
+            self.assertEqual((report['quick']['status'], report['quick']['planned']), ('ok', 20))
+        self.store.commit_page('work', {'mode': 'incremental', 'history_id': '2', 'after': 0, 'backfilled_at': a.now()}, [])
+        self.assertEqual(self.step(Runner('admitted'), 4), 'admitted')  # the rest follows right away, as a regular review
+        rest = self.runs()[1]
+        self.assertEqual((rest['window_hours'], rest['budget']), (None, None))
+        self.assertFalse(set(quick) & set(self.claim(rest['run_id'])))
+        self.assertEqual(self.step(Runner('ok'), 6), 'ok')
+        with self.store.connect() as db:
+            report = a.first_cards_report(db, self.app.config['accounts'])
+            self.assertEqual(report['full']['status'], 'ok')
+            self.assertEqual(self.app.quick_first_review(db), 0)  # once
+
+    def test_an_install_that_reviewed_before_gets_no_quick_review(self):
+        self.app.config.update(review_worker={'enabled': True}, delivery_enabled=True)
+        with self.store.connect() as db:
+            db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at,finished_at) VALUES('r0','ok',?,?,?)", ('2026-01-01T00:00:00+00:00',) * 3)
+        self.store.commit_page('work', {}, [signal(f'm{n}') for n in range(5)])
+        with self.store.connect() as db:
+            self.assertEqual(self.app.quick_first_review(db), 0)
+        self.step(Runner('admitted'))
+        self.assertTrue(all(r['window_hours'] is None for r in self.runs()))
+
+
 if __name__ == '__main__':
     unittest.main()

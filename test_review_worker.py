@@ -18,6 +18,7 @@ class ReviewWorker(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.store=a.Store(Path(self.temp.name)/'events.sqlite')
         self.app=object.__new__(a.App);self.app.store=self.store
+        self.app.quick_first_review=lambda db:0  # the regular reviews only; test_fast_first_look has the quick first one
         self.app.config={'accounts':[{'id':'work'},{'id':'home'}],'review_worker':{'enabled':True,'gap_seconds':120,'timeout_seconds':1500,'min_signals':1}}
         self.store.commit_page('work',{},[{'account_id':'work','source_id':'one','kind':'gmail.message','occurred_at':a.now(),'title':'Hi','body':'Text','metadata':{},'deleted':False}])
 

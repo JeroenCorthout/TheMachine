@@ -1790,7 +1790,7 @@ return rows}
 // The first look (a review of the last days, right after setup): while there are no cards yet it is the empty
 // state itself; once cards come in, a slim progress strip under the counters.
 // Also with reviews off (where the first look happens): waiting for it is not "All clear".
-function firstLookInfo(live){const run=(live.runs||[]).find(r=>r.preview),fl=live.first_look;
+function firstLookInfo(live){const run=(live.runs||[]).find(r=>r.preview||r.window_hours),fl=live.first_look;
 if(run){const total=run.planned||run.claimed_count||0;return{title:`Taking a first look at your ${firstLookSpan(fl,run)}`,done:Math.min(run.done_count||0,total),total}}
 if((fl?.state==='waiting'&&fl.why!=='model')||fl?.state==='due')return{title:`A first look at your ${firstLookSpan(fl)} starts soon`,wait:FIRST_LOOK_WAIT[fl.state==='due'?'due':fl.why]||''};return null}
 const firstLookBar=i=>i.total?`<span class="fl-bar" role="progressbar" aria-label="Signals reviewed" aria-valuemin="0" aria-valuemax="${i.total}" aria-valuenow="${i.done}"><i style="width:${Math.round(100*i.done/i.total)}%"></i></span><span class="fl-count mono">${i.done} of ${i.total} signals</span>`:'';

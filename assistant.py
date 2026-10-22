@@ -654,7 +654,17 @@ def first_cards_report(db, accounts=(), current=None):
             continue
         page, done = marks.get('first_page:' + account['id']), marks.get('first_import:' + account['id'])
         out['sources'].append({'service': str(account.get('service', 'gmail'))[:40], 'first_page_at': page and page[0], 'first_import_at': done and done[0]})
-    runs = rows("SELECT run_id,status,started_at,finished_at,error,window_hours,planned FROM review_runs WHERE preview=1 AND auto=1 ORDER BY started_at")
+    # The first look: with reviews off, the auto previews; with reviews on, the quick first review and the regular
+    # reviews up to the first that finished well (all from when this was recorded on)
+    looks = rows("SELECT run_id,status,started_at,finished_at,error,window_hours,planned FROM review_runs WHERE preview=1 AND auto=1 "
+                 "OR (preview=0 AND window_hours IS NOT NULL) ORDER BY started_at")
+    regular = []
+    for run in rows('SELECT run_id,status,started_at,finished_at,error,window_hours,planned FROM review_runs WHERE preview=0 AND window_hours IS NULL '
+                    'AND started_at>=? ORDER BY started_at', (since,)):
+        regular.append(run)
+        if run[1] == 'ok':
+            break
+    runs = sorted(looks + regular, key=lambda r: r[2])
     for name, part in (('quick', [r for r in runs if r[5]]), ('full', [r for r in runs if not r[5]])):
         if not part:
             continue
@@ -2899,8 +2909,10 @@ class Store:
                             'note': f'Catch-up is bounded to {budget} signals per heartbeat. Continue on the next existing heartbeat.'}
                 limit = min(int(limit), budget - claimed)
             limit = min(max(int(limit), 1), budget)
-            # A preview reviews the last week only (a quick first look: its last hours); older backlog waits for the regular reviews.
-            since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=scope['window_hours'] or PREVIEW_DAYS * 24)).isoformat() if scope and scope['preview'] else ''
+            # A preview reviews the last week only, a quick first look (also the first review once reviews are on) its last
+            # hours; older backlog waits for the regular reviews.
+            since = ((dt.datetime.fromisoformat(now()) - dt.timedelta(hours=scope['window_hours'] or PREVIEW_DAYS * 24)).isoformat()
+                     if scope and (scope['preview'] or scope['window_hours']) else '')
             counts = {a: db.execute('SELECT count(*) FROM events WHERE account_id=? AND analyzed_version<version AND deferrals<? AND occurred_at>=?', (a, SET_ASIDE_AFTER, since)).fetchone()[0] for a in accounts}
             quotas = {a: 0 for a in accounts}
             # One slot per nonempty account, then weighted by remaining backlog.
@@ -10777,7 +10789,7 @@ class App:
             else:
                 active = db.execute("SELECT * FROM analyses WHERE status IN ('running','retryable') ORDER BY started_at LIMIT 1").fetchone()
                 recovery = active and service_review_ended(db, active)
-                last = db.execute('SELECT status,finished_at FROM review_runs WHERE finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1').fetchone()
+                last = db.execute('SELECT status,finished_at,window_hours FROM review_runs WHERE finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1').fetchone()
                 # After failed runs, back off: 1, 2, 4… minutes up to 30, so a persistent
                 # model or account failure can't start a new review every minute.
                 failed = 0
@@ -10787,29 +10799,39 @@ class App:
                     failed += 1
                 retry = min(settings.get('retry_seconds', 60) * 2 ** max(failed - 1, 0), settings.get('max_retry_seconds', 1800))
                 gap = retry if recovery or failed else settings.get('gap_seconds', 600)
+                if last and last['status'] == 'ok' and last['window_hours'] and not recovery:
+                    gap = min(gap, 60)  # after the quick first review, the rest follows right away
                 if last and (stamp - dt.datetime.fromisoformat(last['finished_at'])).total_seconds() < gap:
                     return None
                 # Leave a review claimed elsewhere (a manual run) alone until it ends or expires.
                 if not recovery and db.execute("SELECT 1 FROM analyses WHERE status IN ('running','retryable') AND coalesce(resumed_at,started_at)>?",
                               ((stamp - dt.timedelta(hours=1)).isoformat(),)).fetchone():
                     return None
-                # Each run has a fixed cost (instructions, status, context), so wait for a batch:
-                # enough signals, or the oldest one has waited long enough.
-                waiting, oldest = db.execute('SELECT count(*),min(ingested_at) FROM events WHERE analyzed_version<version AND deferrals<?',
-                                             (SET_ASIDE_AFTER,)).fetchone()
-                young = waiting and oldest > (stamp - dt.timedelta(minutes=settings.get('max_wait_minutes', 60))).isoformat()
-                # A new mailbox: its first review starts as soon as its first import is in, as one review, not one
-                # halfway through the import and another after it (never past the usual longest wait).
-                mail = self.mail_backfill(db) if not recovery else {'filling': [], 'fresh': []}
-                if mail['filling'] and young:
-                    return None
-                if not recovery and not mail['fresh'] and (not waiting or (waiting < settings.get('min_signals', 40) and young)):
-                    return None
-                if not waiting and not recovery:
-                    return None
-                run = {'run_id': uuid.uuid4().hex, 'status': 'starting', 'started_at': now(), 'attempts': 0}
-                db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at,planned) VALUES(?,?,?,?,?)",
-                           (run['run_id'], 'starting', run['started_at'], run['started_at'], min(waiting, RUN_SIGNAL_BUDGET)))
+                # Reviews just turned on and nothing reviewed yet: first a quick look at the newest mail, at once (no
+                # waiting for a batch or for the rest of the import); the regular reviews take the rest after it.
+                quick = 0 if recovery else self.quick_first_review(db)
+                if quick:
+                    run = {'run_id': uuid.uuid4().hex, 'status': 'starting', 'started_at': now(), 'attempts': 0}
+                    db.execute('INSERT INTO review_runs(run_id,status,started_at,updated_at,planned,auto,window_hours,budget) VALUES(?,?,?,?,?,1,?,?)',
+                               (run['run_id'], 'starting', run['started_at'], run['started_at'], quick, QUICK_LOOK_HOURS, QUICK_LOOK_SIGNALS))
+                else:
+                    # Each run has a fixed cost (instructions, status, context), so wait for a batch:
+                    # enough signals, or the oldest one has waited long enough.
+                    waiting, oldest = db.execute('SELECT count(*),min(ingested_at) FROM events WHERE analyzed_version<version AND deferrals<?',
+                                                 (SET_ASIDE_AFTER,)).fetchone()
+                    young = waiting and oldest > (stamp - dt.timedelta(minutes=settings.get('max_wait_minutes', 60))).isoformat()
+                    # A new mailbox: its first review starts as soon as its first import is in, as one review, not one
+                    # halfway through the import and another after it (never past the usual longest wait).
+                    mail = self.mail_backfill(db) if not recovery else {'filling': [], 'fresh': []}
+                    if mail['filling'] and young:
+                        return None
+                    if not recovery and not mail['fresh'] and (not waiting or (waiting < settings.get('min_signals', 40) and young)):
+                        return None
+                    if not waiting and not recovery:
+                        return None
+                    run = {'run_id': uuid.uuid4().hex, 'status': 'starting', 'started_at': now(), 'attempts': 0}
+                    db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at,planned) VALUES(?,?,?,?,?)",
+                               (run['run_id'], 'starting', run['started_at'], run['started_at'], min(waiting, RUN_SIGNAL_BUDGET)))
             if run['status'] == 'starting':
                 db.execute('UPDATE review_runs SET attempts=attempts+1,updated_at=? WHERE run_id=?', (now(), run['run_id']))
         expired = (stamp - dt.datetime.fromisoformat(run['started_at'])).total_seconds() > (
@@ -11022,6 +11044,20 @@ class App:
         return {'waiting': waiting, 'planned': min(waiting, RUN_SIGNAL_BUDGET), 'starts_at': max(after_gap, batch, current).isoformat(),
                 'why': 'mail_in' if mail['fresh'] and after_gap <= current else 'batch' if batch >= after_gap and not full else 'gap',
                 'first': first}
+
+    def quick_first_review(self, db):
+        """How many signals the first review after reviews turned on looks at, quickly: the newest mail (the last
+        QUICK_LOOK_HOURS, at most QUICK_LOOK_SIGNALS). 0 once any review or look finished well, or after
+        FIRST_LOOK_TRIES tries, so an install that has reviewed before never gets one."""
+        if db.execute("SELECT 1 FROM review_runs WHERE status='ok'").fetchone():
+            return 0
+        tries = [dict(r) for r in db.execute('SELECT status FROM review_runs WHERE preview=0 AND window_hours IS NOT NULL')]
+        if tries and first_look_spent(tries):
+            return 0
+        since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=QUICK_LOOK_HOURS)).isoformat()
+        recent = db.execute('SELECT count(*) FROM events WHERE analyzed_version<version AND deferrals<? AND occurred_at>=?',
+                            (SET_ASIDE_AFTER, since)).fetchone()[0]
+        return min(recent, QUICK_LOOK_SIGNALS)
 
     def review_live(self):
         """What the dashboard shows of reviews while they happen: runs in progress, the next one, the first look."""

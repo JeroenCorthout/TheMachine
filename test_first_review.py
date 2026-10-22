@@ -44,6 +44,7 @@ class FirstReview(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.store = a.Store(Path(self.temp.name) / 'events.sqlite')
         self.app = object.__new__(a.App); self.app.store = self.store
+        self.app.quick_first_review = lambda db: 0  # the regular reviews only; test_fast_first_look has the quick first one
         self.app.config = {'accounts': [{'id': 'work', 'service': 'outlook', 'transport': 'broker'},
                                         {'id': 'cal', 'service': 'outlook_calendar', 'transport': 'broker'}],
                            'review_worker': {'enabled': True, 'min_signals': 40, 'max_wait_minutes': 60, 'gap_seconds': 600},
