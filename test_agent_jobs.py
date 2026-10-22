@@ -170,6 +170,9 @@ class AgentJobs(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         (root / 'home').mkdir()
+        app = patch.object(agent_jobs, 'DESKTOP_CODEX', ())  # never the real Codex app's codex
+        app.start()
+        self.addCleanup(app.stop)
         poll = patch.object(agent_jobs.BackgroundClaude, 'POLL', 0.05)
         poll.start()
         self.addCleanup(poll.stop)
@@ -232,7 +235,7 @@ class AgentJobs(unittest.TestCase):
         self.assertIn('+Summary of the card', jobs.diff(job['id']))
         # A named background session, so it shows in the owner's Claude apps: no permission mode, no bypass.
         call = self.calls('claude')[0]
-        self.assertEqual(call['args'][:3], ['--bg', '--name', 'Summarize the card into summary.md'])
+        self.assertEqual(call['args'][:5], ['--bg', '--settings', '{"remoteControlAtStartup": true}', '--name', 'Summarize the card into summary.md'])
         self.assertEqual(call['args'][-2:], ['--', 'Summarize the card into summary.md'])
         self.assertEqual(job['app'], 'Open in Claude')
         self.assertTrue(job['url'].startswith('https://claude.ai/code'))
@@ -242,6 +245,8 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual((work / 'BRIEF.md').read_text().strip(), 'Summarize the card into summary.md')
         self.assertIn('sum up the numbers', (work / 'card/messages.md').read_text())
         self.assertEqual(json.loads((work / '.claude/settings.json').read_text()), {'worktree': {'bgIsolation': 'none'}})
+        self.assertFalse((work / '.git').exists())  # not a repository of its own, so the folder's trust carries over
+        self.assertTrue((work.parent / 'git').is_dir())
         self.assertEqual(jobs.file(job['id'], 'summary.md'), (work / 'summary.md').resolve())
         for bad in ('../turn-1.jsonl', 'BRIEF.md', '/etc/passwd'):
             with self.assertRaises(ValueError):
@@ -281,6 +286,8 @@ class AgentJobs(unittest.TestCase):
         self.assertFalse(job['draft_updated'])
 
     def test_codex_runs_in_the_app_server_so_the_thread_shows_in_the_codex_app(self):
+        with patch.object(agent_jobs, 'DESKTOP_CODEX', (str(self.bin / 'codex'),)):
+            self.assertEqual(agent_jobs.desktop_codex(), str(self.bin / 'codex'))  # the app's own codex when it is there
         jobs = self.jobs()
         job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt, approve this')['id'])
         self.assertEqual(job['status'], 'result', job)

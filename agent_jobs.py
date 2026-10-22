@@ -155,9 +155,18 @@ class Stopped(Exception):
         self.kind = kind
 
 
+def git_dir(work):
+    """The job's own git history, next to its folder rather than in it: a folder that is a git repository of its own
+    is a new project to Claude Code, so it would not inherit the trust the owner gave the agent-jobs folder once.
+    Jobs from before keep their work/.git."""
+    work = Path(work)
+    return work / '.git' if (work / '.git').exists() else work.parent / 'git'
+
+
 def git(folder, *args, check=True):
     """Git in a job folder only, never the owner's own git config, hooks or signing."""
-    env = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
+    env = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0',
+           'GIT_DIR': str(git_dir(folder)), 'GIT_WORK_TREE': str(folder)}
     return subprocess.run(['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'user.name=The Machine', '-c', 'user.email=machine@localhost',
                            '-c', 'commit.gpgsign=false', '-c', 'core.quotepath=false', *args], cwd=folder, env=env, capture_output=True,
                           text=True, timeout=60, check=check)
@@ -349,6 +358,9 @@ def last_words(transcript, since):
     return text
 
 
+RC_ON = json.dumps({'remoteControlAtStartup': True})
+
+
 class BackgroundClaude:
     """A turn as a Claude Code background session (`claude --bg --name <card>`, see Claude Code's agent view docs):
     the owner sees it in `claude agents` and, with Remote Control on for all sessions, at claude.ai/code and in the
@@ -376,7 +388,9 @@ class BackgroundClaude:
 
     def run(self, job, prompt, resume, folder, transcript, timeout, on_progress, on_session, procs):
         name = (str(job.get('brief') or '').strip().splitlines() or ['A job from The Machine'])[0][:80]
-        argv = [self.command, *(['--resume', resume] if resume else []), '--bg', *([] if resume else ['--name', name]), '--', prompt]
+        # Remote Control on for this session (the owner's `disableRemoteControl` still wins): it is what puts the session
+        # in claude.ai/code and the Claude apps, where the owner reads it and keeps talking to it.
+        argv = [self.command, *(['--resume', resume] if resume else []), '--bg', '--settings', RC_ON, *([] if resume else ['--name', name]), '--', prompt]
         started = time.time()
         out = subprocess.run(argv, cwd=folder, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL,
                              env={**os.environ, 'NO_COLOR': '1'})
@@ -448,16 +462,29 @@ class NoAppServer(Exception):
     """This Codex has no app server to talk to: the job runs with `codex exec` instead."""
 
 
+# Where the Codex desktop app keeps the codex it runs (Linux packages, macOS app bundles).
+DESKTOP_CODEX = ('/usr/lib/chatgpt/resources/codex', '/usr/lib/codex/resources/codex', '/opt/Codex/resources/codex',
+                 '/Applications/Codex.app/Contents/Resources/codex', '/Applications/ChatGPT.app/Contents/Resources/codex')
+
+
+def desktop_codex():
+    return next((p for p in DESKTOP_CODEX if os.path.isfile(p) and os.access(p, os.X_OK)), None)
+
+
 class AppServerCodex:
     """A turn through `codex app-server` (stdio, Codex's documented app-server protocol): the thread is an ordinary
     Codex thread named after the card, so it shows up in the Codex app next to the owner's own threads, opens with
-    codex://threads/<id> and can be continued there. `codex exec` threads are hidden from that list."""
-    def __init__(self, command):
-        self.command = command
+    codex://threads/<id> and can be continued there. `codex exec` threads are hidden from that list.
+
+    It runs the app-server that ships with the Codex app when the app is installed (`server`): the app opens threads
+    written by its own version, while a newer or older CLI's threads can show as an endless spinner there."""
+    def __init__(self, command, server=None):
+        self.command = command  # the CLI, for the `codex exec` fallback
+        self.server = server or command
 
     def run(self, job, prompt, resume, folder, transcript, timeout, on_progress, on_session, procs):
         with open(transcript, 'ab') as log, open(str(transcript) + '.err', 'ab') as err:
-            proc = subprocess.Popen([self.command, 'app-server', '--listen', 'stdio://'], cwd=folder, stdin=subprocess.PIPE,
+            proc = subprocess.Popen([self.server, 'app-server', '--listen', 'stdio://'], cwd=folder, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=err, start_new_session=True, env={**os.environ, 'NO_COLOR': '1'})
             procs[job['id']] = proc
             timer = threading.Timer(timeout, lambda: (setattr(proc, 'timed_out', True), kill(proc)))
@@ -835,7 +862,7 @@ class AgentJobs:
                 git(work, 'commit', '-q', '--allow-empty', '-m', 'The card, as handed off')
             except (subprocess.SubprocessError, OSError) as error:
                 LOG.warning('agent job git error=%s', type(error).__name__)
-                shutil.rmtree(work / '.git', ignore_errors=True)
+                shutil.rmtree(git_dir(work), ignore_errors=True)
 
     def runner(self, row):
         own = (settings(self.config) or {}).get(row['tool']) or {}
@@ -848,7 +875,8 @@ class AgentJobs:
             # or when the config says `"background": false` / `"app_server": false`.
             if row['tool'] == 'claude':
                 return BackgroundClaude(command) if own.get('background', True) is not False else LocalClaude(command)
-            return AppServerCodex(command) if own.get('app_server', True) is not False else LocalCodex(command, bool(shutil.which('git')))
+            server = None if own.get('command') else desktop_codex()
+            return AppServerCodex(command, server) if own.get('app_server', True) is not False else LocalCodex(command, bool(shutil.which('git')))
         import agent_remote  # phase 2: the owner's paired computer (Claude) or Codex cloud
         return agent_remote.runner(row, command, own, self)
 
@@ -910,7 +938,7 @@ class AgentJobs:
     def changes(self, job_id):
         """What the job made or changed in its folder since it was handed off: (files, diff)."""
         work = self.work(job_id)
-        if not (work / '.git').is_dir():
+        if not git_dir(work).is_dir():
             files = [{'path': str(p.relative_to(work)), 'size': p.stat().st_size} for p in sorted(work.rglob('*'))
                      if p.is_file() and not p.is_symlink() and p.relative_to(work).parts[0] not in ('card', '.claude') and p.name != 'BRIEF.md']
             return files[:FILES_MAX], ''
