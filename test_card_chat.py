@@ -133,6 +133,41 @@ class CardChat(unittest.TestCase):
         self.assertEqual({k: owner[0][k] for k in ('from', 'via', 'text', 'at')},
                          {'from': 'Sam Lee', 'via': 'intercom', 'text': 'Hi there, we need your call.\nThanks', 'at': 1792673603000})
 
+    def test_a_conversation_source_is_what_was_asked_then_the_note(self):
+        body = ('Can I sync all inboxes on this plan?\n1792673603 · Sam Lee · note: Hi there.\n1792683559 · user · comment: They belong to different people\n'
+                '1792683579 · user · comment: Great!\n1792683630 · user · comment: Maybe 3 to 6 users\n1792685607 · Sam Lee · note: We need to ask for this')
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'three', 'kind': 'intercom.conversation', 'occurred_at': a.now(),
+                                             'title': 'Plan', 'body': body, 'metadata': {'from': '', 'created_at': 1792672698}, 'deleted': False}], None)
+        with self.store.connect() as db:
+            event = db.execute("SELECT id FROM events WHERE source_id='three'").fetchone()['id']
+        sid = self.store.suggest('plan2', 'Sam needs your call on the plan', 'Sam asks.', [event])['id']
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, sid)
+        self.assertEqual([(i['from'], i['text'], i['at'], i.get('note', False)) for i in owner if i['kind'] == 'source'],
+                         [('Contact', 'Can I sync all inboxes on this plan?', 1792672698000, False),
+                          ('Contact', 'They belong to different people\nMaybe 3 to 6 users', 1792683630000, False),
+                          ('Sam Lee', 'We need to ask for this', 1792685607000, True)])
+
+    def test_an_agent_result_leads_with_what_it_found(self):
+        text, quiet = a.chat_agent_text('I wrote `summary.md` in this folder. Nothing else was changed, sent or posted.\n\nThe price is lower.\n\n'
+                                        'Saved [reply-draft.md](/home/x/reply-draft.md). Left for you: send it. Nothing sent or published.', ['summary.md', 'reply-draft.md'])
+        self.assertEqual((text, quiet), ('The price is lower.\n\nLeft for you: send it.', True))
+        self.assertEqual(a.chat_agent_text('Fixed the bug in parser.py.', ['parser.py']), ('Fixed the bug in parser.py.', False))
+
+    def test_changes_asked_of_a_coding_agent_show_before_its_answer(self):
+        import agent_jobs
+        with self.store.connect() as db:
+            db.executescript(agent_jobs.SCHEMA)
+            db.execute("INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,asks,summary,files,created_at,updated_at,finished_at) "
+                       "VALUES('aj_1',?,'codex','local','result','b',?,'I edited summary.md. No, it checked nothing.',?,"
+                       "'2026-01-01T10:00:00+00:00','2026-01-01T10:09:00+00:00','2026-01-01T10:09:00+00:00')",
+                       (self.sid, '[{"at": "2026-01-01T10:08:00+00:00", "text": "Did it check shops?"}]', '[{"path": "summary.md", "size": 3}]'))
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, self.sid)
+        agent = [i for i in owner if i.get('to') or i['kind'] == 'agent' or i.get('text', '').startswith('Handed')]
+        self.assertEqual([(i['kind'], i['text']) for i in agent], [('event', 'Handed to Codex'), ('you', 'Did it check shops?'), ('agent', 'No, it checked nothing.')])
+        self.assertEqual((agent[1]['to'], agent[2]['files'], agent[2]['nothing_sent']), ('Codex', ['summary.md'], False))
+
     def test_card_chat_reads_the_cards_session_with_its_own_notes(self):
         with self.gateway({}):
             empty = self.app.card_chat(self.sid)

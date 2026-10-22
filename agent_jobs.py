@@ -127,7 +127,8 @@ def brief_for(card, drafts=(), links=(), files=(), messages=()):
     if drafts:
         lines += [f'If you rewrite the message prepared above, save only its new text (no To or Subject lines) in {DRAFT_FILE}: '
                   'it replaces the draft on the card, which I check and send myself.', '']
-    lines += ['Done looks like: a short summary of what you did and found, with any files you made in this folder.', '',
+    lines += ['Done looks like: a short summary of what you did and found, with any files you made in this folder. Start with the answer '
+              'or the finding itself; don\'t list the files you saved or say what you didn\'t send, as I see your files myself.', '',
               'Leave anything that sends, publishes, pays or submits for me: prepare it and say what is left.']
     return '\n'.join(lines).strip()[:BRIEF_MAX]
 

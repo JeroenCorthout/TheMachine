@@ -909,7 +909,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
    One body size and one small size; quiet surfaces; the accent only on the one action that matters. */
 .card h3 a.title-link{color:inherit;text-decoration:none}.card h3 a.title-link:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
 .card .saved-feedback[data-chat-open]{cursor:pointer}
-body.chat-open main{max-width:calc(var(--measure) + 340px)}body.chat-open #suggestion-summary,body.chat-open #suggestion-stats,body.chat-open #first-look,body.chat-open #needs-you{display:none}
+body.chat-open main{max-width:calc(var(--measure) + 340px);padding-bottom:0;margin-bottom:0}body.chat-open #suggestion-summary,body.chat-open #suggestion-stats,body.chat-open #first-look,body.chat-open #needs-you,body.chat-open .site-footer{display:none}
 .chat-layout{--chat-body:.95rem;--chat-meta:.75rem;display:grid;grid-template-columns:240px minmax(0,1fr);gap:28px;align-items:start}
 .chat-side{position:sticky;top:12px;max-height:calc(100dvh - 24px);overflow:auto;display:grid;gap:2px;padding-right:4px}
 .chat-side .scope-filter{margin:0 0 10px;justify-self:start}
@@ -917,7 +917,9 @@ body.chat-open main{max-width:calc(var(--measure) + 340px)}body.chat-open #sugge
 .chat-side a{display:block;padding:7px 10px;border-radius:10px;color:var(--text);text-decoration:none;font-size:.9rem;line-height:1.3;overflow-wrap:anywhere}
 .chat-side a:hover{background:var(--sunken)}.chat-side a[aria-current]{background:var(--c-accent-tint);font-weight:600}
 .chat-main{display:flex;flex-direction:column;min-height:calc(100dvh - 40px);font-size:var(--chat-body);line-height:1.45}
-.chat-head{position:sticky;top:0;z-index:6;display:flex;align-items:flex-start;gap:4px;padding:10px 0;background:var(--bg);border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent)}
+.chat-head{position:sticky;top:0;z-index:6;display:flex;align-items:flex-start;gap:4px;padding:10px 0;background:var(--bg)}
+/* A soft edge under the header, so what scrolls under it fades instead of looking cut */
+.chat-head::after{content:'';position:absolute;left:0;right:0;top:100%;height:28px;background:linear-gradient(var(--bg),color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 .chat-back,.chat-menu>summary{display:grid;place-items:center;flex:none;width:36px;height:36px;margin-top:-5px;border-radius:50%;color:var(--text);text-decoration:none;cursor:pointer}
 .chat-back:hover,.chat-menu>summary:hover,.chat-menu[open]>summary{background:var(--sunken)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
 .chat-title{flex:1;min-width:0;margin:2px 0 0;font:600 1rem/1.35 var(--sans);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
@@ -926,7 +928,7 @@ body.chat-open main{max-width:calc(var(--measure) + 340px)}body.chat-open #sugge
 .chat-menu-list>*{justify-content:flex-start;width:100%;min-height:38px;margin:0;padding:8px 12px;border:0;border-radius:9px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
 .chat-menu-list>*:hover{background:var(--sunken)}.chat-layout [data-chat-drawer]{display:none}
 .chat-panel{margin:12px 0 0;padding:0;background:none;box-shadow:none;border:0}.chat-panel:empty{display:none}
-.chat-log{display:flex;flex-direction:column;padding:4px 0 20px;flex:1}.chat-log>*{margin-top:14px}.chat-log>.cont{margin-top:3px}.chat-log>.chat-draft,.chat-log>.chat-options{margin-top:6px}
+.chat-log{display:flex;flex-direction:column;justify-content:flex-end;padding:4px 0 20px;flex:1}.chat-log>*{margin-top:14px}.chat-log>.cont{margin-top:3px}.chat-log>.chat-draft,.chat-log>.chat-options{margin-top:6px}
 .chat-day{align-self:center;margin-top:20px!important;font-size:var(--chat-meta);color:var(--muted);font-weight:500}
 .chat-msg{display:flex;flex-direction:column;align-items:flex-start;max-width:min(82%,62ch)}.chat-msg.you{align-self:flex-end;align-items:flex-end}
 .bubble{padding:8px 12px;border-radius:18px;background:var(--surface);overflow-wrap:anywhere}
@@ -941,6 +943,9 @@ body.chat-open main{max-width:calc(var(--measure) + 340px)}body.chat-open #sugge
 #chat-log button.link:hover,.chat-status button.link:hover{text-decoration:underline}
 .chat-more,.chat-source .read-original{margin:4px 14px 0 0!important}
 .chat-noted{margin:3px 8px 0;font-size:var(--chat-meta);color:var(--muted)}
+.chat-q{margin-top:8px!important;font-weight:600}
+.chat-source.note .bubble{background:none;border:1px solid color-mix(in srgb,var(--border) 80%,transparent);font-size:.875rem}
+.chat-files{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0}.chat-files .agent-file{display:inline-block;padding:2px 10px;border:1px solid var(--border);border-radius:999px;font-size:var(--chat-meta);line-height:1.5;color:var(--text);text-decoration:none;overflow-wrap:anywhere}.chat-files .agent-file:hover{background:var(--sunken)}
 /* The card's own message: what it is about, what it needs, and its decision as a row of choices */
 .chat-card .bubble{max-width:100%}.chat-ask{margin-top:8px}.chat-ask .ask-line{margin:0;font-weight:400}.chat-ask .ask-line>span{display:block;font-weight:600}.chat-ask .ask-q p{margin:2px 0}
 .chat-ask .reason-chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}.chat-ask .reason{min-height:30px;padding:4px 12px;font-size:.85rem}
@@ -2110,9 +2115,16 @@ function chatParts(s){const t=document.createElement('template');t.innerHTML=sug
  const panel=[...(card?.querySelectorAll('.change-editor:not([class*="answer"]),.fleet-handoff-form,.agent-form')||[])].filter(n=>!n.querySelector('[id^="feedback-"]')).map(n=>n.outerHTML).join('')
   +(['blocked','running','starting'].includes(s.preparation_status)&&s.preparation_browser?`<p class="note">${browserLink(s.id,s.preparation_browser)}</p>`:'');
  const html=n=>n?.outerHTML||'';
- return {lead:html(lead),send:!!lead?.dataset.smart,back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,4).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
+ return {lead:html(lead),send:!!lead?.dataset.smart,back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,3).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
   status,intro:body?.innerHTML||'',ask:html(card?.querySelector('.ask-line')),agent:html(card?.querySelector('.agent-job')),
   links:card?.querySelector('.foot-links')?.innerHTML||'',panel}}
+// What the card asks of the owner, in one plain line, when its text doesn't already ask: from the title's "X needs your
+// call on Y". An offer the card ends with ("I can check … and draft …") becomes a suggestion instead.
+const CHAT_OFFER=/(?:^|\s)((?:I can|I could|I'll|I will|Happy to)\s[^.!?]*[.!?]?)\s*$/;
+function chatQuestion(s){const body=String(s.body||'').trim(),offer=CHAT_OFFER.exec(body),rest=offer?body.slice(0,offer.index).trim().replace(/[;,:]$/,'.'):body;
+ const m=/^.+?\s(?:needs|wants|is waiting (?:on|for)|awaits)\s+your\s+(call|decision|go-ahead|approval|ok|answer|input|help)\s+(?:on|about|for|with)\s+(.+?)[.?!]?$/i.exec(s.title||'');
+ const ask=/\?\s*$/.test(rest)?'':m?`Your ${/answer/i.test(m[1])?'answer':/input|help/i.test(m[1])?'input':'call'}: ${m[2]}?`:/^(?:Decide|Choose|Pick|Approve|Confirm)\b/.test(s.title||'')?String(s.title).replace(/[.?!]?$/,'?'):'';
+ return {ask,offer:ask&&offer?offer[1]:'',body:ask&&offer?rest:body}}
 const chatOpenSet=new Set();  // what is unfolded (steps, long messages, drafts, diffs, repeated taps), kept through a poll
 const chatFold=(key,cls,summary,body)=>`<details class="${cls}" data-fold-key="${esc(key)}"${chatOpenSet.has(key)?' open':''}><summary>${summary}</summary>${body}</details>`;
 const chatLong=(t,lines=4)=>String(t||'').split('\n').length>lines||String(t||'').length>lines*70;
@@ -2120,6 +2132,8 @@ const CHAT_VIA={email:'Email',gmail:'Email',slack:'Slack',linkedin:'LinkedIn',wh
 const chatVia=v=>CHAT_VIA[v]||(v&&v!=='signal'?v[0].toUpperCase()+v.slice(1):'');
 // Whose side an item is on: the owner's messages and taps on the right, the Machine and the people it is about on the left.
 const chatSide=i=>i.kind==='you'||i.kind==='event'&&i.mine||i.kind==='source'&&i.mine?'you':i.kind==='event'?'mid':'them';
+// A reply that says it left a page open in the browser (a sign-in tab, a form)
+const CHAT_TAB=/\b(?:tab|browser)\b[^.]*\b(?:open|opened|reopened|ready)\b|\b(?:open|opened|reopened)\b[^.]*\b(?:tab|browser)\b|\bis open for\b/i;
 function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…</p>';const p=s?chatParts(s):{},out=[];let day='',side='';
  const items=[...(chat.items||[])];
  // The card itself opens the conversation when no run has said anything yet: what it is about and what it needs
@@ -2138,24 +2152,28 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  // The decision buttons go on the Machine's latest message when the card is waiting on one (a Send goes on its draft)
  const open=s&&!closed(s)&&s.status!=='snoozed'&&!chat.active&&!['queued','starting','running'].includes(s.preparation_status);
  const lastMachine=rows.findLastIndex(i=>i.kind==='reply'||i.kind==='card');
+ const tabAt=s&&!closed(s)?rows.findLastIndex(i=>i.kind==='reply'&&CHAT_TAB.test(i.text||'')):-1;
  const options=(n,onDraft)=>open&&n===lastMachine&&p.options&&!(p.send&&onDraft)?`<div class="chat-options">${p.options}</div>`:'';
  const clamp=(k,html,long,more='More')=>long?`<div class="chat-clamp${chatOpenSet.has(k)?' open':''}">${html}</div><button type="button" class="link chat-more" data-unclamp="${k}">${chatOpenSet.has(k)?'Less':more}</button>`:html;
  rows.forEach((i,n)=>{stamp(i.at);const k=n+':'+i.kind;
-  if(i.kind==='source'){const via=chatVia(i.via),who=[i.mine?'You':i.from,via].filter(Boolean).map(esc).join(' · ')||'Message';
-   // Several messages in a row from the same person: their name on the first, the link to the thread on the last
-   const same=j=>j?.kind==='source'&&j.from===i.from&&j.mine===i.mine&&chatDayOf(j.at)===chatDayOf(i.at),first=!same(rows[n-1]),last=!same(rows[n+1]);
-   const body=clamp(k,i.text?chatMarkdown(i.text):`<p>${esc(i.title)}</p>`,chatLong(i.text,3));
-   push(i,`<div class="chat-msg ${i.mine?'you':'them'} chat-source"><div class="bubble">${first?`<div class="chat-from"><span>${who}</span>${tm(i.at)}</div>${body}`:body+tm(i.at)}${last&&hasOriginal(s)&&!i.mine?`<button type="button" class="link read-original" data-id="${s.id}" data-original="read">Read the thread</button>`:''}</div></div>`)}
-  else if(i.kind==='card'){const hasDraft=s.status==='prepared'&&p.send;
-   push(i,`<div class="chat-msg machine chat-card"><div class="bubble">${p.intro||`<p>${esc(s.title)}</p>`}${p.ask?`<div class="chat-ask">${p.ask}</div>`:''}${tm(i.at)}</div>${options(n,hasDraft)}${hasDraft?`<div class="chat-card-send">${p.lead}</div>`:''}</div>`)}
+  if(i.kind==='source'){const via=chatVia(i.via)+(i.note&&i.via?' note':''),who=[i.mine?'You':i.from,via].filter(Boolean).map(esc).join(' · ')||'Message';
+   // Several messages in a row from the same person: their name on the first; the link to the thread once, under the last
+   const same=j=>j?.kind==='source'&&j.from===i.from&&j.mine===i.mine&&!!j.note===!!i.note&&chatDayOf(j.at)===chatDayOf(i.at),first=!same(rows[n-1]);
+   const last=!(rows[n+1]?.kind==='source'&&!rows[n+1].mine&&chatDayOf(rows[n+1].at)===chatDayOf(i.at));
+   const body=clamp(k,i.text?chatMarkdown(i.text):`<p>${esc(i.title)}</p>`,chatLong(i.text,i.note?2:3));
+   push(i,`<div class="chat-msg ${i.mine?'you':'them'} chat-source${i.note?' note':''}"><div class="bubble">${first?`<div class="chat-from"><span>${who}</span>${tm(i.at)}</div>${body}`:body+tm(i.at)}${last&&hasOriginal(s)&&!i.mine?`<button type="button" class="link read-original" data-id="${s.id}" data-original="read">Read the thread</button>`:''}</div></div>`)}
+  else if(i.kind==='card'){const hasDraft=s.status==='prepared'&&p.send,q=p.ask?{}:chatQuestion(s),intro=q.offer?chatMarkdown(q.body):p.intro;
+   push(i,`<div class="chat-msg machine chat-card"><div class="bubble">${intro||`<p>${esc(s.title)}</p>`}${p.ask?`<div class="chat-ask">${p.ask}</div>`:q.ask?`<p class="chat-q">${esc(q.ask)}</p>`:''}${tm(i.at)}</div>${options(n,hasDraft)}${hasDraft?`<div class="chat-card-send">${p.lead}</div>`:''}</div>`)}
   else if(i.kind==='agentlive')push(i,`<div class="chat-msg machine chat-agent">${p.agent}</div>`);
-  else if(i.kind==='agent')push(i,`<div class="chat-msg machine"><div class="bubble"><div class="chat-from"><span>${esc(i.name)}</span>${tm(i.at)}</div>${clamp(k,chatMarkdown(i.text),chatLong(i.text))}</div></div>`);
+  else if(i.kind==='agent'){const files=(i.files||[]).map(f=>agentFile({id:i.id},{path:f})).join('');
+   push(i,`<div class="chat-msg machine"><div class="bubble"><div class="chat-from"><span>${esc(i.name)}</span>${tm(i.at)}</div>${clamp(k,chatMarkdown(i.text),chatLong(i.text))}</div>${files?`<div class="chat-files">${files}</div>`:''}${i.nothing_sent?'<small class="chat-noted">Nothing sent</small>':''}</div>`)}
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
   else if(i.kind==='event'){const c=i.times.length,line=c>1?`${esc(i.text)} ${c} times · ${chatHM(i.at)}`:`${esc(i.text)} · ${chatHM(i.at)}`;
    push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line,`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line}</div>`)}
-  else if(i.kind==='you')push(i,`<div class="chat-msg you"><div class="bubble">${chatMarkdown(i.text)}${tm(i.at)}</div></div>`);
+  else if(i.kind==='you')push(i,`<div class="chat-msg you"><div class="bubble">${i.to?`<div class="chat-from"><span>To ${esc(i.to)}</span></div>`:''}${chatMarkdown(i.text)}${tm(i.at)}</div></div>`);
   else if(i.kind==='reply'){const ds=i.drafts||[];
-   push(i,`<div class="chat-msg machine"><div class="bubble">${chatMarkdown(i.text)}${tm(i.at)}</div>${i.noted?'<small class="chat-noted">Noted for next time</small>':''}${ds.length?'':options(n,false)}</div>`);
+   const tab=n===tabAt?`<div class="chat-files"><a class="agent-file" href="${esc(state.browser_link||'#')}" target="_blank" rel="noopener" data-browser-show="${esc(s.id)}">View in Machine browser</a></div>`:'';
+   push(i,`<div class="chat-msg machine"><div class="bubble">${chatMarkdown(i.text)}${tm(i.at)}</div>${tab}${i.noted?'<small class="chat-noted">Noted for next time</small>':''}${ds.length?'':options(n,false)}</div>`);
    ds.forEach((d,m)=>{const dk=k+':d'+m,went=sent.has(d.body.trim()),last=d===newest&&!went&&s?.status==='prepared';
     const before=prev&&prev.kind===d.kind&&!sent.has(prev.body.trim())&&prev.body!==d.body?chatDiff(prev.body,d.body):null;prev=d;
     const to=d.to.length?' to '+d.to.join(', '):'',what=d.reply?'Reply':d.kind==='email'||d.kind==='email_demo'?'Email':'Message';
@@ -2169,8 +2187,10 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  if(chat.unavailable)out.push('<p class="chat-note">I can’t read all of this chat right now.</p>');
  return out.join('')}
 // At most two things to say, from what the card holds; tapping one fills the message box.
-function chatSuggestions(s){if(!chat||chat.active||closed(s))return [];const items=chat.items||[],src=items.filter(i=>i.kind==='source'&&!i.mine).at(-1),who=src?.from?.split(/\s/)[0];
- const draft=s.status==='prepared'&&items.some(i=>i.drafts?.length);
+function chatSuggestions(s){if(!chat||chat.active||closed(s))return [];const items=chat.items||[],src=items.filter(i=>i.kind==='source'&&!i.mine&&i.from!=='Contact').at(-1),who=src?.from?.split(/\s/)[0];
+ const draft=s.status==='prepared'&&items.some(i=>i.drafts?.length),q=items.some(i=>i.kind==='reply')?{}:chatQuestion(s);
+ // A card that asks for a call: the offer it made, and help making the call
+ if(q.ask)return [/\bdraft\b/i.test(q.offer)?(who?`Draft an answer for ${who}`:'Draft an answer'):q.offer?'Go ahead':'What do you know?','What would you say?'];
  return (draft?['Make it shorter',who?`What did ${who} ask?`:'Make it warmer']:[who?`What did ${who} ask?`:'What happened so far?','What do you need?']).slice(0,2)}
 const chatPicks=s=>chatSuggestions(s).map(t=>`<button type="button" class="chat-say" data-chat-say="${esc(t)}">${esc(t)}</button>`).join('');
 // Suggestions show while nothing has been said yet, or while you are writing
@@ -2183,19 +2203,18 @@ const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDa
 function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…':s.status==='snoozed'?(s.snoozed_until?'Snoozed until '+chatUntil(s.snoozed_until):'Snoozed')
   :closed(s)?label(s.status):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':s.preparation_status==='blocked'?p.status:'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
-function chatView(s,groups){const p=chatParts(s),open=!closed(s);
+function chatView(s,groups){const p=chatParts(s);
  const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
  return `<div class="chat-layout${chatDrawer?' drawer':''}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title">${esc(s.title)}</h2>
   <details class="chat-menu" id="chat-menu"><summary aria-label="More actions" title="More actions">${DOTS}</summary><div class="chat-menu-list" role="group" aria-label="More actions">${p.rest}<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button></div></details></header>
  <article id="task-${s.id}" class="chat-panel">${p.panel}</article><div class="chat-log" id="chat-log" aria-live="polite">${chatLog(s)}</div>
- <div class="chat-compose"><div class="chat-status" id="chat-status">${chatStatus(s,p)}</div>${open?`<div class="chat-picks" id="chat-picks"${chatPicksShown()?'':' hidden'}>${chatPicks(s)}</div><div class="chat-box"><textarea id="chat-input" rows="1" aria-label="Message" placeholder="Message" enterkeyhint="send"></textarea><button type="button" class="chat-send" data-chat-send aria-label="Send" title="Send" disabled>${SEND}</button></div>`:''}</div></div></div>`}
+ <div class="chat-compose"><div class="chat-status" id="chat-status">${chatStatus(s,p)}</div><div class="chat-picks" id="chat-picks"${chatPicksShown()?'':' hidden'}>${chatPicks(s)}</div><div class="chat-box"><textarea id="chat-input" rows="1" aria-label="Message" placeholder="Message" enterkeyhint="send"></textarea><button type="button" class="chat-send" data-chat-send aria-label="Send" title="Send" disabled>${SEND}</button></div></div></div></div>`}
 function chatGrow(t){if(!t)return;t.style.height='22px';t.style.height=Math.min(160,t.scrollHeight)+'px';const b=$('[data-chat-send]');if(b)b.disabled=!t.value.trim()}
 // On open: the latest at the bottom, nothing cut off under the header; a short chat just sits under the header.
-function chatScrollStart(){const log=$('#chat-log');if(!log)return;const end=()=>scrollTo(0,document.documentElement.scrollHeight);
- scrollTo(0,0);const bar=$('.chat-compose')?.getBoundingClientRect().top||innerHeight;if((log.lastElementChild?.getBoundingClientRect().bottom||0)<=bar)return;end();
- // What is cut off under the header: a sliver of a message is pushed out of view with a little room at the bottom
- const head=$('.chat-head')?.getBoundingClientRect().bottom||0,cut=[...log.children].find(n=>{const b=n.getBoundingClientRect();return b.top<head&&b.bottom>head});
- if(!cut)return;const b=cut.getBoundingClientRect(),shown=b.bottom-head;if(shown<Math.min(90,b.height/2)){log.style.paddingBottom=(20+shown+4)+'px';end()}}
+function chatScrollStart(){const log=$('#chat-log');if(!log)return;scrollTo(0,document.documentElement.scrollHeight);
+ // The first item under the header starts whole when only a little of it is hidden; otherwise it fades under the header.
+ const head=$('.chat-head')?.getBoundingClientRect().bottom||0,cut=[...log.children].find(n=>{const b=n.getBoundingClientRect();return b.top<head-1&&b.bottom>head+1});
+ if(cut&&head-cut.getBoundingClientRect().top<=12)scrollBy(0,-(head-cut.getBoundingClientRect().top))}
 function paintChat(){const log=$('#chat-log'),s=chatOpen();if(!log||!s)return;const end=innerHeight+scrollY>=document.documentElement.scrollHeight-80;log.innerHTML=chatLog(s);
  const st=$('#chat-status');if(st)st.innerHTML=chatStatus(s);const menu=$('#chat-menu');if(menu&&!menu.open)menu.querySelector('.chat-menu-list').innerHTML=chatParts(s).rest+`<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button>`;
  const picks=$('#chat-picks');if(picks){picks.innerHTML=chatPicks(s);picks.hidden=!chatPicksShown()}
@@ -2238,7 +2257,9 @@ $('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
  // A quick pick or a suggestion fills the message box.
  if(b&&(b.dataset.choice==='pick'||b.dataset.chatSay!=null)&&input){e.stopPropagation();input.value=b.dataset.pick??b.dataset.chatSay;chatGrow(input);input.focus();return}
  if(!b?.hasAttribute('data-chat-send'))return;e.stopPropagation();const s=chatOpen(),text=input?.value.trim();if(!s||!text){input?.focus();return}b.disabled=true;
- try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'decide',args:{suggestion_id:s.id,choice:'other',feedback:text,decision_id:'chat-'+crypto.randomUUID()}})});
+ const decide=args=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'decide',args:{suggestion_id:s.id,...args}})});
+ try{if(s.status==='completed')await decide({choice:'reopen',feedback:'',decision_id:crypto.randomUUID()});
+  await decide({choice:'other',feedback:text,decision_id:'chat-'+crypto.randomUUID()});
   input.value='';chatGrow(input);chat={...(chat||{}),items:[...(chat?.items||[]),{kind:'you',text,at:Date.now()}],active:true,cursor:null};changing.delete(s.id);await refresh();paintChat();scrollTo(0,document.documentElement.scrollHeight);chatPoll()}
  catch(err){toast(err.message,true);b.disabled=false}},true);
 // Links to a tab or a sub-tab: #events, #graph, #graph=roles, #connections, #connections=chat (and the tabs' own ids).

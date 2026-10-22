@@ -6918,6 +6918,75 @@ def chat_name(address, names, fallback=''):
     return _address(address) if email else (fallback.split() or [_address(address) or str(address)])[0]
 
 
+# Who wrote a conversation part when it has no name: the person on the other side (Intercom's user, lead or visitor)
+CHAT_ROLES = {'user', 'lead', 'contact', 'visitor', 'customer'}
+CHAT_NOTES = {'note', 'note_and_reopen'}
+
+
+def chat_conversation(body, parts, title, owner_name, metadata):
+    """A conversation's source for the chat, as [(who, at ms, text, is_note)]: what the other side asked (the opening
+    question, then their latest messages), followed by a later internal note of whom the card names. Empty when the
+    conversation has no other side, and then the part the card is about stands alone."""
+    first = lambda p: p[2].split()[0].lower()
+    me = str(owner_name or '').strip().lower()
+    named = {first(p) for p in parts if first(p) in str(title or '').lower() and p[2].strip().lower() not in CHAT_ROLES}
+    def text_of(p):
+        rest = body[p.end():]
+        after = CHAT_PART.search(rest)
+        return chat_excerpt(p[4] + rest[:after.start() if after else None], '')
+    them = [p for p in parts if p[3] not in CHAT_NOTES and p[2].strip().lower() != me and first(p) not in named
+            and (p[2].strip().lower() in CHAT_ROLES or not named)]
+    if not them:
+        pick = ([p for p in parts if first(p) in named] or [p for p in parts if p[2].strip().lower() != me] or parts)[-1]
+        return [(chat_person(pick[2]), int(pick[1]) * 1000, text_of(pick), False)]
+    who = them[-1][2]
+    run = []  # their latest messages in a row; a one or two word "Great!" is left out when there is more
+    for p in reversed(parts):
+        if p[2] == who and p[3] not in CHAT_NOTES:
+            run.insert(0, p)
+        elif run and (p[2] != who and p[3] not in ('assignment', 'snoozed', 'open', 'close') or p[4].strip()):
+            break
+    said = [p for p in run if len(re.findall(r'\w+', p[4])) > 2] or run
+    name = 'Contact' if who.strip().lower() in CHAT_ROLES else chat_person(who)
+    out = []
+    opening = chat_excerpt(body[:CHAT_PART.search(body).start()], '')
+    if opening and (who.strip().lower() in CHAT_ROLES or not named):
+        start = metadata.get('created_at') if isinstance(metadata.get('created_at'), int) else int(parts[0][1]) - 1
+        out.append((name, start * 1000, opening, False))
+    out.append((name, int(said[-1][1]) * 1000, chat_text('\n'.join(text_of(p) for p in said), chars=1500), False))
+    note = [p for p in parts if first(p) in named and p[3] in CHAT_NOTES and int(p[1]) >= int(run[-1][1])]
+    if note:
+        out.append((chat_person(note[-1][2]), int(note[-1][1]) * 1000, text_of(note[-1]), True))
+    return out
+
+
+# A coding agent's housekeeping, which the chat leaves out: the files it saved (they show as chips) and what it did not send
+CHAT_SAVED = re.compile(r'\b(?:wrote|written|saved|created|edited|updated|made|put|left|added)\b', re.I)
+CHAT_NOT_SENT = re.compile(r'^(?:and\s+)?(?:nothing|no\s+\w+)(?:\s+else)?(?:\s+(?:was|has been|is))?\s+(?:\w+,?\s+){0,3}?(?:sent|posted|published|submitted|changed)\b[^.!?]*[.!?]?$', re.I)
+
+
+def chat_agent_text(summary, files):
+    """(text, nothing_sent) of a coding agent's result for the chat: what it found first, without the sentences about
+    the files it saved (shown as chips) or about what it did not send (a quiet line says so)."""
+    text = chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(summary, chars=4000)))[0]
+    names = {Path(f).name.lower() for f in files} | {'this folder', 'the folder', 'your folder'}
+    quiet, kept = False, []
+    for line in text.split('\n'):
+        out = []
+        for part in re.split(r'(?<=[.!?])\s+|;\s+(?=(?:and\s+)?(?:nothing|no)\b)', line):
+            bare = part.strip()
+            if CHAT_NOT_SENT.match(bare):
+                quiet = True
+                continue
+            if CHAT_SAVED.search(bare) and any(n in bare.lower() for n in names) and len(bare) < 200:
+                continue
+            out.append(part)
+        if out or not line.strip():
+            kept.append(' '.join(p.strip() for p in out) if len(out) != 1 else out[0])
+    clean = re.sub(r'\n{3,}', '\n\n', '\n'.join(kept)).strip()
+    return (clean or text), quiet
+
+
 def chat_ms(value):
     try:
         return int(dt.datetime.fromisoformat(str(value)).timestamp() * 1000)
@@ -10811,11 +10880,11 @@ class App:
             ids = [int(i) for i in json.loads(row['event_ids'])[:20]]
         except (ValueError, TypeError):
             ids = []
-        names, owner, kinds = {}, [], {}
+        names, owner, kinds, metas = {}, [], {}, {}
         title = (db.execute('SELECT title FROM suggestions WHERE id=?', (suggestion_id,)).fetchone() or {'title': ''})['title'] or ''
         for r in db.execute('SELECT id,kind,metadata FROM events WHERE id IN (' + ','.join('?' * len(ids)) + ')', ids) if ids else []:
             m = json.loads(r['metadata'])
-            kinds[r['id']] = r['kind']
+            kinds[r['id']], metas[r['id']] = r['kind'], m
             name = chat_person(str(m.get('sender_display') or '').strip() or str(m.get('from') or '').split('<')[0])
             if _address(m.get('from')) and name and '@' not in name and not m.get('from_me'):
                 names[_address(m.get('from'))] = name
@@ -10824,14 +10893,14 @@ class App:
             via = v['kind'] if v['kind'] != 'signal' else kind.split('.')[0]
             who, at, text = chat_person(v['from'].split('<')[0]) or v['from'], chat_ms(v['occurred_at']), None
             parts = [p for p in CHAT_PART.finditer(v['body'] or '') if p[4].strip()]
-            if parts:  # a conversation (Intercom, a thread): the part it is about, by whom the card names, else the latest
-                me = str(self.config.get('owner_name') or '').strip().lower()
-                named = [p for p in parts if p[2].split()[0].lower() in title.lower()]
-                pick = (named or [p for p in parts if p[2].strip().lower() != me] or parts)[-1]
-                rest = (v['body'] or '')[pick.end():]
-                after = CHAT_PART.search(rest)
-                who, at = chat_person(pick[2]), int(pick[1]) * 1000
-                text = chat_excerpt(pick[4] + rest[:after.start() if after else None], '')
+            if parts:  # a conversation (Intercom, a thread): what was asked, then the note of whom the card names
+                found = chat_conversation(v['body'], parts, title, self.config.get('owner_name'), metas.get(v.get('event_id')) or {})
+                for n, (who, at, text, note) in enumerate(found):
+                    owner.append({'kind': 'source', 'from': clamp(who, 120), 'via': via, 'title': clamp(v['title'], 200), 'text': text,
+                                  'mine': False, 'at': at, **({'note': True} if note else {})})
+                text = '' if found else None
+                if found:
+                    continue
             text = chat_excerpt(v['body'], v['title']) if text is None else text
             if text or v['title']:
                 owner.append({'kind': 'source', 'from': clamp(who, 120), 'via': via, 'title': clamp(v['title'], 200),
@@ -10884,16 +10953,25 @@ class App:
                 d['to'] = [chat_name(t, names, about) for t in d['to']]
             results.setdefault(r['job_id'], []).append({'kind': 'reply', 'text': text, 'drafts': drafts,
                                                        'at': chat_ms(r['started_at'])})
-        # Work handed to a coding agent (Hand to Claude Code / Codex): when it went, and what came back
-        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_jobs'").fetchone():
-            for r in db.execute('SELECT id,tool,status,summary,error,created_at,updated_at,finished_at FROM agent_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)):
-                name = CHAT_AGENTS.get(r['tool'], str(r['tool']).capitalize())
-                owner.append({'kind': 'event', 'text': 'Handed to ' + name, 'mine': True, 'at': chat_ms(r['created_at'])})
-                end = chat_ms(r['finished_at'] or r['updated_at'])
-                if r['status'] == 'result' and str(r['summary'] or '').strip():
-                    owner.append({'kind': 'agent', 'id': r['id'], 'name': name, 'text': chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(r['summary'], chars=4000)))[0], 'at': end})
-                elif r['status'] in ('failed', 'cancelled'):
-                    owner.append({'kind': 'event', 'text': f"{name} {'stopped' if r['status'] == 'failed' else 'cancelled'}", 'at': end})
+        # Work handed to a coding agent (Hand to Claude Code / Codex): when it went, each change asked of it, and what came back
+        jobs = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_jobs'").fetchone()  # only once agents are set up
+        for r in db.execute('SELECT id,tool,status,summary,asks,files,created_at,updated_at,finished_at FROM agent_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)) if jobs else []:
+            name = CHAT_AGENTS.get(r['tool'], str(r['tool']).capitalize())
+            owner.append({'kind': 'event', 'text': 'Handed to ' + name, 'mine': True, 'at': chat_ms(r['created_at'])})
+            try:
+                asks, files = json.loads(r['asks'] or '[]'), json.loads(r['files'] or '[]')
+            except ValueError:
+                asks, files = [], []
+            for ask in asks if isinstance(asks, list) else []:
+                if isinstance(ask, dict) and str(ask.get('text') or '').strip():
+                    owner.append({'kind': 'you', 'text': clamp(str(ask['text']), 5000), 'via': 'agent', 'to': name, 'at': chat_ms(ask.get('at'))})
+            end = chat_ms(r['finished_at'] or r['updated_at'])
+            if r['status'] == 'result' and str(r['summary'] or '').strip():
+                files = [str(f['path']) for f in files if isinstance(f, dict) and isinstance(f.get('path'), str)][:10] if isinstance(files, list) else []
+                text, quiet = chat_agent_text(r['summary'], files)
+                owner.append({'kind': 'agent', 'id': r['id'], 'name': name, 'text': text, 'files': files, 'nothing_sent': quiet, 'at': end})
+            elif r['status'] in ('failed', 'cancelled'):
+                owner.append({'kind': 'event', 'text': f"{name} {'stopped' if r['status'] == 'failed' else 'cancelled'}", 'at': end})
         for i in owner:
             i.pop('choice', None)
         return owner, results
