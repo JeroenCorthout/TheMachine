@@ -81,6 +81,10 @@ if '--bg' in args:
         t.write(json.dumps({'type': 'assistant', 'timestamp': at, 'message': {'content': [{'type': 'text', 'text': 'Wrote [summary.md](' + os.getcwd() + '/summary.md). See https://example.com/x'}]}}) + '\n')
     put(state='done', detail='wrote summary.md')
     sys.exit(0)
+if '--cloud' in args:  # a message to an existing cloud session: queued there, nothing comes back here
+    log(prompt=args[args.index('-p') + 1])
+    print('Sent to ' + args[args.index('--cloud') + 1])
+    sys.exit(0)
 prompt = sys.stdin.read()
 log(prompt=prompt)
 if 'sleep' in prompt:
@@ -132,6 +136,17 @@ if args[:1] == ['app-server']:
         else:
             out({'id': m['id'], 'result': {}})
     sys.exit(0)
+TASK = 'task_e_0123456789abcdef0123456789abcdef'
+if args[:2] == ['cloud', 'exec']:
+    log(prompt=args[-1])
+    print('Submitted ' + TASK + '\nhttps://chatgpt.com/codex/tasks/' + TASK)
+    sys.exit(0)
+if args[:2] == ['cloud', 'list']:
+    print(json.dumps({'tasks': [{'id': TASK, 'status': 'ready', 'title': 'Fix the typo', 'environment_id': args[args.index('--env') + 1]}], 'cursor': None}))
+    sys.exit(0)
+if args[:2] == ['cloud', 'diff']:
+    print('diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-teh\n+the')
+    sys.exit(0)
 prompt = sys.stdin.read()
 log(prompt=prompt)
 thread = args[args.index('resume') + 2] if 'resume' in args else 'thread-1'
@@ -177,7 +192,7 @@ class AgentJobs(unittest.TestCase):
         poll = patch.object(agent_jobs.BackgroundClaude, 'POLL', 0.05)
         poll.start()
         self.addCleanup(poll.stop)
-        self.revised = []
+        self.revised, self.sent, self.tickets, self.reported = [], [], {}, []
         self.store = a.Store(root / 'events.sqlite', protect=True)
         self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm1', 'kind': 'gmail.message', 'occurred_at': '2026-10-20T08:00:00+00:00',
                                              'title': 'Quarterly numbers', 'body': 'Can you sum up the numbers?', 'deleted': False,
@@ -193,7 +208,18 @@ class AgentJobs(unittest.TestCase):
         card = lambda sid: {'card': {'title': 'Sum up the quarterly numbers', 'body': 'Sam asks for a summary.'}, 'drafts': self.drafts,
                             'links': ['https://mail.example/t1'], 'files': [], 'messages': '## Quarterly numbers\nCan you sum up the numbers?'} if sid == self.sid else None
         return agent_jobs.AgentJobs(self.store.connect, self.config, Path(self.tmp.name) / 'agent-jobs', card=card,
-                                    revise=lambda sid, text: self.revised.append((sid, text)) or True)
+                                    revise=lambda sid, text: self.revised.append((sid, text)) or True, network=self.network)
+
+    def network(self, body):
+        """The Network's /api/fleet/agent-results, as the control plane answers it."""
+        self.sent.append(body)
+        if body['action'] == 'register':
+            self.tickets[body['ticket_hash']] = body['job']
+            return {'ok': True, 'mcp_url': 'https://app.example.test/mcp'}
+        if body['action'] == 'fetch':
+            return {'results': [r for r in self.reported if r['ticket_hash'] in body['tickets']]}
+        self.reported = [r for r in self.reported if r['ticket_hash'] not in body['tickets']]
+        return {'ok': True}
 
     drafts = []
 
@@ -236,7 +262,7 @@ class AgentJobs(unittest.TestCase):
         self.assertIn('+Summary of the card', jobs.diff(job['id']))
         # A named background session, so it shows in the owner's Claude apps: no permission mode, no bypass.
         call = self.calls('claude')[0]
-        self.assertEqual(call['args'][:5], ['--bg', '--settings', '{"remoteControlAtStartup": true}', '--name', 'Summarize the card into summary.md'])
+        self.assertEqual(call['args'][:5], ['--bg', '--settings', '{"remoteControlAtStartup": true}', '--name', 'Sum up the quarterly numbers'])
         self.assertEqual(call['args'][-2:], ['--', 'Summarize the card into summary.md'])
         self.assertEqual(job['app'], 'Open in Claude')
         self.assertTrue(job['url'].startswith('https://claude.ai/code'))
@@ -270,6 +296,50 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual(job['status'], 'result', job)
         self.assertIn('summary.md', job['summary'])  # read from the transcript in that config dir
         self.assertEqual({c['config_dir'] for c in self.calls('claude')}, {str(other)})
+
+    def test_remote_claude_goes_to_the_paired_session_and_its_result_comes_back_through_the_network(self):
+        import agent_remote
+        jobs = self.jobs(claude={'place': 'remote', 'session': 'https://claude.ai/code/session_01AbCdEfGh1234', 'device': 'Laptop'})
+        self.assertEqual(jobs.tools()[0], {'id': 'claude', 'name': 'Claude Code', 'place': 'remote', 'device': 'Laptop'})
+        with patch.object(agent_remote, 'watch', lambda jobs: None):  # fetched by hand below
+            job = wait(jobs, jobs.start(self.sid, 'claude', 'Reply to Sam with the numbers')['id'], done=('waiting', 'failed'))
+            end = time.time() + 10
+            while not jobs.get(job['id'])['url'] and time.time() < end:  # waiting from the start; the link once it is sent
+                time.sleep(0.05)
+            job = jobs.get(job['id'])
+        self.assertEqual(job['status'], 'waiting', job)
+        self.assertEqual((job['url'], job['app'], job['device']), ('https://claude.ai/code/session_01AbCdEfGh1234', 'Open in Claude', 'Laptop'))
+        call = self.calls('claude')[0]
+        self.assertEqual(call['args'][-2:], ['--cloud', 'session_01AbCdEfGh1234'])
+        ticket = call['prompt'].split('with ticket `', 1)[1].split('`', 1)[0]
+        digest = __import__('hashlib').sha256(ticket.encode()).hexdigest()
+        self.assertEqual(self.tickets, {digest: job['id']})  # only the hash went to the Network
+        self.assertNotIn(ticket, json.dumps(self.sent))
+        transcript = (Path(self.tmp.name) / 'agent-jobs' / job['id'] / 'turn-1.jsonl').read_text()
+        self.assertNotIn(ticket, transcript)
+        self.assertEqual(agent_remote.fetch(jobs), 0)
+        self.reported.append({'ticket_hash': digest, 'summary': 'Drafted the reply.', 'draft': 'Hi Sam, here they are.',
+                              'diff': '', 'links': ['https://example.com/pr/1']})
+        self.assertEqual(agent_remote.fetch(jobs), 1)
+        job = jobs.get(job['id'])
+        self.assertEqual(job['status'], 'result')
+        self.assertIn('Drafted the reply.', job['summary'])
+        self.assertEqual(job['links'], ['https://example.com/pr/1'])
+        self.assertTrue(job['draft_updated'])
+        self.assertEqual(self.revised, [(self.sid, 'Hi Sam, here they are.')])
+        self.assertEqual(self.sent[-1], {'action': 'ack', 'tickets': [digest]})
+
+    def test_codex_cloud_runs_there_and_its_diff_comes_back(self):
+        import agent_remote
+        jobs = self.jobs(codex={'place': 'cloud', 'env': 'env_123'})
+        with patch.object(agent_remote, 'CODEX_POLL', 0.05):
+            job = wait(jobs, jobs.start(self.sid, 'codex', 'Fix the typo in README')['id'])
+        self.assertEqual(job['status'], 'result', job)
+        self.assertEqual(self.calls('codex')[0]['args'][:4], ['cloud', 'exec', '--env', 'env_123'])
+        self.assertEqual([f['path'] for f in job['files']], ['README.md'])
+        self.assertIn('+the', jobs.diff(job['id']))
+        self.assertEqual((job['url'], job['app']), ('https://chatgpt.com/codex/tasks/task_e_0123456789abcdef0123456789abcdef', 'Open in Codex cloud'))
+        self.assertFalse(job['can_follow_up'])
 
     def test_claude_falls_back_to_print_mode_when_the_folder_is_not_trusted(self):
         with patch.dict(os.environ, {'AJ_UNTRUSTED': '1'}):
@@ -306,7 +376,7 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual(call['args'], ['app-server', '--listen', 'stdio://'])
         methods = [c.get('method') for c in call['calls'] if 'method' in c]
         self.assertEqual(methods[:3], ['initialize', 'initialized', 'thread/start'])
-        self.assertIn('thread/name/set', methods)
+        self.assertIn({'method': 'thread/name/set', 'params': {'threadId': THREAD, 'name': 'Sum up the quarterly numbers'}}, call['calls'])  # the card's title
         self.assertIn({'answer': {'decision': 'decline'}}, call['calls'])  # nothing is approved on the owner's behalf
         self.assertEqual(job['url'], 'codex://threads/' + THREAD)
         self.assertEqual(job['app'], 'Open in Codex')
@@ -387,6 +457,32 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual(app.agents.get(job['id'])['outcome'], 'done')
         self.assertIn('agent_send', a.OWNER_ACTIONS)
 
+
+
+class AgentSettings(unittest.TestCase):
+    def test_a_hosted_owner_pairs_a_claude_session_and_a_codex_environment(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 'config.json'
+        path.write_text(json.dumps({'database': 'x', 'accounts': [], 'manage_url': 'https://app.example.test/machine', 'other': 1}, indent=2) + '\n')
+        app = object.__new__(a.App)
+        app.config_path, app.config = path, json.loads(path.read_text())
+        self.assertIn('set_agents', a.OWNER_ACTIONS)
+        view = app.agents_view()
+        self.assertEqual((view['claude_session'], view['connector'], view['saveable']), ('', 'https://app.example.test/mcp', True))
+        with self.assertRaises(ValueError):
+            app.set_agents({'claude_session': 'not a session'})
+        saved = app.set_agents({'claude_session': 'https://claude.ai/code/session_01AbCdEfGh1234', 'device': 'Laptop', 'codex_env': 'env_123'})
+        self.assertEqual((saved['claude_session'], saved['device'], saved['codex_env']), ('session_01AbCdEfGh1234', 'Laptop', 'env_123'))
+        written = json.loads(path.read_text())
+        self.assertEqual(written['agents'], {'claude': {'place': 'remote', 'session': 'session_01AbCdEfGh1234', 'device': 'Laptop'},
+                                             'codex': {'place': 'cloud', 'env': 'env_123'}})
+        self.assertEqual(written['other'], 1)
+        app.set_agents({'codex_env': 'env_123'})
+        self.assertEqual(json.loads(path.read_text())['agents']['claude'], {})
+        # A Machine on the owner's own computer with nothing remote set: no such settings (its local CLIs are used)
+        app.config = {'accounts': []}
+        self.assertIsNone(app.agents_view())
 
 if __name__ == '__main__':
     unittest.main()

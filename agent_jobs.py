@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -174,6 +173,12 @@ def git(folder, *args, check=True):
 
 
 # ------------------------------------------------------------------ runners: one turn of a job
+
+def job_name(job):
+    """What the job is called in the owner's Claude and Codex apps: the card's title, else the brief's first line."""
+    title = re.sub(r'\s+', ' ', str(job.get('card_title') or '')).strip()
+    return (title or (str(job.get('brief') or '').strip().splitlines() or ['A job from The Machine'])[0])[:80]
+
 
 def claude_dir(config_dir=None):
     """Claude Code's config folder: the jobs' own `config_dir`, else CLAUDE_CONFIG_DIR, else ~/.claude."""
@@ -400,7 +405,7 @@ class BackgroundClaude:
         return None
 
     def run(self, job, prompt, resume, folder, transcript, timeout, on_progress, on_session, procs):
-        name = (str(job.get('brief') or '').strip().splitlines() or ['A job from The Machine'])[0][:80]
+        name = job_name(job)
         # Remote Control on for this session (the owner's `disableRemoteControl` still wins): it is what puts the session
         # in claude.ai/code and the Claude apps, where the owner reads it and keeps talking to it.
         argv = [self.command, *(['--resume', resume] if resume else []), '--bg', '--settings', RC_ON, *([] if resume else ['--name', name]), '--', prompt]
@@ -569,7 +574,7 @@ class AppServerCodex:
                 raise Stopped('failed', 'Codex did not start a thread')
             on_session(thread_id)
             if not resume:
-                name = (str(job.get('brief') or '').strip().splitlines() or ['A job from The Machine'])[0][:80]
+                name = job_name(job)
                 call('thread/name/set', {'threadId': thread_id, 'name': name})
             call('turn/start', {'threadId': thread_id, 'input': [{'type': 'text', 'text': prompt}]})
             while state['status'] is None:
@@ -627,11 +632,11 @@ def app_link(runner, session):
     """Where the owner opens the job in their own app: the Codex app's thread, the Claude Code session's page."""
     if isinstance(runner, AppServerCodex) and re.fullmatch(r'[0-9a-f-]{36}', str(session or '')):
         return 'codex://threads/' + session
-    if isinstance(runner, BackgroundClaude):
+    if hasattr(runner, 'link'):  # a Claude Code session (background or remote), a Codex cloud task
         try:
             return runner.link(session)
         except (OSError, subprocess.SubprocessError):
-            return 'https://claude.ai/code'
+            return 'https://claude.ai/code' if isinstance(runner, BackgroundClaude) else None
     return None
 
 
@@ -641,12 +646,13 @@ APP_LINK = re.compile(r'(https://\S+|codex://threads/[0-9a-f-]{36})')
 # ------------------------------------------------------------------ the jobs
 
 class AgentJobs:
-    def __init__(self, connect, config, root, card=None, close_card=None, revise=None):
+    def __init__(self, connect, config, root, card=None, close_card=None, revise=None, network=None):
         """`connect`: the Store's connection. `root`: where job folders go. `card(suggestion_id)` gives what a brief is
         made of ({card, drafts, links, files, messages}); `close_card(suggestion_id)` marks the card done;
-        `revise(suggestion_id, text)` puts a job's rewritten message in the card's draft (True when it did)."""
+        `revise(suggestion_id, text)` puts a job's rewritten message in the card's draft (True when it did);
+        `network(body)` posts to the Network's /api/fleet/agent-results (remote Claude jobs, agent_remote.py)."""
         self.connect, self.config, self.root = connect, config, Path(root)
-        self.card, self.close_card, self.revise = card, close_card, revise
+        self.card, self.close_card, self.revise, self._network = card, close_card, revise, network
         own = settings(config) or {}
         self.limit = threading.BoundedSemaphore(max(1, min(int(own.get('max_parallel') or 2), 8)))
         self.timeout = max(60, min(int(float(own.get('timeout_minutes') or 30) * 60), 6 * 3600))
@@ -931,15 +937,24 @@ class AgentJobs:
         def on_session(sid, runner=runner):
             self.session(job_id, sid, app_link(runner, sid))
         try:
-            return runner.run(dict(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress, on_session, self.procs)
+            return runner.run(self.named(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress, on_session, self.procs)
         except (Untrusted, NoAppServer) as why:
             LOG.info('agent job fallback=%s', type(why).__name__)
             command = runner.command
             plain = LocalClaude(command, getattr(runner, 'config_dir', None)) if isinstance(why, Untrusted) else LocalCodex(command, bool(shutil.which('git')))
             with self.connect() as db:
                 db.execute('UPDATE agent_jobs SET url=NULL WHERE id=?', (job_id,))
-            return plain.run(dict(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress,
+            return plain.run(self.named(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress,
                              lambda sid: self.session(job_id, sid), self.procs)
+
+    def named(self, row):
+        job = dict(row)
+        try:
+            found = self.card(row['suggestion_id']) if self.card else None
+        except Exception:  # noqa: BLE001 - the brief's first line names it then
+            found = None
+        job['card_title'] = ((found or {}).get('card') or {}).get('title') or ''
+        return job
 
     def progress(self, job_id, line):
         with self.connect() as db:
@@ -1065,29 +1080,31 @@ class AgentJobs:
             return
         self.result(row['id'], session, summary)
 
-    # -- the result connector (phase 2): a token per job, only for posting that job's result
-    def token(self, job_id):
-        token = secrets.token_urlsafe(24)
-        with self.connect() as db:
-            db.execute('UPDATE agent_jobs SET token_hash=? WHERE id=?', (hashlib.sha256(token.encode()).hexdigest(), job_id))
-        return token
+    # -- remote results (agent_remote.py): what a remote Claude session reported through The Machine's connector
+    def network(self, body):
+        if not self._network:
+            raise ValueError('This Machine is not on The Machine Network')
+        return self._network(body)
 
-    def report(self, job_id, token, summary, diff='', links=()):
-        """A result posted for a remote job through The Machine's connector: only with that job's own token, once
-        per turn (a later report for the same turn replaces the summary while the card hasn't moved on)."""
+    def remote_result(self, job_id, found):
+        """A result the job's own session reported (the Network matched it to this job's ticket): its summary, links,
+        diff, and a finished message for the card's draft."""
         with self.connect() as db:
             row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
-        if not row or not row['token_hash'] or not hmac.compare_digest(row['token_hash'], hashlib.sha256(str(token).encode()).hexdigest()):
-            raise ValueError('Not a job this token can report on')
-        if row['status'] not in ('waiting', 'running', 'result') or row['outcome']:
-            raise ValueError('This job is closed')
-        summary = str(summary or '').strip()
-        if not summary:
-            raise ValueError('Say what was done')
-        extra = '\n'.join(u for u in links if isinstance(u, str) and u.startswith('https://'))[:4000]
-        diff = str(diff or '')
-        self.result(row['id'], None, (summary + ('\n\n' + extra if extra else ''))[:SUMMARY_MAX], files=[], diff=diff[:DIFF_MAX])
-        with self.connect() as db:  # also when the card already showed this turn's result
-            db.execute("UPDATE agent_jobs SET summary=?,diff=?,updated_at=? WHERE id=? AND status='result' AND outcome IS NULL",
-                       ((summary + ('\n\n' + extra if extra else ''))[:SUMMARY_MAX], diff[:DIFF_MAX] or None, now(), row['id']))
-        return {'ok': True}
+        if not row or row['status'] not in ('waiting', 'running'):
+            return False
+        summary = str(found.get('summary') or '').strip() or 'Done, without a summary.'
+        links = '\n'.join(u for u in (found.get('links') or []) if isinstance(u, str) and u.startswith('https://'))[:4000]
+        diff = str(found.get('diff') or '')[:DIFF_MAX]
+        files = sorted(set(re.findall(r'^\+\+\+ b/(.+)$', diff, re.M)))[:FILES_MAX]
+        self.result(row['id'], None, (summary + ('\n\n' + links if links else ''))[:SUMMARY_MAX],
+                    files=[{'path': f, 'size': 0} for f in files], diff=diff)
+        draft = str(found.get('draft') or '').strip()
+        if draft and self.revise:
+            try:
+                if self.revise(row['suggestion_id'], draft):
+                    with self.connect() as db:
+                        db.execute('UPDATE agent_jobs SET draft_updated=1 WHERE id=?', (row['id'],))
+            except Exception as error:  # noqa: BLE001 - the result still shows; the draft stays as it was
+                LOG.warning('agent job draft error=%s', type(error).__name__)
+        return True

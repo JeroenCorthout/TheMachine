@@ -415,7 +415,7 @@ SKILL_ACTIONS = {'skill_save', 'skill_get', 'skill_toggle', 'skill_delete', 'ski
 OWNER_ACTIONS |= SKILL_ACTIONS
 # Bigger requests only for these (an uploaded skill export, the Find my skills turn's report), marked X-Upload: skill-import.
 # Hand to Claude Code / Hand to Codex (agent_jobs.py): the owner's own, from their dashboard only.
-AGENT_ACTIONS = {'agent_draft', 'agent_send', 'agent_follow_up', 'agent_retry', 'agent_cancel', 'agent_outcome'}
+AGENT_ACTIONS = {'agent_draft', 'agent_send', 'agent_follow_up', 'agent_retry', 'agent_cancel', 'agent_outcome', 'set_agents'}
 OWNER_ACTIONS |= AGENT_ACTIONS
 UPLOAD_ACTIONS, UPLOAD_REQUEST_BYTES = {'skill_import_upload', 'skill_import_report', 'skills_found'}, 9 * 1024 * 1024
 # A merged fix to The Machine can be undone this long; one it merged by itself undoes itself when
@@ -8518,7 +8518,9 @@ class App:
         self.skills.finder = self.skills_find_start
         # Hand to Claude Code / Hand to Codex on a card (agent_jobs.py): only where the tool is there to hand to.
         self.agents = agent_jobs.AgentJobs(self.store.connect, config, Path(config['database']).parent / 'agent-jobs',
-                                           card=self.agent_card, revise=self.agent_revise) if agent_jobs.settings(config) is not None else None
+                                           card=self.agent_card, revise=self.agent_revise,
+                                           network=(lambda body: self.fleet.relay.call('POST', '/agent-results', body)) if self.fleet else None,
+                                           ) if agent_jobs.settings(config) is not None else None
         if self.fleet:
             self.fleet.skills = self.skills
 
@@ -8816,6 +8818,50 @@ class App:
         set_work_hours(values['work_hours'])
         return self.hours()
 
+    def agents_view(self):
+        """Hand to Claude Code / Codex where no local CLI of the owner's runs (agent_remote.py): the paired Claude Code
+        session, the Codex cloud environment, and the claude.ai connector that brings Claude's results back."""
+        own = agent_jobs.settings(self.config)
+        if own is None:
+            return None
+        claude, codex = (own.get('claude') if isinstance(own.get('claude'), dict) else {}), (own.get('codex') if isinstance(own.get('codex'), dict) else {})
+        if not (self.config.get('manage_url') or claude.get('place') == 'remote' or codex.get('place') == 'cloud'):
+            return None
+        origin = urllib.parse.urlsplit(str(self.config.get('manage_url') or ''))
+        base = f'{origin.scheme}://{origin.netloc}' if origin.scheme == 'https' and origin.netloc else 'https://app.themachine.computer'
+        return {'claude_session': str(claude.get('session') or ''), 'device': str(claude.get('device') or ''),
+                'codex_env': str(codex.get('env') or ''), 'codex_branch': str(codex.get('branch') or ''),
+                'connector': base + '/mcp', 'on_network': bool(getattr(self, 'fleet', None)),
+                'saveable': bool(getattr(self, 'config_path', None))}
+
+    def set_agents(self, args):
+        import agent_remote
+        if not getattr(self, 'config_path', None):
+            raise ValueError('Change these in config.json (agents) on this computer')
+        session = str(args.get('claude_session') or '').strip()
+        found = agent_remote.session_id(session) if session else ''
+        if session and not found:
+            raise ValueError('Paste the session link from claude.ai/code')
+        env, branch = str(args.get('codex_env') or '').strip(), str(args.get('codex_branch') or '').strip()
+        if env and not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', env):
+            raise ValueError('That is not a Codex environment id')
+        if branch and not re.fullmatch(r'[A-Za-z0-9._/-]{1,120}', branch):
+            raise ValueError('That is not a branch name')
+        own = dict(agent_jobs.settings(self.config) or {})
+        claude = {k: v for k, v in (own.get('claude') if isinstance(own.get('claude'), dict) else {}).items() if k not in ('session', 'device')}
+        codex = {k: v for k, v in (own.get('codex') if isinstance(own.get('codex'), dict) else {}).items() if k not in ('env', 'branch')}
+        if found:
+            claude.update(place='remote', session=found, **({'device': str(args['device']).strip()[:60]} if str(args.get('device') or '').strip() else {}))
+        if env:
+            codex.update(place='cloud', env=env, **({'branch': branch} if branch else {}))
+        for part, key, place in ((claude, 'session', 'remote'), (codex, 'env', 'cloud')):
+            if not part.get(key) and part.get('place') == place:
+                part.pop('place')
+        own.update(claude=claude, codex=codex)
+        save_hours(self.config_path, {'agents': own})
+        self.config['agents'] = own
+        return self.agents_view()
+
     def started_at(self):
         """When this Machine started: `started_at` in the config (a hosted machine's signup), else its first own activity."""
         given = str(self.config.get('started_at') or '')
@@ -8879,6 +8925,7 @@ class App:
             result['reviews_on'] = bool((self.config.get('review_worker') or {}).get('enabled'))  # off until activated
             result['started_at'] = self.started_at()
             result['hours'] = self.hours()
+            result['agents_settings'] = self.agents_view()
             result['signatures'] = self.signature_view()
             # Read only the existing heartbeat's runtime facts, never conversation
             # content or scheduler configuration. Missing evidence stays unknown.
@@ -9247,6 +9294,10 @@ class App:
             if not owner_dashboard:
                 raise ValueError('Only the owner sets a signature, on the dashboard (Settings, Signatures)')
             return self.signature_action(name, args)
+        if name == 'set_agents':
+            if not owner_dashboard:
+                raise ValueError('Only the owner changes this, on the dashboard (Settings)')
+            return self.set_agents(args)
         if name == 'set_work_hours':
             if not owner_dashboard:
                 raise ValueError('Only the owner changes work hours, on the dashboard or with: assistant hours')
