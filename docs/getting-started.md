@@ -120,7 +120,7 @@ Then it offers to fill in the rest from what you actually write: your agent read
 
 ## 5. Preview, then turn it on
 
-The installer offers a **preview**: your agent reviews the last 7 days once and shows the cards in the terminal and on the dashboard. Nothing is sent and nothing is done in your accounts. Skip it and the service starts that same preview by itself (the *first look*) once a model and a source are connected and the first import has settled; the dashboard shows how far it is.
+The installer offers a **preview**: your agent reviews the last 7 days once and shows the cards in the terminal and on the dashboard. Nothing is sent and nothing is done in your accounts. Skip it and the service starts that same preview by itself (the *first look*) once a source is connected, your main model can run (signed in or with a key), and the first import has settled; the dashboard shows how far it is.
 
 If the cards look useful, say yes to **turning on reviews and card delivery** (Telegram and/or the dashboard app). Read [Security model](../README.md#security-model) first: **Do it** authorizes the offered task; prepare-ahead may start read-only preparation before a tap, but stops before its consequential final step. You can also do both later with `./install.sh --preview` and `./install.sh --activate`.
 

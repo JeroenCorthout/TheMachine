@@ -152,5 +152,44 @@ class FirstLook(unittest.TestCase):
         self.assertNotEqual(self.app.graph_freshness(), before)
 
 
+class MainModelMustRun(unittest.TestCase):
+    """A main model set in the config is not enough: its provider needs a sign-in or key (`openclaw models status`,
+    no model call), else the first look waits and the dashboard says so. A fallback without one doesn't block."""
+    def setUp(self):
+        a._model_ready.clear(); self.addCleanup(a._model_ready.clear)
+
+    def status(self, missing, fallbacks=()):
+        out = json.dumps({'resolvedDefault': 'openai/gpt-6-astra', 'fallbacks': list(fallbacks), 'auth': {'missingProvidersInUse': missing}})
+        calls = []
+        return calls, lambda args, **kw: calls.append(args) or type('R', (), {'stdout': out, 'returncode': 0})()
+
+    def test_an_unsigned_main_model_is_no_model(self):
+        with patch.object(a, 'main_model', return_value='openai/gpt-6-astra'):
+            calls, run = self.status(['openai'])
+            self.assertFalse(a.model_ready({'openclaw': '/x/openclaw'}, run))
+            self.assertEqual(calls, [['/x/openclaw', 'models', 'status', '--json']])
+            self.assertFalse(a.model_ready({}, run))  # cached: no second node process
+            self.assertEqual(len(calls), 1)
+            with patch.object(a, 'model_ready', return_value=False):
+                self.assertFalse(a.has_model())
+                item = a.needs_you({'accounts': [], 'manage_url': 'https://cp.example/setup'})[0]
+            self.assertEqual((item['id'], item['url'], item['action']), ('model-signed-out', 'https://cp.example/setup#model', 'Fix it'))
+            self.assertIn('openai/gpt-6-astra', item['text'])
+
+    def test_a_signed_in_main_model_or_an_unsigned_fallback_is_fine_and_unknown_does_not_block(self):
+        with patch.object(a, 'main_model', return_value='claude-cli/claude-sonnet-5-5'):
+            self.assertTrue(a.model_ready({}, self.status([])[1]))
+            a._model_ready.clear()
+            self.assertTrue(a.model_ready({}, self.status(['openai'], ['openai/gpt-6-astra'])[1]))
+            a._model_ready.clear()
+            self.assertIsNone(a.model_ready({}, lambda *x, **k: (_ for _ in ()).throw(OSError('no openclaw'))))
+            a._model_ready.clear()
+            with patch.object(a, 'model_ready', return_value=None):
+                self.assertTrue(a.has_model())
+                self.assertEqual(a.needs_you({'accounts': []}), [])
+        with patch.object(a, 'main_model', return_value=''):
+            self.assertFalse(a.has_model())
+
+
 if __name__ == '__main__':
     unittest.main()

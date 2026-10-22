@@ -609,11 +609,45 @@ PREPARATION_INTERRUPTED_TRIES = 4  # starts of one card's preparation that a Gat
 SYSTEM_SERVICES = {'gateway'}  # The Machine's own logs: not a source of the owner's
 
 
-def has_model():
-    """Whether OpenClaw has a default model to review with."""
+def main_model():
+    """OpenClaw's main model (agents.defaults.model), or ''."""
     import onboarding
     model = ((onboarding.openclaw_settings().get('agents') or {}).get('defaults') or {}).get('model')
-    return bool(model.get('primary') if isinstance(model, dict) else model)
+    model = model.get('primary') if isinstance(model, dict) else model
+    return model.strip() if isinstance(model, str) else ''
+
+
+MODEL_READY_SECONDS = {True: 600, False: 60}  # how long one reading of `models status` holds, by its answer
+_model_ready = {}
+
+
+def model_ready(config=None, run=subprocess.run):
+    """Whether the main model can run, as `openclaw models status` says (no model call; the same reading a hosted
+    Machine's health report uses): its provider has a sign-in or key, and any provider in use without one is only a
+    fallback's. None when that can't be read. Cached a short while; a not-ready answer for less long."""
+    model = main_model()
+    if not model:
+        return False
+    hit = _model_ready.get(model)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    try:
+        result = run([str((config or {}).get('openclaw') or 'openclaw'), 'models', 'status', '--json'],
+                     capture_output=True, text=True, timeout=90)
+        data = json.loads(result.stdout)
+        missing = {p for p in (data.get('auth') or {}).get('missingProvidersInUse') or [] if isinstance(p, str)}
+        fallbacks = {m.split('/')[0] for m in data.get('fallbacks') or [] if isinstance(m, str)}
+    except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+        return None
+    ready = model.split('/')[0] not in missing and missing <= fallbacks
+    _model_ready[model] = (time.monotonic() + MODEL_READY_SECONDS[ready], ready)
+    return ready
+
+
+def has_model(config=None):
+    """Whether OpenClaw has a main model to review with that can run (model_ready). When that can't be read,
+    a main model set in its config is taken as one."""
+    return bool(main_model()) and model_ready(config) is not False
 
 
 def active_preview(db):
@@ -8262,6 +8296,12 @@ def needs_you(config):
         if why:
             items.append({'id': 'setup-' + account['id'], 'text': f'{name} is not fully set up yet ({why}).',
                           'url': manage + '#sources' if manage else None, 'action': 'Finish it' if manage else 'Run: assistant connect'})
+    # The main model can't run (no sign-in or key for its provider): nothing gets reviewed, the first look neither
+    model = main_model()
+    if model and model_ready(config) is False:
+        items.append({'id': 'model-signed-out', 'text': f'Your main model, {model}, can\u2019t run: nothing is signed in for it. '
+                      'Nothing gets reviewed until it can.', 'url': manage + '#model' if manage else None,
+                      'action': 'Fix it' if manage else 'Run: openclaw models auth login'})
     # The message key (message_seal.py): without it, the messages can't be read after a restart
     try:
         for key, text, fix in message_seal.problems(config['database']) if config.get('database') else []:
@@ -10794,7 +10834,7 @@ class App:
                                      f'AND account_id IN ({marks})', (SET_ASIDE_AFTER, since, *sources)).fetchone() if sources else (0, None)
         out = {'waiting': min(waiting, RUN_SIGNAL_BUDGET), 'days': PREVIEW_DAYS}
         mail = self.mail_backfill(db)
-        if not has_model():
+        if not has_model(self.config):
             return {**out, 'state': 'waiting', 'why': 'model'}
         if mail['filling'] and (not waiting or newest > (current - dt.timedelta(minutes=settings.get('max_wait_minutes', 60))).isoformat()):
             return {**out, 'state': 'waiting', 'why': 'mail'}

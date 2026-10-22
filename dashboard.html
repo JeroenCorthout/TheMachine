@@ -1774,7 +1774,7 @@ $('#needs-you').onclick=e=>{const b=e.target.closest('[data-show]');if(!b)return
 // review is doing, from its own steps, and the next one. Polled every few seconds while one runs; a finished one moves to
 // the lists below.
 const REVIEW_ACTIVE=['starting','running','recovering'];
-const FIRST_LOOK_WAIT={model:'It starts once a model is connected.',sources:'It starts once a source has sent its first signals.',settling:'It starts in a few minutes, once the first import settles.',mail:'It starts when your mail is in.',retry:'The last try did not finish; it tries again shortly.'};
+const FIRST_LOOK_WAIT={model:'It starts once your main model can run: sign in for it or add a key.',sources:'It starts once a source has sent its first signals.',settling:'It starts in a few minutes, once the first import settles.',mail:'It starts when your mail is in.',retry:'The last try did not finish; it tries again shortly.'};
 function reviewLiveRows(live){const rows=[];const name=id=>{const c=(state.connectors||[]).find(c=>c.id===id);return c?(c.display_name||c.email||id):id};
 for(const r of live.runs||[]){const total=r.planned||r.claimed_count||0,done=Math.min(r.done_count||0,total||Infinity);const steps=r.steps||[],[latest,...earlier]=steps;
 const what=r.preview?`${r.auto?'First look':'Preview'}: your last ${live.first_look?.days||7} days`:'Reviewing new signals';
