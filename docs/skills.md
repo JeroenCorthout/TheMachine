@@ -30,18 +30,23 @@ Do it still asks you, nothing is sent without your Send, and a Fleet's rules sta
 
 Both use the same `SKILL.md` form. **Import** under Settings > Skills lists skills to bring in; you tick which ones.
 
+- **From Claude** or **From ChatGPT**, picked above **Find my skills**, is where it looks: that account only.
 - **Find my skills** looks on this computer (Claude Code's `~/.claude/skills`, including skills and your own plugins
-  synced from claude.ai, Codex's `~/.codex/skills`, and `.claude/skills` in your projects). Then your agent reads the
-  skills in your claude.ai and ChatGPT accounts, read-only, in your Machine's own browser: on claude.ai under Customize >
-  Skills, on ChatGPT the Skills library (chatgpt.com/skills). Custom GPTs, projects and custom instructions aren't
-  skills and aren't imported. It also marks a few as **Recommended**, judged against the work your Machine actually
-  does. A hosted Machine has no such folders; there it only checks your accounts. While it looks, each place shows
-  its own state (found, looking, not signed in, couldn't check), and skills already found are listed right away. When
-  it's done, one line sums up how many it found and how many it picked.
+  synced from claude.ai, Codex's `~/.codex/skills`, and `.claude/skills` in your projects). Then your Machine reads
+  the skills you made or uploaded yourself in that account, read-only, in its own browser, straight on the skills page
+  and with the site's own download of each skill: on ChatGPT **Skills > Installed** (chatgpt.com/skills), on claude.ai
+  **Customize > Skills**. Built-in, vendor and workspace-shared skills, custom GPTs, projects and custom instructions
+  are left out. Your agent then marks a few as **Recommended**, judged against the work your Machine actually does. A
+  hosted Machine has no such folders; there it only checks your account. Each place shows its own state (found,
+  looking, not signed in, couldn't check), and when it's done, one line sums up how many it found and how many it
+  picked.
+- **Nothing found?** It says where it looked and why (for example "none you made or uploaded yourself"), and opens
+  **Or bring one in yourself** with how to download a skill from that site.
 - **Signed out?** If your Machine's browser is signed out of ChatGPT or claude.ai, the list shows **Sign in to ChatGPT**
   (or Claude). It opens the same sign-in dialog as for LinkedIn and X, including the one-time code the site sends; once
   you're in, it looks in that account by itself. Your agent never signs in or types a password.
-- **From Claude** or **From ChatGPT**: upload a `.skill` or `.zip` export or a folder, or paste a `SKILL.md`.
+- **Bring one in yourself**: upload a `.skill` or `.zip` or a folder, or paste a `SKILL.md`. In ChatGPT: **Skills >
+  Installed**, a skill's **⋯** menu, **Download**. In Claude: **Customize > Skills**, open your skill and download it.
 
 The list starts short: **Recommended**, then **Yours**. The rest waits in closed groups with counts (in your projects,
 from vendors, built in), and a search box finds any of them. Each skill shows where it comes from, its scripts and other

@@ -234,7 +234,7 @@ class Import(unittest.TestCase):
 
     def test_progress_per_source_and_never_stale(self):
         """Each place it looks has its own state; one report finishes every account it read, before the turn ends."""
-        self.keeper.finder = lambda token, items, sites=None: 'run1'
+        self.keeper.finder = lambda token, items, sites=None, more=False: 'run1'
         view, _ = self.found()
         token, local = view['token'], len(view['items'])
         state = lambda: {s['key']: (s['state'], s['found']) for s in self.keeper.import_status(token)['sources']}
@@ -262,7 +262,7 @@ class Import(unittest.TestCase):
 
     def test_find_turn_reports_account_skills_and_recommendations(self):
         started = []
-        self.keeper.finder = lambda token, items, sites=None: started.append((token, items, sites)) or 'run1'
+        self.keeper.finder = lambda token, items, sites=None, more=False: started.append((token, items, sites)) or 'run1'
         view, items = self.found()
         self.assertEqual(view['finding'], {'run_id': 'run1', 'status': 'running'})
         listed = {i['name']: i for i in started[0][1]}
@@ -293,10 +293,19 @@ class Import(unittest.TestCase):
         self.assertEqual(self.keeper.import_status(token)['browser'], {'claude': 'ok', 'chatgpt': 'signed_out'})
 
 
-class FindTurn(unittest.TestCase):
-    """Find my skills on the service: one agent turn at a time, its report only from that turn, the list told when it ends."""
+def skill_zip(name, text):
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w') as z:
+        z.writestr(f'{name}/SKILL.md', f'---\nname: {name}\ndescription: {text}\n---\nSteps: {text}\n')
+        z.writestr(f'{name}/agents/openai.yaml', 'x: 1\n')
+    return base64.b64encode(out.getvalue()).decode()
 
-    def test_turn_runs_reports_and_ends(self):
+
+class FindTurn(unittest.TestCase):
+    """Find my skills on the service: the accounts read by the service itself, straight on their skills pages, then one
+    turn that only judges; the account the owner picked is the only one read."""
+
+    def app(self):
         import test_profile as tp
         a = tp.a
         temp = tempfile.TemporaryDirectory()
@@ -306,53 +315,95 @@ class FindTurn(unittest.TestCase):
         app.store, app.config = store, {'accounts': [{'id': 'work', 'service': 'gmail'}], 'browser_lease_script': '/bin/true'}
         app.skills = a.skills.Skills(store.connect, Path(temp.name) / 'ws', home=Path(temp.name) / 'home')
         app.skills.finder = app.skills_find_start
-        checked = []
-        app.skills_accounts = lambda sites: checked.append(sites) or {'claude': 'ok', 'chatgpt': 'signed_out'}
-        view = app.action('skill_import_find', {})
+        return tp, a, app
+
+    def test_only_the_picked_account_is_read_and_its_skills_listed(self):
+        tp, a, app = self.app()
+        read = []
+        app.skills_read = lambda sites: read.append(sites) or {'chatgpt': {'state': 'ok', 'where': a.SKILLS_PAGES['chatgpt'], 'skills': [
+            {'name': 'follow-ups', 'description': 'Chase late replies.', 'zip': skill_zip('follow-ups', 'Chase late replies.'), 'url': a.SKILLS_PAGES['chatgpt']}]}}
+        view = app.action('skill_import_find', {'sites': ['chatgpt']})
+        self.assertEqual([s['key'] for s in view['sources'] if s['key'] != 'local'], ['chatgpt'])  # not claude.ai
         run = view['finding']['run_id']
         self.assertIsNone(app.skills_find_start('t', []))  # one at a time
         runner = tp.Runner('admitted', 'ok')
         app.profile_step(runner)
-        self.assertIn(f'skills run {run}', runner.requests[0]['message'])
-        self.assertIn('This Machine\'s sources: gmail', runner.requests[0]['message'])
-        # Its own session kind (the browser, read-only), and the sign-in states known before the turn reads anything.
+        self.assertEqual(read, [['chatgpt']])
+        status = app.action('skill_import_status', {'token': view['token']})
+        self.assertEqual([i['name'] for i in status['items']], ['follow-ups'])
+        self.assertEqual({x['key']: (x['state'], x['found'], x.get('where')) for x in status['sources'] if x['key'] != 'local'},
+                         {'chatgpt': ('done', 1, 'https://chatgpt.com/skills?collection=installed')})
+        # The turn only judges what the service read: no browser, no site's API in its message.
+        message = runner.requests[0]['message']
         self.assertEqual(runner.requests[0]['kind'], 'skills')
-        self.assertEqual(checked, [['claude', 'chatgpt']])
-        self.assertIn('Not chatgpt.com: the owner is signed out there', runner.requests[0]['message'])
-        self.assertNotIn('/backend-api/hazelnuts', runner.requests[0]['message'])
-        self.assertEqual(app.action('skill_import_status', {'token': view['token']})['browser'], {'claude': 'ok', 'chatgpt': 'signed_out'})
+        self.assertIn(f'skills run {run}', message)
+        self.assertIn('This Machine\'s sources: gmail', message)
+        self.assertIn('chatgpt:account:follow-ups: follow-ups', message)
+        self.assertIn('do not open a browser', message)
+        self.assertNotIn('/backend-api/', message)
+        out = app.action('skills_found', {'_skills_session': a.SKILLS_SESSION_PREFIX + run,
+                                          'recommended': [{'key': 'chatgpt:account:follow-ups', 'why': 'Many follow-up cards'}]})
+        self.assertEqual(out, {'added': 0})
         with self.assertRaisesRegex(ValueError, 'Only the Find my skills turn'):
-            app.action('skills_found', {'_skills_session': a.PROFILE_SESSION_PREFIX + run, 'found': []})
-        with self.assertRaisesRegex(ValueError, 'no longer active'):
-            app.action('skill_import_report', {'run': 'other', 'found': []})
-        out = app.action('skills_found', {'_skills_session': a.SKILLS_SESSION_PREFIX + run, 'browser': {'claude': 'signed_out'}, 'found': [
-            {'from': 'claude', 'name': 'follow-ups', 'description': 'Chase replies that are late.', 'body': 'Check sent mail for unanswered threads.'}]})
-        self.assertEqual(out, {'added': 1})
-        # Reported: no account shows as still looking, though the turn itself hasn't ended yet.
-        shown = {x['key']: x['state'] for x in app.action('skill_import_status', {'token': view['token']})['sources']}
-        self.assertEqual((shown['claude'], shown['chatgpt']), ('signed_out', 'signed_out'))
+            app.action('skills_found', {'_skills_session': a.PROFILE_SESSION_PREFIX + run})
         app.profile_step(runner)
         status = app.action('skill_import_status', {'token': view['token']})
-        self.assertEqual((status['finding']['status'], status['browser'], [i['name'] for i in status['items']]),
-                         ('ok', {'claude': 'signed_out', 'chatgpt': 'signed_out'}, ['follow-ups']))
-        with self.assertRaisesRegex(ValueError, 'no longer active'):
-            app.action('skill_import_report', {'run': run, 'found': []})
-        # Looking again after signing in, while still signed out: no turn at all, and the list says so.
-        again = app.action('skill_import_find', {'token': view['token'], 'sites': ['chatgpt']})
+        self.assertEqual(status['finding']['status'], 'ok')
+        self.assertEqual(status['items'][0]['why'], 'Many follow-up cards')
+
+    def test_nothing_found_says_where_it_looked_and_starts_no_turn(self):
+        tp, a, app = self.app()
+        app.skills_read = lambda sites: {'claude': {'state': 'ok', 'where': a.SKILLS_PAGES['claude'], 'skills': [],
+                                                    'detail': 'none you made or uploaded yourself'},
+                                         'chatgpt': {'state': 'signed_out', 'where': a.SKILLS_PAGES['chatgpt']}}
+        view = app.action('skill_import_find', {})  # no source picked: both, as before
+        runner = tp.Runner('admitted')
         self.assertEqual(app.profile_step(runner), 'ok')
-        self.assertEqual(len(runner.requests), 2)  # no new turn started
-        status = app.action('skill_import_status', {'token': again['token']})
-        self.assertEqual((status['finding']['status'], status['browser']['chatgpt']), ('ok', 'signed_out'))
-        # Signed in now: a turn for just ChatGPT, with where its skills live.
-        app.skills_accounts = lambda sites: {'chatgpt': 'ok'}
+        self.assertEqual(runner.requests, [])
+        status = app.action('skill_import_status', {'token': view['token']})
+        shown = {x['key']: x for x in status['sources']}
+        self.assertEqual((shown['claude']['state'], shown['claude']['where'], shown['claude']['detail']),
+                         ('done', 'https://claude.ai/customize/skills', 'none you made or uploaded yourself'))
+        self.assertEqual(shown['chatgpt']['state'], 'signed_out')
+        self.assertEqual((status['finding']['status'], status['browser']), ('ok', {'claude': 'ok', 'chatgpt': 'signed_out'}))
+        # Signed in since: a look in just ChatGPT, on the same list.
+        app.skills_read = lambda sites: {'chatgpt': {'state': 'ok', 'where': a.SKILLS_PAGES['chatgpt'], 'skills': [
+            {'name': 'notes', 'description': 'Keep notes.', 'zip': skill_zip('notes', 'Keep short notes of every customer call, with the next step.'), 'url': a.SKILLS_PAGES['chatgpt']}]}}
         app.action('skill_import_find', {'token': view['token'], 'sites': ['chatgpt']})
         runner = tp.Runner('admitted')
         app.profile_step(runner)
-        message = runner.requests[0]['message']
-        self.assertIn('https://chatgpt.com/skills', message)
-        self.assertIn('/backend-api/hazelnuts', message)
-        self.assertNotIn('claude.ai/customize', message)
-        self.assertNotIn('Skills found on this computer', message)
+        self.assertIn('chatgpt:account:notes', runner.requests[0]['message'])
+
+    def test_read_opens_the_skills_page_never_the_home_page_and_closes_it(self):
+        tp, a, app = self.app()
+        opened, closed = [], []
+
+        class Cdp:
+            CdpError = RuntimeError
+
+            @staticmethod
+            def open_tab(base, url):
+                opened.append(url)
+                return 'tab' + str(len(opened))
+
+            @staticmethod
+            def evaluate(base, tab, fn, timeout_ms=0):
+                if 'readyState' in fn:
+                    return ('chatgpt.com' if tab == 'tab1' else 'claude.ai') + ' complete'
+                return {'state': 'ok', 'skills': [], 'total': 3, 'failed': 0}
+
+            @staticmethod
+            def close_tab(base, tab):
+                closed.append(tab)
+        old = a.browser_login.browser_cdp, a.time.sleep
+        a.browser_login.browser_cdp, a.time.sleep = Cdp, lambda s: None
+        self.addCleanup(lambda: (setattr(a.browser_login, 'browser_cdp', old[0]), setattr(a.time, 'sleep', old[1])))
+        app.config['browser_cdp_url'] = 'http://127.0.0.1:18800'
+        got = app.skills_read(['chatgpt'])
+        self.assertEqual(opened, ['https://chatgpt.com/skills?collection=installed'])
+        self.assertEqual(closed, ['tab1'])
+        self.assertEqual(got['chatgpt'], {'where': 'https://chatgpt.com/skills?collection=installed', 'state': 'ok', 'skills': [],
+                                          'detail': 'none you made or uploaded yourself'})
 
 
 class FindPrompt(unittest.TestCase):
@@ -362,9 +413,16 @@ class FindPrompt(unittest.TestCase):
         text = assistant.skills_find_prompt('r' * 32, {'token': 't', 'items': items, 'cards': ['c' * 200] * 40, 'sources': ['gmail'], 'skills': []})
         self.assertLess(len(text), 20000)
         self.assertIn('assistant_signals action skills_found', text)
-        self.assertIn('never return, write down or report it', text)  # ChatGPT's session token stays in the page
-        self.assertIn('profile "openclaw"', text)
         self.assertIn('more', text)
+
+    def test_readers_are_read_only_and_keep_the_token_in_the_page(self):
+        import assistant
+        for site, js in assistant.SKILLS_READ.items():
+            self.assertNotIn("method: 'POST'", js)
+            self.assertNotIn('delete', js.lower())
+        self.assertIn('/export', assistant.SKILLS_READ['chatgpt'])
+        self.assertIn("source === 'personal'", assistant.SKILLS_READ['claude'])
+        self.assertNotIn('accessToken', assistant.SKILLS_READ['chatgpt'].split('return {state')[-1])
 
 
 if __name__ == '__main__':

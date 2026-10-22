@@ -338,11 +338,11 @@ class Skills:
 
     # -- importing from Claude and ChatGPT (Importer)
     def import_find(self, token=None, sites=None):
-        """Find my skills: what is on this computer, listed now; the agent's turn adds the owner's claude.ai and
-        chatgpt.com skills and marks the ones worth importing. With `token` and `sites` (after the owner signed in to
-        one of them): the same list, and a turn that looks in just those accounts."""
-        if token:
-            sites = [s for s in (sites if isinstance(sites, list) else []) if s in IMPORT_FROM]
+        """Find my skills: what is on this computer, listed now; the service then reads the owner's skills in the
+        claude.ai or chatgpt.com account they picked (`sites`, both when none) and a turn marks the ones worth importing.
+        With `token` (after the owner signed in to one of them): the same list, looking again in just those accounts."""
+        sites, again = [s for s in (sites if isinstance(sites, list) else []) if s in IMPORT_FROM], bool(token)
+        if again:
             if not sites:
                 raise ValueError('Which account?')
             scan = self.importer.scan(token)
@@ -351,12 +351,12 @@ class Skills:
             items = list(scan['items'].values())
         else:
             items, errors = self.importer.find()
+            if sites:  # From ChatGPT: only what came from there, also on this computer
+                items = [i for i in items if i['public']['from'] in sites]
             token = self.importer.keep(items, errors)
         if self.finder:
             try:
-                run = self.finder(token, [{'key': i['public']['key'], 'name': i['public']['name'], 'description': i['public']['description'][:200],
-                                           'group': i['public']['group'], 'blocked': bool(i['public']['blocked']),
-                                           'here': bool(i['public']['duplicate'])} for i in items], sites)
+                run = self.finder(token, self.importer.brief(items), sites or None, more=again)
             except (ValueError, OSError) as error:
                 LOG.warning('skills find turn error=%s', type(error).__name__)
                 run = None
@@ -365,7 +365,7 @@ class Skills:
                     found = self.importer.scans[token]
                     found['finding'] = {'run_id': run, 'status': 'running'}
                     for site in sites or IMPORT_FROM:
-                        found['browser'].pop(site, None)  # checked again by this turn
+                        found['browser'].pop(site, None)  # checked again by this run
                         found['looked'][site] = 'starting'
         return self.importer.view(token)
 
@@ -1392,6 +1392,13 @@ class Importer:
                                  'browser': {}, 'looked': {}}
         return token
 
+    @staticmethod
+    def brief(items):
+        """The listed skills as the Find my skills turn reads them."""
+        return [{'key': i['public']['key'], 'name': i['public']['name'], 'description': i['public']['description'][:200],
+                 'group': i['public']['group'], 'blocked': bool(i['public']['blocked']), 'here': bool(i['public']['duplicate'])}
+                for i in items]
+
     def scan(self, token):
         with self.lock:
             found = self.scans.get(str(token or ''))
@@ -1408,7 +1415,8 @@ class Importer:
 
     def sources(self, found, items):
         """Where Find my skills looks, each with its own state: 'starting' (the turn hasn't opened the browser yet),
-        'looking', 'done', 'error', 'signed_out' or 'unavailable', and how many skills came from there. [] for an upload."""
+        'looking', 'done', 'error', 'signed_out' or 'unavailable', how many skills came from there, and the page it read
+        (`where`) with what went wrong there (`detail`), so a miss says exactly where it looked. [] for an upload."""
         looked = found.get('looked') or {}
         if not found['finding'] and not looked:
             return []
@@ -1417,7 +1425,8 @@ class Importer:
             if site in looked:
                 browser = found['browser'].get(site)
                 out.append({'key': site, 'state': browser if browser in ('signed_out', 'unavailable') else looked[site],
-                            'found': sum(1 for p in items if p['from'] == site and ':account:' in p['key'])})
+                            'found': sum(1 for p in items if p['from'] == site and ':account:' in p['key']),
+                            **({k: v for k, v in (found.get('where') or {}).get(site, {}).items() if k in ('where', 'detail')})})
         return out
 
     # -- listing
@@ -1654,12 +1663,16 @@ class Importer:
             scan['looked'] = {k: 'done' if v in ('starting', 'looking') else v for k, v in scan.get('looked', {}).items()}
         return {'added': added}
 
-    def accounts(self, token, states):
+    def accounts(self, token, states, where=None):
         """The service's own look, before the turn: is the owner signed in to claude.ai and chatgpt.com in this
-        Machine's browser ('ok', 'signed_out' or 'unavailable')? So the list can offer a sign-in right away."""
+        Machine's browser ('ok', 'signed_out' or 'unavailable')? So the list can offer a sign-in right away. `where`:
+        per site, the page it read and what went wrong there, both shown to the owner."""
         with self.lock:
             scan = self.scans.get(token)
             if scan:
+                for site, seen in (where or {}).items():
+                    if site in IMPORT_FROM and isinstance(seen, dict):
+                        scan.setdefault('where', {})[site] = {k: one_line(seen.get(k), 160) for k in ('where', 'detail') if seen.get(k)}
                 scan['browser'].update({k: v for k, v in (states or {}).items() if k in IMPORT_FROM and v in ('ok', 'signed_out', 'unavailable')})
                 looked = scan.setdefault('looked', {})
                 for site in looked:  # the turn has the browser now
