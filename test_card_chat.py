@@ -168,6 +168,21 @@ class CardChat(unittest.TestCase):
         self.assertEqual([(i['kind'], i['text']) for i in agent], [('event', 'Handed to Codex'), ('you', 'Did it check shops?'), ('agent', 'No, it checked nothing.')])
         self.assertEqual((agent[1]['to'], agent[2]['files'], agent[2]['nothing_sent']), ('Codex', ['summary.md'], False))
 
+    def test_each_turn_of_a_coding_agent_gets_its_answer(self):
+        import agent_jobs
+        answers = [{'at': '2026-01-01T10:00:30+00:00', 'summary': 'Shorter now.', 'files': []},
+                   {'at': '2026-01-01T10:09:00+00:00', 'summary': 'It checked no shops.', 'files': ['summary.md']}]
+        with self.store.connect() as db:
+            db.executescript(agent_jobs.SCHEMA)
+            db.execute("INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,asks,summary,answers,created_at,updated_at) "
+                       "VALUES('aj_2',?,'claude','local','result','b',?,'It checked no shops.',?,'2026-01-01T10:00:00+00:00','2026-01-01T10:09:00+00:00')",
+                       (self.sid, json.dumps([{'at': '2026-01-01T10:00:10+00:00', 'text': 'Make it shorter'}, {'at': '2026-01-01T10:08:00+00:00', 'text': 'Shops?'}]), json.dumps(answers)))
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, self.sid)
+        agent = [(i['kind'], i['text']) for i in sorted(owner, key=lambda i: i['at']) if i.get('to') or i['kind'] == 'agent' or i.get('text', '').startswith('Handed')]
+        # the first message follows the handoff at once: its bubble says it, no separate event
+        self.assertEqual(agent, [('you', 'Make it shorter'), ('agent', 'Shorter now.'), ('you', 'Shops?'), ('agent', 'It checked no shops.')])
+
     def test_card_chat_reads_the_cards_session_with_its_own_notes(self):
         with self.gateway({}):
             empty = self.app.card_chat(self.sid)

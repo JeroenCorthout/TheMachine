@@ -10955,23 +10955,30 @@ class App:
                                                        'at': chat_ms(r['started_at'])})
         # Work handed to a coding agent (Hand to Claude Code / Codex): when it went, each change asked of it, and what came back
         jobs = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_jobs'").fetchone()  # only once agents are set up
-        for r in db.execute('SELECT id,tool,status,summary,asks,files,created_at,updated_at,finished_at FROM agent_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)) if jobs else []:
-            name = CHAT_AGENTS.get(r['tool'], str(r['tool']).capitalize())
-            owner.append({'kind': 'event', 'text': 'Handed to ' + name, 'mine': True, 'at': chat_ms(r['created_at'])})
-            try:
-                asks, files = json.loads(r['asks'] or '[]'), json.loads(r['files'] or '[]')
-            except ValueError:
-                asks, files = [], []
-            for ask in asks if isinstance(asks, list) else []:
-                if isinstance(ask, dict) and str(ask.get('text') or '').strip():
-                    owner.append({'kind': 'you', 'text': clamp(str(ask['text']), 5000), 'via': 'agent', 'to': name, 'at': chat_ms(ask.get('at'))})
-            end = chat_ms(r['finished_at'] or r['updated_at'])
-            if r['status'] == 'result' and str(r['summary'] or '').strip():
-                files = [str(f['path']) for f in files if isinstance(f, dict) and isinstance(f.get('path'), str)][:10] if isinstance(files, list) else []
-                text, quiet = chat_agent_text(r['summary'], files)
-                owner.append({'kind': 'agent', 'id': r['id'], 'name': name, 'text': text, 'files': files, 'nothing_sent': quiet, 'at': end})
-            elif r['status'] in ('failed', 'cancelled'):
-                owner.append({'kind': 'event', 'text': f"{name} {'stopped' if r['status'] == 'failed' else 'cancelled'}", 'at': end})
+        for r in db.execute('SELECT * FROM agent_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)) if jobs else []:
+            name, r = CHAT_AGENTS.get(r['tool'], str(r['tool']).capitalize()), dict(r)
+            def listed(key):
+                try:
+                    found = json.loads(r.get(key) or '[]')
+                except ValueError:
+                    return []
+                return [x for x in found if isinstance(x, dict)] if isinstance(found, list) else []
+            asks = [x for x in listed('asks') if str(x.get('text') or '').strip()]
+            # The handoff is an event; when a message to the agent follows at once, its bubble ("To Codex") says it instead
+            if not (asks and 0 <= chat_ms(asks[0].get('at')) - chat_ms(r['created_at']) < 120000):
+                owner.append({'kind': 'event', 'text': 'Handed to ' + name, 'mine': True, 'at': chat_ms(r['created_at'])})
+            for ask in asks:
+                owner.append({'kind': 'you', 'text': clamp(str(ask['text']), 5000), 'via': 'agent', 'to': name, 'at': chat_ms(ask.get('at'))})
+            # Each turn's answer (jobs from before answers were kept have only their latest, the summary)
+            answers = [x for x in listed('answers') if str(x.get('summary') or '').strip()]
+            if not answers and r['status'] == 'result' and str(r['summary'] or '').strip():
+                answers = [{'summary': r['summary'], 'files': [f.get('path') for f in listed('files')], 'at': r['finished_at'] or r['updated_at']}]
+            for answer in answers:
+                files = [str(f) for f in answer.get('files') or [] if isinstance(f, str)][:10]
+                text, quiet = chat_agent_text(answer['summary'], files)
+                owner.append({'kind': 'agent', 'id': r['id'], 'name': name, 'text': text, 'files': files, 'nothing_sent': quiet, 'at': chat_ms(answer.get('at'))})
+            if r['status'] in ('failed', 'cancelled'):
+                owner.append({'kind': 'event', 'text': f"{name} {'stopped' if r['status'] == 'failed' else 'cancelled'}", 'at': chat_ms(r['finished_at'] or r['updated_at'])})
         for i in owner:
             i.pop('choice', None)
         return owner, results

@@ -63,7 +63,7 @@ DERIVED = {'suggestions': ('title', 'body', 'handled_hint'), 'feedback_prompts':
            'draft_edits': ('before_subject', 'before_body', 'after_subject', 'after_body'),
            'graph_unnamed': ('titles',), 'preparation_calls': ('params', 'result'), 'analyses': ('summary',),
            'fleet_in': ('question', 'draft'), 'fleet_out': ('question', 'answer'), 'network_replies': ('body',),
-           'agent_jobs': ('brief', 'asks', 'progress', 'summary', 'diff', 'files', 'error')}
+           'agent_jobs': ('brief', 'asks', 'progress', 'summary', 'diff', 'files', 'error', 'answers')}
 DERIVED_JSON = (('action_jobs', 'payload', frozenset({'kind'})), ('suggestions', 'next_action', frozenset({'kind'})),
                 ('suggestions', 'outcome', frozenset({'state'})))
 # The phone's notifications reach the app through android_inbox, written by the Gateway's plugin

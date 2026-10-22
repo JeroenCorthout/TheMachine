@@ -919,7 +919,7 @@ body.chat-open main{max-width:calc(var(--measure) + 340px);padding-bottom:0;marg
 .chat-main{display:flex;flex-direction:column;min-height:calc(100dvh - 40px);font-size:var(--chat-body);line-height:1.45}
 .chat-head{position:sticky;top:0;z-index:6;display:flex;align-items:flex-start;gap:4px;padding:10px 0;background:var(--bg)}
 /* A soft edge under the header, so what scrolls under it fades instead of looking cut */
-.chat-head::after{content:'';position:absolute;left:0;right:0;top:100%;height:28px;background:linear-gradient(var(--bg),color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
+.chat-head::after{content:'';position:absolute;left:0;right:0;top:100%;height:16px;background:linear-gradient(var(--bg) 35%,color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 .chat-back,.chat-menu>summary{display:grid;place-items:center;flex:none;width:36px;height:36px;margin-top:-5px;border-radius:50%;color:var(--text);text-decoration:none;cursor:pointer}
 .chat-back:hover,.chat-menu>summary:hover,.chat-menu[open]>summary{background:var(--sunken)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
 .chat-title{flex:1;min-width:0;margin:2px 0 0;font:600 1rem/1.35 var(--sans);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
@@ -2118,12 +2118,12 @@ function chatParts(s){const t=document.createElement('template');t.innerHTML=sug
  return {lead:html(lead),send:!!lead?.dataset.smart,back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,3).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
   status,intro:body?.innerHTML||'',ask:html(card?.querySelector('.ask-line')),agent:html(card?.querySelector('.agent-job')),
   links:card?.querySelector('.foot-links')?.innerHTML||'',panel}}
-// What the card asks of the owner, in one plain line, when its text doesn't already ask: from the title's "X needs your
-// call on Y". An offer the card ends with ("I can check … and draft …") becomes a suggestion instead.
+// What the card asks of the owner, in one plain line, when its text doesn't already ask: the question its run wrote,
+// else from the title's "X needs your call on Y". An offer the card ends with ("I can check … and draft …") becomes a suggestion instead.
 const CHAT_OFFER=/(?:^|\s)((?:I can|I could|I'll|I will|Happy to)\s[^.!?]*[.!?]?)\s*$/;
 function chatQuestion(s){const body=String(s.body||'').trim(),offer=CHAT_OFFER.exec(body),rest=offer?body.slice(0,offer.index).trim().replace(/[;,:]$/,'.'):body;
  const m=/^.+?\s(?:needs|wants|is waiting (?:on|for)|awaits)\s+your\s+(call|decision|go-ahead|approval|ok|answer|input|help)\s+(?:on|about|for|with)\s+(.+?)[.?!]?$/i.exec(s.title||'');
- const ask=/\?\s*$/.test(rest)?'':m?`Your ${/answer/i.test(m[1])?'answer':/input|help/i.test(m[1])?'input':'call'}: ${m[2]}?`:/^(?:Decide|Choose|Pick|Approve|Confirm)\b/.test(s.title||'')?String(s.title).replace(/[.?!]?$/,'?'):'';
+ const own=s.preparation_questions?.[0]?.question,ask=/\?\s*$/.test(rest)?'':own?String(own).trim().replace(/[.?!]?$/,'?'):m?`Your ${/answer/i.test(m[1])?'answer':/input|help/i.test(m[1])?'input':'call'}: ${m[2]}?`:/^(?:Decide|Choose|Pick|Approve|Confirm)\b/.test(s.title||'')?String(s.title).replace(/[.?!]?$/,'?'):'';
  return {ask,offer:ask&&offer?offer[1]:'',body:ask&&offer?rest:body}}
 const chatOpenSet=new Set();  // what is unfolded (steps, long messages, drafts, diffs, repeated taps), kept through a poll
 const chatFold=(key,cls,summary,body)=>`<details class="${cls}" data-fold-key="${esc(key)}"${chatOpenSet.has(key)?' open':''}><summary>${summary}</summary>${body}</details>`;
@@ -2140,7 +2140,7 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  if(s&&!items.some(i=>i.kind==='reply'))items.push({kind:'card',at:Date.parse(s.created_at)||0});
  // A coding agent's job that is still going or waits on you: its live block from the card, with its buttons
  const live=s?.agent_job&&p.agent?s.agent_job:null;if(live)items.push({kind:'agentlive',at:Date.parse(live.updated_at||live.started_at)||Date.now()});
- if(live)for(let n=items.length-1;n>=0;n--)if(items[n].kind==='agent'&&items[n].id===live.id)items.splice(n,1);
+ if(live)for(let n=items.length-1;n>=0;n--)if(items[n].kind==='agent'&&items[n].id===live.id){items.splice(n,1);break}  // its latest answer
  items.sort((a,b)=>(a.at||0)-(b.at||0));
  // The same tap again and again (five snoozes in a row) is one line with a count, unfolded for the times
  const rows=[];for(const i of items){const l=rows.at(-1);if(i.kind==='event'&&l?.kind==='event'&&l.text===i.text&&!!l.mine===!!i.mine)l.times.push(i.at),l.at=i.at;else rows.push(i.kind==='event'?{...i,times:[i.at]}:i)}

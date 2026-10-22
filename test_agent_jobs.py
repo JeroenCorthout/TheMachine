@@ -295,6 +295,10 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual(args[0], '--resume')
         self.assertNotIn('--name', args)
         self.assertIn('+More', jobs.diff(job['id']))
+        with jobs.connect() as db:  # each turn's answer is kept, for the card's chat
+            answers = json.loads(db.execute('SELECT answers FROM agent_jobs WHERE id=?', (job['id'],)).fetchone()['answers'])
+        self.assertEqual(len(answers), 2)
+        self.assertTrue(all(a['summary'] and a['at'] for a in answers))
 
     def test_claude_jobs_can_use_their_own_config_dir(self):
         other = Path(self.tmp.name) / 'claude-other'
