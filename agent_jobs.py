@@ -568,12 +568,28 @@ class AppServerCodex:
         try:
             send({'jsonrpc': '2.0', 'method': 'initialized'})
             # The owner's own ~/.codex config decides model, sandbox and approvals: nothing is passed to change them.
-            thread = call('thread/resume', {'threadId': resume}) if resume else call('thread/start', {'cwd': str(folder)})
-            thread_id = str(((thread.get('thread') or {}).get('id')) or resume or '')[:120]
+            forked = False
+            if resume:
+                try:
+                    thread = call('thread/resume', {'threadId': resume})
+                except ValueError as error:
+                    if 'active writer' not in str(error):
+                        raise
+                    # The thread is open in the Codex app, which holds it while it is: carry on in a copy of it
+                    # (thread/fork copies its history into a new thread, which shows in the app too).
+                    try:
+                        thread, forked = call('thread/fork', {'threadId': resume}), True
+                    except ValueError:
+                        raise Stopped('busy', 'This job is open in the Codex app. Carry on there, or close it there and ask again.') from None
+            else:
+                thread = call('thread/start', {'cwd': str(folder)})
+            thread_id = str(((thread.get('thread') or {}).get('id')) or ('' if forked else resume) or '')[:120]
             if not thread_id:
                 raise Stopped('failed', 'Codex did not start a thread')
             on_session(thread_id)
-            if not resume:
+            if forked:
+                on_progress('It was open in the Codex app, so this goes on in a copy of the thread there')
+            if not resume or forked:
                 name = job_name(job)
                 call('thread/name/set', {'threadId': thread_id, 'name': name})
             call('turn/start', {'threadId': thread_id, 'input': [{'type': 'text', 'text': prompt}]})

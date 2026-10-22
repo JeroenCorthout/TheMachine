@@ -99,6 +99,7 @@ open('summary.md', 'w').write('Summary of the card\n' + ('More\n' if '--resume' 
 print(json.dumps({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'Wrote summary.md. See https://example.com/x', 'session_id': session}))
 """
 THREAD = '01a16539-9d4a-7d83-9620-9203de5acb75'
+FORK = '01a16590-3629-7943-9fcb-56c1b3647f45'
 FAKE_CODEX = r"""#!PYTHON
 import json, os, sys
 args = sys.argv[1:]
@@ -120,6 +121,12 @@ if args[:1] == ['app-server']:
         method, params = m['method'], m.get('params') or {}
         if method == 'thread/start':
             out({'id': m['id'], 'result': {'thread': {'id': 'THREAD'}}})
+        elif method == 'thread/resume' and os.environ.get('AJ_WRITER'):  # open in the Codex app
+            out({'id': m['id'], 'error': {'code': -32600, 'message': 'thread ' + params['threadId'] + ' already has an active writer'}})
+        elif method == 'thread/fork' and os.environ.get('AJ_WRITER') == 'nofork':
+            out({'id': m['id'], 'error': {'code': -32600, 'message': 'no'}})
+        elif method == 'thread/fork':
+            out({'id': m['id'], 'result': {'thread': {'id': 'FORK_ID'}}})
         elif method == 'thread/resume':
             out({'id': m['id'], 'result': {'thread': {'id': params['threadId']}}})
         elif method == 'turn/start':
@@ -155,7 +162,7 @@ print(json.dumps({'type': 'item.started', 'item': {'type': 'command_execution', 
 open('out.txt', 'w').write('hi')
 print(json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'Wrote out.txt.'}}), flush=True)
 print(json.dumps({'type': 'turn.completed', 'usage': {}}))
-""".replace('THREAD', THREAD)
+""".replace('FORK_ID', FORK).replace('THREAD', THREAD)
 
 
 def wait(jobs, job_id, done=('result', 'failed', 'cancelled'), seconds=20):
@@ -383,6 +390,27 @@ class AgentJobs(unittest.TestCase):
         wait(jobs, jobs.follow_up(job['id'], 'Again')['id'])
         resume = [c for c in self.calls('codex')[1]['calls'] if c.get('method') == 'thread/resume']
         self.assertEqual(resume[0]['params']['threadId'], THREAD)
+
+    def test_a_follow_up_while_the_thread_is_open_in_the_codex_app_goes_on_in_a_copy(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt')['id'])
+        with patch.dict(os.environ, {'AJ_WRITER': '1'}):
+            job = wait(jobs, jobs.follow_up(job['id'], 'Again')['id'])
+        self.assertEqual(job['status'], 'result', job)
+        self.assertEqual(job['url'], 'codex://threads/' + FORK)  # the card opens the copy now
+        calls = self.calls('codex')[1]['calls']
+        self.assertIn({'method': 'thread/fork', 'params': {'threadId': THREAD}}, calls)
+        self.assertIn({'method': 'thread/name/set', 'params': {'threadId': FORK, 'name': 'Sum up the quarterly numbers'}}, calls)
+        self.assertEqual([c['params']['threadId'] for c in calls if c.get('method') == 'turn/start'], [FORK])
+
+    def test_when_it_cannot_go_on_the_card_says_to_carry_on_in_codex(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt')['id'])
+        with patch.dict(os.environ, {'AJ_WRITER': 'nofork'}):
+            job = wait(jobs, jobs.follow_up(job['id'], 'Again')['id'])
+        self.assertEqual((job['status'], job['error_kind']), ('failed', 'busy'))
+        self.assertIn('open in the Codex app', job['error'])
+        self.assertEqual((job['url'], job['app']), ('codex://threads/' + THREAD, 'Open in Codex'))
 
     def test_codex_falls_back_to_exec_without_the_app_server(self):
         with patch.dict(os.environ, {'AJ_NO_APPSERVER': '1'}):

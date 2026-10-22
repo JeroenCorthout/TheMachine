@@ -2196,6 +2196,7 @@ function agentBlock(s){const j=s.agent_job;if(!j||['set_aside','again'].includes
  if(j.status==='sent')return`<div class="agent-job"><p class="note">Sent to ${who}${where}. Starting soon.</p>${agentCancel(j)}</div>`;
  if(j.status==='waiting')return`<div class="agent-job"><p class="note">Sent. Waiting for ${esc(j.device||'your computer')}. ${agentLink(j)}</p>${agentCancel(j)}</div>`;
  if(j.status==='running')return`<div class="agent-job"><p class="note">${who} is working on it${where} · <span class="elapsed" data-since="${esc(since)}">${elapsed(since)}</span> ${agentLink(j)}</p>${j.progress?`<p class="muted agent-progress">${esc(j.progress)}</p>`:''}${agentCancel(j)}</div>`;
+ if(j.status==='failed'&&j.error_kind==='busy')return`<div class="agent-job"><p class="note">${esc(j.error)} ${agentLink(j)}</p>${closed(s)?'':agentTools2(s,j,true)}</div>`;
  if(j.status==='failed')return`<div class="agent-job"><p class="note failed">${who} stopped: ${esc(j.error||'it did not finish')} ${agentLink(j)}</p>${closed(s)?'':agentTools2(s,j,true)}</div>`;
  if(j.status==='cancelled')return closed(s)?'':`<div class="agent-job"><p class="note">${who}: cancelled.</p></div>`;
  const line=agentLine(j.summary),rest=String(j.summary||'').trim().length>line.length+2;
