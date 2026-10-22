@@ -137,7 +137,8 @@ class ReviewWorker(unittest.TestCase):
 
     def test_disabled_by_default(self):
         self.app.config.pop('review_worker')
-        self.assertIsNone(self.step(Runner(),T))
+        with patch.object(a,'has_model',return_value=False):  # no first look either (test_first_look)
+            self.assertIsNone(self.step(Runner(),T))
 
     def test_terminal_failure_retains_category_phase_and_saved_claim(self):
         self.step(Runner('admitted'),T)

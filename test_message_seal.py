@@ -504,7 +504,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
         """A new table or column whose name says it may hold message text has to be sealed (message_seal.DERIVED) or
         listed here with the reason it is not a message."""
         not_messages = {
-            'events.content_hash': 'a hash', 'facts.text': 'a learned fact', 'rule_changes.text': 'a learned rule',
+            'events.content_hash': 'a hash', 'milestones.detail': 'a count or a first-look state (first_cards_report)', 'facts.text': 'a learned fact', 'rule_changes.text': 'a learned rule',
             'decisions.feedback': "the owner's feedback", 'decision_annotations.reason': 'a status reason',
             'profile_runs.draft': 'profile notes (USER.md)', 'skills.body': 'a skill', 'skills.description': 'a skill',
             'skills.note': 'a skill', 'skill_hints.summary': 'a skill hint', 'tool_approval_proposals.title': 'a proposal',

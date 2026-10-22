@@ -603,10 +603,94 @@ PREVIEW_DAYS = 7  # what `assistant preview` reviews on a new install
 GRAPH_CHECK_SECONDS = 60  # how often the graph worker looks for new organisation profiles
 # The first look (App.first_look): starts once no new signal came in for this long, tried at most this often, this far apart
 FIRST_LOOK_SETTLE_SECONDS, FIRST_LOOK_TRIES, FIRST_LOOK_RETRY_SECONDS = 180, 3, 1800
+# Before it, a quick first look: the newest signals only, as soon as the first page of mail is in, so the first cards come
+# within minutes. A failed try is retried after this long, doubling per failure up to FIRST_LOOK_RETRY_SECONDS.
+QUICK_LOOK_HOURS, QUICK_LOOK_SIGNALS, FIRST_LOOK_RETRY_MIN_SECONDS = 48, 20, 120
 # The first profile on an install without the interactive installer (hosted): tries, and the wait between them.
 FIRST_PROFILE_TRIES, FIRST_PROFILE_RETRY_SECONDS = 3, 6 * 3600
 PREPARATION_INTERRUPTED_TRIES = 4  # starts of one card's preparation that a Gateway restart may cut off before it counts
 SYSTEM_SERVICES = {'gateway'}  # The Machine's own logs: not a source of the owner's
+
+
+def first_look_spent(runs):
+    """Tried enough: FIRST_LOOK_TRIES tries; a run stopped from outside (a Gateway restart) is not a try, up to twice as many runs in all."""
+    return sum(r['status'] not in ('aborted', 'lost') for r in runs) >= FIRST_LOOK_TRIES or len(runs) >= 2 * FIRST_LOOK_TRIES
+
+
+def first_look_retry_at(runs, current):
+    """When a first look that failed last may be tried again (None: now). A few minutes after the first failure, doubling
+    per failure in a row up to FIRST_LOOK_RETRY_SECONDS; a rate limit waits that long at once."""
+    if not runs or runs[-1]['status'] == 'ok' or not runs[-1]['finished_at']:
+        return None
+    failed = 0
+    for run in reversed(runs):
+        if run['status'] == 'ok':
+            break
+        failed += 1
+    wait = FIRST_LOOK_RETRY_SECONDS if runs[-1].get('error') == 'rate_limited' else min(
+        FIRST_LOOK_RETRY_MIN_SECONDS * 2 ** (failed - 1), FIRST_LOOK_RETRY_SECONDS)
+    at = dt.datetime.fromisoformat(runs[-1]['finished_at']) + dt.timedelta(seconds=wait)
+    return at.isoformat() if at > current else None
+
+
+FIRST_LOOK_SIGNAL_SECONDS = 12  # about how long a first look takes per signal, for "first cards in about N min"
+FIRST_ACTIONS = {'accept': 'approve', 'other': 'approve', 'prepare_next': 'approve', 'send': 'send', 'complete': 'done', 'reject': 'dismiss'}
+
+
+def first_cards_report(db, accounts=(), current=None):
+    """How fast a new install got to its first useful card, for the hosted health report: per source when its first
+    import was in, each first-look pass (start, end, status, reason, cards), when the first card was shown on the
+    dashboard and when the owner first acted on one (and how). Timestamps, counts and codes only, never content. None
+    on an install from before this was recorded. `db`: a plain sqlite3 connection to the events database."""
+    rows = lambda sql, args=(): db.execute(sql, args).fetchall()
+    if not rows("SELECT 1 FROM sqlite_master WHERE type='table' AND name='milestones'"):
+        return None
+    marks = {name: (at, detail) for name, at, detail in rows('SELECT name,at,detail FROM milestones')}
+    since = (marks.get('tracking_since') or ('',))[0]
+    current = current or dt.datetime.fromisoformat(now())
+    out = {'since': since, 'sources': []}
+    for account in accounts:
+        if account.get('service') in SYSTEM_SERVICES:
+            continue
+        page, done = marks.get('first_page:' + account['id']), marks.get('first_import:' + account['id'])
+        out['sources'].append({'service': str(account.get('service', 'gmail'))[:40], 'first_page_at': page and page[0], 'first_import_at': done and done[0]})
+    runs = rows("SELECT run_id,status,started_at,finished_at,error,window_hours,planned FROM review_runs WHERE preview=1 AND auto=1 ORDER BY started_at")
+    for name, part in (('quick', [r for r in runs if r[5]]), ('full', [r for r in runs if not r[5]])):
+        if not part:
+            continue
+        cards = sum(rows('SELECT count(*) FROM suggestions WHERE created_at>=? AND created_at<=?', (r[2], r[3] or current.isoformat()))[0][0] for r in part)
+        out[name] = {'started_at': part[0][2], 'finished_at': part[-1][3], 'status': part[-1][1], 'reason': part[-1][4],
+                     'tries': len(part), 'planned': part[-1][6], 'cards': cards}
+    first = rows('SELECT min(created_at),count(*) FROM suggestions')[0]
+    out['cards'] = first[1]
+    out['first_card_at'] = first[0] if first[0] and first[0] >= since else None
+    shown = marks.get('first_card_shown')
+    out['first_card_shown_at'] = shown and shown[0]
+    acted = rows("SELECT choice,created_at FROM decisions WHERE source IN ('dashboard','telegram') AND created_at>=? AND choice IN ("
+                 + ','.join('?' for _ in FIRST_ACTIONS) + ') ORDER BY created_at LIMIT 1', (since, *FIRST_ACTIONS))
+    out['first_action_at'], out['first_action'] = (acted[0][1], FIRST_ACTIONS[acted[0][0]]) if acted else (None, None)
+    # Where the first look is now, and about when the first cards come
+    try:
+        state = json.loads((marks.get('first_look_state') or (None, 'null'))[1] or 'null')
+    except ValueError:
+        state = None
+    active = next((r for r in reversed(runs) if r[1] in ('starting', 'running', 'recovering')), None)
+    eta = None
+    if active:
+        done = sum(len(json.loads(items)) for (items,) in rows("SELECT items FROM analyses WHERE owner_run=? AND status='complete'", (active[0],)))
+        out['look'] = {'state': 'running', 'quick': bool(active[5]), 'done': done, 'planned': active[6] or 0}
+        eta = max(1, -(-max((active[6] or 0) - done, 1) * FIRST_LOOK_SIGNAL_SECONDS // 60))
+    elif state:
+        out['look'] = {k: state.get(k) for k in ('state', 'why', 'quick', 'waiting', 'retry_at')}
+        if state.get('state') == 'due' or state.get('why') in ('mail', 'settling', 'retry'):
+            eta = 1 + -(-(state.get('waiting') or QUICK_LOOK_SIGNALS) * FIRST_LOOK_SIGNAL_SECONDS // 60)
+            if state.get('why') == 'settling':
+                eta += FIRST_LOOK_SETTLE_SECONDS // 60
+            if state.get('retry_at'):
+                eta += max(0, int((dt.datetime.fromisoformat(state['retry_at']) - current).total_seconds() // 60))
+    if eta and not out['cards']:
+        out['eta_minutes'] = eta
+    return out
 
 
 def main_model():
@@ -2083,6 +2167,13 @@ class Store:
                 db.execute('ALTER TABLE review_runs ADD COLUMN auto INTEGER NOT NULL DEFAULT 0')
             if 'planned' not in worker_columns:  # how many signals the run set out to review, for its progress
                 db.execute('ALTER TABLE review_runs ADD COLUMN planned INTEGER')
+            if 'window_hours' not in worker_columns:  # a quick first look: only this many hours back, at most `budget` signals
+                db.execute('ALTER TABLE review_runs ADD COLUMN window_hours INTEGER')
+                db.execute('ALTER TABLE review_runs ADD COLUMN budget INTEGER')
+            # When setup steps first happened (first import per source, first card shown): timestamps and counts only.
+            # `tracking_since` tells a new install from one that had cards before this was recorded.
+            db.execute('CREATE TABLE IF NOT EXISTS milestones(name TEXT PRIMARY KEY,at TEXT NOT NULL,detail TEXT)')
+            db.execute("INSERT OR IGNORE INTO milestones(name,at) VALUES('tracking_since',?)", (now(),))
             if 'due' not in columns:
                 db.execute('ALTER TABLE suggestions ADD COLUMN due TEXT')
             if 'handled_hint' not in columns:
@@ -2553,6 +2644,44 @@ class Store:
                     events[event['source_id']] = json.loads(encoded(event))
         return list(events.values()), consumed
 
+    def note_first_import(self, db, account, state):
+        """Milestones of a source's first import: its first page in, and the whole import in (its checkpoint leaves
+        bootstrap). Only a source that starts here is timed: one already past its first import keeps no milestone."""
+        row = db.execute('SELECT state FROM checkpoints WHERE account_id=?', (account,)).fetchone()
+        try:
+            before = json.loads(row['state'] or '{}') if row else {}
+        except (TypeError, ValueError):
+            return
+        if before.get('mode') not in ('bootstrap', None) or (before and 'mode' not in before):
+            return  # past its first import (or a plugin's own cursor): not timed
+        db.execute('INSERT OR IGNORE INTO milestones(name,at) VALUES(?,?)', ('first_page:' + account, now()))
+        if (state or {}).get('mode', 'incremental') not in ('bootstrap', 'resync') and not (state or {}).get('page_token'):
+            db.execute('INSERT OR IGNORE INTO milestones(name,at) VALUES(?,?)', ('first_import:' + account, now()))
+
+    def note_first_look(self, db, look):
+        """The first look's last state, for the health report (first_cards_report): kept only when it changed."""
+        detail = encoded({k: look.get(k) for k in ('state', 'why', 'quick', 'waiting', 'retry_at') if look.get(k) is not None}) if look else None
+        row = db.execute("SELECT detail FROM milestones WHERE name='first_look_state'").fetchone()
+        if not row or row['detail'] != detail:
+            db.execute("INSERT OR REPLACE INTO milestones(name,at,detail) VALUES('first_look_state',?,?)", (now(), detail))
+
+    def note_card_shown(self):
+        """The first card the dashboard showed on a new install (one with cards from before this was recorded keeps none)."""
+        if getattr(self, '_card_shown', False):
+            return
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM milestones WHERE name='first_card_shown'").fetchone():
+                self._card_shown = True
+                return
+            since = (db.execute("SELECT at FROM milestones WHERE name='tracking_since'").fetchone() or [''])[0]
+            if db.execute('SELECT 1 FROM suggestions WHERE created_at<?', (since,)).fetchone():
+                self._card_shown = True  # cards from before: not a new install's first
+                return
+            shown = db.execute("SELECT count(*) FROM suggestions WHERE status IN ('pending','accepted','instructions','prepared')").fetchone()[0]
+            if shown:
+                db.execute("INSERT OR IGNORE INTO milestones(name,at,detail) VALUES('first_card_shown',?,?)", (now(), str(shown)))
+                self._card_shown = True
+
     def commit_page(self, account, state, events, record_sync=True, excluded_source_ids=(), android_inbox_ids=()):
         # The page AND its next cursor commit together. A killed fetch replays the page.
         rules = self.exclusions.get(account)
@@ -2593,6 +2722,7 @@ class Store:
                                (*values, account, event['source_id']))
             if record_sync:
                 self.record_sync_activity(db, account, 'success', signals=len(changed))
+                self.note_first_import(db, account, state)
                 db.execute('INSERT INTO checkpoints(account_id,state,last_success,last_sync_signals) VALUES(?,?,?,?) ON CONFLICT(account_id) DO UPDATE SET state=excluded.state,last_success=excluded.last_success,last_sync_signals=excluded.last_sync_signals,error=NULL,failures=0,retry_at=NULL',
                            (account, encoded(state), now(), len(changed)))
             else:
@@ -2757,19 +2887,20 @@ class Store:
                        (now(), (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat(), REVIEW_SESSION_PREFIX))
             if db.execute("SELECT 1 FROM analyses WHERE status='retryable'").fetchone():
                 return {'busy': True}
+            scope = db.execute('SELECT preview,window_hours,budget FROM review_runs WHERE run_id=?', (owner_run,)).fetchone() if owner_run else None
+            budget = (scope and scope['budget']) or RUN_SIGNAL_BUDGET  # a quick first look: fewer
             if owner_run:
                 run_reviews = db.execute('SELECT items,started_at FROM analyses WHERE owner_session=? AND owner_run=?', (owner_session, owner_run)).fetchall()
                 claimed = sum(len(json.loads(r['items'])) for r in run_reviews)
                 started = min((r['started_at'] for r in run_reviews), default=None)
                 elapsed = (dt.datetime.fromisoformat(now()) - dt.datetime.fromisoformat(started)).total_seconds() if started else 0
-                if claimed >= RUN_SIGNAL_BUDGET or elapsed >= 900:
+                if claimed >= budget or elapsed >= 900:
                     return {'events': [], 'analysis_id': None, 'budget_exhausted': True,
-                            'note': f'Catch-up is bounded to {RUN_SIGNAL_BUDGET} signals per heartbeat. Continue on the next existing heartbeat.'}
-                limit = min(int(limit), RUN_SIGNAL_BUDGET - claimed)
-            limit = min(max(int(limit), 1), RUN_SIGNAL_BUDGET)
-            # A preview reviews the last week only; older backlog waits for the regular reviews.
-            since = (dt.datetime.fromisoformat(now()) - dt.timedelta(days=PREVIEW_DAYS)).isoformat() if owner_run and db.execute(
-                'SELECT 1 FROM review_runs WHERE run_id=? AND preview=1', (owner_run,)).fetchone() else ''
+                            'note': f'Catch-up is bounded to {budget} signals per heartbeat. Continue on the next existing heartbeat.'}
+                limit = min(int(limit), budget - claimed)
+            limit = min(max(int(limit), 1), budget)
+            # A preview reviews the last week only (a quick first look: its last hours); older backlog waits for the regular reviews.
+            since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=scope['window_hours'] or PREVIEW_DAYS * 24)).isoformat() if scope and scope['preview'] else ''
             counts = {a: db.execute('SELECT count(*) FROM events WHERE account_id=? AND analyzed_version<version AND deferrals<? AND occurred_at>=?', (a, SET_ASIDE_AFTER, since)).fetchone()[0] for a in accounts}
             quotas = {a: 0 for a in accounts}
             # One slot per nonempty account, then weighted by remaining backlog.
@@ -10617,12 +10748,15 @@ class App:
             # The Machine starts by itself once a model and a source are there.
             with self.store.connect() as db:
                 running = active_preview(db)
-                due = not running and (self.first_look(db) or {}).get('state') == 'due'
+                look = None if running else self.first_look(db)
+                due = (look or {}).get('state') == 'due'
+                if not running:
+                    self.store.note_first_look(db, look)
             if not running and not due:
                 return None
             if due:
                 try:
-                    self.start_preview(auto=True)
+                    self.start_preview(auto=True, quick=bool(look.get('quick')))
                 except ValueError:  # nothing from the last week after all, or another review just started
                     return None
         runner = runner or self.preparation_gateway
@@ -10811,21 +10945,24 @@ class App:
         return {'filling': filling, 'fresh': fresh}
 
     def first_look(self, db, current=None):
-        """The first look: on a new install with reviews still off, one preview of the last week starts by itself
-        once a model and a source are connected and the first import has settled. Read-only like any preview: its
-        cards show on the dashboard, nothing is sent, nothing is prepared, nothing is done in any account; turning
-        reviews on stays the owner's choice. None when it is not (or no longer) for this install, else its state:
-        'due', or 'waiting' with why (model, sources, settling, retry)."""
+        """The first look: on a new install with reviews still off, previews start by itself once a model and a source
+        are connected. First a quick one: the newest signals (QUICK_LOOK_HOURS back, at most QUICK_LOOK_SIGNALS) as soon
+        as the first page of mail is in, so the first cards come within minutes. Then the full one over the last week,
+        once the first import has settled; what the quick one reviewed is not reviewed again, so no card comes twice.
+        Read-only like any preview: its cards show on the dashboard, nothing is sent, nothing is prepared, nothing is
+        done in any account; turning reviews on stays the owner's choice. None when it is not (or no longer) for this
+        install, else its state: 'due' (with `quick` for the quick one), or 'waiting' with why (model, sources,
+        settling, mail, retry)."""
         settings = self.config.get('review_worker') or {}
         if settings.get('enabled') or settings.get('first_look') is False:
             return None
-        runs = db.execute('SELECT status,auto,finished_at FROM review_runs ORDER BY started_at').fetchall()
-        # A run stopped from outside (a Gateway restart) is not a try, up to twice as many runs in all
-        tries = sum(r['status'] not in ('aborted', 'lost') for r in runs)
-        if any(not r['auto'] or r['status'] == 'ok' for r in runs) or tries >= FIRST_LOOK_TRIES or len(runs) >= 2 * FIRST_LOOK_TRIES:
+        runs = [dict(r) for r in db.execute('SELECT status,auto,finished_at,error,window_hours FROM review_runs ORDER BY started_at')]
+        quick_runs, full_runs = [r for r in runs if r['window_hours']], [r for r in runs if not r['window_hours']]
+        if any(not r['auto'] for r in runs) or any(r['status'] == 'ok' for r in full_runs) or first_look_spent(full_runs):
             return None  # reviewed before, or the owner ran their own preview; or tried enough
         if any(r['status'] in ('starting', 'running', 'recovering') for r in runs):
             return None
+        quick_done = any(r['status'] == 'ok' for r in quick_runs) or first_look_spent(quick_runs)
         current = current or dt.datetime.fromisoformat(now())
         sources = [a['id'] for a in self.config.get('accounts', []) if a.get('service') not in SYSTEM_SERVICES]
         since = (current - dt.timedelta(days=PREVIEW_DAYS)).isoformat()
@@ -10836,15 +10973,29 @@ class App:
         mail = self.mail_backfill(db)
         if not has_model(self.config):
             return {**out, 'state': 'waiting', 'why': 'model'}
+        if not quick_done and sources:
+            recent = db.execute(f'SELECT count(*) FROM events WHERE analyzed_version<version AND deferrals<? AND occurred_at>=? AND account_id IN ({marks})',
+                                (SET_ASIDE_AFTER, (current - dt.timedelta(hours=QUICK_LOOK_HOURS)).isoformat(), *sources)).fetchone()[0]
+            # A mailbox still on its first page: its newest mail is what the quick look is for, wait for it
+            first_page = mail['filling'] and not db.execute('SELECT 1 FROM events WHERE account_id IN (' + ','.join('?' for _ in mail['filling'])
+                                                             + ') LIMIT 1', mail['filling']).fetchone()
+            if recent and not first_page:
+                quick = {**out, 'waiting': min(recent, QUICK_LOOK_SIGNALS), 'quick': True, 'hours': QUICK_LOOK_HOURS}
+                retry = first_look_retry_at(runs, current)
+                return {**quick, 'state': 'waiting', 'why': 'retry', 'retry_at': retry} if retry else {**quick, 'state': 'due'}
+            if first_page:
+                return {**out, 'state': 'waiting', 'why': 'mail'}
         if mail['filling'] and (not waiting or newest > (current - dt.timedelta(minutes=settings.get('max_wait_minutes', 60))).isoformat()):
             return {**out, 'state': 'waiting', 'why': 'mail'}
         if not waiting:
-            return {**out, 'state': 'waiting', 'why': 'sources'}
+            # After a quick look that left nothing of the week to review, the first look is done
+            return None if any(r['status'] == 'ok' for r in quick_runs) else {**out, 'state': 'waiting', 'why': 'sources'}
         if (waiting < RUN_SIGNAL_BUDGET and not mail['fresh'] and
                 newest > (current - dt.timedelta(seconds=FIRST_LOOK_SETTLE_SECONDS)).isoformat()):
             return {**out, 'state': 'waiting', 'why': 'settling'}
-        if runs and (runs[-1]['finished_at'] or '') > (current - dt.timedelta(seconds=FIRST_LOOK_RETRY_SECONDS)).isoformat():
-            return {**out, 'state': 'waiting', 'why': 'retry'}
+        retry = first_look_retry_at(runs, current)  # also after a failed quick look: a rate limit holds for both
+        if retry:
+            return {**out, 'state': 'waiting', 'why': 'retry', 'retry_at': retry}
         return {**out, 'state': 'due'}
 
     def review_queue(self, db, current=None):
@@ -10881,14 +11032,16 @@ class App:
                 run['steps'] = review_steps(db, run, self.config.get('agent_db'))
             return {'runs': runs, 'queue': self.review_queue(db), 'first_look': self.first_look(db)}
 
-    def start_preview(self, auto=False):
+    def start_preview(self, auto=False, quick=False):
         """`assistant preview`: one regular review run (same session, prompt and tool) over the last
         week's signals, for a new install with reviews still off. Its cards are shown on the dashboard
         only (see Store.suggest); review_step monitors the run. Config stays as it is."""
         if (self.config.get('review_worker') or {}).get('enabled'):
             raise ValueError('Reviews are already on: new suggestions arrive by themselves. See assistant tasks or the dashboard.')
         accounts = [a['id'] for a in self.config['accounts']]
-        since = (dt.datetime.fromisoformat(now()) - dt.timedelta(days=PREVIEW_DAYS)).isoformat()
+        hours = QUICK_LOOK_HOURS if quick else PREVIEW_DAYS * 24
+        budget = QUICK_LOOK_SIGNALS if quick else RUN_SIGNAL_BUDGET
+        since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=hours)).isoformat()
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             run = db.execute("SELECT run_id,started_at,preview FROM review_runs WHERE status IN ('starting','running','recovering') LIMIT 1").fetchone()
@@ -10902,9 +11055,9 @@ class App:
             if not waiting:
                 raise ValueError(f'No unreviewed signals from the last {PREVIEW_DAYS} days yet. Check assistant sources; the first import can take a few minutes.')
             run_id, started = uuid.uuid4().hex, now()
-            db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at,preview,auto,planned) VALUES(?,'starting',?,?,1,?,?)",
-                       (run_id, started, started, int(auto), min(waiting, RUN_SIGNAL_BUDGET)))
-        return {'run_id': run_id, 'started_at': started, 'waiting': waiting, 'signals': min(waiting, RUN_SIGNAL_BUDGET)}
+            db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at,preview,auto,planned,window_hours,budget) VALUES(?,'starting',?,?,1,?,?,?,?)",
+                       (run_id, started, started, int(auto), min(waiting, budget), QUICK_LOOK_HOURS if quick else None, budget if quick else None))
+        return {'run_id': run_id, 'started_at': started, 'waiting': waiting, 'signals': min(waiting, budget)}
 
     def recap_push(self, message, week):
         """Without Telegram the recap's start goes to the dashboard app as a notification."""
@@ -11494,6 +11647,10 @@ class App:
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
                 elif path.path == '/api/status':
                     self.output(200, app.action('status', {'full': True}))
+                    try:
+                        app.store.note_card_shown()
+                    except sqlite3.Error as error:
+                        LOG.warning('card shown not noted error=%s', type(error).__name__)
                 elif path.path == '/api/merge-diff':
                     args=urllib.parse.parse_qs(path.query)
                     try:

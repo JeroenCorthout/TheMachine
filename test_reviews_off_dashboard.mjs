@@ -8,7 +8,8 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 // the command), and Signal reviews shows one line for it instead of a first-look row next to "No reviews yet".
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 let on=false,manage='https://control.example/setup',cards=[];
-const live=()=>({runs:[],queue:null,first_look:{state:'waiting',why:'sources',days:7}});
+let look={state:'waiting',why:'sources',days:7};
+const live=()=>({runs:[],queue:null,first_look:look});
 const state=()=>({suggestions:cards,promises:[],connectors:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},
  review_runs:[],review_live:live(),reviews_on:on,manage_url:manage});
 const errors=[];
@@ -33,7 +34,13 @@ try{
  const text=await rows.textContent();
  assert.ok(text.includes('Reviews are off.')&&text.includes('first look at your last 7 days')&&text.includes('it starts once a source'),text);
  assert.ok(!(await page.locator('#analyses').textContent()).includes('No reviews yet'));
+ // Suggestions: while the first look is pending it says so, not "All clear"
+ const empty=await page.locator('#suggestions').textContent();
+ assert.ok(empty.includes('A first look at your last 7 days starts soon')&&!empty.includes('All clear'),empty);
  await page.close();
+ look={state:'due',quick:true,hours:48,waiting:20,days:7};page=await open();
+ assert.match(await page.locator('#suggestions').textContent(),/A first look at your last 2 days starts soon.*Starting now/);
+ await page.close();look={state:'waiting',why:'sources',days:7};
  cards=[{id:'s1',title:'Reply to Sam',body:'',status:'pending',scope:'work',created_at:'2026-10-21T10:00:00+00:00',event_ids:[],account_ids:[]}];
  page=await open();  // cards from the first look: the notice says where they came from
  assert.match(await page.locator('#needs-you').textContent(),/Reviews are off: the cards here come from a one-time first look/);

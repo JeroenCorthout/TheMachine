@@ -45,7 +45,7 @@ class FirstLook(unittest.TestCase):
         self.assertEqual(self.state(10)['why'], 'sources')  # The Machine's own log is not a source
         with patch.object(a, 'has_model', return_value=False):
             self.assertEqual(self.state(10)['why'], 'model')
-        self.store.commit_page('work', {}, [signal(f'm{n}') for n in range(30)] + [signal('old', days_ago=20)])
+        self.store.commit_page('work', {}, [signal(f'm{n}', days_ago=3) for n in range(30)] + [signal('old', days_ago=20)])  # nothing for a quick look
         self.assertEqual(self.state()['why'], 'settling')  # signals still coming in
         self.assertEqual(self.state(4), {'state': 'due', 'waiting': 30, 'days': 7})
         runner = Runner('admitted')
@@ -62,7 +62,7 @@ class FirstLook(unittest.TestCase):
         self.assertIsNone(self.app.review_step(Runner()))
 
     def test_a_failed_first_look_is_tried_again_later_at_most_three_times(self):
-        self.store.commit_page('work', {}, [signal('m1')])
+        self.store.commit_page('work', {}, [signal('m1', days_ago=3)])
         for attempt in range(a.FIRST_LOOK_TRIES):
             with self.later(5 + attempt * 40):
                 self.assertEqual(self.app.review_step(Runner('admitted')), 'admitted')
@@ -74,7 +74,7 @@ class FirstLook(unittest.TestCase):
         self.assertEqual(len(self.runs()), a.FIRST_LOOK_TRIES)
 
     def test_a_first_look_a_gateway_restart_cut_off_is_not_a_try(self):
-        self.store.commit_page('work', {}, [signal('m1')])
+        self.store.commit_page('work', {}, [signal('m1', days_ago=3)])
         for attempt in range(2 * a.FIRST_LOOK_TRIES):
             with self.later(5 + attempt * 40):
                 self.assertEqual(self.app.review_step(Runner('admitted')), 'admitted')
