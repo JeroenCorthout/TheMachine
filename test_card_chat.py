@@ -168,20 +168,77 @@ class CardChat(unittest.TestCase):
         self.assertEqual([(i['kind'], i['text']) for i in agent], [('event', 'Handed to Codex'), ('you', 'Did it check shops?'), ('agent', 'No, it checked nothing.')])
         self.assertEqual((agent[1]['to'], agent[2]['files'], agent[2]['nothing_sent']), ('Codex', ['summary.md'], False))
 
+    def agent_turns(self, owner):
+        return [(i['kind'], i['text']) for i in sorted(owner, key=lambda i: i['at']) if i.get('to') or i['kind'] == 'agent' or i.get('text', '').startswith('Handed')]
+
     def test_each_turn_of_a_coding_agent_gets_its_answer(self):
         import agent_jobs
-        answers = [{'at': '2026-01-01T10:00:30+00:00', 'summary': 'Shorter now.', 'files': []},
-                   {'at': '2026-01-01T10:09:00+00:00', 'summary': 'It checked no shops.', 'files': ['summary.md']}]
+        answers = [{'at': '2026-01-01T10:00:05+00:00', 'turn': 1, 'summary': 'Here is the summary.', 'files': []},
+                   {'at': '2026-01-01T10:00:30+00:00', 'turn': 2, 'summary': 'Shorter now.', 'files': []},
+                   {'at': '2026-01-01T10:09:00+00:00', 'turn': 3, 'summary': 'It checked no shops.', 'files': ['summary.md']}]
         with self.store.connect() as db:
             db.executescript(agent_jobs.SCHEMA)
-            db.execute("INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,asks,summary,answers,created_at,updated_at) "
-                       "VALUES('aj_2',?,'claude','local','result','b',?,'It checked no shops.',?,'2026-01-01T10:00:00+00:00','2026-01-01T10:09:00+00:00')",
+            db.execute("INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,asks,summary,answers,turns,created_at,updated_at) "
+                       "VALUES('aj_2',?,'claude','local','result','b',?,'It checked no shops.',?,3,'2026-01-01T10:00:00+00:00','2026-01-01T10:09:00+00:00')",
                        (self.sid, json.dumps([{'at': '2026-01-01T10:00:10+00:00', 'text': 'Make it shorter'}, {'at': '2026-01-01T10:08:00+00:00', 'text': 'Shops?'}]), json.dumps(answers)))
         with self.store.connect() as db:
             owner, _ = self.app.card_chat_service(db, self.sid)
-        agent = [(i['kind'], i['text']) for i in sorted(owner, key=lambda i: i['at']) if i.get('to') or i['kind'] == 'agent' or i.get('text', '').startswith('Handed')]
-        # the first message follows the handoff at once: its bubble says it, no separate event
-        self.assertEqual(agent, [('you', 'Make it shorter'), ('agent', 'Shorter now.'), ('you', 'Shops?'), ('agent', 'It checked no shops.')])
+        # the handoff is the first turn, also when a change follows at once: every message has its own answer
+        self.assertEqual(self.agent_turns(owner), [('event', 'Handed to Claude Code'), ('agent', 'Here is the summary.'), ('you', 'Make it shorter'),
+                                                   ('agent', 'Shorter now.'), ('you', 'Shops?'), ('agent', 'It checked no shops.')])
+
+    def test_an_old_job_reads_each_turns_answer_from_its_transcripts(self):
+        """Jobs from before every answer was kept saved only the latest (the summary): the others come from the job
+        folder's turn-N.jsonl, for Codex (exec and app server) and Claude Code alike, each after its own message."""
+        import agent_jobs
+        folder = Path(self.temp.name) / 'agent-jobs' / 'aj_00000000000000aa'
+        (folder / 'work').mkdir(parents=True)
+        (folder / 'work' / 'summary.md').write_text('two lines')
+        line = lambda *events: '\n'.join(json.dumps(e) for e in events) + '\n'
+        msg = lambda text: {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': text}}
+        (folder / 'turn-1.jsonl').write_text(line({'type': 'thread.started', 'thread_id': 't'}, msg('I’ll read the card first.'),
+                                                  {'type': 'item.completed', 'item': {'type': 'file_change', 'changes': [{'path': str(folder / 'work' / 'summary.md')}]}},
+                                                  msg('Created [summary.md](/home/x/summary.md) with four short lines. Nothing else was changed or sent.'),
+                                                  {'type': 'turn.completed'}))
+        (folder / 'turn-2.jsonl').write_text(line({'method': 'item/completed', 'params': {'item': {'type': 'agentMessage', 'text': 'Shortened `summary.md` to two lines. Only that file was changed.'}}},
+                                                  {'method': 'turn/completed', 'params': {'turn': {'status': 'completed'}}}))
+        (folder / 'turn-3.jsonl').write_text(line(msg('I don’t know that. I read the files and edited `summary.md`; I didn’t check any shops.')))
+        import os
+        for n, at in ((1, '2026-01-01T10:00:20+00:00'), (2, '2026-01-01T10:01:10+00:00'), (3, '2026-01-01T10:20:30+00:00')):
+            stamp = a.chat_ms(at) / 1000
+            os.utime(folder / f'turn-{n}.jsonl', (stamp, stamp))
+        asks = [{'at': '2026-01-01T10:01:00+00:00', 'text': 'Make it two lines shorter'}, {'at': '2026-01-01T10:20:00+00:00', 'text': 'Did it check shops?'}]
+        with self.store.connect() as db:
+            db.executescript(agent_jobs.SCHEMA)
+            db.execute("INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,asks,summary,files,turns,created_at,updated_at,finished_at) "
+                       "VALUES('aj_00000000000000aa',?,'codex','local','result','b',?,?,?,3,'2026-01-01T10:00:00+00:00','2026-01-01T10:20:31+00:00','2026-01-01T10:20:31+00:00')",
+                       (self.sid, json.dumps(asks), 'I don’t know that. I read the files and edited `summary.md`; I didn’t check any shops.', '[{"path": "summary.md", "size": 3}]'))
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, self.sid)
+        self.assertEqual(self.agent_turns(owner), [
+            ('event', 'Handed to Codex'), ('agent', 'Created summary.md with four short lines. Nothing else was changed or sent.'),
+            ('you', 'Make it two lines shorter'), ('agent', 'Shortened summary.md to two lines. Only that file was changed.'),
+            ('you', 'Did it check shops?'), ('agent', 'I don’t know that. I didn’t check any shops.')])
+        agent = [i for i in sorted(owner, key=lambda i: i['at']) if i['kind'] == 'agent']
+        self.assertEqual([i['files'] for i in agent], [['summary.md'], [], ['summary.md']])
+        # the last one was shortened: the whole answer is there for its More
+        self.assertEqual(agent[2]['full'], 'I don’t know that. I read the files and edited summary.md; I didn’t check any shops.')
+        self.assertNotIn('full', agent[1])
+
+    def test_claude_code_transcripts_and_failed_turns(self):
+        import agent_jobs
+        folder = Path(self.temp.name) / 'job'
+        folder.mkdir()
+        (folder / 'turn-1.jsonl').write_text(json.dumps({'type': 'result', 'subtype': 'success', 'result': 'The price is lower.'}) + '\n')
+        (folder / 'turn-2.jsonl').write_text(json.dumps({'type': 'result', 'subtype': 'error_max_turns', 'is_error': True, 'result': 'x'}) + '\n')
+        job = {'turns': 2, 'status': 'failed', 'created_at': '2026-01-01T10:00:00+00:00', 'asks': json.dumps([{'at': '2026-01-01T10:05:00+00:00', 'text': 'More?'}])}
+        self.assertEqual([(x['turn'], x['summary']) for x in agent_jobs.turn_answers(job, folder)], [(1, 'The price is lower.')])
+        self.assertIsNone(agent_jobs.transcript_answer(folder / 'missing.jsonl'))
+
+    def test_a_shortened_agent_answer_keeps_what_it_says_after_a_semicolon(self):
+        self.assertEqual(a.chat_agent_text('I edited `summary.md`; I didn’t check any shops.', ['summary.md'], full=True),
+                         ('I didn’t check any shops.', False, 'I edited summary.md; I didn’t check any shops.'))
+        self.assertEqual(a.chat_agent_text('Fixed it; tests pass.', ['x.py'], full=True), ('Fixed it; tests pass.', False, ''))
 
     def test_card_chat_reads_the_cards_session_with_its_own_notes(self):
         with self.gateway({}):

@@ -2166,7 +2166,9 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
    push(i,`<div class="chat-msg machine chat-card"><div class="bubble">${intro||`<p>${esc(s.title)}</p>`}${p.ask?`<div class="chat-ask">${p.ask}</div>`:q.ask?`<p class="chat-q">${esc(q.ask)}</p>`:''}${tm(i.at)}</div>${options(n,hasDraft)}${hasDraft?`<div class="chat-card-send">${p.lead}</div>`:''}</div>`)}
   else if(i.kind==='agentlive')push(i,`<div class="chat-msg machine chat-agent">${p.agent}</div>`);
   else if(i.kind==='agent'){const files=(i.files||[]).map(f=>agentFile({id:i.id},{path:f})).join('');
-   push(i,`<div class="chat-msg machine"><div class="bubble"><div class="chat-from"><span>${esc(i.name)}</span>${tm(i.at)}</div>${clamp(k,chatMarkdown(i.text),chatLong(i.text))}</div>${files?`<div class="chat-files">${files}</div>`:''}${i.nothing_sent?'<small class="chat-noted">Nothing sent</small>':''}</div>`)}
+   // A shortened answer (its housekeeping left out) has More too, which shows the whole answer
+   const whole=i.full&&chatOpenSet.has(k)?i.full:i.text;
+   push(i,`<div class="chat-msg machine"><div class="bubble"><div class="chat-from"><span>${esc(i.name)}</span>${tm(i.at)}</div>${clamp(k,chatMarkdown(whole),chatLong(i.text)||!!i.full)}</div>${files?`<div class="chat-files">${files}</div>`:''}${i.nothing_sent?'<small class="chat-noted">Nothing sent</small>':''}</div>`)}
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
   else if(i.kind==='event'){const c=i.times.length,line=c>1?`${esc(i.text)} ${c} times · ${chatHM(i.at)}`:`${esc(i.text)} · ${chatHM(i.at)}`;
    push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line,`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line}</div>`)}

@@ -6965,26 +6965,32 @@ CHAT_SAVED = re.compile(r'\b(?:wrote|written|saved|created|edited|updated|made|p
 CHAT_NOT_SENT = re.compile(r'^(?:and\s+)?(?:nothing|no\s+\w+)(?:\s+else)?(?:\s+(?:was|has been|is))?\s+(?:\w+,?\s+){0,3}?(?:sent|posted|published|submitted|changed)\b[^.!?]*[.!?]?$', re.I)
 
 
-def chat_agent_text(summary, files):
-    """(text, nothing_sent) of a coding agent's result for the chat: what it found first, without the sentences about
-    the files it saved (shown as chips) or about what it did not send (a quiet line says so)."""
+def chat_agent_text(summary, files, full=False):
+    """(text, nothing_sent) of a coding agent's result for the chat: what it found first, without the sentences (or
+    clauses) about the files it saved (shown as chips) or about what it did not send (a quiet line says so). With
+    `full`, also the whole answer when something was left out (the bubble's More shows it), else ''."""
     text = chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(summary, chars=4000)))[0]
     names = {Path(f).name.lower() for f in files} | {'this folder', 'the folder', 'your folder'}
-    quiet, kept = False, []
+    quiet, dropped, kept = False, False, []
     for line in text.split('\n'):
+        pieces = re.split(r'((?<=[.!?])\s+|;\s+)', line)  # sentences and clauses, each with what came after it
         out = []
-        for part in re.split(r'(?<=[.!?])\s+|;\s+(?=(?:and\s+)?(?:nothing|no)\b)', line):
+        for part, after in zip(pieces[::2], pieces[1::2] + ['']):
             bare = part.strip()
             if CHAT_NOT_SENT.match(bare):
                 quiet = True
+            elif not (CHAT_SAVED.search(bare) and any(n in bare.lower() for n in names) and len(bare) < 200):
+                out.append((part, after))
                 continue
-            if CHAT_SAVED.search(bare) and any(n in bare.lower() for n in names) and len(bare) < 200:
-                continue
-            out.append(part)
-        if out or not line.strip():
-            kept.append(' '.join(p.strip() for p in out) if len(out) != 1 else out[0])
+            dropped = True
+        if len(out) == len(pieces[::2]):
+            kept.append(line)
+        elif out:  # a clause left alone ends as a sentence
+            kept.append(' '.join(p.strip() + ('.' if a.startswith(';') and not re.search(r'[.!?:]$', p.strip()) else '') for p, a in out))
     clean = re.sub(r'\n{3,}', '\n\n', '\n'.join(kept)).strip()
-    return (clean or text), quiet
+    if not full:
+        return (clean or text), quiet
+    return (clean or text), quiet, (text if dropped and clean and clean != text else '')
 
 
 def chat_ms(value):
@@ -10964,24 +10970,30 @@ class App:
                     return []
                 return [x for x in found if isinstance(x, dict)] if isinstance(found, list) else []
             asks = [x for x in listed('asks') if str(x.get('text') or '').strip()]
-            # The handoff is an event; when a message to the agent follows at once, its bubble ("To Codex") says it instead
-            if not (asks and 0 <= chat_ms(asks[0].get('at')) - chat_ms(r['created_at']) < 120000):
-                owner.append({'kind': 'event', 'text': 'Handed to ' + name, 'mine': True, 'at': chat_ms(r['created_at'])})
+            # The handoff is the first turn (its brief); each change asked of it after is the next one. Every turn's
+            # answer follows the message it answers, also for jobs from before each answer was kept (read back from
+            # the turn's own transcript in the job folder).
+            owner.append({'kind': 'event', 'text': 'Handed to ' + name, 'mine': True, 'at': chat_ms(r['created_at'])})
             for ask in asks:
                 owner.append({'kind': 'you', 'text': clamp(str(ask['text']), 5000), 'via': 'agent', 'to': name, 'at': chat_ms(ask.get('at'))})
-            # Each turn's answer (jobs from before answers were kept have only their latest, the summary)
-            answers = [x for x in listed('answers') if str(x.get('summary') or '').strip()]
-            if not answers and r['status'] == 'result' and str(r['summary'] or '').strip():
-                answers = [{'summary': r['summary'], 'files': [f.get('path') for f in listed('files')], 'at': r['finished_at'] or r['updated_at']}]
-            for answer in answers:
-                files = [str(f) for f in answer.get('files') or [] if isinstance(f, str)][:10]
-                text, quiet = chat_agent_text(answer['summary'], files)
-                owner.append({'kind': 'agent', 'id': r['id'], 'name': name, 'text': text, 'files': files, 'nothing_sent': quiet, 'at': chat_ms(answer.get('at'))})
+            for answer in agent_jobs.turn_answers(r, self.agent_folder(r['id'])):
+                files = answer['files'][:10]
+                text, quiet, full = chat_agent_text(answer['summary'], files, full=True)
+                owner.append({'kind': 'agent', 'id': r['id'], 'name': name, 'text': text, 'files': files, 'nothing_sent': quiet,
+                              'at': answer['at'], **({'full': full} if full else {})})
             if r['status'] in ('failed', 'cancelled'):
                 owner.append({'kind': 'event', 'text': f"{name} {'stopped' if r['status'] == 'failed' else 'cancelled'}", 'at': chat_ms(r['finished_at'] or r['updated_at'])})
         for i in owner:
             i.pop('choice', None)
         return owner, results
+
+    def agent_folder(self, job_id):
+        """A coding agent job's own folder (its turn transcripts), or None."""
+        if not re.fullmatch(r'aj_[0-9a-f]{16}', str(job_id or '')):
+            return None
+        agents = getattr(self, 'agents', None)
+        root = agents.root if agents is not None else Path(self.config['database']).expanduser().parent / 'agent-jobs'
+        return Path(root) / job_id
 
     def card_chat_gateway(self, request):
         """chat-history-run.mjs: the Gateway's chat.history for one preparation session; {'error'} when unavailable."""

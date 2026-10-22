@@ -299,6 +299,7 @@ class AgentJobs(unittest.TestCase):
             answers = json.loads(db.execute('SELECT answers FROM agent_jobs WHERE id=?', (job['id'],)).fetchone()['answers'])
         self.assertEqual(len(answers), 2)
         self.assertTrue(all(a['summary'] and a['at'] for a in answers))
+        self.assertEqual([a['turn'] for a in answers], [1, 2])
 
     def test_claude_jobs_can_use_their_own_config_dir(self):
         other = Path(self.tmp.name) / 'claude-other'

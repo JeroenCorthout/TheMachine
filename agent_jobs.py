@@ -645,6 +645,113 @@ class AppServerCodex:
                 state['error'] = str(error['message'])[:500]
 
 
+def transcript_answer(path, work=None):
+    """(summary, files) of one turn from its own transcript (turn-N.jsonl): what the job said last, as `result` saves
+    it (Claude Code's result, Codex's last message, from `codex exec` or the app server), and the files it wrote that
+    are still in its folder. None when the turn has no answer there (it stopped, or it ran in the background)."""
+    summary, failed, files = None, False, []
+    try:
+        lines = Path(path).read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return None
+    for raw in lines:
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind, params = event.get('type'), event.get('params') if isinstance(event.get('params'), dict) else {}
+        item = event.get('item') if isinstance(event.get('item'), dict) else params.get('item') if isinstance(params.get('item'), dict) else {}
+        changed = []
+        if kind == 'result':  # Claude Code -p
+            if event.get('is_error') or event.get('subtype') not in (None, 'success'):
+                failed = True
+            elif str(event.get('result') or '').strip():
+                summary = str(event['result'])
+        elif kind == 'assistant':
+            for part in ((event.get('message') or {}).get('content') or []) if isinstance(event.get('message'), dict) else []:
+                if isinstance(part, dict) and part.get('type') == 'tool_use' and part.get('name') in ('Write', 'Edit', 'MultiEdit', 'NotebookEdit'):
+                    changed.append((part.get('input') or {}).get('file_path') or (part.get('input') or {}).get('notebook_path'))
+        elif (kind == 'item.completed' and item.get('type') == 'agent_message') or (event.get('method') == 'item/completed' and item.get('type') == 'agentMessage'):
+            if str(item.get('text') or '').strip():
+                summary = str(item['text']).strip()
+        elif kind in ('turn.failed', 'error') or event.get('method') == 'turn/completed' and str((params.get('turn') or {}).get('status') or 'completed') != 'completed':
+            failed = True
+        if item.get('type') in ('file_change', 'fileChange'):
+            changed += [c.get('path') for c in item.get('changes') or [] if isinstance(c, dict)]
+        for name in changed:
+            if work and isinstance(name, str) and name:
+                found = Path(name) if Path(name).is_absolute() else Path(work) / name
+                try:
+                    relative = str(found.resolve().relative_to(Path(work).resolve()))
+                except (ValueError, OSError):
+                    continue
+                if relative not in files and found.is_file() and not found.is_symlink():
+                    files.append(relative)
+    if failed or not summary:
+        return None
+    return summary[:SUMMARY_MAX], files[:FILES_MAX]
+
+
+def ms(value):
+    try:
+        found = dt.datetime.fromisoformat(str(value))
+    except ValueError:
+        return 0
+    return int((found if found.tzinfo else found.replace(tzinfo=dt.timezone.utc)).timestamp() * 1000)
+
+
+def turn_answers(job, folder=None):
+    """Each turn's answer of a job, in turn order: [{'turn', 'summary', 'files', 'at'}]. Turn 1 is the handoff, turn
+    N the (N-1)th change asked of it. What `result` saved comes first; a turn it has no answer for (jobs from before
+    answers were kept saved only their latest, the summary) is read from that turn's own transcript in the job folder.
+    An answer always comes after the message it answers."""
+    def listed(key):
+        try:
+            found = json.loads(job.get(key) or '[]')
+        except (ValueError, TypeError):
+            return []
+        return [x for x in found if isinstance(x, dict)] if isinstance(found, list) else []
+    asks = [x for x in listed('asks') if str(x.get('text') or '').strip()]
+    turns = max(int(job.get('turns') or 1), len(asks) + 1)
+    prompts = [ms(job.get('created_at'))] + [ms(x.get('at')) for x in asks]
+    prompts += [prompts[-1]] * (turns - len(prompts))
+    saved = [x for x in listed('answers') if str(x.get('summary') or '').strip()]
+    if not saved and job.get('status') == 'result' and str(job.get('summary') or '').strip():
+        saved = [{'summary': job['summary'], 'files': [f.get('path') for f in listed('files')], 'at': job.get('finished_at') or job.get('updated_at'),
+                  'turn': turns}]
+    found = {}
+    for x in saved:
+        at = ms(x.get('at'))
+        turn = x.get('turn') if isinstance(x.get('turn'), int) and 1 <= x['turn'] <= turns else None
+        if turn is None:  # saved before answers had their turn: the last message sent before it
+            turn = max([n + 1 for n, p in enumerate(prompts) if p and p <= at] or [turns])
+        found[turn] = {'turn': turn, 'summary': str(x['summary']), 'at': at,
+                       'files': [str(f) for f in x.get('files') or [] if isinstance(f, str)][:FILES_MAX]}
+    if folder:
+        work = Path(folder) / 'work'
+        for turn in range(1, turns + 1):
+            path = Path(folder) / f'turn-{turn}.jsonl'
+            if turn in found or not path.is_file():
+                continue
+            read = transcript_answer(path, work)
+            if read:
+                try:
+                    at = int(path.stat().st_mtime * 1000)  # its last line: when the turn ended
+                except OSError:
+                    at = 0
+                found[turn] = {'turn': turn, 'summary': read[0], 'files': read[1], 'at': at}
+    out = []
+    for turn in sorted(found):
+        answer = found[turn]
+        answer['at'] = max(answer['at'], prompts[turn - 1] + 1)
+        if out:
+            answer['at'] = max(answer['at'], out[-1]['at'] + 1)
+        out.append(answer)
+    return out
+
+
 def app_link(runner, session):
     """Where the owner opens the job in their own app: the Codex app's thread, the Claude Code session's page."""
     if isinstance(runner, AppServerCodex) and re.fullmatch(r'[0-9a-f-]{36}', str(session or '')):
@@ -1016,14 +1123,15 @@ class AgentJobs:
         summary, at = str(summary or 'Done, without a summary.')[:SUMMARY_MAX], now()
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute("SELECT answers FROM agent_jobs WHERE id=? AND status IN ('running','waiting','sent')", (job_id,)).fetchone()
+            row = db.execute("SELECT answers,turns FROM agent_jobs WHERE id=? AND status IN ('running','waiting','sent')", (job_id,)).fetchone()
             if not row:
                 return
             try:
                 answers = json.loads(row['answers'] or '[]')
             except ValueError:
                 answers = []
-            answers = (answers if isinstance(answers, list) else []) + [{'at': at, 'summary': summary, 'files': [f['path'] for f in files]}]
+            answers = (answers if isinstance(answers, list) else []) + [{'at': at, 'turn': row['turns'], 'summary': summary,
+                                                                          'files': [f['path'] for f in files]}]
             db.execute("UPDATE agent_jobs SET status='result',session_id=COALESCE(?,session_id),summary=?,files=?,diff=?,progress=NULL,"
                        "error=NULL,error_kind=NULL,draft_updated=?,updated_at=?,finished_at=?,answers=? WHERE id=? AND status IN ('running','waiting','sent')",
                        (session, summary, json.dumps(files), diff or None, 1 if updated else None, at, at,

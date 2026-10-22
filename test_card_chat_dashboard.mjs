@@ -33,7 +33,7 @@ const history={session:true,status:'ok',active:false,cursor:'k1',items:[
  {kind:'reply',text:'Changed Monday to Tuesday.',drafts:[mail('Hi Sam, Tuesday works.')],at:t0+4000},
  {kind:'event',text:'Didn’t go out to Sam',mine:false,at:t0+5000},
  {kind:'you',text:'Check the venue site',to:'Codex',via:'agent',at:t0+6000},
- {kind:'agent',id:'aj_1',name:'Codex',text:'Both dates are free.',files:['summary.md'],nothing_sent:true,at:t0+7000}]};
+ {kind:'agent',id:'aj_1',name:'Codex',text:'Both dates are free.',full:'Both dates are free. I wrote summary.md.',files:['summary.md'],nothing_sent:true,at:t0+7000}]};
 const actions=[];let live=null;
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
@@ -107,6 +107,10 @@ try{
  assert.equal(await agent.locator('.chat-from span').textContent(),'Codex');
  assert.equal(await agent.locator('.chat-files a.agent-file').textContent(),'summary.md');
  assert.equal(await agent.locator('.chat-noted').textContent(),'Nothing sent');
+ // A shortened answer has More, which shows the whole answer
+ await agent.locator('.chat-more').click();
+ await page.locator('#chat-log .chat-msg.machine',{hasText:'I wrote summary.md.'}).waitFor();
+ assert.equal(await page.locator('#chat-log .chat-msg.machine',{hasText:'I wrote summary.md.'}).locator('.chat-more').textContent(),'Less');
  // At most two suggestions from the card; one fills the message box
  assert.ok(await page.locator('#chat-picks').isHidden());  // after a message of yours, only while you write
  await page.locator('#chat-input').focus();
