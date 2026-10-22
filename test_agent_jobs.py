@@ -268,7 +268,7 @@ class AgentJobs(unittest.TestCase):
         self.assertTrue(job['url'].startswith('https://claude.ai/code'))
         self.assertTrue(job['can_follow_up'])
         work = Path(call['cwd'])
-        self.assertEqual(work, Path(self.tmp.name) / 'agent-jobs' / job['id'] / 'work')
+        self.assertEqual(work.resolve(), (Path(self.tmp.name) / 'agent-jobs' / job['id'] / 'work').resolve())  # macOS: /var is /private/var
         self.assertEqual((work / 'BRIEF.md').read_text().strip(), 'Summarize the card into summary.md')
         self.assertIn('sum up the numbers', (work / 'card/messages.md').read_text())
         self.assertEqual(json.loads((work / '.claude/settings.json').read_text()), {'worktree': {'bgIsolation': 'none'}})
