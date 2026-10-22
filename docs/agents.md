@@ -22,7 +22,8 @@ The CLIs keep their own sign-ins. The Machine never reads, copies or stores a Cl
 - **Codex** runs through the Codex app's own app server, so the job is a thread in the Codex app (named after the
   card), also from your phone through the app's remote access. **Open in Codex** opens it. Without the Codex app it
   uses `codex exec`, and the job only shows on the card. Nothing is approved for you: a command that needs approval is
-  declined.
+  declined. If the job's thread is open in the Codex app, a follow-up from the card goes on in a copy of the thread
+  (`thread/fork`), which shows in the app too. If even that is refused, the card says to carry on in Codex.
 
 ## On a hosted Machine
 
@@ -35,7 +36,9 @@ Coding agents**.
   `https://app.themachine.computer/mcp`. It has one tool, `report_result`. Each job gets its own ticket, and the
   Network keeps only the ticket's hash and the sealed result until your Machine picks it up. A result that hasn't come
   back after two days shows as stopped.
-- **Codex**: enter a Codex cloud environment id (and a branch, if not the default). The job runs as a Codex cloud task
+- **Codex**: sign in to Codex first, on the setup page (step **Codex**): your server runs `codex login --device-auth`
+  and the page shows a code to enter on OpenAI's page, on your own phone or computer. The Codex CLI keeps its sign-in
+  on your server, as it always does. Then enter a Codex cloud environment id (and a branch, if not the default). The job runs as a Codex cloud task
   (`codex cloud exec`). The card shows its status and then its changes, and **Open in Codex cloud** goes to the task.
 
 ## Settings
