@@ -526,7 +526,9 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 .card .draft.clamp .db{max-height:calc(14*1.5em);overflow:hidden;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent)}
 .card .draft .attachments{margin:10px 0 0;gap:6px}.card .draft .attachment{padding:4px 11px;font-size:.82rem;background:var(--surface)}
 .card .card-foot{margin-top:10px;font-size:.84rem;color:var(--faint)}.card .card-foot .source{color:var(--faint)}
-.card .card-foot .read-original{color:var(--faint);font-weight:400;text-align:left;text-decoration:none}.card .card-foot .read-original:hover{color:var(--text);text-decoration:underline;text-underline-offset:3px}
+.card .card-foot .read-original{align-items:flex-start;color:var(--faint);font-weight:400;text-align:left;text-decoration:none}.card .card-foot .read-original:is(:hover,:focus,:active){background:none;text-decoration:none}
+.card .card-foot .read-original::before,.card .card-foot .read-original>span{flex:none;margin-top:calc((1lh - 14px)/2)}.card .card-foot .read-original>span{margin-top:0}  /* icon and arrow sit on the first line when the source wraps; no underline, so the arrow never gets one */
+@media (hover:hover){.card .card-foot .read-original:hover{color:var(--text)}}
 .card .foot-links{display:inline-flex;gap:14px;margin-left:auto}.card .foot-links button{margin:0;padding:0;border:0;background:none;min-height:0;font-size:inherit;font-weight:600;color:var(--muted)}.card .foot-links button:hover{color:var(--text)}
 /* Button tiles: equal height, the primary action in mint first; on a phone three per row, the rest share the next row. */
 .card .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
@@ -1086,7 +1088,7 @@ const handled=!closed(s)&&s.handled_hint?(()=>{try{return JSON.parse(s.handled_h
 const ask=askQuestion(s,smart,hint);
 // Try again already ran without anything new and stopped asking again: retrying alone won't help, so it isn't offered.
 const retryPointless=s.preparation_cause==='retry'&&askBlocked(s);
-const choices=ask?[['answer','Answer'],...(s.preparation_status==='blocked'&&!retryPointless?[['retry',retryLabel(s.preparation_reason)]]:[]),['complete','Mark done'],['snooze','Snooze'],['reject','Not needed']]:s.status==='pending'?[['accept',s.labels?.accept||'Do it'],['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject',s.labels?.reject||'Not needed']]:s.status==='snoozed'?[['accept','Bring back'],['snooze','Change time'],['reject','Not needed']]:[...(s.preparation_status==='blocked'?[['retry',retryLabel(s.preparation_reason)]]:answered?[['accept','Do it']]:[]),['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']];
+const choices=ask?[['answer','Answer'],...(s.preparation_status==='blocked'&&!retryPointless?[['retry',retryLabel(s.preparation_reason)]]:[]),['complete','Mark done'],['snooze','Snooze'],['reject','Not needed']]:s.status==='pending'?[['accept',s.labels?.accept||'Do it'],['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject',s.labels?.reject||'Not needed']]:s.status==='snoozed'?[['accept','Unsnooze'],['snooze','Change time'],['reject','Not needed']]:[...(s.preparation_status==='blocked'?[['retry',retryLabel(s.preparation_reason)]]:answered?[['accept','Do it']]:[]),['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']];
 const notes=smart.map(a=>({action:a,state:a.state||s.action_status})).filter(x=>actionNote(x.state,x.action.kind));
 const undo=closed(s)&&s.undo_until&&Date.parse(s.undo_until)>Date.now();
 const status=s.preparation_status==='blocked'&&!closed(s)&&s.status!=='snoozed'?'Needs your help':['accepted','instructions'].includes(s.status)?'Preparing':label(s.status);

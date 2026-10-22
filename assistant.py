@@ -4828,7 +4828,7 @@ class Store:
         db.execute("UPDATE action_jobs SET status='cancelled',updated_at=? WHERE suggestion_id=? AND status IN ('queued','blocked')",(now(),suggestion_id))
         db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id=? AND message_id IS NOT NULL', (suggestion_id,))
         cluster = db.execute("SELECT id FROM skill_clusters WHERE suggestion_id=? AND status IN ('pending','declined','failed')", (suggestion_id,)).fetchone()
-        if cluster and choice in ('accept', 'reject', 'complete') and not (choice == 'accept' and row['status'] == 'snoozed'):  # Bring back isn't Create skill
+        if cluster and choice in ('accept', 'reject', 'complete') and not (choice == 'accept' and row['status'] == 'snoozed'):  # Unsnooze isn't Create skill
             db.execute('UPDATE skill_clusters SET status=?,updated_at=? WHERE id=?', ('accepting' if choice == 'accept' else 'declined', now(), cluster['id']))
             if choice == 'accept':
                 db.execute("UPDATE suggestions SET status='completed',completed_from='pending' WHERE id=?", (suggestion_id,))
@@ -7307,7 +7307,7 @@ def controls(row, root=''):
     if row['status'] in ['completed','rejected']:
         choices = [('Undo','undo')] if row.get('undo_until') and row['undo_until']>now() else []
     elif row['status'] == 'snoozed':
-        choices = [('Bring back','accept'),('Change time','snooze'),('Not needed','reject')]
+        choices = [('Unsnooze','accept'),('Change time','snooze'),('Not needed','reject')]
     elif row['status'] in ['accepted','prepared','instructions']:
         choices = [('Mark done','complete'),('Snooze','snooze'),('Change','other'),('Not needed','reject')]
         if row.get('preparation_status')=='blocked':choices.insert(0,(retry_label(row.get('preparation_reason')),'retry'))

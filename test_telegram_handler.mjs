@@ -30,7 +30,7 @@ await import(fixturePath);
 globalThis.fixturePlugin.register({runtime:{config:{current:()=>({})}},registerTool(factory){toolFactory=factory;},registerInteractiveHandler(h){handler=h.handler},on(name,h){if(name==='before_dispatch')beforeDispatch=h},registerCommand(){}});
 const ctx=(choice,message='123')=>({auth:{isAuthorizedSender:true},isGroup:false,accountId:'default',senderId:'1000001',callback:{data:`assistant:${id}:${choice}`,chatId:'1000001',messageId:message},callbackId:'unique',respond:{editButtons:async x=>edits.push(x),reply:async x=>replies.push(x),editMessage:async x=>edits.push(x),clearButtons:async()=>{}}});
 await handler(ctx('snooze'));assert.equal(choices.length,0);let buttons=edits.pop().buttons.flat();assert.equal(buttons.length,6);assert.ok(buttons.some(b=>b.url?.startsWith('https://machine.example.ts.net/assistant/#snooze-custom=')));assert.ok(buttons.filter(b=>b.callback_data).every(b=>Buffer.byteLength(b.callback_data)<=64&&decodeCallback(b.callback_data)));
-await handler(ctx('back'));assert.deepEqual(edits.pop().buttons.flat().map(b=>b.text),['Bring back','Change time','Not needed']);
+await handler(ctx('back'));assert.deepEqual(edits.pop().buttons.flat().map(b=>b.text),['Unsnooze','Change time','Not needed']);
 await handler(ctx('snooze_tomorrow','old'));assert.equal(choices.pop().snooze_option,'tomorrow');
 item.status='prepared';const repliesBeforeDone=replies.length;await handler(ctx('complete'));assert.equal(choices.pop().choice,'complete');assert.deepEqual(edits.pop().buttons,[]);assert.equal(replies.length,repliesBeforeDone);
 item.status='completed';await handler(ctx('accept'));assert.equal(choices.length,0);assert.equal(replies.length,repliesBeforeDone);

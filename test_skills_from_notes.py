@@ -121,13 +121,13 @@ class SkillsFromNotes(unittest.TestCase):
         self.assertEqual(self.app.skills.get(made['id'])['body'].count('## Steps'),1)
         self.assertEqual(len(made['notes']),6)
 
-    def test_snoozed_skill_bring_back_only_returns_the_card(self):
+    def test_snoozed_skill_unsnooze_only_returns_the_card(self):
         out=self.propose(self.notes[:6])
         self.store.decide(out['suggestion_id'],'snooze','', 'later','dashboard')
         with self.store.connect() as db:
             row=dict(db.execute('SELECT * FROM suggestions WHERE id=?',(out['suggestion_id'],)).fetchone());row.update(self.store.suggestion_result(row,db))
         labels=[b['label'] for block in a.controls(row,'https://fixture.invalid/')['blocks'] for b in block['buttons']]
-        self.assertIn('Bring back',labels)
+        self.assertIn('Unsnooze',labels)
         self.assertNotIn('Create skill',labels)
         self.app.action('decide',{'suggestion_id':out['suggestion_id'],'choice':'accept','decision_id':'back'},owner_dashboard=True)
         self.assertEqual(self.card(out['suggestion_id'])['status'],'pending')
