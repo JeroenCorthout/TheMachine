@@ -4,10 +4,14 @@ A card can go to Claude Code or Codex. **Hand to Claude Code** and **Hand to Cod
 actions when that tool is there. A small sheet opens (in the card chat, in the message box's place): **Hand to** with a
 switch between the tools, one line of what it will do, chips for what it gets (the emails, the draft, `messages.md`,
 links counted, never shown raw) and an optional note for the agent. **See the full job** shows the whole brief to read
-or edit: the task, the card's drafts, links and files, and what done looks like. Nothing goes without your **Hand off**.
+or edit. It opens with the task, the card's next step (its Needs you line), then your note on the card word for word,
+who it's about, what happened so far as background, the card's drafts and files, what done looks like and the limits.
+Nothing goes without your **Hand off**.
 
 The job runs in its own folder under the Machine's data folder (`agent-jobs/<job>/work`), with the card's messages in
-`card/`. The card shows its progress, then a short result with the files it made. Details stay folded away. **Ask for
+`card/messages.md`, full text included, so it needs no mailbox of its own. A job that runs away from this computer
+(Claude Code on your paired computer, Codex cloud) doesn't get that folder, so the messages are in the brief itself,
+newest first, shortened to fit with a note where something is cut. The card shows its progress, then a short result with the files it made. Details stay folded away. **Ask for
 changes** sends a follow-up to the same job. Cancel stops it.
 
 A job never sends anything for you. If it rewrites a message (`draft.md`), that text becomes the card's draft, and you

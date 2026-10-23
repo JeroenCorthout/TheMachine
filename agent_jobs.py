@@ -105,13 +105,63 @@ def plain(text):
     return re.sub(r'\[([^\]\n]*)\]\((https?://[^)\s]+)\)', r'\1 (\2)', str(text or ''))
 
 
-def brief_for(card, drafts=(), links=(), files=(), messages=()):
-    """The job as the owner first sees it: the task, what the card prepared, its links and files, and what done looks
-    like. They edit it before it goes."""
-    lines = [str(card.get('title') or 'A task from The Machine').strip(), '']
+def gist(text, chars):
+    """One line of at most chars, ending at a whole sentence (or word) instead of mid-word."""
+    text = ' '.join(plain(text).split())
+    if len(text) <= chars:
+        return text
+    cut = text[:chars]
+    end = max(cut.rfind('. '), cut.rfind('! '), cut.rfind('? '))
+    return cut[:end + 1] if end > chars // 3 else cut[:cut.rfind(' ')].rstrip(',;:') + '…'
+
+
+INLINE_MAX = 7000  # source text written into a job that runs away from this Machine (remote Claude Code, Codex cloud)
+
+
+def inline_messages(sources, budget):
+    """The source messages written into the job itself, newest first, within budget characters: for a job that runs
+    where the job folder isn't (remote Claude Code, Codex cloud). Each gets its share (the newest up to half); what
+    doesn't fit is cut with a note saying so, and older ones that don't fit at all are counted as left out."""
+    items = sorted(sources, key=lambda v: str(v.get('occurred_at') or ''), reverse=True)
+    out, left = [], budget
+    share = max(budget // max(len(items), 1), 1500)  # each message gets its share; the newest may take up to half
+    for n, v in enumerate(items):
+        head = '\n'.join([f"### {v.get('title') or 'Message'}", f"From: {v.get('from') or 'unknown'}",
+                          *[f'{k}: {v[k.lower()]}' for k in ('To', 'Cc') if v.get(k.lower())], f"When: {v.get('occurred_at') or ''}", '', ''])
+        body = str(v.get('body') or '').strip() or '(no text)'
+        room = min(left, max(share, budget // 2) if n == 0 else share) - len(head) - 120
+        if room < 200:
+            out.append(f'({len(items) - n} older message{"s" if len(items) - n > 1 else ""} left out here, to keep this short.)')
+            break
+        if len(body) > room:
+            cut = body[:room].rsplit(' ', 1)[0]
+            body = cut + f'\n(Cut here: {len(body) - len(cut)} more characters in the original.)'
+        if v.get('clipped'):
+            body += '\n(The stored copy was already cut short; the rest is in the original.)'
+        out.append(head + body)
+        left -= len(out[-1]) + 2
+    return '\n\n'.join(out)
+
+
+def brief_for(card, drafts=(), links=(), files=(), messages=(), task=None, note=None, about=(), history=(), sources=(), inline=False):
+    """The job as the owner first sees it, in the order the agent needs it: the task (the card's next step, never its
+    latest chat reply), the owner's own note word for word, who and what it is about, what happened so far (as
+    background), what the card prepared, the source messages in the folder (links only as a second reference), what
+    done looks like and the limits. They edit it before it goes. `inline`: the job runs away from this Machine, where
+    the folder isn't, so the source messages (`sources`) go into the text itself, newest first, under a cap."""
+    title = ' '.join(str(card.get('title') or '').split())
+    task = ' '.join(str(task or '').split()) or (title.rstrip('.') + '.' if title else 'Do the next step on this card.')
+    lines = ['Task: ' + task, '']
+    note = str(note or '').strip()
+    if note:
+        lines += ['My note on the card, as I wrote it:', note[:2000], '']
+    lines += ['About:', f'- The card in The Machine: {title or "a task"}', *[f'- {a}' for a in list(about)[:6]], '']
+    history = [h for h in history if str(h).strip()][-6:]
     body = plain(card.get('body')).strip()
-    if body:
-        lines += ['What this is about:', body[:4000], '']
+    if history or body:
+        lines.append('So far (background only; the task above is what to do):')
+        lines += [f'- {h}' for h in history] if history else [f'- The card says: {gist(body, 800)}']
+        lines.append('')
     if drafts:
         lines.append('Prepared on the card:')
         for d in list(drafts)[:5]:
@@ -119,17 +169,30 @@ def brief_for(card, drafts=(), links=(), files=(), messages=()):
             head = (d.get('label') or d.get('kind') or 'Draft') + (f' (to {to})' if to else '')
             lines.append(f'- {head}: ' + plain(d.get('body') or d.get('message') or '')[:1500].replace('\n', '\n  '))
         lines.append('')
-    if links:
-        lines += ['Links:', *[f'- {u}' for u in list(dict.fromkeys(links))[:10]], '']
-    names = [*[f'card/{Path(f).name}' for f in files], *(['card/messages.md'] if messages else [])]
+    if messages and not (inline and sources):
+        lines += ['The source messages, with their full text, are in card/messages.md in your folder. Read them first: '
+                  'you don\'t need the mailbox or the links for them.', '']
+    at = len(lines)  # where the source messages go when they travel in the text itself
+    names = [f'card/{Path(f).name}' for f in files]
     if names:
-        lines += ['Files from the card, in your folder: ' + ', '.join(names), '']
-    if drafts:
-        lines += [f'If you rewrite the message prepared above, save only its new text (no To or Subject lines) in {DRAFT_FILE}: '
-                  'it replaces the draft on the card, which I check and send myself.', '']
-    lines += ['Done looks like: a short summary of what you did and found, with any files you made in this folder. Start with the answer '
+        lines += ['Other files from the card, in your folder: ' + ', '.join(names), '']
+    if links:
+        lines += ['Links, only if you need more than what is here:', *[f'- {u}' for u in list(dict.fromkeys(links))[:10]], '']
+    lines += ['Done looks like: the task above done, or taken as far as it can go from here with what is left for me said plainly. '
+              'Then a short summary of what you did and found, with any files you made in this folder. Start with the answer '
               'or the finding itself; don\'t list the files you saved or say what you didn\'t send, as I see your files myself.', '',
-              'Leave anything that sends, publishes, pays or submits for me: prepare it and say what is left.']
+              'Limits:', '- You may read what you need and make or change files in this folder.']
+    if drafts:
+        lines.append(f'- If you rewrite the message prepared above, save only its new text (no To or Subject lines) in {DRAFT_FILE}: '
+                     'it replaces the draft on the card, which I check and send myself.')
+    lines.append('- Leave anything that sends, publishes, pays or submits for me: prepare it and say what is left.')
+    if inline and sources:
+        # Within what the brief may hold, so the limits at its end are never cut off.
+        budget = min(INLINE_MAX, BRIEF_MAX - len('\n'.join(lines)) - 300)
+        text = inline_messages(sources, budget) if budget > 400 else ''
+        lines[at:at] = (['The source messages, newest first, with their text (read them first; you don\'t need the mailbox '
+                         'or the links for them):', '', text, ''] if text else
+                        ['The source messages didn\'t fit here; the links below open them.', ''])
     return '\n'.join(lines).strip()[:BRIEF_MAX]
 
 
@@ -797,7 +860,7 @@ APP_LINK = re.compile(r'(https://\S+|codex://threads/[0-9a-f-]{36})')
 class AgentJobs:
     def __init__(self, connect, config, root, card=None, close_card=None, revise=None, network=None):
         """`connect`: the Store's connection. `root`: where job folders go. `card(suggestion_id)` gives what a brief is
-        made of ({card, drafts, links, files, messages}); `close_card(suggestion_id)` marks the card done;
+        made of ({card, drafts, links, files, messages, task, note, about, history}); `close_card(suggestion_id)` marks the card done;
         `revise(suggestion_id, text)` puts a job's rewritten message in the card's draft (True when it did);
         `network(body)` posts to the Network's /api/fleet/agent-results (remote Claude jobs, agent_remote.py)."""
         self.connect, self.config, self.root = connect, config, Path(root)
@@ -870,7 +933,9 @@ class AgentJobs:
         title = str(parts['card'].get('title') or 'this task').strip().rstrip('.')
         return {'suggestion_id': str(suggestion_id), 'tools': self.tools(), 'gets': gets_for(parts),
                 'line': f'Picks up “{title[:160]}” and reports back here. Sends nothing itself.',
-                'brief': brief_for(parts['card'], parts.get('drafts') or (), parts.get('links') or (), parts.get('files') or (), parts.get('messages') or '')}
+                'brief': brief_for(parts['card'], parts.get('drafts') or (), parts.get('links') or (), parts.get('files') or (), parts.get('messages') or '',
+                                   task=parts.get('task'), note=parts.get('note'), about=parts.get('about') or (), history=parts.get('history') or (),
+                                   sources=parts.get('sources') or (), inline=any(t['place'] != 'local' for t in self.tools()))}
 
     def start(self, suggestion_id, tool_id, brief, note=None):
         tool = self.tool(tool_id)

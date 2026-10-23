@@ -525,5 +525,115 @@ class AgentSettings(unittest.TestCase):
         app.config = {'accounts': []}
         self.assertIsNone(app.agents_view())
 
+
+class TaskFirstBrief(unittest.TestCase):
+    """The job a card hands to Claude Code or Codex leads with the card's next step (its Needs you line), not its latest
+    chat reply; the owner's note follows word for word; the source email's full text is in the job folder."""
+    NEEDS = 'add the agreed Listly link to your agency lead-generation article'
+    REPLY = 'Yes, you still need to add the link: their last email confirms position 6 once the link is live.'
+    NOTE = 'Do I still need to add the link?'
+    MAIL = ('Hi,\n\nHere is the final entry for the list. We are happy to take position 6.\n\n'
+            'Link to use: https://listly.example/agencies\n\nThanks, Robin')
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.store = a.Store(root / 'events.sqlite', protect=True)
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm1', 'kind': 'gmail.message', 'occurred_at': '2026-10-22T09:00:00+00:00',
+                                             'title': 'Final entry for the agency list', 'body': self.MAIL, 'deleted': False,
+                                             'metadata': {'from': 'Robin Vendor <robin@listly.example>', 'to': 'me@example.com', 'thread_id': 't1',
+                                                          'labels': ['INBOX'], 'source_url': 'https://mail.google.com/mail/u/0/#all/t1'}}])
+        with self.store.connect() as db:
+            event_id = db.execute('SELECT id FROM events').fetchone()[0]
+        self.sid = self.store.suggest('listly', 'Listly sent the final entry and offers position 6', 'Robin sent the final entry.', [event_id])['id']
+        with self.store.connect() as db:
+            db.execute("UPDATE suggestions SET status='prepared',body=?,outcome=? WHERE id=?",
+                       (self.REPLY, json.dumps({'state': 'needs_you', 'needs': self.NEEDS}), self.sid))
+            db.execute("INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES('d1',?,'other',?,'dashboard',?)",
+                       (self.sid, self.NOTE, '2026-10-22T10:00:00+00:00'))
+            db.execute("INSERT INTO preparation_runs(job_id,suggestion_id,session_job_id,status,started_at) VALUES('job1',?,'job1','ok',?)",
+                       (self.sid, '2026-10-22T10:01:00+00:00'))
+            db.execute('INSERT INTO preparation_calls(job_id,call_id,tool,params,started_at) VALUES(?,?,?,?,?)',
+                       ('job1', 'c1', 'assistant_signals', json.dumps({'action': 'prepare', 'args': {'suggestion_id': self.sid, 'body': self.REPLY}}),
+                        '2026-10-22T10:01:30+00:00'))
+        self.app = object.__new__(a.App)
+        self.app.store = self.store
+        self.app.config = {'accounts': [], 'database': str(root / 'events.sqlite')}
+        self.config = {'database': str(root / 'events.sqlite'), 'accounts': [], 'agents': {}}
+
+    def jobs(self):
+        return agent_jobs.AgentJobs(self.store.connect, self.config, Path(self.tmp.name) / 'agent-jobs', card=self.app.agent_card)
+
+    def test_the_task_comes_first_then_the_note_then_background(self):
+        brief = self.jobs().draft(self.sid)['brief']
+        lines = brief.splitlines()
+        self.assertEqual(lines[0], 'Task: Add the agreed Listly link to your agency lead-generation article.')
+        self.assertEqual(lines[2:4], ['My note on the card, as I wrote it:', self.NOTE])
+        self.assertNotIn('What this is about', brief)
+        # The latest chat reply is background, labelled so, after the task; never the lead.
+        self.assertIn('So far (background only; the task above is what to do):', brief)
+        self.assertIn('- The Machine answered: ' + self.REPLY, brief)
+        self.assertGreater(brief.index(self.REPLY), brief.index('Task: '))
+        self.assertEqual(brief.count(self.NOTE), 1)  # the note isn't repeated as a chat turn
+        self.assertIn('- With: Robin Vendor <robin@listly.example> (email)', brief)
+        self.assertIn('card/messages.md', brief)
+        # Raw links come after the files, as a second reference only.
+        self.assertGreater(brief.index('https://mail.google.com/'), brief.index('card/messages.md'))
+        self.assertIn('Done looks like: the task above done', brief)
+        self.assertTrue(lines[-1].startswith('- Leave anything that sends, publishes, pays or submits for me'))
+
+    def test_the_folder_has_the_source_email_text(self):
+        parts = self.app.agent_card(self.sid)
+        jobs = self.jobs()
+        jobs.prepare_folder('aj_0123456789abcdef', jobs.draft(self.sid)['brief'], parts)
+        work = Path(self.tmp.name) / 'agent-jobs' / 'aj_0123456789abcdef' / 'work'
+        text = (work / 'card/messages.md').read_text()
+        self.assertIn(self.MAIL.strip(), text)  # the whole body, not a snippet
+        self.assertIn('From: Robin Vendor <robin@listly.example>', text)
+        self.assertIn('To: me@example.com', text)
+        self.assertTrue((work / 'BRIEF.md').read_text().startswith('Task: Add the agreed Listly link'))
+
+    def test_a_job_that_runs_elsewhere_carries_the_messages_newest_first(self):
+        # Remote Claude Code and Codex cloud don't get the job folder: the source text travels in the job, under a cap.
+        later = 'Robin again. ' + 'The banner size is 600 by 300. ' * 400
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm2', 'kind': 'gmail.message', 'occurred_at': '2026-10-22T11:00:00+00:00',
+                                             'title': 'One more thing', 'body': later, 'deleted': False,
+                                             'metadata': {'from': 'Robin Vendor <robin@listly.example>', 'thread_id': 't1', 'labels': ['INBOX']}}])
+        with self.store.connect() as db:
+            ids = [r[0] for r in db.execute('SELECT id FROM events ORDER BY id')]
+            db.execute('UPDATE suggestions SET event_ids=? WHERE id=?', (json.dumps(ids), self.sid))
+        jobs = self.jobs()
+        with patch.object(agent_jobs.AgentJobs, 'tools', lambda self: [{'id': 'codex', 'name': 'Codex', 'place': 'cloud'}]):
+            brief = jobs.draft(self.sid)['brief']
+        self.assertTrue(brief.startswith('Task: Add the agreed Listly link'))
+        self.assertIn('The source messages, newest first, with their text', brief)
+        self.assertNotIn('card/messages.md', brief)  # not a file it can read there
+        self.assertLess(brief.index('### One more thing'), brief.index('### Final entry for the agency list'))
+        self.assertIn('Robin again.', brief)
+        self.assertRegex(brief, r'\(Cut here: \d+ more characters in the original\.\)')
+        self.assertLessEqual(len(brief), agent_jobs.BRIEF_MAX)
+        self.assertTrue(brief.splitlines()[-1].startswith('- Leave anything that sends, publishes, pays or submits for me'))
+        # On this computer the folder has them, so the job only points there.
+        with patch.object(agent_jobs.AgentJobs, 'tools', lambda self: [{'id': 'codex', 'name': 'Codex', 'place': 'local'}]):
+            local = jobs.draft(self.sid)['brief']
+        self.assertIn('card/messages.md', local)
+        self.assertNotIn('Robin again.', local)
+        # Many messages: the older ones that don't fit are named as left out.
+        many = [{'title': f'Mail {n}', 'from': 'x@example.com', 'occurred_at': f'2026-10-{10 + n}', 'body': 'word ' * 600} for n in range(9)]
+        text = agent_jobs.inline_messages(many, 7000)
+        self.assertTrue(text.startswith('### Mail 8'))
+        self.assertRegex(text, r'\(\d+ older messages left out here, to keep this short\.\)$')
+        self.assertLessEqual(len(text), 7000)
+
+    def test_the_task_follows_the_card(self):
+        row = {'status': 'prepared', 'title': 'Pick a venue', 'outcome': json.dumps({'state': 'needs_you', 'needs': 'which venue do we book?'})}
+        self.assertEqual(a.card_task(row), 'Help me answer this: Which venue do we book?')
+        row['outcome'] = json.dumps({'state': 'your_step', 'step': 'submit'})
+        self.assertEqual(a.card_task(row), 'Check that everything is ready for me to submit, and fix what isn’t.')
+        self.assertEqual(a.card_task({'status': 'pending', 'title': 'Sum up the quarterly numbers'}), 'Sum up the quarterly numbers.')
+        blocked = {'status': 'accepted', 'title': 'X', 'preparation_status': 'blocked', 'preparation_reason': 'Which account should pay?'}
+        self.assertEqual(a.card_task(blocked), 'Help me answer this: Which account should pay?')
+
 if __name__ == '__main__':
     unittest.main()

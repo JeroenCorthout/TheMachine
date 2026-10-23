@@ -567,10 +567,61 @@ class Graph(unittest.TestCase):
         self.assertEqual([p['what'] for p in detail['open']['you_promised']], ['send the deck'])
         self.assertEqual([p['what'] for p in detail['open']['they_promised']], ['sign the contract'])
         self.assertEqual({c['title'] for c in detail['open']['cards']}, {'Answer Ann', 'Book the call with Ann'})
-        self.assertEqual(detail['open']['facts'], ['Ann prefers calls before 10'])
+        self.assertNotIn('known', detail['open'])  # a fact on her card is no fact about her: no subject, on nobody's page
         lines = self.app.graph_lines(task['id'])
         self.assertIn('open: you promised to send the deck by Tue 20 Oct; they promised to sign the contract; card "Book the call with Ann"', lines)
         self.assertNotIn('card "Answer Ann"', lines)  # the task itself
+
+    def test_a_fact_shows_on_who_it_is_about_never_on_who_sent_the_message(self):
+        ask = mail(3, 'Ann Example <ann@client.com>', 'sam@acme.com', thread='deal')
+        bob = mail(2, 'Bob Other <bob@other.com>', 'sam@acme.com', thread='bob')
+        self.add(ask, bob)
+        ask_id, bob_id = self.ids([ask['source_id'], bob['source_id']])
+        self.store.owner_user_ids = set()
+        self.build()
+        card = self.store.suggest('ann-1', 'Answer Ann', 'Ann asked about pricing.', [ask_id])['id']
+        self.store.decide(card, 'other', 'i never use capitals in chat, and Ann prefers calls before 10', 'note-1', 'dashboard')
+        mine = self.app.action('remember_fact', {'text': 'The owner does not use capitals in chat.', 'decision_id': 'note-1'})
+        hers = self.app.action('remember_fact', {'text': 'Ann prefers calls before 10.', 'decision_id': 'note-1', 'about': ['email:ann@client.com']})
+        self.assertEqual(hers['about'], ['email:ann@client.com'])
+        with self.assertRaisesRegex(ValueError, 'not a person, organisation or project'):
+            self.app.action('remember_fact', {'text': 'Someone else entirely.', 'decision_id': 'note-1', 'about': ['email:nobody@x.com']})
+        known = lambda node: [f['text'] for f in self.app.graph_action({'node_id': node})['open'].get('known', [])]
+        self.assertEqual(known('email:ann@client.com'), ['Ann prefers calls before 10.'])  # the owner's own habit is not on her page
+        self.assertEqual(known('email:bob@other.com'), [])
+        self.assertIn('known: Ann prefers calls before 10.', self.app.graph_lines(card))
+        self.build()  # a rebuild keeps who it is about
+        self.assertEqual(known('email:ann@client.com'), ['Ann prefers calls before 10.'])
+        # A review ties an older fact to who it is about; only kind=fact notes have a subject.
+        self.assertEqual(self.app.action('remember_fact', {'id': mine['id'], 'about': ['email:bob@other.com']})['about'], ['email:bob@other.com'])
+        self.assertEqual(known('email:bob@other.com'), ['The owner does not use capitals in chat.'])
+        # Not about Bob: only that link goes, for good; the fact stays in the owner's memory.
+        with self.assertRaisesRegex(ValueError, 'Only the owner'):
+            self.app.action('graph_fact_unlink', {'fact_id': mine['id'], 'node_id': 'email:bob@other.com'})
+        self.app.action('graph_fact_unlink', {'fact_id': mine['id'], 'node_id': 'email:bob@other.com'}, owner_dashboard=True)
+        self.assertEqual(known('email:bob@other.com'), [])
+        self.assertIn('The owner does not use capitals in chat.', [f['text'] for f in self.store.facts()])
+        self.app.action('remember_fact', {'id': mine['id'], 'about': ['email:bob@other.com']})  # a review can't put it back
+        self.assertEqual(known('email:bob@other.com'), [])
+        # Condensed, the new fact keeps who the originals were about.
+        merged = self.app.action('remember_fact', {'text': 'Ann prefers calls before 10, never after 4.', 'replaces': [hers['id']]})
+        self.assertEqual(known('email:ann@client.com'), ['Ann prefers calls before 10, never after 4.'])
+        # Forget: gone everywhere, her page and the owner's memory.
+        self.app.action('forget_fact', {'id': merged['id']}, owner_dashboard=True)
+        self.assertEqual(known('email:ann@client.com'), [])
+        self.assertNotIn(merged['id'], [f['id'] for f in self.store.facts()])
+
+    def test_an_event_row_says_who_wrote_it_and_how_it_starts(self):
+        accounts = [{'id': 'slack', 'service': 'slack', 'user_id': 'U0OWNER'}]
+        glance = lambda kind, body, **m: a.event_glance({'kind': kind, 'account_id': 'slack', 'body': body, 'metadata': m}, accounts)
+        self.assertEqual(glance('gmail.message', 'Hi Sam,\r\n\r\nthe   form', **{'from': 'Ann Example <ann@client.com>'}),
+                         {'from': 'Ann Example', 'from_me': False, 'preview': 'Hi Sam, the form'})
+        self.assertEqual(glance('gmail.message', 'Sure', **{'from': 'Sam <sam@acme.com>', 'labels': ['SENT']})['from'], 'You')
+        self.assertEqual(glance('salesflare.email', 'From: Ann <ann@client.com>\nTo: Kim <kim@acme.com>\n\nOur internet is down')['preview'], 'Our internet is down')
+        self.assertEqual(glance('slack.message', 'see <https://x.example|the doc>', user_id='U0OWNER', conversation_type='dm'),
+                         {'from': 'You', 'from_me': True, 'preview': 'see the doc', 'dm': True})
+        self.assertEqual(glance('slack.message', 'done', user_id='U0ANN', conversation_type='channel', channel_name='standup')['place'], '#standup')
+        self.assertEqual(glance('whatsapp.message', 'x' * 300, from_me=False, sender_display='Ann')['preview'], 'x' * 240 + '…')
 
 
 def linkedin(days_ago, conv, name, text, mine=False, headline=None):

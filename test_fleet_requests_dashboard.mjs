@@ -45,7 +45,7 @@ try{
  assert.equal(await form.locator('textarea').inputValue(),'Sam asked for pricing.');
  await form.locator('textarea').fill('Sam wants pricing for 40 seats.');
  await form.locator('button.primary').click();
- await page.getByText('Handed off to Pat: asked').waitFor();
+ await page.getByText('Handed off to Pat, waiting for an answer').waitFor();
  assert.equal(await page.getByText('is on it').count(),0);  // a claim without a teammate's name says nothing
  assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats.',contact:'sam@client.example'}});
  // Requests wait as cards under Suggestions (tagged Fleet, Work) with Accept, their words shown as text; the Suggestions
