@@ -232,6 +232,21 @@ class FastFirstLook(unittest.TestCase):
         self.assertEqual(order[4:6], ['crowd', 'answered'])  # one of many on it, or answered since
         self.assertTrue(all(x.startswith(('news', 'robot')) for x in order[6:]))
 
+    def test_upcoming_events_and_a_burst_of_newsletters_never_crowd_out_who_waits(self):
+        a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
+        self.addCleanup(setattr, a.Store, 'accounts', [])
+        news = [self.mail(f'news{n}', 'Shop <news@shop.example>', labels=['CATEGORY_PROMOTIONS'], hours_ago=1) for n in range(600)]
+        soon = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=3)).isoformat()
+        upcoming = [{'account_id': 'work', 'source_id': f'event{n}', 'kind': 'calendar.event', 'occurred_at': soon, 'title': 'Sync',
+                     'body': 'Meeting', 'metadata': {}, 'deleted': False} for n in range(600)]
+        self.store.commit_page('work', {}, news + upcoming + [self.mail('ask', 'Sam <sam@example.org>', hours_ago=40)])
+        self.step(Runner('admitted'))
+        run = self.runs()[0]
+        claim = self.store.begin_analysis(['work'], 40, a.REVIEW_SESSION_PREFIX + run['run_id'], run['run_id'])
+        with self.store.connect() as db:
+            names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
+        self.assertEqual(names[claim['events'][0]['id']], 'ask')
+
     def test_first_look_cards_that_want_a_draft_get_one_once_reviews_are_on(self):
         self.store.commit_page('work', {}, [signal('m1'), signal('m2'), signal('m3')])
         self.step(Runner('admitted'))

@@ -3058,8 +3058,11 @@ class Store:
         already answered; automated mail last. Newest first within each. The full first look reviews the rest."""
         own = {str(a.get('email', '')).lower() for a in self.accounts if '@' in str(a.get('email', ''))}
         marks = ','.join('?' for _ in accounts)
+        # The whole window, what already happened first: upcoming appointments or a burst of newsletters must not crowd
+        # out the mail that waits on the owner. The cap only guards a runaway import.
         found = [dict(r) for r in db.execute(f'SELECT * FROM events WHERE account_id IN ({marks}) AND analyzed_version<version AND deferrals<? '
-                                             'AND occurred_at>=? ORDER BY occurred_at DESC,id DESC LIMIT 500', (*accounts, SET_ASIDE_AFTER, since))]
+                                             'AND occurred_at>=? ORDER BY occurred_at>?,occurred_at DESC,id DESC LIMIT 5000',
+                                             (*accounts, SET_ASIDE_AFTER, since, now()))]
 
         def rank(row):
             m = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'] or '{}')
@@ -3076,14 +3079,27 @@ class Store:
                 return 3
             if own and (not own & to or len(to) > 2):
                 return 2
-            answered = m.get('thread_id') and db.execute(
+            return 0
+
+        def answered(row):
+            m = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'] or '{}')
+            return bool(m.get('thread_id') and db.execute(
                 "SELECT 1 FROM events WHERE account_id=? AND kind='gmail.message' AND deleted=0 AND occurred_at>? "
                 "AND json_extract(metadata,'$.thread_id')=? AND instr(metadata,'\"SENT\"')>0 LIMIT 1",
-                (row['account_id'], row['occurred_at'], m['thread_id'])).fetchone()
-            return 2 if answered else 0
+                (row['account_id'], row['occurred_at'], m['thread_id'])).fetchone())
 
-        ranked = sorted(enumerate(found), key=lambda item: (rank(item[1]), item[0]))  # stable: newest first within a rank
-        return [row for _, row in ranked[:limit]]
+        ranks = [rank(row) for row in found]
+        waiting = 0
+        for i, row in enumerate(found):  # the thread check only where it decides, and only until the batch is full
+            if ranks[i] == 0 and row['kind'] == 'gmail.message':
+                if answered(row):
+                    ranks[i] = 2
+                else:
+                    waiting += 1
+                    if waiting >= limit:
+                        break
+        ranked = sorted(range(len(found)), key=lambda i: (ranks[i], i))  # stable: newest first within a rank
+        return [found[i] for i in ranked[:limit]]
 
     def conversation_context(self, rows, limit=4, hours=48):
         """Up to four earlier messages from the same chat for each Slack/WhatsApp signal, so a
