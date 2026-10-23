@@ -1709,8 +1709,8 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 .row-menu button:hover{background:var(--c-hover)}
 @media(hover:hover) and (pointer:fine){.card h3 .title-link{cursor:text}}
 .chat-title{cursor:text}
-/* This device: a quiet card at the top of Suggestions (install the app, turn on notifications), like the first-look line. */
-.device-nudge{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin:0 0 14px;padding:12px 14px 12px 16px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--shadow-sm);font-size:var(--fs-sm);line-height:1.45;color:var(--muted)}
+/* This device: the shared quiet notice card (.notice-card) at the top of Suggestions, to install the app or turn on notifications. */
+.device-nudge{gap:10px 14px;color:var(--muted)}
 .device-nudge[hidden],body.chat-open .device-nudge{display:none}
 .nudge-icon{flex:none;width:36px;height:36px;border-radius:9px}
 .nudge-text{flex:1 1 240px;min-width:0}.nudge-text>span{display:block}
@@ -2928,7 +2928,7 @@ function nudgeHTML(k){const later='<button type="button" class="ghost" data-nudg
  if(k==='ios')return text('Add The Machine to your Home Screen',`<ol class="nudge-steps"><li>Tap Share ${SHARE_ICON}</li><li>Tap Add to Home Screen</li></ol><span>Notifications on iPhone and iPad work only from there.</span>`)+`<div class="nudge-act">${later}</div>`;
  if(k==='mac')return text('Add The Machine to your Dock','<span>In Safari’s menu bar: File, then Add to Dock.</span>')+`<div class="nudge-act">${later}</div>`;
  return text('Turn on notifications','<span>A ping when a card needs you, on this device only.</span>')+`<div class="nudge-act"><button type="button" class="primary" data-device="push-on">Turn on</button>${later}</div>`}
-const nudgeBox=(()=>{const el=document.createElement('div');el.id='device-nudge';el.className='device-nudge';el.setAttribute('role','region');el.setAttribute('aria-label','This device');el.hidden=true;el.dataset.kind='';
+const nudgeBox=(()=>{const el=document.createElement('div');el.id='device-nudge';el.className='notice-card device-nudge';el.setAttribute('role','region');el.setAttribute('aria-label','This device');el.hidden=true;el.dataset.kind='';
  $('#inbox').prepend(el);el.onclick=async e=>{const b=e.target.closest('button');if(!b)return;const k=el.dataset.kind;
   if(b.matches('[data-nudge-later]')){nudgeLater(k==='push'?'push':'install');return}
   // A closed prompt counts as Not now, so it doesn't come straight back.
