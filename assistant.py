@@ -6906,21 +6906,31 @@ def code_version(root=APP_ROOT):
 
 
 SOURCE_REPO = 'https://github.com/Salesflare/TheMachine'
+RELEASE_TAG = re.compile(r'release-\d{8}-\d{4}')
 _SOURCE_URL = {}
 
 
 def source_url(root=APP_ROOT):
-    """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else its commit, else the repo."""
+    """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else the latest release its
+    code contains, else the release its last port names ("(OSS #12, release-…)"), else the repo. Never a local commit,
+    which GitHub doesn't have."""
     if 'url' in _SOURCE_URL and _SOURCE_URL['at'] > time.monotonic() - 600:
         return _SOURCE_URL['url']
+    git = lambda *args: subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=10)
     ref = None
     try:
-        tag = subprocess.run(['git', '-C', str(root), 'describe', '--tags', '--exact-match', 'HEAD'], capture_output=True, text=True, timeout=10)
-        ref = tag.stdout.strip() if tag.returncode == 0 else None
+        for args in (('describe', '--tags', '--exact-match', '--match', 'release-*', 'HEAD'), ('describe', '--tags', '--abbrev=0', '--match', 'release-*', 'HEAD')):
+            found = git(*args)
+            if found.returncode == 0 and RELEASE_TAG.fullmatch(found.stdout.strip()):
+                ref = found.stdout.strip()
+                break
+        if not ref:
+            log = git('log', '-200', '--format=%s')
+            ported = RELEASE_TAG.search(log.stdout) if log.returncode == 0 else None
+            ref = ported and ported.group(0)
     except (OSError, subprocess.TimeoutExpired):
         pass
-    ref = ref or code_version(root)
-    url = f'{SOURCE_REPO}/tree/{urllib.parse.quote(ref, safe="")}' if ref else SOURCE_REPO
+    url = f'{SOURCE_REPO}/tree/{ref}' if ref else SOURCE_REPO
     _SOURCE_URL.update(at=time.monotonic(), url=url)
     return url
 
