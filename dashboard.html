@@ -4735,7 +4735,8 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
  $('#people').classList.remove('graph-on-node');
  const q=$('#people-query').value.trim();
  if(q){const r=await request('api/graph?q='+encodeURIComponent(q));draw(graphSection('Found','',r.found)||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nobody by that name.</strong>Try part of a name, an address or a company.</div></div>');return}
- let g=await request(graphTeam||graphPane==='held'?'api/graph?view=team':'api/graph');graphSharing=g.sharing||graphSharing;if(g.team&&!teamOn())g=await request('api/graph');
+ const forTeam=graphTeam;let g=await request(graphTeam||graphPane==='held'?'api/graph?view=team':'api/graph');graphSharing=g.sharing||graphSharing;if(g.team&&!teamOn())g=await request('api/graph');
+ if(forTeam!==graphTeam)return;  // Mine or Team changed while this loaded: the newer load draws
  const team=!!g.team&&(graphTeam||graphPane==='held'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';const start=team?shareNote(g.sharing):'';
  const panes=[{id:'people',label:'People',html:start+(team?graphSection('Closest to the team','Everyone your team shares, the closest first.',g.people):graphSection('Gone quiet','People you talk with regularly, silent for much longer than usual.',g.quiet)+graphSection('Closest','From your messages, meetings and cards. Fades over about two months.',g.people)+graphSection('New this week','',g.new)+sameList(g.same_person))},
   {id:'projects',label:'Projects',html:projectsPane(g)},

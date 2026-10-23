@@ -189,7 +189,7 @@ class Network:
         if method == 'POST' and path == '/trust':
             self.trust.append(body['item'])
             return {'ok': True}
-        if method == 'POST' and path == '/graph':  # this Machine's blobs: the teammates' Machines take its graph key and publish theirs
+        if method == 'POST' and path == '/graph':  # put, relay, ack: the teammates' Machines take its graph key and publish theirs
             blob = body.get('blob') or {}
             if body.get('op') == 'put' and blob.get('header', {}).get('kind') == 'key' and not self.graph and self.keys:
                 key = stub_graph.open_key(self, blob, self.net['owner']['member_id'])
