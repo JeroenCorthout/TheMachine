@@ -101,9 +101,9 @@ assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('folded
 await page.evaluate(id=>location.hash='#card='+id,ids[3]);
 await page.locator('#task-'+ids[3]).waitFor({state:'visible'});
 assert.equal(await page.locator('#later-list').getAttribute('open'),'');
-// Closed tasks older than the normal seven-day group can still be opened explicitly.
+// An old closed task is in Done with the rest (folded away), and its link opens Done on it.
 const saved={...suggestions[0]};Object.assign(suggestions[0],{status:'completed',created_at:'2026-01-01T09:00:00Z'});
-await page.evaluate(()=>refresh());assert.equal(await page.locator('#task-'+ids[0]).count(),0);
+await page.evaluate(()=>refresh());assert.equal(await page.locator('#task-'+ids[0]).isVisible(),false);
 await page.evaluate(id=>location.hash='#card='+id,ids[0]);
 await page.locator('#task-'+ids[0]).waitFor({state:'visible'});
 assert.equal(await page.locator('#finished-list').getAttribute('open'),'');
