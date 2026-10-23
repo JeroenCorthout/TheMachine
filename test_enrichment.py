@@ -167,7 +167,9 @@ class Enrichment(unittest.TestCase):
         self.assertEqual([enrichment.readable_name(d) for d in ('remy.be', 'blue-fox.io', 'kbc.be', 'mail.remy.be', 'acme.co.uk')],
                          ['Remy', 'Blue Fox', 'KBC', 'Remy', 'Acme'])
         self.assertEqual(enrichment.website('mail.remy.be'), 'https://remy.be')
-        self.add(tg.mail(3, 'Ann <ann@remy.be>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Ann <ann@remy.be>', ('SENT',)),
+        crm = tg.mail(3, 'Ann <ann@remy.be>', 'sam@acme.com')
+        crm['metadata']['crm_account'] = {'domain': 'remy.be', 'name': 'remy.be'}  # a CRM name that is only the domain says nothing
+        self.add(crm, tg.mail(2, 'Sam <sam@acme.com>', 'Ann <ann@remy.be>', ('SENT',)),
                  tg.mail(3, 'Lee <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee <lee@globex.com>', ('SENT',)))
         self.build()
         remy = self.node('org:remy.be')  # not looked up yet, or the service doesn't know it

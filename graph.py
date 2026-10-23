@@ -962,7 +962,9 @@ def _build(db, config, now):
                       len(node_events[node]), usual, int(quiet), None, info))
     # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
     def org_name(domain):
-        return (named.get('org:' + domain) or crm_names.get(domain) or paying_names.get(domain)
+        # A CRM or Stripe name that is only the domain says nothing; a looked-up or readable one reads better.
+        said = [n for n in (crm_names.get(domain), paying_names.get(domain)) if n and str(n).strip().lower().removeprefix('www.') != domain]
+        return (named.get('org:' + domain) or (said[0] if said else None)
                 or ({**(profiles.get(domain) or {}), **edits.get(domain, {})}).get('name') or enrichment.readable_name(domain))
     by_org_name = {}
     for domain in sorted(members):
