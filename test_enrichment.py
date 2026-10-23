@@ -2,6 +2,7 @@ import http.server
 import json
 import threading
 import unittest
+import urllib.parse
 from pathlib import Path
 
 import test_graph as tg
@@ -9,6 +10,20 @@ import test_graph as tg
 a, graph = tg.a, tg.graph
 enrichment = a.enrichment
 KEY = 'not-a-real-key'  # a test value; a realistic-looking one trips secret scanners
+
+
+# Salesflare's lead API shape for a person (GET /enrich/people?name=&domain=), with the much more it says than is kept.
+LEE = {'name': 'Lee Parker', 'linkedin_id': 'lee-parker-1', 'linkedin_url': 'https://www.linkedin.com/in/lee-parker-1',
+       'image_url': 'https://media.example/lee.jpg', 'location': {'address': '1 Main St', 'city': 'Springfield', 'state': 'IL', 'country_code': 'us'},
+       'title': 'Head of Sales at Globex | Speaker | Dad', 'position': 'Head of Sales',
+       'company': {'name': 'Globex', 'domain': 'globex.com', 'linkedin_id': 'globex', 'employees_num': 120},
+       'about_me': 'I love selling.', 'social_followers': 900, 'social_connections': 500,
+       'experience': [{'position': 'Head of Sales', 'company': {'name': 'Globex'}}], 'education': [{'school': 'Springfield U'}],
+       'languages': ['English'], 'websites': ['https://lee.example']}
+PEOPLE = {('Lee Parker', 'globex.com'): LEE,
+          ('Kai Novak', 'hooli.example'): {'name': 'Someone Else', 'position': 'CEO', 'company': {'name': 'Hooli', 'domain': 'hooli.example'}},
+          ('Rae Quinn', 'initech.example'): {'name': 'Rae Quinn', 'position': 'CTO', 'company': {'name': 'Other', 'domain': 'other.example'}}}
+WORK = {'work': 'work:Acme', 'home': 'personal:me', 'chat': 'personal:whatsapp', 'slack': 'work:Acme'}
 
 
 class Service(http.server.BaseHTTPRequestHandler):
@@ -19,6 +34,13 @@ class Service(http.server.BaseHTTPRequestHandler):
         Service.seen.append((self.path, self.headers.get('Authorization')))
         if self.headers.get('Authorization') != 'Bearer ' + KEY:
             self.send_response(401); self.end_headers(); return
+        if self.path.startswith('/enrich/people'):
+            asked = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            body = PEOPLE.get((asked.get('name', [''])[0], asked.get('domain', [''])[0]))
+            if body is None:
+                self.send_response(404); self.end_headers(); return
+            body = json.dumps(body).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(body); return
         if 'mismatch.example' in self.path:  # the service matched a page that merely links to this domain
             body = json.dumps({'name': 'Srsr company', 'website': 'https://mismatch.example/blog/post', 'about_us': 'srsr'}).encode()
             self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(body); return
@@ -193,6 +215,98 @@ class Enrichment(unittest.TestCase):
             self.assertEqual(enrichment.due(db, now, 10), ['globex.com'])
         with self.assertRaisesRegex(ValueError, 'organisation'):
             self.app.action('graph_org_wrong', {'node_id': 'email:lee@globex.com', 'wrong': True}, owner_dashboard=True)
+
+
+    def people_config(self, **extra):
+        return {'accounts': [{'id': k, 'boundary': v} for k, v in WORK.items()],
+                'enrichment': {**self.config['enrichment'], 'people_url': f'http://127.0.0.1:{self.server.server_port}/enrich/people?name={{name}}&domain={{domain}}', **extra}}
+
+    def test_a_person_answer_is_cut_down_to_what_the_dashboard_shows(self):
+        self.assertEqual(enrichment.normalise_person(LEE, 'Lee Parker', 'globex.com'),
+                         {'title': 'Head of Sales', 'company': 'Globex', 'company_domain': 'globex.com', 'photo': 'https://media.example/lee.jpg',
+                          'linkedin_url': 'https://www.linkedin.com/in/lee-parker-1', 'city': 'Springfield', 'country': 'US'})
+        # Other services' shapes: People Data Labs, Hunter.
+        pdl = enrichment.normalise_person({'data': {'full_name': 'lee parker', 'job_title': 'head of sales', 'job_company_name': 'globex',
+                                                    'job_company_website': 'globex.com', 'linkedin_url': 'linkedin.com/in/leeparker',
+                                                    'location_locality': 'springfield', 'location_country': 'united states', 'personal_emails': ['x@y.z']}},
+                                          'Lee Parker', 'globex.com')
+        self.assertEqual(pdl, {'title': 'head of sales', 'company': 'globex', 'company_domain': 'globex.com',
+                               'linkedin_url': 'https://www.linkedin.com/in/leeparker', 'city': 'springfield', 'country': 'united states'})
+        hunter = enrichment.normalise_person({'data': {'name': {'fullName': 'Lee Parker'}, 'employment': {'domain': 'globex.com', 'name': 'Globex', 'title': 'CFO'},
+                                                       'geo': {'city': 'Springfield', 'countryCode': 'US'}, 'linkedin': {'handle': 'leeparker'}}}, 'Lee Parker', 'globex.com')
+        self.assertEqual((hunter['title'], hunter['linkedin_url'], hunter['country']), ('CFO', 'https://www.linkedin.com/in/leeparker', 'US'))
+        # A photo only as a plain https address; a LinkedIn address only to a profile.
+        for bad in ('http://media.example/a.jpg', 'javascript:alert(1)', 'data:image/png;base64,AAAA', 'https://media.example/"><b>'):
+            self.assertNotIn('photo', enrichment.normalise_person({'name': 'Lee Parker', 'position': 'CFO', 'image_url': bad}, 'Lee Parker', 'globex.com'), bad)
+        self.assertNotIn('linkedin_url', enrichment.normalise_person({'name': 'Lee Parker', 'position': 'CFO', 'linkedin_url': 'https://evil.example/in/lee'}, 'Lee Parker', 'globex.com'))
+        # Someone else: another name, or the same name at another company. Nothing worth showing is nothing.
+        self.assertIsNone(enrichment.normalise_person(PEOPLE[('Kai Novak', 'hooli.example')], 'Kai Novak', 'hooli.example'))
+        self.assertIsNone(enrichment.normalise_person(PEOPLE[('Rae Quinn', 'initech.example')], 'Rae Quinn', 'initech.example'))
+        self.assertIsNone(enrichment.normalise_person({'name': 'Lee Parker', 'linkedin_url': 'https://www.linkedin.com/in/lee'}, 'Lee Parker', 'globex.com'))
+        self.assertIsNone(enrichment.normalise_person({'success': False}, 'Lee Parker', 'globex.com'))
+        self.assertEqual(enrichment.settings({'enrichment': {'url': 'https://leadapi.salesflare.com/enrich/companies?domain={domain}'}})['people_url'],
+                         'https://leadapi.salesflare.com/enrich/people?name={name}&domain={domain}')
+
+    def test_only_the_technical_skips(self):
+        info = {'org': 'org:globex.com', 'org_by': 'email', 'identifiers': ['email:lee@globex.com']}
+        ok = lambda name='Lee Parker', **changes: enrichment.work_contact({**info, **changes}, name)
+        self.assertEqual(ok(), ('lee@globex.com', 'globex.com'))
+        # Who they are to the owner doesn't matter: a colleague, family, only wrote in, only on a personal account.
+        self.assertEqual(ok(colleague=True, seen_only=True, wrote=0, met=0, accounts=['chat'], hints=["shares the owner's surname"]), ('lee@globex.com', 'globex.com'))
+        self.assertEqual(ok(org=None, org_by=None, identifiers=['email:lee@acme.com']), ('lee@acme.com', 'acme.com'))  # the owner's own domain
+        self.assertEqual(ok(identifiers=['email:lee@gmail.com', 'email:lee@globex.com']), ('lee@globex.com', 'globex.com'))
+        # Where a look-up can't work or would be wrong.
+        self.assertIsNone(ok('lee'))                                # no full name to look up by
+        self.assertIsNone(ok(org='org:gmail.com', identifiers=['email:lee@gmail.com']))  # free mail: no company to look in
+        self.assertIsNone(ok(identifiers=['email:info@globex.com']))
+        self.assertIsNone(ok(identifiers=['email:noreply@globex.com']))
+        self.assertIsNone(ok(identifiers=['wa:3212345678']))
+
+    def test_work_contacts_are_looked_up_on_their_own_budget_and_shown(self):
+        def home(event):
+            return {**event, 'account_id': 'home'}
+        self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee Parker <lee@globex.com>', ('SENT',)),
+                 tg.mail(3, 'Kim Ray <kim@initech.example>', 'sam@acme.com'),                                        # only wrote in: looked up too
+                 tg.mail(3, 'Bo Smith <bo@gmail.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Bo Smith <bo@gmail.com>', ('SENT',)),
+                 home(tg.mail(3, 'Max Field <max@umbrella.example>', 'sam@acme.com')), home(tg.mail(2, 'Sam <sam@acme.com>', 'Max Field <max@umbrella.example>', ('SENT',))))
+        self.build()
+        config, now = self.people_config(), tg.NOW.isoformat()
+        with self.store.connect() as db:  # everyone with a full name and a company address; Bo has only free mail
+            self.assertEqual([p['identifier'] for p in enrichment.people_due(db, now, 10)], ['email:lee@globex.com', 'email:max@umbrella.example', 'email:kim@initech.example'])
+        self.assertEqual(enrichment.people_step(self.store.connect, config, now, per_pass=1), 1)
+        people = [p for p, _ in Service.seen if p.startswith('/enrich/people')]
+        self.assertEqual(people, ['/enrich/people?name=Lee%20Parker&domain=globex.com'])  # name and domain only, never the address
+        self.assertEqual(enrichment.people_step(self.store.connect, config, now), 0)  # the others aren't known; done until due again
+        with self.store.connect() as db:
+            self.assertEqual(enrichment.people_status(db)['found'], 1)
+            self.assertEqual(enrichment.status(db, config)['found'], 0)  # the organisations' budget is untouched
+            db.execute('DELETE FROM person_profiles')
+            enrichment.save_person(db, 'email:someone@else.example', 'none', None, now)  # today's one look-up
+        capped = self.people_config(people_per_day=1)
+        self.assertEqual(enrichment.people_step(self.store.connect, capped, now), 0)
+        self.assertEqual(enrichment.people_step(self.store.connect, config, now), 1)
+        self.build()
+        lee = self.node('email:lee@globex.com')
+        self.assertEqual((lee['profile']['title'], lee['profile']['company_domain'], lee['org']), ('Head of Sales', 'globex.com', 'org:globex.com'))
+        self.assertNotIn('about_me', json.dumps(lee))
+        with self.store.connect() as db:
+            lines = graph.context_lines(db, [r[0] for r in db.execute("SELECT event_id FROM graph_events WHERE node_id='email:lee@globex.com'")])
+        self.assertIn('job title Head of Sales', lines)
+        self.app.config = {**tg.CONFIG, **config}
+        self.assertTrue({'graph_person_delete', 'set_people_lookup'} <= a.OWNER_ACTIONS and 'graph_person_lookup' not in a.OWNER_ACTIONS)
+        # Settings, Look up work contacts: off means nobody is looked up.
+        with self.assertRaisesRegex(ValueError, 'Only the owner'):
+            self.app.action('set_people_lookup', {'on': False})
+        self.assertEqual(self.app.action('set_people_lookup', {'on': False}, owner_dashboard=True), {'people_available': True, 'people': False})
+        with self.store.connect() as db:
+            self.assertEqual(enrichment.people_due(db, now, 10), [])
+        self.assertEqual(enrichment.people_step(self.store.connect, config, now), 0)
+        self.app.action('set_people_lookup', {'on': True}, owner_dashboard=True)
+        self.assertEqual(self.app.lookups_view(), {'people_available': True, 'people': True})
+        self.app.config = {**tg.CONFIG, 'enrichment': {'enabled': False, 'by': 'hosting'}}  # hosted: the hosting agent looks them up
+        self.assertTrue(self.app.lookups_view()['people_available'])
+        self.app.config = {**tg.CONFIG, 'enrichment': {**self.config['enrichment']}}  # a service without a people address
+        self.assertFalse(self.app.lookups_view()['people_available'])
 
 
 if __name__ == '__main__':
