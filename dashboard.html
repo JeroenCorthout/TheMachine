@@ -1577,11 +1577,11 @@ body:has(#calendar:not([hidden])) #page-head{position:sticky;top:0;z-index:30;ma
 /* A chip: an item in the All day strip and in a month's day */
 .cal-chip{display:block;min-width:0;padding:4px 7px 5px;border-radius:var(--r-xs);background:var(--c-sunken);color:var(--text);text-decoration:none;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);box-shadow:inset 3px 0 0 var(--tone)}
 .cal-chip.k-meeting{box-shadow:inset 3px 0 0 var(--c-line-strong)}
-.cal-chip.k-theirs,.cal-blk.k-theirs{background:transparent;box-shadow:inset 0 0 0 1px var(--c-line);color:var(--c-text-2)}
+.cal-chip.k-theirs,.cal-blk.k-theirs{background:transparent;box-shadow:inset 0 0 0 1px var(--c-line);color:var(--c-text-2)}.cal-blk.k-theirs{background:var(--c-surface)}
 @media(hover:hover){a.cal-chip:hover,a.cal-blk:hover{background:color-mix(in srgb,var(--text) 8%,var(--c-sunken))}}
 .cal-chip .t{color:var(--c-text-3);font-variant-numeric:tabular-nums;margin-right:4px}
 .cal-chip .n{overflow-wrap:anywhere}
-.cal-chip,.cal-blk{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cal-chip{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 /* Week: the time grid */
 .cal-tg{--gut:48px;border:1px solid var(--c-line);border-radius:var(--r-lg);background:var(--c-surface);overflow:hidden}
 .cal-tg-head,.cal-tg-strip,.cal-tg-body{display:grid;grid-template-columns:var(--gut) repeat(var(--n),minmax(0,1fr))}
@@ -1599,13 +1599,12 @@ body:has(#calendar:not([hidden])) #page-head{position:sticky;top:0;z-index:30;ma
 .cal-tg-hours span{position:absolute;right:6px;transform:translateY(-50%);color:var(--c-text-3);font:var(--fw-medium) 10px/1 var(--sans);font-variant-numeric:tabular-nums}
 .cal-tg-col{position:relative;min-width:0;border-left:1px solid var(--c-line)}
 .cal-tg-col.today{background:color-mix(in srgb,var(--c-accent-tint) 45%,transparent)}
-.cal-blk{position:absolute;display:block;box-sizing:border-box;margin:1px 0 0 2px;padding:3px 6px;border-radius:var(--r-xs);background:var(--c-sunken);color:var(--text);text-decoration:none;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);box-shadow:inset 3px 0 0 var(--tone),0 0 0 1px var(--c-surface);white-space:normal}
+.cal-blk .c{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--lines);overflow:hidden}
+.cal-blk{position:absolute;display:block;box-sizing:border-box;margin:1px 0 0 2px;padding:2px 6px;overflow:hidden;border-radius:var(--r-xs);background:var(--c-sunken);color:var(--text);text-decoration:none;font:var(--fw-medium) var(--fs-xs)/14px var(--sans);white-space:normal;overflow-wrap:break-word;hyphens:auto;box-shadow:inset 3px 0 0 var(--tone),0 0 0 1px var(--c-surface)}
 .cal-blk.k-meeting{box-shadow:inset 3px 0 0 var(--c-line-strong),0 0 0 1px var(--c-surface)}
-.cal-blk .t{display:block;color:var(--c-text-3);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cal-blk .n{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:var(--lines);overflow-wrap:anywhere}
-.cal-blk.narrow{padding-left:5px;padding-right:3px}.cal-blk.narrow.short .t{display:none}.cal-blk.narrow:not(.short) .t{display:none}
-.cal-blk.short{display:flex;align-items:flex-start;gap:4px;padding-top:2px;padding-bottom:0;white-space:nowrap}.cal-blk.short .t{flex:none}.cal-blk.short .n{display:block;min-width:0;text-overflow:ellipsis;white-space:nowrap}
-.cal-blk.past{opacity:.55}
+.cal-blk .t{color:var(--c-text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cal-tg-more{position:absolute;right:1px;z-index:5;width:24px;min-height:0;margin:1px 0 0;padding:2px 0;border:0;border-radius:999px;background:var(--c-raised);box-shadow:var(--shadow-sm),0 0 0 1px var(--c-line);color:var(--text);font:var(--fw-medium) 11px/16px var(--sans);cursor:pointer}
+.cal-blk.past{color:var(--c-text-3);background:color-mix(in srgb,var(--c-sunken) 55%,var(--c-surface))}
 .cal-now{position:absolute;left:0;right:0;z-index:2;height:2px;margin-top:-1px;background:var(--orange);pointer-events:none}
 .cal-now::before{content:'';position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--orange)}
 /* Month */
@@ -1630,7 +1629,7 @@ body:has(#calendar:not([hidden])) #page-head{position:sticky;top:0;z-index:30;ma
 .cal-mg.dots .cal-mday.gone:not(.today) b{color:var(--c-text-3)}
 .cal-dots{display:flex;gap:3px;height:5px}.cal-dots i{width:5px;height:5px;border-radius:50%;background:var(--tone)}
 .cal-dots i.k-meeting,.cal-dots i.k-prep{background:var(--c-text-3)}.cal-dots i.k-prep{background:var(--tone)}.cal-dots i.k-theirs{background:transparent;box-shadow:inset 0 0 0 1px var(--c-line-strong)}
-@media(max-width:1023px){.cal-tg{--gut:38px;margin:0 -6px}.cal-tg-scroll{max-height:calc(100dvh - 250px)}.cal-tg-day{flex-direction:column;align-items:center;gap:4px}.cal-tg-day.today b{margin:0}.cal-mg.dots{margin-left:-6px;margin-right:-6px}}
+@media(max-width:1023px){.cal-tg{--gut:38px;margin:0 -6px}.cal-blk{padding:2px 4px 2px 6px}.cal-tg-more{width:19px;font-size:10px}.cal-tg-scroll{max-height:calc(100dvh - 250px)}.cal-tg-day{flex-direction:column;align-items:center;gap:4px}.cal-tg-day.today b{margin:0}.cal-mg.dots{margin-left:-6px;margin-right:-6px}}
 /* Saved sign-ins (Connections, Sign-ins): one calm row per site, a letter tile, the username, a faint "Password saved"
    line and a quiet Forget; the explainer sits under the heading. */
 .logins-head{flex-direction:column;align-items:flex-start;gap:3px}.logins-head p{margin:0}.logins-head p span{display:block}
@@ -3640,22 +3639,30 @@ function calDayBlock(k,list,late,today){const name=calName(k),date=calDate(k);
 // Week as a time grid: hours down the side, a column per day, each meeting a block as long as it lasts; ones that
 // overlap share the width. All day, and dates without a time (due cards, promises), sit in a strip on top. A line
 // marks now on today. A computer shows the calendar week; a phone three days, swiped through.
-const CAL_HOUR=44;
+const CAL_HOUR=68,CAL_MIN=30;  // px an hour, so half an hour holds two lines; a block is never shorter than that
 function calMins(v,k){const d=new Date(v),day=localDay(d);return day<k?0:day>k?1440:d.getHours()*60+d.getMinutes()}  // local clock time, so a day with a clock change still lines up
+// Lay a day's timed items out like a paper calendar: ones that really overlap share the width, at most two abreast
+// (one on a phone's narrow days), and the rest become "+N" (which opens the day in the agenda). One that only touches the one before because blocks
+// have a minimum height sits a little to the right, on top, keeping the full width.
 function calLay(list,k){const ev=list.map(it=>{let s,e;if(it.kind==='meeting'){s=calMins(it.m.start,k);const end=new Date(it.m.end);e=!isNaN(end)&&end>new Date(it.m.start)?calMins(it.m.end,k):s+30}else{s=calMins(it.at,k);e=s+30}
-  s=Math.min(s,1420);return {it,s,e:Math.min(1440,Math.max(e,s+20))}}).sort((a,b)=>a.s-b.s||b.e-a.e);
- let group=[],end=-1;const flush=()=>{const cols=[];for(const x of group){let c=cols.findIndex(e=>e<=x.s);if(c<0){c=cols.length;cols.push(0)}cols[c]=x.e;x.col=c}for(const x of group)x.n=cols.length;group=[]};
- for(const x of ev){if(group.length&&x.s>=end){flush();end=-1}group.push(x);end=Math.max(end,x.e)}flush();return ev}
-// A block shows its time over its title when it has the room, else both on one line; one of three or more side by
-// side keeps just the title (the time is in its tooltip)
-function calBlock(b){const x=calParts(b.it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'',h=(b.e-b.s)*CAL_HOUR/60-2,short=h<40;
- return `<${tag} class="cal-blk k-${x.tone}${b.it.past?' past':''}${short?' short':''}${b.n>2||b.n>1&&!DESK.matches?' narrow':''}"${attrs} style="top:${b.s*CAL_HOUR/60}px;height:${h}px;left:calc(${b.col} * 100% / ${b.n});width:calc(100% / ${b.n} - 3px);--lines:${Math.max(1,Math.floor((h-22)/16))}" title="${esc([x.time,x.owner,x.title].filter(Boolean).join(' ')+(x.sub?' · '+x.sub:'')+(x.said||[]).map(t=>' · '+t).join(''))}"><span class="t">${esc(x.owner||x.time)}</span><span class="n">${esc(x.title)}</span></${tag}>`}
+  s=Math.min(s,1440-CAL_MIN);e=Math.min(1440,Math.max(e,s+1));return {it,s,e,ve:Math.min(1440,Math.max(e,s+CAL_MIN)),ind:0}}).sort((a,b)=>a.s-b.s||b.e-a.e);
+ const shown=[],more=[];let group=[],end=-1;
+ const flush=()=>{if(!group.length)return;const cols=[];for(const x of group){let c=cols.findIndex(e=>e<=x.s);if(c<0){c=cols.length;cols.push(0)}cols[c]=x.e;x.col=c}
+  const max=DESK.matches?2:1,n=Math.min(max,cols.length),hid=group.filter(x=>x.col>=max);for(const x of group)if(x.col<max){x.n=n;x.rail=hid.length>0;shown.push(x)}
+  if(hid.length)more.push({s:Math.min(...hid.map(x=>x.s)),n:hid.length});group=[]};
+ for(const x of ev){if(group.length&&x.s>=end){flush();end=-1}group.push(x);end=Math.max(end,x.e)}flush();
+ for(const x of shown)for(const y of shown){if(y===x)break;if(y.s<x.s&&x.s<y.ve&&x.s>=y.e&&(x.n===1||y.n===1||x.col===y.col))x.ind=Math.max(x.ind,y.ind+1)}
+ return {shown,more}}
+// A block: its start time, then its title, on as many lines as it has room for (two at least)
+function calBlock(b){const x=calParts(b.it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'',h=(b.ve-b.s)*CAL_HOUR/60-2,off=b.ind*12,rail=b.rail?(DESK.matches?26:20):0;
+ return `<${tag} class="cal-blk k-${x.tone}${b.it.past?' past':''}"${attrs} style="top:${b.s*CAL_HOUR/60}px;height:${h}px;left:calc(${b.col} * (100% - ${rail}px) / ${b.n} + ${off}px);width:calc((100% - ${rail}px) / ${b.n} - ${3+off}px);z-index:${1+b.ind};--lines:${Math.max(2,Math.floor((h-4)/14))}" title="${esc([x.time,x.owner,x.title].filter(Boolean).join(' ')+(x.sub?' · '+x.sub:'')+(x.said||[]).map(t=>' · '+t).join(''))}"><span class="c"><span class="t">${esc(x.time)}</span> <span class="n">${x.owner?esc(x.owner)+' ':''}${esc(x.title)}</span></span></${tag}>`}
+const calMoreBlock=(m,k)=>`<button type="button" class="cal-tg-more" data-cal-open="${k}" style="top:${m.s*CAL_HOUR/60}px" aria-label="${m.n} more, open the day">+${m.n}</button>`;
 function calTimeGrid(days,byDay,today){const n=days.length,nowMin=new Date().getHours()*60+new Date().getMinutes();
- const cols=days.map(k=>{const list=byDay(k);return {k,strip:list.filter(i=>i.allDay||i.at<0),timed:calLay(list.filter(i=>!i.allDay&&i.at>=0),k)}}),strip=cols.some(c=>c.strip.length);
+ const cols=days.map(k=>{const list=byDay(k);return {k,strip:list.filter(i=>i.allDay||i.at<0),lay:calLay(list.filter(i=>!i.allDay&&i.at>=0),k)}}),strip=cols.some(c=>c.strip.length);
  const head=`<div class="cal-tg-head">${'<span></span>'+cols.map(c=>`<div class="cal-tg-day${c.k===today?' today':''}${c.k<today?' gone':''}" data-day="${c.k}"><span>${c.k===today?'Today':esc(calWeekday(c.k))}</span><b>${calOf(c.k).getDate()}</b></div>`).join('')}</div>`;
  const top=strip?`<div class="cal-tg-strip"><span class="cal-tg-label">All day</span>${cols.map(c=>`<div class="cal-tg-cell">${c.strip.map(calChip).join('')}</div>`).join('')}</div>`:'';
  const hours=[...Array(23)].map((_,h)=>`<span style="top:${(h+1)*CAL_HOUR}px">${String(h+1).padStart(2,'0')}:00</span>`).join('');
- return `<div class="cal-tg" style="--n:${n};--hour:${CAL_HOUR}px">${head}${top}<div class="cal-tg-scroll"><div class="cal-tg-body"><div class="cal-tg-hours" aria-hidden="true">${hours}</div>${cols.map(c=>`<div class="cal-tg-col${c.k===today?' today':''}" data-col="${c.k}">${c.k===today?`<i class="cal-now" style="top:${nowMin*CAL_HOUR/60}px" aria-hidden="true"></i>`:''}${c.timed.map(calBlock).join('')}</div>`).join('')}</div></div></div>`}
+ return `<div class="cal-tg" style="--n:${n};--hour:${CAL_HOUR}px">${head}${top}<div class="cal-tg-scroll"><div class="cal-tg-body"><div class="cal-tg-hours" aria-hidden="true">${hours}</div>${cols.map(c=>`<div class="cal-tg-col${c.k===today?' today':''}" data-col="${c.k}">${c.k===today?`<i class="cal-now" style="top:${nowMin*CAL_HOUR/60}px" aria-hidden="true"></i>`:''}${c.lay.shown.map(calBlock).join('')}${c.lay.more.map(m=>calMoreBlock(m,c.k)).join('')}</div>`).join('')}</div></div></div>`}
 // Month: the calendar month, Monday on or before the 1st to Sunday on or after the last; days of the months around it
 // step back. A computer shows up to three items a day and "+N more"; a phone shows dots, and a tap lists that day.
 let calPick='';
@@ -3682,9 +3689,11 @@ function calRender(){const box=$('#calendar-view');if(!box||!state)return;const 
  if(box.innerHTML!==html){box.innerHTML=html;if(keep){const el=box.querySelector(`[data-day="${keep.day}"]`),d=el?el.getBoundingClientRect().top-keep.top:0;if(Math.abs(d)>.5)scrollBy(0,d)}calObserve(box)}
  const p=box.querySelector('.cal-tg-scroll');if(p){if(y!=null)p.scrollTop=y;else if(calMeetings){p.scrollTop=calFirstHour(box)*CAL_HOUR;calGridShown=hash}}
  calBadge();pageHead()}
-// The time grid opens an hour before now on today's week, else an hour before the first meeting (08:00 when there is none)
+// The time grid opens an hour before now on today's week while there is more to come, else an hour before the first
+// meeting (08:00 when there is none)
 let calGridShown='';
-function calFirstHour(box){if(box.querySelector('.cal-now'))return Math.max(0,new Date().getHours()-1);const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR);return tops.length?Math.max(0,Math.floor(Math.min(...tops))-1):8}
+function calFirstHour(box){const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR),h=new Date().getHours()-1;
+ if(box.querySelector('.cal-now')&&tops.some(t=>t>=h))return Math.max(0,h);return tops.length?Math.max(0,Math.floor(Math.min(...tops))-1):8}
 // The row's count: what is on today, also before the Calendar is opened (its meetings come once, a moment after the start)
 function calBadge(){if(!state)return;const {items}=calItems(),n=items.filter(i=>i.day===localDay(new Date())).length,b=$('#badge-calendar');if(b&&b.textContent!==(n?String(n):''))b.textContent=n?String(n):''}
 setTimeout(()=>calFetch().then(calBadge),2000);

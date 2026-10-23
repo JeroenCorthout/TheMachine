@@ -20,7 +20,10 @@ const key=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.ge
 const iso=d=>d.toISOString(),now=iso(new Date());
 const mtg=(id,title,a,b,extra={})=>({id,account_id:'cal',title,start:iso(a),end:iso(b),all_day:false,location:'',guests:2,url:'https://calendar.example/e/'+id,...extra});
 const meetings=[
- mtg(1,'Design review',at(0,10),at(0,11)),mtg(2,'Pilot call',at(0,10,30),at(0,11,30)),mtg(3,'Lunch with Kai',at(0,12),at(0,13)),
+ // Today, like a real calendar: half hours and hours on the quarter hour, three at once at 10:30, back to back at 9, a quarter hour at 13:15
+ mtg(6,'Standup',at(0,9),at(0,9,30)),mtg(7,'Hiring sync',at(0,9,30),at(0,10)),
+ mtg(1,'Design review',at(0,10),at(0,11)),mtg(2,'Pilot call',at(0,10,30),at(0,11)),mtg(8,'Vendor demo',at(0,10,30),at(0,11,15)),
+ mtg(3,'Lunch with Kai',at(0,12),at(0,13)),mtg(10,'Quick call',at(0,13,15),at(0,13,30)),mtg(11,'Follow-up',at(0,13,30),at(0,14)),mtg(9,'Quarterly check-in with Harborline',at(0,14,15),at(0,14,45)),
  mtg(4,'Conference',at(1,0),at(3,0),{all_day:true}),mtg(5,'Their dentist',at(1,9),at(1,10),{shared:'Robin',url:''}),
  // The weekend of the clock change: 10:00 on Saturday (summer time) and on Sunday (winter time)
  mtg(20,'Saturday brunch',new Date('2026-10-24T08:00:00Z'),new Date('2026-10-24T09:00:00Z')),mtg(21,'Sunday walk',new Date('2026-10-25T09:00:00Z'),new Date('2026-10-25T10:00:00Z')),
@@ -79,22 +82,33 @@ try{
   await go(page,'#calendar?view=week&date=2026-10-19');await page.locator('.cal-tg-col[data-col="2026-10-25"] .cal-blk').waitFor();
   assert.equal(await range(page),'19 – 25 Oct 2026');
   const tops=await page.evaluate(()=>[['2026-10-24','Saturday brunch'],['2026-10-25','Sunday walk']].map(([k,t])=>{const b=[...document.querySelectorAll(`.cal-tg-col[data-col="${k}"] .cal-blk`)].find(b=>b.textContent.includes(t));return [parseFloat(b.style.top),parseFloat(b.style.height)]}));
-  assert.deepEqual(tops,[[440,42],[440,42]],'an hour at 10:00 on both sides of the change');
+  assert.deepEqual(tops,[[680,66],[680,66]],'an hour at 10:00 on both sides of the change');
   // This week: seven columns from Monday, today marked with the now line, overlaps side by side, All day on top
   await page.keyboard.press('t');await page.locator('.cal-tg-col.today').waitFor();
   assert.ok(await page.locator('.cal-today.now').count(),'Today is quiet on this week');
   const days=await page.locator('.cal-tg-day').evaluateAll(d=>d.map(x=>x.dataset.day));assert.equal(days.length,7);assert.equal(new Date(days[0]+'T12:00').getDay(),1);
   assert.equal(await page.locator('.cal-tg-col.today .cal-now').count(),1);
-  const pair=await page.evaluate(()=>[...document.querySelectorAll('.cal-tg-col.today .cal-blk')].map(b=>[b.textContent,b.style.left,b.style.width]));
-  const design=pair.find(p=>p[0].includes('Design review')),pilot=pair.find(p=>p[0].includes('Pilot call')),lunch=pair.find(p=>p[0].includes('Lunch'));
-  assert.ok(design[1]!==pilot[1]&&/50%/.test(design[2])&&/50%/.test(pilot[2]),'overlapping meetings share the width '+JSON.stringify(pair));
-  assert.match(lunch[2],/100%/,'one on its own takes the column');
+  const blocks=await page.evaluate(()=>[...document.querySelectorAll('.cal-tg-col.today .cal-blk')].map(b=>({text:b.textContent,left:b.style.left,width:b.style.width,z:b.style.zIndex,h:b.getBoundingClientRect().height})));
+  const find=t=>blocks.find(b=>b.text.includes(t));
+  // At most two abreast: the third at 10:30 becomes "+1", which opens the day in the agenda
+  const second=find('Vendor demo')||find('Pilot call');
+  assert.ok(find('Design review').left!==second.left&&/50%/.test(find('Design review').width)&&/50%/.test(second.width),'two at once share the width '+JSON.stringify(blocks));
+  assert.ok(!(find('Vendor demo')&&find('Pilot call')),'a third at once is not squeezed in');assert.equal(await page.locator('.cal-tg-col.today .cal-tg-more').textContent(),'+1');
+  // A half hour is two lines tall with its time first, and back to back ones don't touch; a quarter of an hour is
+  // as tall, so the one after it sits on top, a little to the right, keeping the width
+  assert.ok(find('Standup').h>=32,'two lines at least '+find('Standup').h);assert.match(find('Standup').text,/^09:00 Standup$/);
+  assert.equal(find('Hiring sync').z,'1');assert.ok(find('Quick call').h>=32);
+  assert.match(find('Follow-up').left,/12px/);assert.equal(find('Follow-up').z,'2');assert.match(find('Follow-up').width,/100%/);
+  assert.match(find('Lunch').width,/100%/,'one on its own takes the column');assert.equal(find('Lunch').z,'1');
   const tomorrow=key(at(1,0));
   if(days.includes(tomorrow)){const strip=page.locator('.cal-tg-strip');
    assert.ok(await strip.locator('.cal-chip',{hasText:'Conference'}).count(),'All day goes on top');
    assert.equal(await strip.locator('a.cal-chip',{hasText:'send the pilot recap'}).getAttribute('href'),'#promise/7','a promise opens its own page');
    assert.ok(await page.locator('.cal-blk.k-theirs',{hasText:'Their dentist'}).count(),'a shared calendar\'s meeting is marked as theirs')}
   await fits(page,'week 1440');await shot(page,'grid-week-1440');
+  await page.locator('.cal-tg-col.today .cal-tg-more').click();await page.waitForFunction(()=>location.hash.startsWith('#calendar?view=agenda'));
+  assert.ok(await page.locator('#calendar-view .cal-block[data-day="'+key(at(0,0))+'"] .cal-item',{hasText:'Vendor demo'}).count()&&await page.locator('#calendar-view .cal-item',{hasText:'Pilot call'}).count(),'the agenda lists all three');
+  await page.keyboard.press('w');await page.locator('.cal-tg').waitFor();
   // m picks Month, on this month; the view is remembered on this device, and the Calendar opens on the current period
   await page.keyboard.press('m');await page.locator('.cal-mg').waitFor();assert.equal(await range(page),new Date().toLocaleDateString('en-GB',{month:'long',year:'numeric'}));
   await page.keyboard.press('ArrowLeft');await page.waitForFunction(()=>!document.querySelector('.cal-today.now'));
