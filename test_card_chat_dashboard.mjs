@@ -103,17 +103,19 @@ try{
  assert.equal(await page.locator('#chat-log .chat-options button.primary').count(),1);
  // A message to a coding agent says to whom; its answer leads with what it found, its files as chips
  assert.equal(await page.locator('#chat-log .chat-msg.you .chat-to').textContent(),'to Codex');
- // An answer with files is a result: the raised card, as the latest thing made for the owner
- const agent=page.locator('#chat-log .chat-result',{hasText:'Both dates are free.'});
- assert.equal(await agent.locator('.chat-result-title').textContent(),'Codex');
- assert.ok(await agent.evaluate(n=>n.classList.contains('current')));
- assert.ok(await page.locator('#chat-log .chat-result.earlier').count()>=1);
+ // An agent's answer is plain text like any reply (never a raised card), its name small above it
+ const agent=page.locator('#chat-log .chat-msg.machine',{hasText:'Both dates are free.'});
+ assert.equal(await agent.locator('.chat-agent-name').textContent(),'Codex');
+ assert.equal(await page.locator('#chat-log .chat-result',{hasText:'Both dates are free.'}).count(),0);
+ // The open draft is the one raised result; the earlier one steps back
+ assert.equal(await page.locator('#chat-log .chat-result.current').count(),1);
+ assert.ok(await page.locator('#chat-log .chat-result.current .chat-draft.current').count());
  assert.equal(await agent.locator('.chat-files a.agent-file').textContent(),'summary.md');
- assert.equal(await agent.locator('.chat-noted').textContent(),'Nothing sent');
+ assert.equal(await agent.locator('.chat-files .chat-noted').textContent(),'Codex sent nothing');
  // A shortened answer has More, which shows the whole answer
  await agent.locator('.chat-more').click();
- await page.locator('#chat-log .chat-result',{hasText:'I wrote summary.md.'}).waitFor();
- assert.equal(await page.locator('#chat-log .chat-result',{hasText:'I wrote summary.md.'}).locator('.chat-more').textContent(),'Less');
+ await page.locator('#chat-log .chat-msg.machine',{hasText:'I wrote summary.md.'}).waitFor();
+ assert.equal(await page.locator('#chat-log .chat-msg.machine',{hasText:'I wrote summary.md.'}).locator('.chat-more').textContent(),'Less');
  // At most two suggestions from the card; one fills the message box
  assert.ok(await page.locator('#chat-picks').isHidden());  // after a message of yours, only while you write
  await page.locator('#chat-input').focus();

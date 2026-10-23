@@ -930,7 +930,7 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 .chat-main{display:flex;flex-direction:column;min-height:calc(100dvh - 40px);font-size:var(--chat-body);line-height:1.6}
 .chat-head{position:sticky;top:0;z-index:6;display:flex;align-items:flex-start;gap:4px;padding:10px 0;background:var(--bg)}
 /* A soft edge under the header, so what scrolls under it fades instead of looking cut */
-.chat-head::after{content:'';position:absolute;left:0;right:0;top:100%;height:20px;background:linear-gradient(var(--bg) 20%,color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
+.chat-head::after{content:'';position:absolute;left:0;right:0;top:100%;z-index:1;height:14px;background:linear-gradient(var(--bg) 30%,color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 .chat-back,.chat-menu>summary{display:grid;place-items:center;flex:none;width:36px;height:36px;margin-top:-5px;border-radius:50%;color:var(--text);text-decoration:none;cursor:pointer}
 .chat-back:hover,.chat-menu>summary:hover,.chat-menu[open]>summary{background:var(--c-hover)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
 .chat-title{flex:1;min-width:0;margin:2px 0 0;font:600 1rem/1.35 var(--sans);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
@@ -953,7 +953,7 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 /* People's messages (email, WhatsApp, Intercom): a light quote with the sender above */
 .chat-source .bubble{padding:1px 0 1px 14px;border-left:2px solid color-mix(in srgb,var(--text) 16%,transparent);color:var(--muted)}
 .chat-source.you{align-items:flex-end}.chat-source.you .bubble{padding:1px 14px 1px 0;border-left:0;border-right:2px solid color-mix(in srgb,var(--c-accent) 45%,transparent);border-radius:0;background:none}
-.chat-source.note .bubble{border-left-style:dashed;font-size:.94rem}
+
 .chat-from{display:flex;gap:10px;align-items:baseline;margin:0 0 4px;font-size:var(--chat-meta);color:var(--chat-quiet)}.chat-from span{font-weight:600;color:var(--muted)}
 /* Times are quiet: on hover (or keyboard focus) on a computer; on a phone only by each sender's name */
 .chat-time{font-size:var(--chat-meta);color:var(--chat-quiet);line-height:1.5;font-variant-numeric:tabular-nums;font-weight:400;transition:opacity .15s}
@@ -965,7 +965,7 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 #chat-log button.link,.chat-status button.link{display:inline;min-height:0;margin:0;padding:0;border:0;background:none;box-shadow:none;color:var(--c-accent);font:500 var(--chat-meta)/1.5 var(--sans);cursor:pointer}
 #chat-log button.link:hover,.chat-status button.link:hover{text-decoration:underline}
 .chat-more,.chat-source .read-original{margin:6px 14px 0 0!important}
-.chat-noted{margin:6px 0 0;font-size:var(--chat-meta);color:var(--chat-quiet)}
+.chat-noted{margin:6px 0 0;font-size:var(--chat-meta);color:var(--chat-quiet)}.chat-files .chat-noted{margin:0 0 0 4px;align-self:center}
 .chat-q{margin:0!important;font-weight:600}
 .chat-agent-name{margin:0 0 4px;font-size:var(--chat-meta);font-weight:600;color:var(--chat-quiet)}
 .chat-files{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}.chat-files .agent-file{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border:1px solid var(--c-line-strong);border-radius:999px;font-size:.82rem;line-height:1.5;color:var(--text);text-decoration:none;overflow-wrap:anywhere}.chat-files .agent-file:hover{background:var(--c-hover)}
@@ -1005,7 +1005,7 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 .chat-result.only-draft .chat-draft{margin:0;padding:0;border:0;background:none}.chat-result.only-draft .chat-draft-head{font-size:.9rem;margin-bottom:6px}.chat-result.only-draft .chat-draft-head span:first-child{color:var(--text)}.chat-result.only-draft.earlier .chat-draft-head span:first-child{color:var(--muted);font-weight:500}
 .chat-result-head+.chat-draft,.chat-draft:first-child{margin-top:4px}
 .chat-draft-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin:0 0 4px;font-size:var(--chat-meta);color:var(--chat-quiet)}.chat-draft-head span:first-child{font-weight:600;color:var(--muted)}
-.chat-draft .went-tag{color:var(--c-accent)}
+.chat-draft .went-tag{color:var(--chat-quiet)}
 .chat-draft-subject{margin:0 0 2px;font-weight:600}
 .chat-draft-foot{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;margin:10px 0 0}.chat-draft-foot>span{display:flex;gap:14px}
 .chat-draft-foot>button{min-height:34px;margin:0 0 0 auto;padding:6px 16px;border-radius:999px;font-size:.87rem}
@@ -1020,12 +1020,12 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 .chat-compose{position:sticky;bottom:0;z-index:5;align-self:center;width:min(100%,var(--chat-col));padding:14px 0 calc(14px + env(safe-area-inset-bottom));background:var(--bg)}
 .chat-compose::before{content:'';position:absolute;left:0;right:0;bottom:100%;height:20px;background:linear-gradient(color-mix(in srgb,var(--bg) 0%,transparent),var(--bg) 80%);pointer-events:none}
 .chat-status{display:flex;gap:6px;align-items:baseline;justify-content:center;font-size:var(--chat-meta);color:var(--chat-quiet);line-height:1.5}.chat-status:empty{display:none}.chat-status:not(:empty){margin:0 0 12px}
-.chat-picks{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.chat-picks:empty,.chat-picks[hidden]{display:none}
+.chat-picks{display:flex;flex-wrap:nowrap;gap:8px;margin:0 0 12px;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}.chat-picks::-webkit-scrollbar{display:none}.chat-picks:empty,.chat-picks[hidden]{display:none}
 .chat-say{flex:none;width:auto;min-height:30px;margin:0;padding:4px 12px;border:1px solid var(--c-line-strong);border-radius:999px;background:none;box-shadow:none;color:var(--muted);font:400 .84rem/1.3 var(--sans);white-space:nowrap;cursor:pointer}.chat-say:hover{background:var(--c-hover);color:var(--text)}
-.chat-box{display:flex;flex-direction:column;gap:6px;padding:12px 10px 8px 16px;border-radius:24px;background:var(--surface);border:1px solid var(--c-line-strong);box-shadow:0 6px 20px -14px #0006}
+.chat-box{display:flex;align-items:flex-end;gap:8px;padding:10px 10px 10px 18px;border-radius:28px;background:var(--surface);border:1px solid var(--c-line-strong);box-shadow:0 6px 20px -14px #0006}
 .chat-box:focus-within{border-color:color-mix(in srgb,var(--c-accent) 55%,var(--c-line-strong))}
-.chat-box textarea{min-height:0;height:22px;max-height:160px;margin:2px 6px 0 0;padding:0;border:0;background:none;resize:none;box-shadow:none;outline:none;line-height:22px;font-size:1rem}
-.chat-tools{display:flex;align-items:center;gap:6px}.chat-tools .grow{flex:1}
+.chat-box textarea{flex:1;min-height:0;height:22px;max-height:160px;margin:6px 0;padding:0;border:0;background:none;resize:none;box-shadow:none;outline:none;line-height:22px;font-size:1rem}
+.chat-tools{display:flex;align-items:center;gap:6px}.chat-tools .grow{display:none}
 .chat-send{display:grid;place-items:center;flex:none;width:34px;height:34px;min-height:0;margin:0;padding:0;border:0;border-radius:50%;background:var(--c-accent);color:var(--c-accent-ink,#fff);box-shadow:none;cursor:pointer}.chat-send svg{width:17px;height:17px}
 .chat-send:disabled{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--chat-quiet);cursor:default}
 /* On a computer the list and the thread each scroll on their own inside the window; the page itself stays put */
@@ -2222,8 +2222,10 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  // an agent's answer with files, or the card's own question while it waits on a call. The latest one is the raised card; earlier ones step back.
  const q=s&&!items.some(i=>i.kind==='reply')&&!p.ask?chatQuestion(s):{};
  const headline=t=>{const m=/^\s*\*\*([^*\n]+)\*\*[ \t]*(?:\n+|$)/.exec(String(t||''));return m?{title:m[1].trim(),rest:String(t).slice(m[0].length).trim()}:null};
- const isResult=i=>i.kind==='reply'?!!((i.drafts||[]).length||headline(i.text)):i.kind==='agent'?!!(i.files||[]).length:i.kind==='card'?!!(s&&!closed(s)&&(p.ask||q.ask||s.status==='prepared'&&p.send)):false;
- const current=rows.findLastIndex(isResult);
+ const isResult=i=>i.kind==='reply'?!!((i.drafts||[]).length||headline(i.text)):i.kind==='card'?!!(s&&!closed(s)&&(p.ask||q.ask||s.status==='prepared'&&p.send)):false;
+ // Raised only while it is open: a draft not sent yet, an outcome on a card still going, or the call the card waits on
+ const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||i.drafts.some(d=>!sent.has(d.body.trim())));
+ const last=rows.findLastIndex(isResult),current=last>=0&&isOpen(rows[last])?last:-1;
  const result=(n,i,inner,only)=>`<div class="chat-result ${n===current?'current':'earlier'}${only?' only-draft':''}">${inner}${tm(i.at)}</div>`;
  let lastTo='';
  rows.forEach((i,n)=>{stamp(i.at);const k=n+':'+i.kind,res=isResult(i),quiet=res&&n!==current;
@@ -2239,9 +2241,10 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
   else if(i.kind==='agentlive')push(i,`<div class="chat-msg machine chat-agent">${p.agent}</div>`);
   else if(i.kind==='agent'){const files=(i.files||[]).map(f=>agentFile({id:i.id},{path:f})).join('');
    // A shortened answer (its housekeeping left out) has More too, which shows the whole answer
-   const whole=i.full&&chatOpenSet.has(k)?i.full:i.text,text=clamp(k,chatMarkdown(whole),chatLong(i.text,quiet?2:4)||!!i.full);
-   if(res)push(i,result(n,i,`<div class="chat-result-head"><span class="chat-result-title">${esc(i.name)}</span></div><div class="bubble">${text}</div><div class="chat-files">${files}</div>${i.nothing_sent?'<small class="chat-noted">Nothing sent</small>':''}`));
-   else push(i,`<div class="chat-msg machine"><div class="chat-agent-name">${esc(i.name)}</div><div class="bubble">${text}</div>${i.nothing_sent?'<small class="chat-noted">Nothing sent</small>':''}${tm(i.at)}</div>`)}
+   const whole=i.full&&chatOpenSet.has(k)?i.full:i.text,text=clamp(k,chatMarkdown(whole),chatLong(i.text)||!!i.full);
+   // Plain text like any reply: whose answer it is, small above; its files and "<agent> sent nothing" on one line under it
+   const nothing=i.nothing_sent?`<small class="chat-noted">${esc(i.name)} sent nothing</small>`:'';
+   push(i,`<div class="chat-msg machine chat-agent-msg"><div class="chat-agent-name">${esc(i.name)}</div><div class="bubble">${text}</div>${files||nothing?`<div class="chat-files">${files}${nothing}</div>`:''}${tm(i.at)}</div>`)}
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
   else if(i.kind==='event'){const c=i.times.length,line=c>1?`${esc(i.text)} ${c} times`:esc(i.text);
    push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+tm(i.at)}</div>`)}
