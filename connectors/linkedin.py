@@ -110,6 +110,22 @@ def events(account, data, helpers):
     return list({e['source_id']: e for e in (event(account, raw, helpers) for raw in data['messages'])}.values())
 
 
+PHOTO = re.compile(r'https://media\.licdn\.com/dms/image/[^\s"\'<>\\]{10,600}')
+
+
+def profiles(data):
+    """What LinkedIn shows about the person in each one-to-one conversation of this page, from the participant it sent
+    anyway: their headline, profile link and photo, in their own words."""
+    out = []
+    for urn, p in (data.get('profiles') or {}).items() if isinstance(data.get('profiles'), dict) else ():
+        if not isinstance(p, dict) or not str(urn).startswith('urn:li:msg_conversation:'):
+            continue
+        photo = str(p.get('photo') or '')
+        out.append({'ids': ['li:' + str(urn)], 'rank': 2, 'facts': {'headline': p.get('headline') or '', 'linkedin_url': p.get('url') or ''},
+                    'photo': photo if PHOTO.fullmatch(photo) else None})
+    return out
+
+
 def sync(store, config, account, helpers, source=None):
     # Browser reads with no official API: keep them rare and in waking hours.
     current = dt.datetime.fromisoformat(helpers.now())
@@ -132,4 +148,6 @@ def sync(store, config, account, helpers, source=None):
                  completed_ms=state.get('completed_ms', 0) if more else scan_until, coverage_complete=not more,
                  coverage='Paged inbox catch-up in progress.' if more else 'Inbox conversations and message pages caught up; spam excluded.')
     store.commit_page(account['id'], state, found)
+    if getattr(helpers, 'remember_profiles', None):
+        helpers.remember_profiles(store, 'linkedin', profiles(page))
     return {'mode': 'incremental', 'events': len(found), 'more': more}

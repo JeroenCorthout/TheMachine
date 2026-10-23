@@ -400,7 +400,7 @@ dialog input{display:block;width:100%;margin-top:8px}
 .graph-list article{margin:0;padding:12px 16px;min-width:0}
 .graph-row{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
 .person-pic{position:relative;flex:none;display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;overflow:hidden;background:var(--sunken);color:var(--muted);font:600 10.5px/1 var(--sans);letter-spacing:.02em}.person-pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.person-pic.big{width:44px;height:44px;font-size:15px}
-.person-facts a{white-space:nowrap}.person-item .graph-row .graph-bar{margin-left:auto}.person-item>.graph-sub{padding-left:36px}.person-head{flex:1 1 auto;min-width:0}.person-head h3{overflow-wrap:anywhere}.person-job{margin:2px 0 0;color:var(--muted);font-size:.95rem;overflow-wrap:anywhere}
+.person-facts a{white-space:nowrap}.person-bio{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.person-item .graph-row .graph-bar{margin-left:auto}.person-item>.graph-sub{padding-left:36px}.person-head{flex:1 1 auto;min-width:0}.person-head h3{overflow-wrap:anywhere}.person-job{margin:2px 0 0;color:var(--muted);font-size:.95rem;overflow-wrap:anywhere}
 .person-page .name-row{align-items:flex-start}.person-page .name-row>.person-pic{margin-top:1px}.person-page .name-row>button{margin-top:2px}
 @media (min-width:700px){.person-page>:not(.name-row){margin-left:52px}}
 .org-row button.node{display:inline;min-height:0;box-shadow:none;border-radius:0;padding:0;border:0;background:none;color:var(--text);font:inherit;font-weight:600;text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}.org-row button.node:hover{text-decoration-color:currentColor}
@@ -4518,12 +4518,22 @@ const orgErrors=(f,errs)=>{for(const [k] of ORG_FIELDS){const el=f.elements[k],m
 // What an enrichment service says about a work contact: their job title under their name (with the company's name when
 // they have no organisation yet; otherwise the organisation's own row links it), where they are, and LinkedIn.
 const COUNTRY=c=>{try{return /^[A-Z]{2}$/.test(c)?new Intl.DisplayNames([],{type:'region'}).of(c):c}catch{return c}};
-const personJob=n=>{const p=n.kind==='person'&&n.profile;if(!p)return'';const at=n.org&&n.org_name?'':p.company?esc(p.company):'';
- const job=p.title&&at?`${esc(p.title)} at ${at}`:p.title?esc(p.title):at;return job?`<p class="person-job">${job}</p>`:''};
-const personProfile=n=>{const p=n.kind==='person'&&n.profile;if(!p)return'';
- const place=[p.city,COUNTRY(p.country)].filter(Boolean).join(', ');
- const li=/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/in\//.test(p.linkedin_url||'')?`<a href="${esc(p.linkedin_url)}" target="_blank" rel="noreferrer">LinkedIn ↗</a>`:'';
- return `${place||li?`<p class="graph-sub person-facts">${[esc(place),li].filter(Boolean).join(' · ')}</p>`:''}`};
+// Facts their connectors read (their own Slack, X or LinkedIn profile, a contact, the CRM) come first; hover says where from.
+const personJob=n=>{const p=n.kind==='person'&&(n.profile||{});if(!p)return'';const at=n.org&&n.org_name?'':p.company?esc(p.company):'';
+ const title=p.title||(!at&&n.headline)||'';
+ const job=title&&at?`${esc(title)} at ${at}`:title?esc(title):at;return job?`<p class="person-job">${job}</p>`:''};
+const FACT_FROM=p=>{const s=Object.values(p.sources||{}).map(x=>x.from);return s.length?'From '+[...new Set(s)].join(', '):''};
+const localTime=tz=>{try{return tz?new Intl.DateTimeFormat([],{hour:'2-digit',minute:'2-digit',timeZone:tz}).format(new Date())+' their time':''}catch{return''}};
+const personProfile=n=>{const p=n.kind==='person'&&(n.profile||{});if(!p)return'';
+ const place=p.location||[p.city,COUNTRY(p.country)].filter(Boolean).join(', ');
+ const link=(u,t)=>`<a href="${esc(u)}" target="_blank" rel="noreferrer">${t} ↗</a>`;
+ const li=/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/in\//.test(p.linkedin_url||'')?link(p.linkedin_url,'LinkedIn'):'';
+ const x=/^[A-Za-z0-9_]{1,15}$/.test(p.x||'')?link('https://x.com/'+p.x,'X'):'';
+ const web=/^https?:\/\/[^\s]+$/.test(p.website||'')?link(p.website,esc(p.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'').slice(0,40))):'';
+ const tel=/^\+?[0-9][0-9 ().-]{5,30}$/.test(p.phone||'')?`<a href="tel:${esc(p.phone.replace(/[^0-9+]/g,''))}">${esc(p.phone)}</a>`:'';
+ const bits=[esc(place),esc(localTime(p.timezone)),tel,li,x,web].filter(Boolean),from=FACT_FROM(p);
+ const bio=n.bio?.text?`<p class="graph-sub person-bio" title="${esc('From '+n.bio.from+', '+n.bio.at)}">${esc(n.bio.text)}</p>`:'';
+ return `${bits.length?`<p class="graph-sub person-facts"${from?` title="${esc(from)}"`:''}>${bits.join(' · ')}</p>`:''}${bio}`};
 // A person's ⋯ menu: Rename, and Delete permanently… (rarely needed), which opens its own confirm step under the header.
 const personMenu='<details class="fact-menu person-menu"><summary aria-label="More for this person" title="More">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-name-edit>Rename</button><button type="button" role="menuitem" class="danger" data-person-delete>Delete permanently…</button></div></details>';
 const deleteRow=n=>n.kind!=='person'?'':`<div class="person-delete"><div class="person-delete-confirm" hidden><p>Delete ${esc(n.name)} and everything The Machine knows about them? This can’t be undone.</p><p class="muted">Won’t be added again.</p><div class="row"><button class="danger-solid" data-person-delete-yes>Delete</button><button class="ghost" data-person-delete-no>Cancel</button></div></div></div>`;

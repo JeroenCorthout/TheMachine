@@ -125,6 +125,24 @@ def events(account, data, helpers):
     return list({e['source_id']: e for e in out}.values())
 
 
+PHOTO = re.compile(r'https://pbs\.twimg\.com/profile_images/\d{1,25}/[A-Za-z0-9_-]{1,100}_normal\.(?:jpe?g|png|webp)')
+
+
+def profiles(data, people):
+    """What the user objects in this page say about the people in it (their own bio, place, website, handle and
+    photo), for their page in the graph. Only for people in this page's mentions and one-to-one DMs."""
+    out = []
+    for uid, p in (data.get('profiles') or {}).items() if isinstance(data.get('profiles'), dict) else ():
+        if not isinstance(p, dict) or not re.fullmatch(r'\d{1,25}', str(uid)) or 'x:' + str(uid) not in people:
+            continue
+        photo = str(p.get('photo') or '')
+        out.append({'ids': ['x:' + str(uid)], 'rank': 2,
+                    'facts': {'bio': p.get('bio') or '', 'location': p.get('location') or '', 'website': p.get('website') or '',
+                              'x': p.get('screen_name') or ''},
+                    'photo': photo.replace('_normal.', '_200x200.') if PHOTO.fullmatch(photo) else None})
+    return out
+
+
 def sync(store, config, account, helpers, source=None):
     # Browser reads: keep them to waking hours.
     current = dt.datetime.fromisoformat(helpers.now())
@@ -140,4 +158,10 @@ def sync(store, config, account, helpers, source=None):
     state.update(mode='incremental', since_ms=since, page=data['state'], read_items=len(found), coverage_complete=not more,
                  coverage=('Older mentions are still being collected for @' if more else 'Mentions, replies and DM inbox caught up for @') + account['handle'] + '.')
     store.commit_page(account['id'], state, found)
+    people = {'x:' + str(e['metadata'].get('author_id') or e['metadata'].get('sender_id')) for e in found
+              if not e['metadata'].get('group') and not e['metadata'].get('from_me')}
+    people |= {'x:' + p for e in found if e['kind'] == 'x.dm' and not e['metadata'].get('group')
+               for p in str(e['metadata'].get('conversation_id') or '').split('-') if p.isdigit()}
+    if getattr(helpers, 'remember_profiles', None):
+        helpers.remember_profiles(store, 'x', profiles(data, people))
     return {'mode': 'incremental', 'events': len(found), 'more': more}
