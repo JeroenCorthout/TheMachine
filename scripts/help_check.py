@@ -62,6 +62,7 @@ FEATURES = {
     'self-hosted': ('install.sh', '#!'),
     'moving': ('moving.py', 'def '),
     'support-bundle': ('cli.py', "'support-bundle'"),
+    'keyboard': ('dashboard.html', 'Search and commands'),
 }
 # Features that exist in the code but have no article yet, each with the reason. Keep this short.
 PENDING = {
