@@ -34,11 +34,11 @@ try{
   const menu=id=>page.locator(`#task-${id} .more-menu>button`).evaluateAll(n=>n.map(x=>x.textContent.trim()));
   // A decision: Do it, Snooze, Not needed; the rest under More, Hand off among them, never above the buttons
   assert.deepEqual(await shown('p1'),['Do it','Snooze','Not needed','More']);
-  assert.deepEqual(await menu('p1'),['Mark done','Change','Hand off']);
+  assert.deepEqual(await menu('p1'),['Mark done','Change','Hand off','Rename']);
   assert.equal(await page.getByText('Hand off to a teammate').count(),0);
   // A ready draft: the button says it opens the preview first
   assert.deepEqual(await shown('r1'),['Review and send to Noor','Mark done','Snooze','More']);
-  assert.deepEqual(await menu('r1'),['Change','Not needed','Hand off']);
+  assert.deepEqual(await menu('r1'),['Change','Not needed','Hand off','Rename']);
   // A personal card has no Hand off
   assert.ok(!(await menu('h1')).includes('Hand off'));
   // The buttons line up: one row height on a wide screen

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings, Account: the first tab on a Machine linked to a control plane account. Hosted, the control plane answers on
@@ -51,8 +52,8 @@ try{
   const context=await browser.newContext({viewport:{width,height:900},colorScheme:scheme}),page=await context.newPage();
   await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
   page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(base);await page.locator('#updated',{hasText:/\d/}).waitFor();
-  await page.locator('#open-settings').click();await page.locator('#acct-list [data-acct-go="plan"]').waitFor();
+  await page.goto(base);await page.locator('#updated',{hasText:/\d/}).waitFor({state:'attached'});
+  await navClick(page.locator('#open-settings'));await page.locator('#acct-list [data-acct-go="plan"]').waitFor();
   // A normal tab, the first one, and open by default
   assert.deepEqual((await page.locator('#settings-tabs>:not([hidden])').allInnerTexts())[0],'Account');
   assert.equal(await page.locator('#settings-tabs [aria-selected="true"]').innerText(),'Account');
@@ -83,7 +84,7 @@ try{
    assert.equal(asked.length,before);
    await page.locator('#settings-acct form[action="/_machine/logout"] button').click();await page.waitForURL(base+'/bye');assert.deepEqual(posts,['POST']);
    // Signed out at the control plane: a short note and the account link, nothing broken
-   fail=true;await page.goto(base);await page.locator('#open-settings').click();await page.locator('#acct-list',{hasText:'Can’t reach your account'}).waitFor();
+   fail=true;await page.goto(base);await navClick(page.locator('#open-settings'));await page.locator('#acct-list',{hasText:'Can’t reach your account'}).waitFor();
    assert.equal(await page.locator('#acct-foot a[href="https://account.example/account"]').count(),1);
    // Self-hosted and paired: this Machine asks, links instead of hops, no Sign out
    mode='paired';fail=false;await page.goto('about:blank');await page.goto(base+'/#settings/account');await page.locator('#acct-list',{hasText:'Family'}).waitFor();

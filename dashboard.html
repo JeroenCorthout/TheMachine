@@ -1178,74 +1178,95 @@ main{padding-top:calc(28px + env(safe-area-inset-top));padding-left:max(24px,env
 #settings .settings-list{max-width:none}
 .agents-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:end}.agents-grid>label{display:flex;flex-direction:column;gap:6px;min-width:0}.agents-grid>label.wide{grid-column:1/-1}.agents-grid input{width:100%;min-width:0;box-sizing:border-box}
 @media(max-width:420px){.agents-grid{grid-template-columns:1fr}}
-@media(min-width:1024px){#settings-browser{display:none!important}}  /* Browser is in the sidebar */
 /* The folded sidebar's tooltip: a small pill to the right of the row, the theme's text colour as its ground */
 #side-tip{position:fixed;z-index:1000;transform:translateY(-50%);padding:5px 9px;border-radius:7px;background:var(--text);color:var(--bg);font:500 var(--fs-xs)/1.25 var(--sans);white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px -6px #0006}#side-tip[hidden]{display:none}
-/* App sidebar. On a phone and a tablet it is the old top: the brand, the status pills and the tab row, in the page's
-   column. From 1024px it is a fixed column on the left, like a chat app: the brand, a card filter, the tabs as quiet
-   rows with icons, the cards as a list, and Browser, Settings and the status at the bottom. It folds to icons. */
-.app-side{width:100%;max-width:calc(var(--measure) + 48px);margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) 0 max(24px,env(safe-area-inset-left))}
+/* App sidebar: one component. From 1024px it is a fixed column on the left, like a chat app: the brand, a card filter,
+   the tabs as quiet rows with icons (Graph with its People, Organisations and Projects), the cards as a list, and Browser,
+   Settings and the status at the bottom; it folds to icons. Below 1024px the same sidebar is a drawer that slides in from
+   the left under a slim top bar with a menu button. */
+:root{--side-w:260px;--side-bg:color-mix(in srgb,var(--c-sunken) 55%,var(--c-bg));--side-ink:var(--c-text-2);--side-quiet:var(--c-text-3)}
+.topbar,.drawer-scrim{display:none}
 body main{padding-top:0}
-.side-toggle,.side-search,.side-cards,.page-head,nav .ni{display:none}
-@media(max-width:560px){.app-side{padding:calc(18px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left))}}
-/* A tablet with a chat open: the top stays, the chat fills the rest of the window */
-@media(min-width:861px) and (max-width:1023px){body.chat-open:has(#inbox:not([hidden])) main{height:auto;flex:1 1 0}body.chat-open:has(#inbox:not([hidden])) .app-side{flex:none}}
-@media(max-width:860px){body.chat-open:has(#inbox:not([hidden])) .app-side{display:none}}
+.side-toggle .ic-x{display:none}
+.app-side>header{display:contents}
+.app-side .brand{order:0;flex:none;display:flex;align-items:center;gap:10px;min-height:36px;padding:0 0 0 8px}
+.app-side .avatar{width:28px;height:28px}
+.app-side h1{font:var(--fw-heading) 19px/1.2 var(--serif);letter-spacing:-.01em;white-space:nowrap}
+.app-side #tagline{display:none}
+.side-toggle{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0 0 0 auto;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
+.side-toggle:hover{background:var(--c-hover);color:var(--text)}
+.side-toggle svg,.side-search svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.side-search{order:1;flex:none;display:flex;align-items:center;gap:8px;height:34px;margin:12px 0 8px;padding:0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:color-mix(in srgb,var(--c-bg) 70%,transparent);color:var(--side-quiet);cursor:text}
+.side-search:focus-within{border-color:var(--c-line-strong)}
+.side-search input,.side-search input:focus{flex:1;min-width:0;height:100%;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;outline:none;color:var(--text);font:400 var(--fs-sm)/1 var(--sans)}
+.side-search input::placeholder{color:var(--side-quiet);opacity:1}
+.app-side nav,[data-theme="light"] .app-side nav{order:2;flex:none;flex-direction:column;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:none;overflow:visible}
+.app-side nav button,.app-side .head-side>.settings-link{position:relative;flex:none;display:flex;justify-content:flex-start;align-items:center;gap:10px;width:100%;min-height:34px;margin:0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
+.app-side nav button[hidden]{display:none}
+.app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
+.app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);box-shadow:none;font-weight:600}
+.app-side nav .ni,.app-side .head-side>.settings-link svg{display:block;flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.app-side nav .badge,.app-side nav button.active .badge,[data-theme="light"] .app-side nav button.active .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans)}
+.app-side nav .badge.warn,.app-side nav button.active .badge.warn{color:var(--c-orange)}
+.side-cards{order:3;display:block;flex:1 1 0;min-height:0;margin:14px -8px 0 0;padding:0 2px 16px 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.side-label{display:flex;align-items:center;gap:2px;margin:0 0 2px;padding:0 4px 0 10px;min-height:26px;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);color:var(--side-quiet)}
+.side-label>span{margin-right:auto}
+.side-label button{min-height:0;margin:0;padding:3px 7px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);font:inherit;cursor:pointer}
+.side-label button:hover{color:var(--text)}
+.side-label button[aria-pressed="true"]{color:var(--text);background:var(--c-hover)}
+.side-head{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;margin:6px 0 0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);text-align:left;cursor:pointer}
+.side-head:hover{color:var(--text)}
+.side-head .count{margin-left:auto;font-variant-numeric:tabular-nums}
+.side-head svg{width:12px;height:12px;flex:none;margin-left:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
+.side-head[aria-expanded="false"] svg{transform:rotate(-90deg)}
+.side-cards a{display:block;padding:5px 10px;border-radius:var(--r-sm);color:var(--side-ink);font:400 13px/1.45 var(--sans);text-decoration:none;white-space:nowrap;overflow:hidden}
+.side-group.quiet a{color:var(--side-quiet)}
+.side-cards a:hover{background:var(--c-hover);color:var(--text)}
+.side-cards a[aria-current]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
+.side-cards a.fade{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
+.side-empty{margin:6px 10px;font-size:var(--fs-xs);color:var(--side-quiet)}
+.app-side .head-side{order:4;flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:stretch;gap:1px;margin:0;padding:8px 0 0;border-top:1px solid var(--c-line)}
+.app-side .head-side>.settings-link[hidden]{display:none}
+.app-side .head-side>.settings-link .lbl{display:inline}
+.app-side .head-side>.live,[data-theme="light"] .app-side .head-side>.live{display:flex;justify-content:flex-start;gap:10px;min-height:30px;margin:0;padding:0 10px 0 16px;border:0;background:none;color:var(--side-quiet);font:400 var(--fs-xs)/1 var(--sans);cursor:pointer}
+.app-side .head-side>.live::before{flex:none}
+.page-head{display:flex;align-items:center;gap:14px;margin:0 0 32px}.page-head[hidden]{display:none}
+.page-title{margin:0;font:var(--fw-display) 30px/1.2 var(--serif);letter-spacing:-.015em;color:var(--text);text-wrap:balance}
+.page-head.greet .page-title{font-size:28px}
+.page-avatar{width:40px;height:40px;flex:none;object-fit:contain}
+.page-sub{margin:4px 0 0;color:var(--side-quiet);font-size:var(--fs-sm)}
+#inbox #suggestion-summary,#inbox #suggestion-stats{display:none}
+/* All clear: the title's line says it, so the block below is only the robot and its line */
+#suggestions .all-clear:not(.first-look-empty){padding-top:24px}#suggestions .all-clear:not(.first-look-empty)>div>strong{display:none}
+.chat-layout{grid-template-columns:minmax(0,1fr)}.chat-layout>.chat-side{display:none}
+#settings-browser{display:none!important}  /* Browser is in the sidebar */
+/* Graph's own rows: People, Organisations and Projects, each a small coloured square and a count, under a fold */
+.side-row{position:relative;display:flex;align-items:center}
+.side-row>button[data-tab]{padding-right:36px!important}
+.app-side nav .side-fold{position:absolute;right:4px;top:50%;display:grid;place-items:center;width:26px;height:26px;min-height:0;margin:-13px 0 0;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
+.app-side nav .side-fold:hover{background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
+.app-side nav .side-fold svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
+.app-side nav .side-fold[aria-expanded="false"] svg{transform:rotate(-90deg)}
+@media(hover:hover){.app-side nav .side-fold{opacity:0;transition:opacity var(--dur) var(--ease)}.side-row:hover .side-fold,.app-side nav .side-fold:focus-visible,.app-side nav .side-fold[aria-expanded="false"]{opacity:1}}  /* calm until wanted */
+.side-sub{display:flex;flex-direction:column;gap:1px}.side-sub[hidden]{display:none}
+.side-sub a{display:flex;align-items:center;gap:10px;min-height:32px;padding:0 10px 0 20px;border-radius:var(--r-sm);color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
+.side-sub a:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
+.side-sub a[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);font-weight:600}
+.side-sub .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans);font-variant-numeric:tabular-nums}
+.sq{display:grid;place-items:center;flex:none;width:16px;height:16px;border-radius:4px;background:var(--sq)}
+.sq svg{width:11px;height:11px;fill:none;stroke:var(--bg);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.sq-people{--sq:var(--lavender)}.sq-orgs{--sq:var(--mint)}.sq-projects{--sq:var(--amber)}.sq-roles{--sq:var(--orange)}
+.side-sub a[hidden]{display:none}
+.side-sub #count-roles:not(:empty){color:var(--c-accent)}
+.side-row:has(+.side-sub:not([hidden])) .badge{display:none}  /* the rows say it: Who's who has the count */
+.page-crumb{margin:0 0 2px;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);letter-spacing:.02em}
+.app-side nav button.active.sub-on{background:none;font-weight:600}
 @media(min-width:1024px){
-  :root{--side-w:260px;--side-bg:color-mix(in srgb,var(--c-sunken) 55%,var(--c-bg));--side-ink:var(--c-text-2);--side-quiet:var(--c-text-3)}
   :root[data-side="collapsed"]{--side-w:60px}
   body{display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:1fr auto;min-height:100dvh}
   .app-side{grid-column:1;grid-row:1/3;position:sticky;top:0;align-self:start;z-index:20;display:flex;flex-direction:column;width:auto;max-width:none;height:100dvh;margin:0;padding:12px 10px 10px;border-right:1px solid var(--c-line);background:var(--side-bg);overflow:hidden}
   body main{grid-column:2;grid-row:1;width:100%;max-width:calc(var(--measure) + 112px);margin:0 auto;padding:44px 56px 64px}
   .site-footer{grid-column:2;grid-row:2;width:100%;max-width:calc(var(--measure) + 112px);padding-left:56px;padding-right:56px;background-size:calc(100% - 112px) 1px}
-  .app-side>header{display:contents}
-  .app-side .brand{order:0;flex:none;display:flex;align-items:center;gap:10px;min-height:36px;padding:0 0 0 8px}
-  .app-side .avatar{width:28px;height:28px}
-  .app-side h1{font:var(--fw-heading) 19px/1.2 var(--serif);letter-spacing:-.01em;white-space:nowrap}
-  .app-side #tagline{display:none}
-  .side-toggle{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0 0 0 auto;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
-  .side-toggle:hover{background:var(--c-hover);color:var(--text)}
-  .side-toggle svg,.side-search svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .side-search{order:1;flex:none;display:flex;align-items:center;gap:8px;height:34px;margin:12px 0 8px;padding:0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:color-mix(in srgb,var(--c-bg) 70%,transparent);color:var(--side-quiet);cursor:text}
-  .side-search:focus-within{border-color:var(--c-line-strong)}
-  .side-search input,.side-search input:focus{flex:1;min-width:0;height:100%;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;outline:none;color:var(--text);font:400 var(--fs-sm)/1 var(--sans)}
-  .side-search input::placeholder{color:var(--side-quiet);opacity:1}
-  .app-side nav,[data-theme="light"] .app-side nav{order:2;flex:none;flex-direction:column;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:none;overflow:visible}
-  .app-side nav button,.app-side .head-side>.settings-link{position:relative;flex:none;display:flex;justify-content:flex-start;align-items:center;gap:10px;width:100%;min-height:34px;margin:0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
-  .app-side nav button[hidden]{display:none}
-  .app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
-  .app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);box-shadow:none;font-weight:600}
-  .app-side nav .ni,.app-side .head-side>.settings-link svg{display:block;flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .app-side nav .badge,.app-side nav button.active .badge,[data-theme="light"] .app-side nav button.active .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans)}
-  .app-side nav .badge.warn,.app-side nav button.active .badge.warn{color:var(--c-orange)}
-  .side-cards{order:3;display:block;flex:1 1 0;min-height:0;margin:14px -8px 0 0;padding:0 2px 16px 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
-  .side-label{display:flex;align-items:center;gap:2px;margin:0 0 2px;padding:0 4px 0 10px;min-height:26px;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);color:var(--side-quiet)}
-  .side-label>span{margin-right:auto}
-  .side-label button{min-height:0;margin:0;padding:3px 7px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);font:inherit;cursor:pointer}
-  .side-label button:hover{color:var(--text)}
-  .side-label button[aria-pressed="true"]{color:var(--text);background:var(--c-hover)}
-  .side-head{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;margin:6px 0 0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);text-align:left;cursor:pointer}
-  .side-head:hover{color:var(--text)}
-  .side-head .count{margin-left:auto;font-variant-numeric:tabular-nums}
-  .side-head svg{width:12px;height:12px;flex:none;margin-left:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
-  .side-head[aria-expanded="false"] svg{transform:rotate(-90deg)}
-  .side-cards a{display:block;padding:5px 10px;border-radius:var(--r-sm);color:var(--side-ink);font:400 13px/1.45 var(--sans);text-decoration:none;white-space:nowrap;overflow:hidden}
-  .side-group.quiet a{color:var(--side-quiet)}
-  .side-cards a:hover{background:var(--c-hover);color:var(--text)}
-  .side-cards a[aria-current]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
-  .side-cards a.fade{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
-  .side-empty{margin:6px 10px;font-size:var(--fs-xs);color:var(--side-quiet)}
-  .app-side .head-side{order:4;flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:stretch;gap:1px;margin:0;padding:8px 0 0;border-top:1px solid var(--c-line)}
-  .app-side .head-side>.settings-link[hidden]{display:none}
-  .app-side .head-side>.settings-link .lbl{display:inline}
-  .app-side .head-side>.live,[data-theme="light"] .app-side .head-side>.live{display:flex;justify-content:flex-start;gap:10px;min-height:30px;margin:0;padding:0 10px 0 16px;border:0;background:none;color:var(--side-quiet);font:400 var(--fs-xs)/1 var(--sans);cursor:pointer}
-  .app-side .head-side>.live::before{flex:none}
-  .page-head{display:flex;align-items:center;gap:14px;margin:0 0 32px}.page-head[hidden]{display:none}
-  .page-title{margin:0;font:var(--fw-display) 30px/1.2 var(--serif);letter-spacing:-.015em;color:var(--text);text-wrap:balance}
-  .page-head.greet .page-title{font-size:28px}
-  .page-avatar{width:40px;height:40px;flex:none;object-fit:contain}
-  .page-sub{margin:4px 0 0;color:var(--side-quiet);font-size:var(--fs-sm)}
-  #inbox #suggestion-summary,#inbox #suggestion-stats{display:none}
   /* A chat open: the list is in the sidebar, so the chat gets the whole main area */
   /* the thread scrolls across the whole main area, so its thin bar sits at the window's right edge */
   html:has(body.chat-open #inbox:not([hidden])){scrollbar-gutter:auto}body.chat-open:has(#inbox:not([hidden])) main{max-width:none;padding:0}
@@ -1255,10 +1276,7 @@ body main{padding-top:0}
   body.chat-open:has(#inbox:not([hidden])) .chat-title{text-overflow:ellipsis}
   body.chat-open:has(#inbox:not([hidden])) .chat-title.fade{-webkit-mask-image:none;mask-image:none}
   body.chat-open:has(#inbox:not([hidden])) .chat-log{padding-top:12px}
-  /* All clear: the title's line says it, so the block below is only the robot and its line */
-  #suggestions .all-clear:not(.first-look-empty){padding-top:24px}#suggestions .all-clear:not(.first-look-empty)>div>strong{display:none}
   body.chat-open:has(#inbox:not([hidden])) .chat-log{padding-left:max(24px,calc((100% - var(--chat-col))/2));padding-right:max(24px,calc((100% - var(--chat-col))/2))}
-  .chat-layout{grid-template-columns:minmax(0,1fr)}.chat-layout>.chat-side{display:none}
   /* Folded to icons: the labels, the filter text and the list step out; the order and the places stay */
   :root[data-side="collapsed"] .app-side{padding:12px 8px 10px}
   :root[data-side="collapsed"] .app-side .brand{justify-content:center;padding:0}
@@ -1272,6 +1290,55 @@ body main{padding-top:0}
   :root[data-side="collapsed"] .app-side nav .badge:not(:empty){position:absolute;top:6px;right:8px;width:7px;height:7px;padding:0;border-radius:50%;background:var(--c-accent);font-size:0}
   :root[data-side="collapsed"] .app-side nav .badge.warn:not(:empty){background:var(--c-orange)}
   :root[data-side="collapsed"] .side-cards{visibility:hidden}
+
+  :root[data-side="collapsed"] .app-side nav .side-fold{display:none}
+  :root[data-side="collapsed"] .side-row>button[data-tab]{padding:0!important}
+  :root[data-side="collapsed"] .side-sub a{justify-content:center;padding:0}
+  :root[data-side="collapsed"] .side-sub .badge{display:none}
+}
+/* A phone and a tablet: a slim top bar with the menu button, the page's title in the column, and the sidebar as a drawer */
+@media(max-width:1023px){
+  :root{--side-bg:var(--bg)}
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+  .topbar-title{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 26px);transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:var(--r-sm);color:var(--text);font:var(--fw-heading) 17px/1 var(--serif);letter-spacing:-.01em;text-decoration:none;white-space:nowrap}
+  .topbar-title img{width:22px;height:22px;object-fit:contain}
+  .topbar>:not(.topbar-title):last-child:not(:first-child){margin-left:auto}  /* a button on the right (New card) */
+  .topbar-menu{display:grid;place-items:center;width:44px;height:44px;min-height:0;margin:0;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--c-text-2);cursor:pointer}
+  .topbar-menu:hover{background:var(--c-hover);color:var(--text)}
+  .topbar-menu svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .topbar-menu .dot{position:absolute;margin:-14px 0 0 16px;width:7px;height:7px;border-radius:50%;background:var(--c-orange)}.topbar-menu .dot[hidden]{display:none}
+  body.chat-open:has(#inbox:not([hidden])) .topbar{display:none}
+  .app-side{position:fixed;top:0;bottom:0;left:0;z-index:70;display:flex;flex-direction:column;width:min(88vw,380px);max-width:none;height:100dvh;margin:0;padding:calc(8px + env(safe-area-inset-top)) 12px calc(6px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border-right:1px solid var(--c-line);background:var(--bg);box-shadow:var(--shadow-pop);overflow:hidden;overscroll-behavior:contain;transform:translateX(-104%);visibility:hidden;transition:transform .26s var(--ease),visibility 0s linear .26s}
+  :root[data-drawer="open"] .app-side{transform:none;visibility:visible;transition:transform .26s var(--ease)}
+  .app-side.dragging{transition:none!important}
+  .drawer-scrim{display:block;position:fixed;inset:0;z-index:65;background:#0008;opacity:0;pointer-events:none;transition:opacity .26s var(--ease)}
+  :root[data-drawer="open"] .drawer-scrim{opacity:1;pointer-events:auto}
+  :root[data-drawer="open"],:root[data-drawer="open"] body{overflow:hidden}
+  .app-side .brand{gap:4px;min-height:44px;padding:0}
+  .app-side .avatar{display:none}
+  .app-side h1{font-size:22px}
+  .side-toggle{order:-1;width:44px;height:44px;margin:0 2px 0 -4px;color:var(--c-text-2)}
+  .side-toggle svg{width:22px;height:22px}
+  .side-toggle .ic-panel{display:none}.side-toggle .ic-x{display:block}
+  @media(hover:none){.side-toggle:hover,.topbar-menu:hover{background:none}}
+  .side-search{height:44px;margin:8px 0 10px;padding:0 12px;border-color:transparent;border-radius:var(--r-md,12px);background:color-mix(in srgb,var(--text) 6%,transparent)}
+  .side-search input,.side-search input:focus{font-size:16px}  /* 16px: no zoom on focus on an iPhone */
+  .app-side nav button,.app-side .head-side>.settings-link{min-height:44px;gap:12px;font-size:var(--fs-md)}
+  .app-side nav .ni,.app-side .head-side>.settings-link svg{width:20px;height:20px}
+  .app-side nav .badge,.side-sub .badge{font-size:var(--fs-sm)}
+  .side-sub a{min-height:40px;gap:12px;padding-left:22px;font-size:var(--fs-md)}
+  .side-sub .sq{width:18px;height:18px}
+  .app-side nav .side-fold{width:36px;height:36px;margin-top:-18px}
+  .side-label{min-height:34px;font-size:var(--fs-sm)}.side-label button{padding:6px 9px}
+  .side-head{min-height:38px;font-size:var(--fs-sm)}
+  .side-cards{margin-top:12px;scrollbar-gutter:auto}
+  .side-cards a{padding:9px 10px;font-size:15px}
+  .app-side .head-side>.live{min-height:36px}
+  #open-browser:not([hidden]){display:flex}
+  .page-head{display:flex;align-items:center;gap:12px;margin:4px 0 22px}
+  .page-title{font-size:26px}.page-head.greet .page-title{font-size:24px}
+  .page-avatar{display:none}  /* the top bar carries the mascot on a phone */
+  .chat-layout [data-chat-drawer]{display:flex}
 }
 @media(prefers-reduced-motion:reduce){*{transition-duration:0s!important;animation-duration:0s!important}}
 /* Saved sign-ins (Connections, Sign-ins): one calm row per site, a letter tile, the username, a faint "Password saved"
@@ -1331,15 +1398,94 @@ body main{padding-top:0}
 .tp-reply{margin-top:var(--sp-2);padding:8px 12px;border-left:3px solid var(--c-accent);background:var(--c-sunken);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:var(--fs-sm)}
 .tp-reply q{display:block;color:var(--c-text-2);margin-top:2px;overflow-wrap:anywhere}
 .tp-reply small{display:block;color:var(--c-text-3);font-size:var(--fs-xs);margin-top:2px}
+/* The Machine's browser in the main area on a computer (from 1024px): a slim header over the viewer, the sidebar beside it */
+.browser-pane{display:none}
+@media(min-width:1024px){
+  html:has(#browser-pane:not([hidden])){scrollbar-gutter:auto;overflow:hidden}
+  body:has(#browser-pane:not([hidden])) main{max-width:none;height:100dvh;padding:0;display:flex;flex-direction:column}
+  body:has(#browser-pane:not([hidden])) :is(#page-head,#needs-you,#notice),body:has(#browser-pane:not([hidden])) .site-footer{display:none}  /* banners wait for the other views */
+  .browser-pane:not([hidden]){display:flex;flex-direction:column;flex:1 1 0;min-height:0}
+  /* The same header as a card's chat on a computer: height, title, hairline, the round button on the right */
+  .bp-head{flex:none;display:flex;align-items:center;gap:6px;box-sizing:border-box;padding:10px 16px;border-bottom:1px solid var(--c-line);background:color-mix(in srgb,var(--bg) 92%,transparent)}
+  .bp-head h2{flex:1;min-width:0;margin:calc((32px - 1.35em)/2 - .09em) 0 0;align-self:flex-start;font:600 1rem/1.35 var(--sans);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bp-head a{flex:none;margin-right:6px;color:var(--c-text-2);font:400 var(--fs-sm)/1 var(--sans);text-decoration:none}.bp-head a:hover{color:var(--text)}
+  .bp-head button{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0;padding:0;border:0;border-radius:50%;background:none;box-shadow:none;color:var(--text);cursor:pointer}
+  .bp-head button:hover{background:var(--c-hover)}.bp-head button svg{width:20px;height:20px}
+  .browser-pane iframe{flex:1 1 0;min-height:0;width:100%;border:0;background:#000}
+}
+/* New card: a row under Find a card on a computer, a "+" in the top bar on a phone, a composer like the chat's. */
+.side-new{display:none}
+.new-card-link svg,.side-new svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+@media(min-width:1024px){
+  .app-side .head-side>.new-card-link{display:none}
+  .side-new{order:1;flex:none;display:flex;align-items:center;gap:10px;width:100%;min-height:34px;margin:0 0 6px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-align:left;cursor:pointer;white-space:nowrap}
+  .side-new:hover,.side-new.hit{background:var(--c-hover);color:var(--text)}
+  .side-new kbd{margin-left:auto;padding:1px 6px;border:1px solid var(--c-line);border-radius:5px;background:none;color:var(--side-quiet);font:500 11px/1.4 var(--sans)}
+  :root[data-side="collapsed"] .side-new{justify-content:center;padding:0}
+  :root[data-side="collapsed"] .side-new span,:root[data-side="collapsed"] .side-new kbd{display:none}
+}
+@media(max-width:1023px){
+  .nc-drawer .side-new{order:1;flex:none;display:flex;align-items:center;gap:12px;width:100%;min-height:44px;margin:0 0 6px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-md)/1.2 var(--sans);text-align:left;cursor:pointer}
+  .nc-drawer .side-new svg{width:20px;height:20px}.nc-drawer .side-new kbd{display:none}
+  .new-card-top{margin-left:auto}
+}
+#new-card{width:min(600px,calc(100vw - 24px));padding:18px 18px 14px}
+#new-card .snooze-heading{margin-bottom:12px}
+#new-card .chat-box{border-radius:22px}
+#new-card .chat-box textarea{height:auto;min-height:48px}
+/* On a phone the composer is a bottom sheet that stays above the keyboard, like the card chat's box. */
+@media(max-width:560px){
+  #new-card{position:fixed;inset:auto 0 var(--nc-kb,0px) 0;width:100%;max-width:100%;margin:0;max-height:calc(100dvh - var(--nc-kb,0px) - 24px);border-radius:var(--r-xl,20px) var(--r-xl,20px) 0 0;padding:14px max(16px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  #new-card[open]{animation:nc-up .18s ease-out}
+  #new-card .nc-keys{display:none}
+}
+@keyframes nc-up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+.nc-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+.nc-chips button{display:inline-flex;align-items:center;gap:6px;min-height:30px;margin:0;padding:4px 12px;border:1px solid var(--c-line-strong,var(--border));border-radius:999px;background:none;box-shadow:none;color:var(--muted);font:500 .85rem/1.2 var(--sans);cursor:pointer}
+.nc-chips button:hover{color:var(--text)}
+.nc-chips button[aria-pressed="true"],.nc-chips button.set{border-color:var(--mint);background:color-mix(in srgb,var(--mint) 16%,transparent);color:var(--text)}
+.nc-chips .x{margin-right:-4px;color:var(--muted);font-size:1rem;line-height:1}
+.nc-pick{margin:10px 0 0}
+.nc-pick input{margin:0}
+.nc-pick .nc-read{margin:6px 2px 0;color:var(--muted);font-size:.85rem}
+.nc-hits{display:flex;flex-direction:column;gap:1px;margin:6px 0 0;padding:0;list-style:none}
+.nc-hits button{display:block;width:100%;min-height:0;margin:0;padding:7px 10px;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--text);font:400 .9rem/1.35 var(--sans);text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nc-hits button:hover,.nc-hits button:focus-visible{background:var(--c-hover)}
+.nc-hits small{margin-left:8px;color:var(--muted)}
+.nc-foot{display:flex;justify-content:space-between;gap:12px;margin:12px 2px 0;color:var(--muted);font-size:.8rem}
+.nc-error{margin:10px 2px 0;color:var(--c-orange,var(--orange));font-size:.88rem}
+.nc-error:empty{display:none}
+/* An owner's card: quiet "Added by you"; their own words open its chat. */
+.card .added-by{color:var(--muted);font-size:.8rem;margin-right:8px}
+@media(max-width:560px){.card .meta-side:has(.added-by)>time{display:none}}
+.merge-offer{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:4px 0 10px;padding:10px 12px;border:1px solid var(--c-line,var(--border));border-radius:12px}
+.merge-offer>span{flex:1 1 220px;min-width:0}
+.merge-offer button{min-height:30px;margin:0;padding:4px 12px}
+.chat-panel .merge-offer{margin:12px 0}
+/* Rename: an input over the title, wherever the title is the card's own heading. */
+.rename-box{position:fixed;z-index:71;display:flex;flex-direction:column;gap:4px}
+.rename-box input{width:100%;min-height:0;height:100%;margin:0;padding:2px 8px;border:1px solid var(--c-accent,var(--mint));border-radius:8px;background:var(--surface);color:var(--text);font:inherit;box-shadow:0 0 0 3px color-mix(in srgb,var(--c-accent,var(--mint)) 22%,transparent);outline:none}
+.rename-box .rename-reset{align-self:flex-start;min-height:0;margin:0;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 6px 16px #0003;color:var(--muted);font:500 .8rem/1.3 var(--sans);cursor:pointer}
+.rename-box .rename-reset:hover{color:var(--text)}
+.row-more{position:fixed;z-index:30;display:grid;place-items:center;width:24px;height:24px;min-height:0;margin:0;padding:0;border:0;border-radius:6px;background:var(--c-hover);box-shadow:none;color:var(--side-ink,var(--muted));cursor:pointer}
+.row-more:hover{color:var(--text)}
+.row-more svg{width:16px;height:16px}
+.row-menu{position:fixed;z-index:72;display:flex;flex-direction:column;min-width:150px;padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 30px #0005}
+.row-menu button{min-height:0;margin:0;padding:7px 12px;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
+.row-menu button:hover{background:var(--c-hover)}
+@media(hover:hover) and (pointer:fine){.card h3 .title-link{cursor:text}}
+.chat-title{cursor:text}
 </style>
-<aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20.5V16.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M12 13.2l-2.4-2.3a1.5 1.5 0 0 1 2.1-2.1l.3.3.3-.3a1.5 1.5 0 0 1 2.1 2.1z"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="topbar" id="topbar"><button type="button" class="topbar-menu" id="drawer-open" aria-label="Open the menu" aria-controls="app-side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><span class="dot" id="drawer-dot" hidden></span></button><a class="topbar-title" href="#" id="topbar-title" aria-label="The Machine, to the top"><img src="brand/avatar.png" alt="" width="22" height="22"><span>The Machine</span></a></div><div class="drawer-scrim" id="drawer-scrim"></div>
+<aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg class="ic-panel" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><svg class="ic-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><div class="side-row"><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button type="button" class="side-fold" id="graph-fold" aria-expanded="true" aria-controls="graph-sub" aria-label="Hide People, Organisations and Projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div><div class="side-sub" id="graph-sub" role="group" aria-label="Graph"><a href="#graph=people" data-graph-sub="people"><span class="sq sq-people"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.2"/><path d="M5.5 19.5c.8-3.4 3.4-5.2 6.5-5.2s5.7 1.8 6.5 5.2"/></svg></span><span class="nl">People</span><span class="badge" id="count-people"></span></a><a href="#graph=orgs" data-graph-sub="orgs"><span class="sq sq-orgs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V5.5h8V20M14 9.5h4V20M4 20h16M9 9h2M9 12.5h2M9 16h2"/></svg></span><span class="nl">Organisations</span><span class="badge" id="count-orgs"></span></a><a href="#graph=projects" data-graph-sub="projects"><span class="sq sq-projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5V18a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 18V9.5A1.5 1.5 0 0 0 18.5 8H12l-2-2.5H5.5A1.5 1.5 0 0 0 4 7z"/></svg></span><span class="nl">Projects</span><span class="badge" id="count-projects"></span></a><a href="#graph=roles" data-graph-sub="roles" hidden><span class="sq sq-roles"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="6" width="15" height="12" rx="2"/><circle cx="9.5" cy="11" r="1.8"/><path d="M7 15.2c.6-1.2 1.5-1.8 2.5-1.8s1.9.6 2.5 1.8M14.5 10h2.5M14.5 13h2.5"/></svg></span><span class="nl">Who’s who</span><span class="badge" id="count-roles"></span></a></div><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20.5V16.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M12 13.2l-2.4-2.3a1.5 1.5 0 0 1 2.1-2.1l.3.3.3-.3a1.5 1.5 0 0 1 2.1 2.1z"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div id="needs-you" role="status" hidden></div><div class="page-head" id="page-head" hidden></div>
 <dialog id="send-dialog" aria-labelledby="send-title"><form method="dialog"><div class="snooze-heading"><h2 id="send-title">Send this email?</h2><button aria-label="Cancel send">×</button></div></form><fieldset id="send-recipients" hidden><legend>Who should get this?</legend><div></div></fieldset><dl id="send-head" class="send-head"></dl><div id="send-preview" class="send-body"></div><div id="send-editor" hidden><label id="send-subject-label">Subject<input id="send-subject" maxlength="250"></label><label>Message<textarea id="send-body"></textarea></label></div><div id="send-files" class="attachments" hidden></div><p id="send-fine" class="fine" hidden></p><p id="send-error" role="status"></p><div class="actions send-act"><button id="send-confirm" class="primary">Send now</button><button id="send-edit" class="ghost">Edit</button><button id="send-cancel">Cancel</button></div></dialog><p id="notice" role="status"></p><section id="inbox"><div id="suggestion-summary"></div><div id="suggestion-stats" aria-live="polite"></div><div id="first-look" class="first-look" role="status" hidden></div><div id="suggestions"></div></section>
 <section id="events" hidden><div class="search"><select id="account" aria-label="Account"><option value="all">All accounts</option></select><input id="query" type="search" placeholder="Search by meaning or words" aria-label="Search"><button id="search" class="primary">Search</button></div><div id="results"></div></section>
 <section id="people" hidden><div class="search people-search"><input id="people-query" type="search" placeholder="Find someone or a project" aria-label="Find a person, company or project"><button id="people-find" class="primary">Find</button></div><div id="people-view"></div></section>
 <section id="fleet" hidden><div id="fleet-view"></div></section>
 <section id="feedback" hidden><div class="section-head"><h2>How the cards are doing</h2><p>Last 30 days. Worth it: you acted on the card. First try: no correction needed. Finished: no “try again” needed. Sent as is: drafts sent unedited.</p></div><div id="quality"></div><div class="section-head"><h2>What I’ve learned</h2><p>From your notes. Remove anything that’s no longer true.</p></div><div id="facts"></div><div class="section-head"><h2>What you decided</h2><p>Your notes steer the next reviews.</p></div><div id="decisions" class="timeline"></div></section>
-<section id="settings" hidden><div id="settings-acct" hidden><div class="section-head"><h2>Account</h2><p id="acct-email"></p></div><div class="list settings-list acct-list" id="acct-list" aria-live="polite"></div><div class="acct-foot" id="acct-foot"></div></div><div class="section-head"><h2>Work hours</h2><p>When I may message you, in your time zone.</p></div><form id="hours" class="hours" hidden novalidate><fieldset class="hours-days"><legend>Work days</legend><div id="hours-days"></div><small>Work cards and snoozed work wait for a work day.</small></fieldset><div class="hours-grid"><label>Messages from<input type="time" id="hours-start" required></label><label>Until<input type="time" id="hours-end" required></label><label>Snoozes land at<input type="time" id="hours-morning" required></label><label>Morning digest<input type="time" id="hours-digest" required></label></div><label class="hours-zone">Time zone<select id="hours-zone"></select></label><button type="button" id="hours-detect" class="ghost" hidden></button><p class="fine">Nothing is sent outside these hours. Snoozes of a day or more land at the snooze time. <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/usage.md#work-hours" target="_blank" rel="noopener">Learn more</a></p><p id="hours-error" role="status"></p><div class="actions"><button id="hours-save" class="primary">Save</button></div></form><div id="settings-signatures" hidden><div class="section-head"><h2>Signatures</h2><p>Added below the emails you send.</p></div><div id="signatures"></div></div><div id="settings-voices"><div class="section-head"><h2>How you write</h2><p>A few lines per channel. Drafts follow them; your messages, notes and edits keep them up to date.</p></div><div id="voices"></div></div><div id="settings-model" hidden><div class="section-head"><h2>Model</h2><p>What answers for you, and how much of your plan’s limits it has used.</p></div><div id="model-panel" class="model-panel"></div></div><div id="settings-skills" hidden><div class="section-head"><h2>Skills</h2><p>How-tos your Machine follows. Write your own or get them from others. <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/skills.md" target="_blank" rel="noopener">Learn more</a></p></div><div class="skills-find" id="skills-find" hidden><input id="skills-filter" type="search" placeholder="Find a skill" aria-label="Find a skill"></div><div id="skills-hints" class="skills-group" hidden></div><h3 class="skills-head" id="skills-yours-head" hidden>Yours</h3><div id="skills-list" class="list settings-list skills-list"></div><div class="actions skills-new"><button type="button" class="ghost" id="skill-new">New skill</button><button type="button" class="ghost" id="skill-example">Start from an example</button><button type="button" class="ghost" id="skill-import-open">Import</button></div><div id="skill-import" class="skill-form skill-import" hidden><div class="import-body" id="import-body"><h3>Import skills</h3><fieldset class="import-from" aria-label="Where it comes from"><label><input type="radio" name="import-from" value="claude" checked> From Claude</label><label><input type="radio" name="import-from" value="chatgpt"> From ChatGPT</label></fieldset><div class="actions"><button type="button" class="primary" id="import-find">Find my skills</button></div><p class="fine" id="import-find-note">Looks on this computer and in your Claude account.</p><details class="import-own" id="import-own" open><summary>Or bring one in yourself</summary><p class="fine" id="import-how"></p><div class="actions"><button type="button" class="ghost" id="import-zip-pick">Upload .skill or .zip</button><button type="button" class="ghost" id="import-folder-pick">Upload a folder</button><button type="button" class="ghost" id="import-paste-open">Paste a SKILL.md</button></div><input type="file" id="import-zip" accept=".skill,.zip" hidden><input type="file" id="import-folder" webkitdirectory multiple hidden><div id="import-paste" hidden><label>SKILL.md<textarea id="import-paste-text" rows="8" placeholder="---&#10;name: …&#10;description: …&#10;---&#10;Instructions"></textarea></label><div class="actions"><button type="button" class="ghost" id="import-paste-go">Read it</button></div></div><p class="fine">Only instructions come in; scripts never do.</p></details><div id="import-progress" class="import-progress" aria-live="polite" hidden></div><p id="import-status" role="status"></p><div id="import-signin" class="import-signin" hidden></div><input id="import-search" type="search" placeholder="Search skills" aria-label="Search skills" hidden><div id="import-list"></div></div><div class="actions import-bar" id="import-actions"><button type="button" class="primary" id="import-go" disabled hidden>Import selected</button><button type="button" class="ghost" id="import-close">Close</button></div></div><form id="skill-editor" class="skill-form" hidden novalidate><h3 id="skill-editor-title">New skill</h3><label>Name<input id="skill-name" maxlength="60" placeholder="Answer pricing questions" required></label><label>When to use it<input id="skill-description" maxlength="300" placeholder="When a customer asks what something costs" required></label><label>Instructions<textarea id="skill-body" rows="12" maxlength="16000" placeholder="Steps, sources to check, what never to do. Markdown or a pasted SKILL.md." required></textarea></label><p class="fine">Instructions only: a skill never changes what your Machine may do.</p><p id="skill-error" role="status"></p><div class="actions"><button class="primary" id="skill-save">Save</button><button type="button" class="ghost" id="skill-cancel">Cancel</button><button type="button" class="ghost danger" id="skill-delete" hidden>Delete</button></div></form><form id="skill-share" class="skill-form" hidden novalidate><h3 id="skill-share-title">Share</h3><label>With<select id="skill-share-to"></select></label><label>Note <small>(optional)</small><input id="skill-share-note" maxlength="300" placeholder="Why it helps"></label><p class="fine">They read it and choose to install it. Later edits go out only if you share again.</p><p id="skill-share-error" role="status"></p><div class="actions"><button class="primary" id="skill-share-send">Send</button><button type="button" class="ghost" id="skill-share-cancel">Cancel</button></div></form><div id="skills-installed"></div><div id="skills-hub" class="skills-hub" hidden><h3 class="skills-head">Search ClawHub</h3><p class="fine">Skills other people publish. Third-party: read one before you install it.</p><form id="hub-search" class="search hub-search" novalidate><input id="hub-query" type="search" maxlength="80" placeholder="What should it help with?" aria-label="Search ClawHub"><button class="primary" id="hub-go">Search</button></form><p id="hub-status" class="fine" role="status"></p><div id="hub-results" class="list settings-list skills-list"></div></div><dialog id="skill-read" aria-labelledby="skill-read-title"><form method="dialog"><div class="snooze-heading"><h2 id="skill-read-title"></h2><button aria-label="Close">×</button></div></form><p id="skill-read-from" class="fine"></p><p id="skill-read-description"></p><pre id="skill-read-body" class="skill-body"></pre><p id="skill-read-error" role="status"></p><div class="actions" id="skill-read-actions"></div></dialog></div><div class="section-head"><h2>This device</h2><p>Only for this browser or phone.</p></div><div class="list settings-list"><div><span class="grow"><strong>Light mode</strong><small>Follows your device until you pick one here.</small></span><button type="button" id="theme-toggle" class="theme-toggle" role="switch" aria-checked="false" aria-label="Light mode" title="Switch theme"><span class="track-icon moon"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/><path fill="currentColor" d="M17 3.2l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg></span><span class="track-icon sun"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><g stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2.5v1.8M12 19.7v1.8M2.5 12h1.8M19.7 12h1.8M5.3 5.3l1.3 1.3M17.4 17.4l1.3 1.3M5.3 18.7l1.3-1.3M17.4 6.6l1.3-1.3"/></g></svg></span><span class="knob"><svg class="k-moon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/><path fill="currentColor" d="M17 3.2l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg><svg class="k-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><g stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2.5v1.8M12 19.7v1.8M2.5 12h1.8M19.7 12h1.8M5.3 5.3l1.3 1.3M17.4 17.4l1.3 1.3M5.3 18.7l1.3-1.3M17.4 6.6l1.3-1.3"/></g></svg></span></button></div><div><span class="grow"><strong>Phone notifications</strong><small>One per card, even without Telegram. On a phone, add The Machine to your home screen and open it there first.</small></span><button type="button" id="push-toggle" class="push-toggle" aria-pressed="false" aria-label="Phone notifications" title="Turn on phone notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="bell" d="M12 3.2a5.6 5.6 0 0 0-5.6 5.6v3.3c0 .9-.3 1.8-.9 2.5l-1 1.2c-.5.6-.1 1.5.7 1.5h13.6c.8 0 1.2-.9.7-1.5l-1-1.2a3.9 3.9 0 0 1-.9-2.5V8.8A5.6 5.6 0 0 0 12 3.2z"/><path class="clapper" d="M9.7 19.4a2.4 2.4 0 0 0 4.6 0"/><path class="slash" d="M4 4l16 16"/></svg></button></div></div><p id="settings-browser" class="settings-browser" hidden><a class="head-link" target="_blank" rel="noopener">Open the Machine’s browser ↗</a></p><form id="agents-settings" hidden novalidate><div class="section-head"><h2>Coding agents</h2><p>Where Hand to Claude Code and Hand to Codex send a card.</p></div><div class="hours-grid agents-grid"><label class="wide">Claude Code session<input id="agents-session" placeholder="https://claude.ai/code/session_…" autocomplete="off"></label><label class="wide">Codex cloud environment<input id="agents-env" maxlength="80" placeholder="Environment id" autocomplete="off"></label><label>Runs on<input id="agents-device" maxlength="60" placeholder="Laptop" autocomplete="off"></label><label><span>Branch <small>(optional)</small></span><input id="agents-branch" maxlength="120" placeholder="main" autocomplete="off"></label></div><p class="fine">Claude sends its result back through The Machine connector. Add it once in claude.ai, Settings, Connectors, Add custom connector: <code id="agents-connector"></code> <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/agents.md" target="_blank" rel="noopener">Learn more</a></p><p id="agents-error" role="status"></p><div class="actions"><button id="agents-save" class="primary">Save</button></div></form><div id="settings-fleet" hidden><div class="section-head"><h2>Fleet</h2></div><div class="list settings-list"><div><span class="grow">What your Machine answers each teammate.</span><button type="button" class="ghost" id="settings-fleet-rules">Fleet rules</button></div></div></div><div id="settings-account-block"><div class="section-head"><h2>Account</h2></div><div class="list settings-list" id="settings-account"><div><span class="grow" id="settings-more"></span><a class="btn-link" id="settings-cloud" target="_blank" rel="noopener" hidden></a><span class="account-actions"><a class="head-link" id="manage" hidden>Open account</a><form id="sign-out" method="post" action="/_machine/logout" hidden><button class="head-link">Sign out</button></form></span></div></div></div></section><section id="health" hidden><div id="health-tabs"></div><p class="sub-note" data-health-for="mail chat other">Counts show new or changed signals, including the first import.</p><div class="health" id="connectors"></div><p class="connect-more muted" id="connect-more" data-health-for="mail chat other"></p><div id="connect-add" data-health-for="add" aria-live="polite"></div><div data-health-for="signins"><div id="saved-logins-block"><div class="section-head logins-head"><h2>Saved sign-ins</h2><p><span>When a site logs your Machine out, these sign it back in with one tap.</span> <span>Passwords stay encrypted on this Machine.</span></p></div><div id="saved-logins" class="list saved-logins"></div></div></div><div data-health-for="reviews"><div class="section-head"><h2>Signal reviews</h2></div><p id="review-summary" class="muted"></p><div id="model-usage"></div><div id="review-live" class="list" aria-live="polite"></div><div id="analyses" class="list"></div><details id="review-run-history"><summary>Recent runs</summary><div id="review-runs" class="list"></div></details><div class="section-head"><h2>Delivery</h2></div><div id="deliveries" class="list"></div><p class="footnote">Reviews run in small batches, apart from collection, so a busy or failed run can delay them. Sources keep collecting while OpenClaw is offline, except Android, which needs it and your phone. <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/architecture.md#reviews" target="_blank" rel="noopener">Learn more</a></p></div></section></main><footer class="site-footer"><p id="copyright">© The Machine</p><div class="footer-controls"><a id="report-problem" class="footer-link" href="https://github.com/Salesflare/TheMachine/issues/new" target="_blank" rel="noopener">Something's wrong?</a></div></footer>
+<section id="settings" hidden><div id="settings-acct" hidden><div class="section-head"><h2>Account</h2><p id="acct-email"></p></div><div class="list settings-list acct-list" id="acct-list" aria-live="polite"></div><div class="acct-foot" id="acct-foot"></div></div><div class="section-head"><h2>Work hours</h2><p>When I may message you, in your time zone.</p></div><form id="hours" class="hours" hidden novalidate><fieldset class="hours-days"><legend>Work days</legend><div id="hours-days"></div><small>Work cards and snoozed work wait for a work day.</small></fieldset><div class="hours-grid"><label>Messages from<input type="time" id="hours-start" required></label><label>Until<input type="time" id="hours-end" required></label><label>Snoozes land at<input type="time" id="hours-morning" required></label><label>Morning digest<input type="time" id="hours-digest" required></label></div><label class="hours-zone">Time zone<select id="hours-zone"></select></label><button type="button" id="hours-detect" class="ghost" hidden></button><p class="fine">Nothing is sent outside these hours. Snoozes of a day or more land at the snooze time. <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/usage.md#work-hours" target="_blank" rel="noopener">Learn more</a></p><p id="hours-error" role="status"></p><div class="actions"><button id="hours-save" class="primary">Save</button></div></form><div id="settings-signatures" hidden><div class="section-head"><h2>Signatures</h2><p>Added below the emails you send.</p></div><div id="signatures"></div></div><div id="settings-voices"><div class="section-head"><h2>How you write</h2><p>A few lines per channel. Drafts follow them; your messages, notes and edits keep them up to date.</p></div><div id="voices"></div></div><div id="settings-model" hidden><div class="section-head"><h2>Model</h2><p>What answers for you, and how much of your plan’s limits it has used.</p></div><div id="model-panel" class="model-panel"></div></div><div id="settings-skills" hidden><div class="section-head"><h2>Skills</h2><p>How-tos your Machine follows. Write your own or get them from others. <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/skills.md" target="_blank" rel="noopener">Learn more</a></p></div><div class="skills-find" id="skills-find" hidden><input id="skills-filter" type="search" placeholder="Find a skill" aria-label="Find a skill"></div><div id="skills-hints" class="skills-group" hidden></div><h3 class="skills-head" id="skills-yours-head" hidden>Yours</h3><div id="skills-list" class="list settings-list skills-list"></div><div class="actions skills-new"><button type="button" class="ghost" id="skill-new">New skill</button><button type="button" class="ghost" id="skill-example">Start from an example</button><button type="button" class="ghost" id="skill-import-open">Import</button></div><div id="skill-import" class="skill-form skill-import" hidden><div class="import-body" id="import-body"><h3>Import skills</h3><fieldset class="import-from" aria-label="Where it comes from"><label><input type="radio" name="import-from" value="claude" checked> From Claude</label><label><input type="radio" name="import-from" value="chatgpt"> From ChatGPT</label></fieldset><div class="actions"><button type="button" class="primary" id="import-find">Find my skills</button></div><p class="fine" id="import-find-note">Looks on this computer and in your Claude account.</p><details class="import-own" id="import-own" open><summary>Or bring one in yourself</summary><p class="fine" id="import-how"></p><div class="actions"><button type="button" class="ghost" id="import-zip-pick">Upload .skill or .zip</button><button type="button" class="ghost" id="import-folder-pick">Upload a folder</button><button type="button" class="ghost" id="import-paste-open">Paste a SKILL.md</button></div><input type="file" id="import-zip" accept=".skill,.zip" hidden><input type="file" id="import-folder" webkitdirectory multiple hidden><div id="import-paste" hidden><label>SKILL.md<textarea id="import-paste-text" rows="8" placeholder="---&#10;name: …&#10;description: …&#10;---&#10;Instructions"></textarea></label><div class="actions"><button type="button" class="ghost" id="import-paste-go">Read it</button></div></div><p class="fine">Only instructions come in; scripts never do.</p></details><div id="import-progress" class="import-progress" aria-live="polite" hidden></div><p id="import-status" role="status"></p><div id="import-signin" class="import-signin" hidden></div><input id="import-search" type="search" placeholder="Search skills" aria-label="Search skills" hidden><div id="import-list"></div></div><div class="actions import-bar" id="import-actions"><button type="button" class="primary" id="import-go" disabled hidden>Import selected</button><button type="button" class="ghost" id="import-close">Close</button></div></div><form id="skill-editor" class="skill-form" hidden novalidate><h3 id="skill-editor-title">New skill</h3><label>Name<input id="skill-name" maxlength="60" placeholder="Answer pricing questions" required></label><label>When to use it<input id="skill-description" maxlength="300" placeholder="When a customer asks what something costs" required></label><label>Instructions<textarea id="skill-body" rows="12" maxlength="16000" placeholder="Steps, sources to check, what never to do. Markdown or a pasted SKILL.md." required></textarea></label><p class="fine">Instructions only: a skill never changes what your Machine may do.</p><p id="skill-error" role="status"></p><div class="actions"><button class="primary" id="skill-save">Save</button><button type="button" class="ghost" id="skill-cancel">Cancel</button><button type="button" class="ghost danger" id="skill-delete" hidden>Delete</button></div></form><form id="skill-share" class="skill-form" hidden novalidate><h3 id="skill-share-title">Share</h3><label>With<select id="skill-share-to"></select></label><label>Note <small>(optional)</small><input id="skill-share-note" maxlength="300" placeholder="Why it helps"></label><p class="fine">They read it and choose to install it. Later edits go out only if you share again.</p><p id="skill-share-error" role="status"></p><div class="actions"><button class="primary" id="skill-share-send">Send</button><button type="button" class="ghost" id="skill-share-cancel">Cancel</button></div></form><div id="skills-installed"></div><div id="skills-hub" class="skills-hub" hidden><h3 class="skills-head">Search ClawHub</h3><p class="fine">Skills other people publish. Third-party: read one before you install it.</p><form id="hub-search" class="search hub-search" novalidate><input id="hub-query" type="search" maxlength="80" placeholder="What should it help with?" aria-label="Search ClawHub"><button class="primary" id="hub-go">Search</button></form><p id="hub-status" class="fine" role="status"></p><div id="hub-results" class="list settings-list skills-list"></div></div><dialog id="skill-read" aria-labelledby="skill-read-title"><form method="dialog"><div class="snooze-heading"><h2 id="skill-read-title"></h2><button aria-label="Close">×</button></div></form><p id="skill-read-from" class="fine"></p><p id="skill-read-description"></p><pre id="skill-read-body" class="skill-body"></pre><p id="skill-read-error" role="status"></p><div class="actions" id="skill-read-actions"></div></dialog></div><div class="section-head"><h2>This device</h2><p>Only for this browser or phone.</p></div><div class="list settings-list"><div><span class="grow"><strong>Light mode</strong><small>Follows your device until you pick one here.</small></span><button type="button" id="theme-toggle" class="theme-toggle" role="switch" aria-checked="false" aria-label="Light mode" title="Switch theme"><span class="track-icon moon"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/><path fill="currentColor" d="M17 3.2l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg></span><span class="track-icon sun"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><g stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2.5v1.8M12 19.7v1.8M2.5 12h1.8M19.7 12h1.8M5.3 5.3l1.3 1.3M17.4 17.4l1.3 1.3M5.3 18.7l1.3-1.3M17.4 6.6l1.3-1.3"/></g></svg></span><span class="knob"><svg class="k-moon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/><path fill="currentColor" d="M17 3.2l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg><svg class="k-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><g stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2.5v1.8M12 19.7v1.8M2.5 12h1.8M19.7 12h1.8M5.3 5.3l1.3 1.3M17.4 17.4l1.3 1.3M5.3 18.7l1.3-1.3M17.4 6.6l1.3-1.3"/></g></svg></span></button></div><div><span class="grow"><strong>Phone notifications</strong><small>One per card, even without Telegram. On a phone, add The Machine to your home screen and open it there first.</small></span><button type="button" id="push-toggle" class="push-toggle" aria-pressed="false" aria-label="Phone notifications" title="Turn on phone notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="bell" d="M12 3.2a5.6 5.6 0 0 0-5.6 5.6v3.3c0 .9-.3 1.8-.9 2.5l-1 1.2c-.5.6-.1 1.5.7 1.5h13.6c.8 0 1.2-.9.7-1.5l-1-1.2a3.9 3.9 0 0 1-.9-2.5V8.8A5.6 5.6 0 0 0 12 3.2z"/><path class="clapper" d="M9.7 19.4a2.4 2.4 0 0 0 4.6 0"/><path class="slash" d="M4 4l16 16"/></svg></button></div></div><p id="settings-browser" class="settings-browser" hidden><a class="head-link" target="_blank" rel="noopener">Open the Machine’s browser ↗</a></p><form id="agents-settings" hidden novalidate><div class="section-head"><h2>Coding agents</h2><p>Where Hand to Claude Code and Hand to Codex send a card.</p></div><div class="hours-grid agents-grid"><label class="wide">Claude Code session<input id="agents-session" placeholder="https://claude.ai/code/session_…" autocomplete="off"></label><label class="wide">Codex cloud environment<input id="agents-env" maxlength="80" placeholder="Environment id" autocomplete="off"></label><label>Runs on<input id="agents-device" maxlength="60" placeholder="Laptop" autocomplete="off"></label><label><span>Branch <small>(optional)</small></span><input id="agents-branch" maxlength="120" placeholder="main" autocomplete="off"></label></div><p class="fine">Claude sends its result back through The Machine connector. Add it once in claude.ai, Settings, Connectors, Add custom connector: <code id="agents-connector"></code> <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/agents.md" target="_blank" rel="noopener">Learn more</a></p><p id="agents-error" role="status"></p><div class="actions"><button id="agents-save" class="primary">Save</button></div></form><div id="settings-fleet" hidden><div class="section-head"><h2>Fleet</h2></div><div class="list settings-list"><div><span class="grow">What your Machine answers each teammate.</span><button type="button" class="ghost" id="settings-fleet-rules">Fleet rules</button></div></div></div><div id="settings-account-block"><div class="section-head"><h2>Account</h2></div><div class="list settings-list" id="settings-account"><div><span class="grow" id="settings-more"></span><a class="btn-link" id="settings-cloud" target="_blank" rel="noopener" hidden></a><span class="account-actions"><a class="head-link" id="manage" hidden>Open account</a><form id="sign-out" method="post" action="/_machine/logout" hidden><button class="head-link">Sign out</button></form></span></div></div></div></section><section id="health" hidden><div id="health-tabs"></div><p class="sub-note" data-health-for="mail chat other">Counts show new or changed signals, including the first import.</p><div class="health" id="connectors"></div><p class="connect-more muted" id="connect-more" data-health-for="mail chat other"></p><div id="connect-add" data-health-for="add" aria-live="polite"></div><div data-health-for="signins"><div id="saved-logins-block"><div class="section-head logins-head"><h2>Saved sign-ins</h2><p><span>When a site logs your Machine out, these sign it back in with one tap.</span> <span>Passwords stay encrypted on this Machine.</span></p></div><div id="saved-logins" class="list saved-logins"></div></div></div><div data-health-for="reviews"><div class="section-head"><h2>Signal reviews</h2></div><p id="review-summary" class="muted"></p><div id="model-usage"></div><div id="review-live" class="list" aria-live="polite"></div><div id="analyses" class="list"></div><details id="review-run-history"><summary>Recent runs</summary><div id="review-runs" class="list"></div></details><div class="section-head"><h2>Delivery</h2></div><div id="deliveries" class="list"></div><p class="footnote">Reviews run in small batches, apart from collection, so a busy or failed run can delay them. Sources keep collecting while OpenClaw is offline, except Android, which needs it and your phone. <a class="learn" href="https://github.com/Salesflare/TheMachine/blob/main/docs/architecture.md#reviews" target="_blank" rel="noopener">Learn more</a></p></div></section><section id="browser-pane" class="browser-pane" hidden aria-label="Browser"><div class="bp-head"><h2>Browser</h2><a id="bp-tab" target="_blank" rel="noopener">Open in new tab ↗</a><button type="button" id="bp-close" aria-label="Close the browser" title="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div><iframe id="bp-frame" title="The Machine’s browser" allow="clipboard-read; clipboard-write"></iframe></section>
+</main><footer class="site-footer"><p id="copyright">© The Machine</p><div class="footer-controls"><a id="report-problem" class="footer-link" href="https://github.com/Salesflare/TheMachine/issues/new" target="_blank" rel="noopener">Something's wrong?</a></div></footer>
 <dialog id="snooze-dialog" aria-labelledby="snooze-title"><form method="dialog"><div class="snooze-heading"><h2 id="snooze-title">Remind me later</h2><button aria-label="Close picker">×</button></div><div id="snooze-quick"><div class="snooze-presets"><button type="button" data-snooze="2h">2 hours</button><button type="button" data-snooze="tomorrow">Tomorrow · 9:00</button><button type="button" data-snooze="3d">3 days · 9:00</button><button type="button" data-snooze="1w">1 week · 9:00</button></div><button type="button" id="snooze-custom">Choose date</button></div><div id="snooze-calendar" hidden><div class="month-nav"><button type="button" id="month-prev" aria-label="Previous month">‹</button><strong id="snooze-month" aria-live="polite"></strong><button type="button" id="month-next" aria-label="Next month">›</button></div><div class="month-grid" id="snooze-days" aria-label="Choose a day"></div><div class="snooze-time-row"><label for="snooze-time">Time</label><input id="snooze-time" type="time" required></div><small id="snooze-zone"></small><div class="snooze-footer"><button id="snooze-back" type="button">Back</button><button id="snooze-save" type="button" class="primary">Save time</button></div></div><p id="snooze-error" class="error" role="alert"></p></form></dialog>
 <dialog id="skill-look" aria-labelledby="skill-look-title"><form method="dialog"><div class="snooze-heading"><h2 id="skill-look-title"></h2><button aria-label="Close">×</button></div></form><p id="skill-look-from" class="fine"></p><ul id="skill-look-notes" class="skill-notes"></ul><pre id="skill-look-body" class="skill-body"></pre><p id="skill-look-error" role="status"></p><div class="actions" id="skill-look-actions"></div></dialog>
  <dialog id="peek-dialog" aria-labelledby="peek-title"><form method="dialog"><div class="snooze-heading"><h2 id="peek-title">The browser, live</h2><button aria-label="Close">×</button></div></form><img id="peek-image" alt="What The Machine’s browser shows now"></dialog>
@@ -1505,7 +1651,9 @@ function cardActions(s,choices,smartButtons,unmerge,hint,smart){const copy=copyL
  const rank=c=>c.startsWith('agent:')?99:c==='change'&&agentAsk(s)?-1:order.indexOf(c),rest=all.filter(([c])=>!isPrimary(c)).sort((a,b)=>rank(a[0])-rank(b[0]));
  const leads=(smartButtons.match(/<(button|a) /g)||[]).length+head.length,room=Math.max(1,3-leads);
  let shown=rest.slice(0,room),more=rest.slice(room);if(more.length===1&&!unmerge){shown=rest;more=[]}
- const menu=more.length||unmerge?`<details class="more-actions"><summary aria-label="More actions">More</summary><div class="more-menu" role="group" aria-label="More actions">${more.map(btn).join('')}${unmerge}</div></details>`:'';
+ // Rename sits in More on every card (and so in the chat's menu): the owner's title wins over the generated one.
+ const rename=`<button type="button" class="ghost" data-rename="${esc(s.id)}">Rename</button>`;
+ const menu=`<details class="more-actions"><summary aria-label="More actions">More</summary><div class="more-menu" role="group" aria-label="More actions">${more.map(btn).join('')}${rename}${unmerge}</div></details>`;
  return `<div class="actions">${smartButtons}${head.map(btn).join('')}${shown.map(btn).join('')}${menu}</div>${copy?`<p class="copy-why">${COPY_WHY}</p>`:''}`}
 // A Needs you line ends with one mark: a question keeps its "?" instead of getting ".".
 const sentence=t=>{t=String(t).trim();return /[.?!…]$/.test(t)?t:t+'.'};
@@ -1564,7 +1712,7 @@ const viewIn=s.browser_view&&!smart.some(a=>a.browser)?[{kind:'open',browser:tru
 const smartButtons=s.status==='prepared'?[...smart,...viewIn].map(a=>a.kind==='handoff'?(canHandoff(s)?`<button class="primary" data-fleet-handoff="${esc(s.id)}">${esc(a.label||'Hand off')}</button>`:''):a.kind==='open'&&a.browser?`<a class="open${finalStep(s)?' primary':''}" href="${esc(state.browser_link||'#')}" target="_blank" rel="noopener" data-browser-show="${esc(s.id)}"${a.site?` title="${esc(a.site)}, in your Machine’s browser"`:''}>${esc(a.label)} ↗</a>`:a.kind==='open'?`<a class="open" href="${esc(safeURL(a.url))}" target="_blank" rel="noreferrer">${esc(a.label)} ↗</a>`:!(a.kind==='finish'&&(a.state||s.action_status)?.status==='done')&&!sendBusy(a.state||s.action_status)?`<button class="primary" data-id="${s.id}" data-smart="${a.revision}">${esc(sendLabel(a)||(a.kind==='prepare'?'Prepare next step':'Review and send'))}</button>`:'').join(''):'';
 // A merged fix stays reversible for a day.
 const unmerge=['prepared','completed'].includes(s.status)&&smart.some(a=>a.kind==='merge'&&Date.parse((a.state||s.action_status)?.undo_until||'')>Date.now())?`<button data-id="${s.id}" data-unmerge="1">Undo merge</button>`:'';
-return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>${s.latest_feedback.choice==='other'?'Asked':'Your note'}</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
+return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${s.origin==='owner'?'<span class="added-by">Added by you</span>':''}${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${mergeOffer(s)}${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>${s.latest_feedback.choice==='other'?'Asked':'Your note'}</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
 }
 // Success notices clear themselves after a few seconds; errors stay until the next notice.
 let noticeTimer;const notice=(text,error=false)=>{const n=$('#notice');n.textContent=text;n.className=error?'error':'';clearTimeout(noticeTimer);if(text&&!error)noticeTimer=setTimeout(()=>{if(n.textContent===text)n.textContent=''},4500)};
@@ -1615,7 +1763,7 @@ function settingsSync(){const s=$('#settings'),bar=$('#settings-tabs'),shown=new
 new MutationObserver(settingsSync).observe($('#settings'),{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
 const settingsHash=()=>{if(!$('#settings').hidden)history.replaceState(null,'',location.pathname+location.search+'#settings/'+settingsNow)};
 function showSettings(tab){if(SETTINGS_TABS.some(t=>t[0]===tab)){settingsTab=tab;localStorage.setItem('settings-tab',tab)}const was=!$('#settings').hidden;
- for(const b of document.querySelectorAll('nav button')){b.classList.remove('active');b.setAttribute('aria-current','false')}for(const x of document.querySelectorAll('main>section'))x.hidden=x.id!=='settings';$('#open-settings').setAttribute('aria-current','page');
+ for(const b of document.querySelectorAll('nav button[data-tab]')){b.classList.remove('active');b.setAttribute('aria-current','false')}for(const x of document.querySelectorAll('main>section'))x.hidden=x.id!=='settings';$('#open-settings').setAttribute('aria-current','page');
  settingsSync();settingsHash();if(!was)scrollTo(0,0);requestAnimationFrame(()=>tabsShow($('#settings-tabs')))}
 $('#open-settings').onclick=()=>showSettings();
 $('#settings-tabs').onclick=e=>{const b=e.target.closest('[data-settings-tab]');if(!b)return;showSettings(b.dataset.settingsTab)};
@@ -2112,7 +2260,8 @@ const apiURL=path=>new URL(path,document.baseURI).href;
 // Any card built from collected messages can show them, including older cards without a source line.
 const eventIds=s=>{try{return Array.isArray(s.event_ids)?s.event_ids:JSON.parse(s.event_ids||'[]')}catch{return []}};
 const cardViaIcon=s=>{const v=/^Source:\s*([^·\n]+)/i.exec(s.source_line||'')?.[1]||'';return isEmail(s)?'mail':/note/i.test(v)?'note':/calendar/i.test(v)?'cal':/^(email|gmail|outlook|mail)/i.test(v.trim())?'mail':'chat'};
-const hasOriginal=s=>Boolean(s.source_line||eventIds(s).length||(s.original_urls||[]).length);
+// A card the owner added has their own words as its only signal until the review links an email: nothing to open yet.
+const hasOriginal=s=>Boolean(s.source_line||(s.origin!=='owner'&&eventIds(s).length)||(s.original_urls||[]).length);
 const isEmail=s=>/^Source: email/.test(s.source_line||'')||(s.original_urls||[]).some(u=>/^https:\/\/(mail\.google\.com|outlook\.(office|office365|live)\.com)\//.test(u));
 const originalsFor=id=>{if(!originals.has(id))originals.set(id,request('api/originals?id='+id).then(r=>r.originals).catch(e=>{originals.delete(id);throw e}));return originals.get(id)};
 // Dark mode for HTML emails, like Gmail's: light backgrounds turn dark and dark text turns light,
@@ -2306,9 +2455,13 @@ function renderFirstLook(live){const i=firstLookInfo(live),el=$('#first-look'),e
 if(empty){el.hidden=true;if(i){empty.classList.add('first-look-empty');empty.innerHTML=firstLookInner(i)}else if(empty.classList.contains('first-look-empty'))refresh();return}
 if(i){el.innerHTML=`<strong>${esc(i.title)}</strong>${firstLookBar(i)}${i.wait?`<small>${esc(i.wait)}</small>`:''}`;el.hidden=false}else el.hidden=true}
 function renderReviewLive(){const live=state.review_live||{};$('#review-live').innerHTML=reviewLiveRows(live).join('');const none=$('#analyses .no-reviews');if(none)none.hidden=!!$('#review-live').innerHTML;renderFirstLook(live)}
-let reviewWasLive=false;
-setInterval(async()=>{if(document.hidden||!state||!((state.review_live?.runs||[]).length||reviewWasLive))return;try{const live=await request('api/reviews/live');const running=(live.runs||[]).length;
-if(!running&&reviewWasLive){reviewWasLive=false;refresh();return}reviewWasLive=!!running;state.review_live=live;renderReviewLive()}catch(e){}},5000);
+let reviewWasLive=false,cardWaiting=false;
+// While a review runs, or the first look is about to start, look every 5 s; a card a running review just saved shows at once
+const firstLookPending=()=>['due','waiting'].includes(state?.review_live?.first_look?.state)&&state.review_live.first_look.why!=='model';
+setInterval(async()=>{if(document.hidden||!state||!((state.review_live?.runs||[]).length||reviewWasLive||cardWaiting||firstLookPending()))return;try{const live=await request('api/reviews/live');const running=(live.runs||[]).length;
+const before=state.review_live?.cards,fresh=live.cards&&before&&(live.cards.newest!==before.newest||live.cards.count!==before.count);
+if(fresh&&!canRefresh()){reviewWasLive=!!running;cardWaiting=true;state.review_live={...live,cards:before};renderReviewLive();return}  // typing: on the next look, also once the review ended
+if((!running&&reviewWasLive)||fresh){reviewWasLive=!!running;cardWaiting=false;state.review_live=live;refresh();return}cardWaiting=false;reviewWasLive=!!running;state.review_live=live;renderReviewLive()}catch(e){}},5000);
 function render(){renderNeedsYou();
 const finishedOpen=$('#finished-list')?.open||false,laterOpen=$('#later-list')?.open||false,promisesOpen=$('#promises-list')?.open||false;
 const drafts=Object.fromEntries([...document.querySelectorAll('#suggestions textarea,#suggestions .fleet-card input[id]')].filter(t=>t.value).map(t=>[t.id,t.value]));
@@ -2326,7 +2479,7 @@ const backDay=s=>{const d=new Date(s.snoozed_until),t=new Date();t.setDate(t.get
 const laterCards=items=>items.map((s,i)=>(i===0||backDay(s)!==backDay(items[i-1])?`<h3 class="day-head">${esc(backDay(s))}</h3>`:'')+suggestionCard(s,'Later')).join('');
 $('#suggestion-summary').innerHTML=`<div class="summary-row"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div></div>`;
 $('#suggestion-stats').innerHTML=`<div class="stats">${[[ready,'Ready','mint','ready'],[needs,'To decide','amber','needs'],[preparing,'Preparing','lavender','preparing'],[later,'Later','lavender','later']].map(([items,title,t,key])=>`<button type="button" class="stat t-${t}${items.length?'':' zero'}" data-fold-tile="${key}" aria-expanded="${!!items.length&&(key==='later'?laterOpen:!folded.has(key))}" aria-label="${items.length} ${title}${items.length?', tap to show or hide':''}" ${items.length?'':'disabled'}><b>${items.length}</b><span>${title}</span></button>`).join('')}</div>`;
-$('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:scopeFilter==='personal'?0:state.fleet?.waiting||0))||'';$('#tab-fleet').hidden=!state.fleet?.on;navFade();$('#badge-fleet').textContent='';
+$('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:scopeFilter==='personal'?0:state.fleet?.waiting||0))||'';$('#tab-fleet').hidden=!state.fleet?.on;$('#badge-fleet').textContent='';
 if(!chatOpen())$('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
 // Snoozed cards are out of the way by choice: folded by default, open state kept across refreshes.
 +(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed this week</span><span class="count">${recent.length}</span></summary>${recent.map(suggestionCard).join('')||'<p class="muted">Nothing finished or dismissed this week.</p>'}${older?`<p class="muted">${older} older ${older===1?'item is':'items are'} under Feedback.</p>`:''}</details>`;
@@ -2531,7 +2684,7 @@ function chatParts(s){const t=document.createElement('template');t.innerHTML=sug
  const decide=rest.filter(n=>['complete','snooze','reject','accept','retry'].includes(n.dataset.choice)||n.dataset.smart!=null);
  const status=card?.querySelector('.status-line:not(.ask-line)')?.textContent.trim()||card?.querySelector('.card-badges .chip')?.textContent.trim()||'';
  const body=card?.querySelector('.body');body?.classList.remove('clamp');
- const panel=[...(card?.querySelectorAll('.change-editor:not([class*="answer"]),.fleet-handoff-form')||[])].filter(n=>!n.querySelector('[id^="feedback-"]')).map(n=>n.outerHTML).join('')
+ const panel=[...(card?.querySelectorAll('.merge-offer,.change-editor:not([class*="answer"]),.fleet-handoff-form')||[])].filter(n=>!n.querySelector('[id^="feedback-"]')).map(n=>n.outerHTML).join('')
   +(['blocked','running','starting'].includes(s.preparation_status)&&s.preparation_browser?`<p class="note">${browserLink(s.id,s.preparation_browser)}</p>`:'');
  const html=n=>n?.outerHTML||'';
  return {sends,going,sheet:html(card?.querySelector('.agent-form')),lead:html(lead),send:!!lead?.dataset.smart,copy:lead?.dataset.result==='copy',back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,3).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
@@ -2655,6 +2808,7 @@ const chatPicks=s=>chatSuggestions(s).map(t=>`<button type="button" class="chat-
 // Suggestions show while nothing has been said yet, or while you are writing
 const chatPicksShown=()=>!(chat?.items||[]).some(i=>i.kind==='you')||document.activeElement?.id==='chat-input';
 const BACK='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>';
+const NC_PLUS='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 const SEND='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4.5l7 7-1.4 1.4-4.6-4.6V20h-2V8.3l-4.6 4.6L5 11.5z"/></svg>';
 const DOTS='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></svg>';
 const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}):d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
@@ -2696,6 +2850,8 @@ function chatFades(){document.querySelectorAll('.chat-side a,.chat-title,.side-c
  while(lo>1&&/\s/.test(txt.data[lo-1]))lo--;r.setStart(txt,Math.max(0,lo-1));r.setEnd(txt,lo);n.style.setProperty('--fade-x',Math.round(r.getBoundingClientRect().right-box.left)+'px')})}
 addEventListener('resize',()=>chatFades());
 // A scrolled box shows its thin thumb while it moves
+// Fonts that arrive late change the widths: measure the fades again then
+document.fonts?.ready.then(()=>requestAnimationFrame(chatFades));document.fonts?.addEventListener?.('loadingdone',()=>requestAnimationFrame(chatFades));
 document.addEventListener('scroll',e=>{const b=e.target;if(!b.matches?.('.chat-log,.chat-side,.side-cards'))return;b.classList.add('scrolling');clearTimeout(b._scrolling);b._scrolling=setTimeout(()=>b.classList.remove('scrolling'),900)},{capture:true,passive:true});
 // A result file shown in the thread (a copy-only draft): read once, then kept while the page is open
 const chatFiles=new Map();
@@ -2735,7 +2891,8 @@ async function chatPoll(){clearTimeout(chatTimer);const id=chatId;if(!id)return;
  if(id===chatId)chatTimer=setTimeout(chatPoll,chat?.active?1000:10000)}
 // Whether this page put the open chat on the history (so back can take it off again instead of adding an entry)
 let chatPushed=false;
-function openChatLink(){if(!state.suggestions)return;const m=/^#chat=([a-f0-9]{16})$/.exec(location.hash),id=m&&state.suggestions.some(s=>s.id===m[1])?m[1]:null;
+function openChatLink(){if(!state.suggestions||location.hash==='#browser')return;  // the browser pane over a chat keeps that chat for Back
+const m=/^#chat=([a-f0-9]{16})$/.exec(location.hash),id=m&&state.suggestions.some(s=>s.id===m[1])?m[1]:null;
  if(id===chatId)return;const was=chatId;chatId=id;chat=null;chatDrawer=false;chatOpenSet.clear();clearTimeout(chatTimer);if(!id)chatPushed=false;
  if(id){document.querySelector('nav [data-tab="inbox"]').click();render();scrollTo(0,0);chatPoll()}else{render();if(was)document.getElementById('task-'+was)?.scrollIntoView({block:'center'})}}
 // A chat opens only on a real tap: not on the tap that stops a fling, nor on one that ends a scroll or a drag.
@@ -2743,7 +2900,7 @@ let chatScrolledAt=0,chatDown=null;
 addEventListener('scroll',()=>{chatScrolledAt=Date.now()},{passive:true});
 document.addEventListener('pointerdown',e=>{chatDown={x:e.clientX,y:e.clientY,at:Date.now(),scrolled:Date.now()-chatScrolledAt<250}},{passive:true,capture:true});
 const chatRealTap=e=>!(chatDown&&(chatDown.scrolled||Math.hypot(e.clientX-chatDown.x,e.clientY-chatDown.y)>8));
-function chatGo(id){if(!chatId){history.pushState(null,'',location.pathname+location.search+'#chat='+id);chatPushed=true}else history.replaceState(null,'',location.pathname+location.search+'#chat='+id);openChatLink()}
+function chatGo(id){if(history.state?.drawer){history.replaceState(null,'',location.pathname+location.search+'#chat='+id);chatPushed=true}else if(!chatId){history.pushState(null,'',location.pathname+location.search+'#chat='+id);chatPushed=true}else history.replaceState(null,'',location.pathname+location.search+'#chat='+id);openChatLink()}
 // In-page links, also when the page's base is another path; the "You asked" note opens the chat too.
 $('#suggestions').addEventListener('click',e=>{const a=e.target.closest('a[href^="#chat="],a[href^="#card="]'),note=!a&&e.target.closest('[data-chat-open]');
  if(note&&!e.target.closest('a,button')){if(chatRealTap(e))chatGo(note.dataset.chatOpen);return}
@@ -2759,7 +2916,7 @@ $('#suggestions').addEventListener('focusout',e=>{if(e.target.id!=='chat-input')
 $('#suggestions').addEventListener('keydown',e=>{if(e.target.id!=='chat-input'||e.key!=='Enter'||e.shiftKey||e.isComposing||e.ctrlKey||e.metaKey||matchMedia('(pointer: coarse)').matches)return;e.preventDefault();$('[data-chat-send]')?.click()});
 $('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
  const layout=e.target.closest('.chat-layout');if(e.target===layout&&chatDrawer){chatDrawer=false;layout.classList.remove('drawer');return}
- if(e.target.closest('[data-chat-drawer]')){chatDrawer=!chatDrawer;layout.classList.toggle('drawer',chatDrawer);e.target.closest('[data-chat-drawer]').setAttribute('aria-expanded',chatDrawer);e.target.closest('details')?.removeAttribute('open');return}
+ if(e.target.closest('[data-chat-drawer]')){e.target.closest('details')?.removeAttribute('open');drawerOpen();return}
  if(e.target.closest('.chat-menu-list button'))setTimeout(()=>$('#chat-menu')?.removeAttribute('open'));
  const scope=e.target.closest('.chat-side [data-scope]');if(scope){e.stopPropagation();scopeFilter=scope.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render();return}
  const un=e.target.closest('[data-unclamp]');if(un){e.stopPropagation();const k=un.dataset.unclamp;chatOpenSet.has(k)?chatOpenSet.delete(k):chatOpenSet.add(k);paintChat();return}
@@ -2776,7 +2933,9 @@ $('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
 const TAB_LINKS={inbox:'inbox',suggestions:'inbox',events:'events',graph:'people',people:'people',feedback:'feedback',connections:'health',health:'health'};
 function showTab(tab,pane){if(tab==='people'&&pane){graphPane=pane;localStorage.setItem('graph-pane',pane);graphNode='';$('#people-query').value=''}
  if(tab==='health'&&pane){healthPane=pane==='phone'?'other':pane;healthPicked=true}document.querySelector(`nav [data-tab="${tab}"]`)?.click();if(tab==='health')renderHealthTabs()}
-function openTabLink(){const st=/^#settings(?:[/=]([a-z]+))?$/.exec(location.hash);if(st){if($('#settings').hidden||st[1]&&st[1]!==settingsNow)showSettings(st[1]);return}const m=/^#([a-z]+)(?:=([a-z]+))?$/.exec(location.hash);if(!m||!TAB_LINKS[m[1]])return;history.replaceState(null,'',location.pathname+location.search);showTab(TAB_LINKS[m[1]],m[2])}
+function openTabLink(){const st=/^#settings(?:[/=]([a-z]+))?$/.exec(location.hash);if(st){if($('#settings').hidden||st[1]&&st[1]!==settingsNow)showSettings(st[1]);return}const m=/^#([a-z]+)(?:=([a-z]+))?$/.exec(location.hash);if(!m||!TAB_LINKS[m[1]])return;
+ const tab=TAB_LINKS[m[1]];if(tab==='people'&&GRAPH_PANES.includes(m[2])){if(!$('#people').hidden&&!graphNode&&graphShown===m[2])return;showTab(tab,m[2]);return}
+ history.replaceState(null,'',location.pathname+location.search);showTab(tab,m[2])}
 window.addEventListener('hashchange',()=>{openChatLink();openSnoozeLink();openResultLink();openCardLink();openFleetLink();openTabLink()});
 function noteSplit(n){if(!n)return'';const parts=[['style','style'],['fact','missing facts'],['continue','keep going'],['new_ask','new asks'],['unsorted','not sorted']].filter(([k])=>n[k]);
 return parts.length?`<div class="notes-split"><span>Your Change notes</span><div>${parts.map(([k,t])=>`<span class="chip t-${{style:'lavender',fact:'amber',continue:'orange',new_ask:'mint',unsorted:'muted'}[k]}">${n[k]} ${t}</span>`).join('')}</div></div>`:''}
@@ -2806,11 +2965,7 @@ function wakeSnoozed(st){const now=Date.now();let next=Infinity;for(const s of s
  clearTimeout(wakeTimer);if(next<Infinity&&next-now<864e5)wakeTimer=setTimeout(()=>refresh(),next-now+3000);return st}
 let sendTimer=null;const sendWatch=()=>{clearTimeout(sendTimer);if((state.suggestions||[]).some(s=>chatSends(s).some(x=>['queued','sending'].includes(x.st.status))))sendTimer=setTimeout(()=>{refreshWhenReady();if(chatId)chatPoll()},2000)};
 async function refresh(){refreshes++;try{state=wakeSnoozed(await request('api/status'));browserPill(state);if(uiVersionCheck())return;render();sendWatch();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=e.retryAfter||Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=e.restarting?'Restarting · retrying':lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
-// On a phone the tab row scrolls sideways: a fade shows on the side with more tabs, and the current tab scrolls into view.
-function navFade(){const n=$('nav'),max=n.scrollWidth-n.clientWidth;n.classList.toggle('more-left',n.scrollLeft>2);n.classList.toggle('more-right',n.scrollLeft<max-2)}
-$('nav').addEventListener('scroll',navFade,{passive:true});addEventListener('resize',navFade);navFade();
-const navShow=t=>{const n=$('nav');if(n.scrollWidth>n.clientWidth)n.scrollTo({left:Math.max(0,t.offsetLeft-(n.clientWidth-t.offsetWidth)/2),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})};
-$('nav').onclick=e=>{const t=e.target.closest('button');if(!t?.dataset.tab)return;navShow(t);for(const b of document.querySelectorAll('nav button')){b.classList.toggle('active',b===t);b.setAttribute('aria-current',b===t?'page':'false')}for(const s of document.querySelectorAll('main>section'))s.hidden=s.id!==t.dataset.tab;if(t.dataset.tab==='people')people(graphNode,!!$('#people-view').innerHTML);if(t.dataset.tab==='health')savedLogins();if(t.dataset.tab==='fleet')fleetShown=fleetView(true);requestAnimationFrame(()=>document.querySelectorAll('.fleet-tabs,.sub-tabs').forEach(tabsShow))};
+$('nav').onclick=e=>{const t=e.target.closest('button');if(!t?.dataset.tab)return;for(const b of document.querySelectorAll('nav button[data-tab]')){b.classList.toggle('active',b===t);b.setAttribute('aria-current',b===t?'page':'false')}for(const s of document.querySelectorAll('main>section'))s.hidden=s.id!==t.dataset.tab;if(t.dataset.tab==='people')people(graphNode,!!$('#people-view').innerHTML);if(t.dataset.tab==='health')savedLogins();if(t.dataset.tab==='fleet')fleetShown=fleetView(true);requestAnimationFrame(()=>document.querySelectorAll('.fleet-tabs,.sub-tabs').forEach(tabsShow))};
 // The desktop sidebar (from 1024px): the cards as a quiet list under the tabs, by section, each section folds (Done
 // starts folded) and the fold is remembered; a filter on the titles; the whole sidebar folds to icons.
 const sideStore={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
@@ -2849,7 +3004,7 @@ function sideTipHide(){clearTimeout(sideTipTimer);if(sideTipFor){if(sideTipFor.d
 function sideTipShow(el){if(document.documentElement.dataset.side!=='collapsed'||!matchMedia('(min-width:1024px)').matches)return;sideLabels();const text=sideTipText(el);if(!text)return;
  if(el.title){el.dataset.tipTitle=el.title;el.title=''}  /* no second, native tooltip */
  sideTipFor=el;sideTip.textContent=text;const r=el.getBoundingClientRect(),side=$('#app-side').getBoundingClientRect();sideTip.style.left=Math.round(side.right+8)+'px';sideTip.style.top=Math.round(r.top+r.height/2)+'px';sideTip.hidden=false}
-const SIDE_TIP_ON='.app-side nav [data-tab],#side-toggle,#side-search,.app-side .head-side>.settings-link,#live';
+const SIDE_TIP_ON='.app-side nav [data-tab],.side-sub a,#side-toggle,#side-search,.app-side .head-side>.settings-link,#live';
 $('#app-side').addEventListener('pointerover',e=>{const el=e.target.closest(SIDE_TIP_ON);if(!el||el===sideTipFor||e.pointerType==='touch')return;sideTipHide();sideTipTimer=setTimeout(()=>sideTipShow(el),300)});
 $('#app-side').addEventListener('pointerout',e=>{const el=e.target.closest(SIDE_TIP_ON);if(el&&!el.contains(e.relatedTarget))sideTipHide()});
 $('#app-side').addEventListener('focusin',e=>{const el=e.target.closest(SIDE_TIP_ON);sideTipHide();if(el&&el.matches(':focus-visible'))sideTipShow(el)});
@@ -2860,12 +3015,72 @@ addEventListener('keydown',e=>{if(e.key==='Escape')sideTipHide();if(!(e.ctrlKey|
 sideSet(document.documentElement.dataset.side==='collapsed',false);
 $('#side-toggle').onclick=()=>sideSet(document.documentElement.dataset.side!=='collapsed');
 $('#side-search').addEventListener('click',()=>{if(document.documentElement.dataset.side==='collapsed'&&matchMedia('(min-width:1024px)').matches){sideSet(false);$('#side-find').focus()}});
+// Below 1024px the sidebar is a drawer: the menu button, a swipe from the left edge or All tasks in a chat opens it; ✕,
+// the shade, Esc, a swipe to the left and the back button close it, and so does picking a row in it. While it is open
+// the rest of the page is inert, so focus stays in it.
+const DESK=matchMedia('(min-width:1024px)'),drawerIs=()=>document.documentElement.dataset.drawer==='open';
+let drawerInert=[],drawerPopping=false,drawerStep=false,drawerFrom=null;
+function drawerShow(on){const root=document.documentElement;if(on)root.dataset.drawer='open';else delete root.dataset.drawer;$('#drawer-open').setAttribute('aria-expanded',String(on));
+ for(const el of drawerInert)el.inert=false;drawerInert=[];
+ if(on)for(const el of document.body.children)if(!['app-side','drawer-scrim','side-tip'].includes(el.id)&&el.tagName!=='DIALOG'&&el.tagName!=='SCRIPT'&&!el.inert){el.inert=true;drawerInert.push(el)}}
+function drawerOpen(){if(DESK.matches||drawerIs())return;drawerFrom=document.activeElement;sideTipHide();drawerShow(true);if(!history.state?.drawer)history.pushState({drawer:1},'',location.href);
+ requestAnimationFrame(()=>$('#side-toggle').focus({preventScroll:true}))}
+// visual only: a row that navigates takes the drawer's place on the history itself
+function drawerHide(){if(!drawerIs())return;const back=document.activeElement&&$('#app-side').contains(document.activeElement);drawerShow(false);if(back&&!chatId)(drawerFrom?.isConnected&&drawerFrom.offsetParent?drawerFrom:$('#drawer-open')).focus({preventScroll:true})}
+function drawerClose(){if(!drawerIs())return;drawerHide();if(history.state?.drawer){drawerPopping=true;history.back()}}
+// back closes it; back onto the entry it pushed (it closed some other way meanwhile) steps over that entry; back from
+// #graph=… to the plain page leaves the Graph for Suggestions
+// (a step that only opened or closed the drawer is no navigation: drawerStep tells the other back handlers to sit it out)
+addEventListener('popstate',()=>{const step=()=>{drawerStep=true;setTimeout(()=>{drawerStep=false})};if(drawerPopping){drawerPopping=false;step();return}if(drawerIs()&&!history.state?.drawer){drawerHide();step();return}
+ if(history.state?.drawer&&!drawerIs()){drawerPopping=true;step();history.back();return}
+ if(!location.hash&&!$('#people').hidden&&!graphNode)showTab('inbox')});
+$('#drawer-open').onclick=drawerOpen;$('#topbar-title').onclick=e=>{e.preventDefault();scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})};$('#drawer-scrim').onclick=drawerClose;
+$('#side-toggle').addEventListener('click',e=>{if(DESK.matches)return;e.stopImmediatePropagation();drawerClose()},true);
+addEventListener('keydown',e=>{if(e.key==='Escape'&&drawerIs()&&!document.querySelector('dialog[open]')){e.preventDefault();drawerClose()}});
+DESK.addEventListener('change',()=>{if(DESK.matches&&drawerIs()){drawerShow(false);if(history.state?.drawer)history.replaceState(null,'',location.href)}});
+// picking a tab, a card, a Graph row, Settings or Browser closes it
+$('#app-side').addEventListener('click',e=>{if(!drawerIs()||!e.isTrusted)return;const t=e.target.closest('nav button[data-tab],.side-cards a,.side-sub a,#open-settings,#open-browser');if(!t||e.ctrlKey||e.metaKey||e.shiftKey)return;
+ drawerHide();setTimeout(()=>{if(history.state?.drawer){drawerPopping=true;history.back()}})},true);
+// swipe: from the left edge to open, to the left on the drawer to close
+{let sw=null;
+ addEventListener('touchstart',e=>{if(DESK.matches||e.touches.length!==1)return;const t=e.touches[0],open=drawerIs();
+  if(!open&&t.clientX>24||document.querySelector('dialog[open]'))return;if(open&&!$('#app-side').contains(e.target)&&e.target.id!=='drawer-scrim')return;sw={x:t.clientX,y:t.clientY,open,dx:0,lock:null}},{passive:true});
+ addEventListener('touchmove',e=>{if(!sw)return;const t=e.touches[0],dx=t.clientX-sw.x,dy=t.clientY-sw.y;
+  if(sw.lock===null&&Math.hypot(dx,dy)>8)sw.lock=Math.abs(dx)>Math.abs(dy)*1.3?'x':'y';if(sw.lock!=='x'){if(sw.lock==='y')sw=null;return}
+  sw.dx=dx;const side=$('#app-side'),w=side.offsetWidth;side.classList.add('dragging');
+  if(sw.open)side.style.transform=`translateX(${Math.min(0,dx)}px)`;else{if(!drawerIs()){document.documentElement.dataset.drawer='open';side.style.transform=`translateX(-${w}px)`}side.style.transform=`translateX(${Math.min(0,dx-w)}px)`}},{passive:true});
+ addEventListener('touchend',()=>{if(!sw)return;const {open,dx,lock}=sw,side=$('#app-side');sw=null;side.classList.remove('dragging');side.style.transform='';if(lock!=='x')return;
+  if(open){if(dx<-60)drawerClose()}else{delete document.documentElement.dataset.drawer;if(dx>60)drawerOpen()}});
+ addEventListener('touchcancel',()=>{if(!sw)return;const side=$('#app-side');side.classList.remove('dragging');side.style.transform='';if(!sw.open&&!drawerInert.length)delete document.documentElement.dataset.drawer;sw=null})}
+// The menu button wears a dot when a connection needs a look
+new MutationObserver(()=>{$('#drawer-dot').hidden=!$('#badge-health').textContent.trim()}).observe($('#badge-health'),{childList:true,characterData:true,subtree:true});
+// Graph's rows: People, Organisations and Projects open the Graph on that pane, the address says which (#graph=orgs), the
+// row of the pane on screen is lit, and the group folds (remembered).
+const GRAPH_SUBS={people:'People',orgs:'Organisations',projects:'Projects',roles:'Who’s who'};let graphCounts=null;
+function graphCountsSet(c){if(!c)return;graphCounts=c;for(const [k,n] of Object.entries({people:c.person,orgs:c.org,projects:c.project})){const b=$('#count-'+k);if(b)b.textContent=n?String(n):''}graphSubLabels();pageHead()}
+let rolesWaiting=0;
+function rolesRow(on,n){rolesWaiting=on?n||0:0;const a=$('.side-sub a[data-graph-sub="roles"]');a.hidden=!on;$('#count-roles').textContent=on&&n?String(n):'';graphSubLabels();if(!$('#people').hidden)pageHead()}
+function graphSubLabels(){for(const a of document.querySelectorAll('.side-sub a')){const n=a.querySelector('.badge').textContent.trim(),label=GRAPH_SUBS[a.dataset.graphSub]+(n?' · '+n:'');if(a.getAttribute('aria-label')!==label)a.setAttribute('aria-label',label)}}
+function graphSubSync(){pageHead();const on=!$('#people').hidden,graph=$('nav [data-tab="people"]');let lit=false;
+ for(const a of document.querySelectorAll('.side-sub a')){const me=on&&a.dataset.graphSub===graphShown;lit||=me;if(me)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')}graph.classList.toggle('sub-on',lit)}
+function graphHashSync(){if($('#people').hidden||graphNode||!graphShown)return;const h=location.hash;if(h&&!/^#(graph|people)(=[a-z]+)?$/.test(h))return;const want='#graph='+graphShown;if(h!==want)history.replaceState(null,'',location.pathname+location.search+want)}
+$('#graph-sub').addEventListener('click',e=>{const a=e.target.closest('a[data-graph-sub]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const url=location.pathname+location.search+'#graph='+a.dataset.graphSub;
+ if(history.state?.drawer)history.replaceState(null,'',url);else if(location.hash!=='#graph='+a.dataset.graphSub)history.pushState(null,'',url);openTabLink();graphSubSync();if(!DESK.matches)scrollTo(0,0)});
+{const fold=$('#graph-fold'),set=open=>{fold.setAttribute('aria-expanded',String(open));fold.setAttribute('aria-label',open?'Hide People, Organisations and Projects':'Show People, Organisations and Projects');$('#graph-sub').hidden=!open};
+ set(sideStore.get('graph-sub')!=='closed');fold.onclick=()=>{const open=fold.getAttribute('aria-expanded')!=='true';set(open);sideStore.set('graph-sub',open?'open':'closed')}}
+// The counts come with the Graph; fetch it once at the start so the rows show them before it is opened
+setTimeout(()=>{if(!graphCounts)request('api/graph').then(g=>graphCountsSet(g?.counts)).catch(()=>{})},1500);
+
 // A title over the main area on a computer: the tagline on Suggestions, else the tab's name
 const PAGE_TITLES={events:'Events',people:'Graph',fleet:'Fleet',feedback:'Feedback',health:'Connections',settings:'Settings'};
+// The Graph's title is the pane on screen, with Graph as a quiet crumb and the same count as its row in the sidebar
+function graphHead(){const name=GRAPH_SUBS[graphShown];if(!name)return '<h2 class="page-title">Graph</h2>';const c=graphCounts||{},n={people:c.person,orgs:c.org,projects:c.project,roles:rolesWaiting}[graphShown];
+ const words={people:['person','people'],orgs:['organisation','organisations'],projects:['open project','open projects'],roles:['role to confirm','roles to confirm']}[graphShown];
+ return `<div><p class="page-crumb">Graph</p><h2 class="page-title">${esc(name)}</h2>${n&&!graphNode?`<p class="page-sub">${n} ${n===1?words[0]:words[1]}</p>`:''}</div>`}
 function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';
  if(tab==='inbox'&&chatId){h.hidden=true;return}
  const c=sideCounts,busy=[[c.ready,'ready for you'],[c.needs,'to decide'],[c.preparing,'preparing']].filter(([k])=>k).map(([k,t])=>k+' '+t),sub=(busy.length?busy:['All clear',c.later&&c.later+' coming back later',c.promises&&c.promises+(c.promises===1?' promise':' promises')+' kept track of'].filter(Boolean)).join(' · ');
- const html=tab==='inbox'?`<img class="page-avatar" src="brand/avatar.png" alt="" width="40" height="40"><div><h2 class="page-title">${esc($('#tagline').textContent)}</h2>${sub?`<p class="page-sub">${esc(sub)}</p>`:''}</div>`:`<h2 class="page-title">${PAGE_TITLES[tab]||''}</h2>`;
+ const html=tab==='inbox'?`<img class="page-avatar" src="brand/avatar.png" alt="" width="40" height="40"><div><h2 class="page-title">${esc($('#tagline').textContent)}</h2>${sub?`<p class="page-sub">${esc(sub)}</p>`:''}</div>`:tab==='people'?(()=>{try{return graphHead()}catch{return '<h2 class="page-title">Graph</h2>'}})():`<h2 class="page-title">${PAGE_TITLES[tab]||''}</h2>`;
  h.classList.toggle('greet',tab==='inbox');if(h.innerHTML!==html)h.innerHTML=html;h.hidden=false}
 {const o=new MutationObserver(()=>pageHead());document.querySelectorAll('main>section').forEach(x=>o.observe(x,{attributes:true,attributeFilter:['hidden']}));o.observe($('#tagline'),{childList:true,characterData:true,subtree:true})}
 $('#suggestions').oninput=e=>{if(e.target.tagName==='TEXTAREA')e.target.classList.toggle('filled',!!e.target.value)};
@@ -3064,9 +3279,15 @@ const agentHref=j=>j.url_elsewhere&&/^codex:\/\/threads\/[0-9a-f-]{36}\?hostId=/
 const agentLink=j=>j.url&&/^(https:\/\/|codex:\/\/threads\/)/.test(j.url)?`<a class="agent-app" href="${esc(agentHref(j))}" target="_blank" rel="noreferrer" aria-label="${esc(j.app||'Open')}"><span class="agent-app-long">${esc(j.app||'Open')}</span><span class="agent-app-short">Open</span> ↗</a>`:'';
 // A result's header keeps one row: when "Open in Codex" no longer fits next to the tool's name it reads "Open" (the
 // name is already on the left). Measured per header as its width changes, not at a fixed screen width.
-const agentHeadFit=new ResizeObserver(rows=>{for(const {target:h,contentRect:r} of rows){if(h._fitW===r.width)continue;h._fitW=r.width;
- const a=h.querySelector('a.agent-app'),n=h.firstElementChild;if(!a||a===n)continue;h.classList.remove('tight');if(a.offsetTop>n.offsetTop+2)h.classList.add('tight')}});
-new MutationObserver(()=>{for(const h of document.querySelectorAll('.agent-result .agent-head:not([data-fit])')){h.dataset.fit='';agentHeadFit.observe(h)}}).observe(document.body,{childList:true,subtree:true});
+// A wider header tries the long label again; any other change (a late font, new text) only ever shortens it, so it can't flip back and forth.
+const agentHeadWraps=h=>{const a=h.querySelector('a.agent-app'),n=h.firstElementChild;return !!a&&a!==n&&a.getBoundingClientRect().top>=n.getBoundingClientRect().bottom-1};
+function agentHeadSize(h,width){if(width!==undefined&&h._fitW!==width){h._fitW=width;h.classList.remove('tight')}if(!h.classList.contains('tight')&&agentHeadWraps(h))h.classList.add('tight')}
+const agentHeadFit=new ResizeObserver(rows=>{for(const {target:h,contentRect:r} of rows)agentHeadSize(h,r.width)});
+let agentHeadsQueued=false;
+new MutationObserver(()=>{if(agentHeadsQueued)return;agentHeadsQueued=true;requestAnimationFrame(()=>{agentHeadsQueued=false;
+ for(const h of document.querySelectorAll('.agent-result .agent-head:not([data-fit])')){h.dataset.fit='';agentHeadFit.observe(h)}})}).observe(document.body,{childList:true,subtree:true});
+const agentHeadsFit=()=>{for(const h of document.querySelectorAll('.agent-result .agent-head[data-fit]'))agentHeadSize(h)};
+document.fonts?.ready.then(agentHeadsFit);document.fonts?.addEventListener?.('loadingdone',agentHeadsFit);
 // A job's follow-up goes to the same session: the card's Change asks the agent while its result is open.
 const agentAsk=s=>agentOpen(s)&&s.agent_job.can_follow_up;
 const agentFile=(j,f)=>`<a class="agent-file" href="api/agent-file?job=${encodeURIComponent(j.id)}&path=${encodeURIComponent(f.path)}" target="_blank" rel="noreferrer">${esc(f.path.split('/').pop())}</a>`;
@@ -3473,14 +3694,14 @@ const graphEvents=n=>{const all=n.recent||[],soon=Date.now();if(!all.length)retu
 const GRAPH_KIND_PANE={person:['people','People'],project:['projects','Projects'],org:['orgs','Organisations']};
 const graphHash=id=>'#graph/'+encodeURIComponent(id);
 function graphOpen(id){if(location.hash!==graphHash(id))history.pushState(null,'',graphHash(id));people(id)}
-function graphBack(pane){if(pane){graphPane=pane;localStorage.setItem('graph-pane',pane)}if(/^#graph\//.test(location.hash))history.pushState(null,'',location.pathname+location.search);people('')}
+function graphBack(pane){if(pane){graphPane=pane;localStorage.setItem('graph-pane',pane)}if(/^#graph\//.test(location.hash))history.pushState(null,'',location.pathname+location.search+'#graph='+(graphPane||'people'));people('')}
 function graphRoute(){const m=/^#graph\/(.+)$/.exec(location.hash);let id='';try{id=m?decodeURIComponent(m[1]):''}catch{}
  if(id){if($('#people').hidden){graphNode=id;document.querySelector('nav [data-tab="people"]')?.click()}else if(graphNode!==id)people(id);return}
  if(!$('#people').hidden&&graphNode)people('')}
-addEventListener('popstate',graphRoute);addEventListener('hashchange',graphRoute);setTimeout(graphRoute);
+addEventListener('popstate',()=>{if(!drawerStep)graphRoute()});addEventListener('hashchange',graphRoute);setTimeout(graphRoute);
 document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.fact-menu[open]'))if(!m.contains(e.target))m.open=false});
-$('nav').addEventListener('click',e=>{const t=e.target.closest('button');if(t?.dataset.tab&&t.dataset.tab!=='people'&&/^#graph\//.test(location.hash))history.replaceState(null,'',location.pathname+location.search)});
-let graphNode='',graphRequest=0,editRole=false,graphPane=localStorage.getItem('graph-pane')||'';
+$('nav').addEventListener('click',e=>{const t=e.target.closest('button');if(t?.dataset.tab&&t.dataset.tab!=='people'&&/^#graph[/=]/.test(location.hash))history.replaceState(null,'',location.pathname+location.search);graphSubSync()});
+let graphShown='',graphNode='',graphRequest=0,editRole=false,graphPane=localStorage.getItem('graph-pane')||'';
 // Sub-tabs, as in Fleet: a pill row over panes that are all drawn at once and shown one at a time.
 const subTabs=(label,attr,panes,current)=>`<div class="sub-tabs" role="tablist" aria-label="${esc(label)}">${panes.map(p=>`<button type="button" role="tab" ${attr}="${esc(p.id)}" aria-selected="${p.id===current}"><span class="ell">${esc(p.label)}</span>${p.badge?` <span class="badge${p.warn?' warn':''}">${p.badge}</span>`:''}</button>`).join('')}</div>`;
 function tabsFade(row){const max=row.scrollWidth-row.clientWidth;row.classList.toggle('more-left',row.scrollLeft>2);row.classList.toggle('more-right',row.scrollLeft<max-2)}
@@ -3490,7 +3711,7 @@ document.addEventListener('scroll',e=>{if(e.target.matches?.('.fleet-tabs,.sub-t
 new MutationObserver(()=>document.querySelectorAll(':is(.fleet-tabs,.sub-tabs):not([data-faded])').forEach(r=>{r.dataset.faded='';tabsShow(r)})).observe(document.querySelector('main'),{childList:true,subtree:true});
 // Graph: People (closest, gone quiet, new), Who's who (roles to confirm), Projects and Organisations.
 const GRAPH_PANES=['people','roles','projects','orgs'];
-function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
+function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);graphShown=id;graphHashSync();graphSubSync();const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
  for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'))}
 async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=html=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */const scroll=window.scrollY;view.innerHTML=html;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
@@ -3507,11 +3728,11 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
  if(q){const r=await request('api/graph?q='+encodeURIComponent(q));draw(graphSection('Found','',r.found)||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nobody by that name.</strong>Try part of a name, an address or a company.</div></div>');return}
  const g=await request('api/graph'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';
  const panes=[{id:'people',label:'People',html:graphSection('Gone quiet','People you talk with regularly, silent for much longer than usual.',g.quiet)+graphSection('Closest','From your messages, meetings and cards. Fades over about two months.',g.people)+graphSection('New this week','',g.new)},
-  {id:'projects',label:'Projects',html:graphSection('Projects','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)},
-  {id:'orgs',label:'Organisations',html:graphSection('Organisations','',g.orgs)+warmupList(g.warmup)},
+  {id:'projects',label:'Projects',html:graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)},
+  {id:'orgs',label:'Organisations',html:graphSection('Closest','The ones you are most in touch with.',g.orgs)+warmupList(g.warmup)},
   {id:'roles',label:'Who’s who',badge:waiting,html:whosWho(g.whos_who,waiting)}].filter(p=>p.html);
- const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;
- draw((panes.length?subTabs('Graph','data-graph-pane',panes,current)+panes.map(p=>`<div class="sub-pane" role="tabpanel" data-graph-panel="${p.id}"${p.id===current?'':' hidden'}>${p.html}</div>`).join(''):'')
+ const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;graphCountsSet(g.counts);if(version===graphRequest){graphShown=current||'';graphHashSync();graphSubSync()}
+ rolesRow(panes.some(p=>p.id==='roles'),waiting);draw((panes.length?panes.map(p=>`<div class="sub-pane" role="tabpanel" data-graph-panel="${p.id}"${p.id===current?'':' hidden'}>${p.html}</div>`).join(''):'')
   ||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing mapped yet.</strong>People appear as messages and meetings come in.</div></div>');if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
 const graphPost=(action,args)=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
 $('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){for(const x of $('#people-view').querySelectorAll('.graph-events [hidden]'))x.hidden=false;e.target.closest('[data-ge-more]').remove();return}if(openEventFrom(e))return;
@@ -3713,4 +3934,181 @@ const refreshWhenReady=()=>{if(canRefresh()&&!refreshes)refresh()};
 document.addEventListener('visibilitychange',refreshWhenReady);
 addEventListener('pageshow',refreshWhenReady);addEventListener('online',refreshWhenReady);
 refresh().then(()=>newTagline());setInterval(refreshWhenReady,30000);
+// The Machine's browser in the main area on a computer (from 1024px), next to the sidebar: Browser shows the viewer
+// (state.browser_embed, on the dashboard's own address) there instead of a new tab. The frame stays loaded while
+// another view is open, so the session keeps running. Back and close return to the view before. A phone keeps the tab.
+{let bpBack='inbox',pushed=false,from='',quiet=false;const pane=$('#browser-pane'),row=$('#open-browser'),wide=()=>matchMedia('(min-width:1024px)').matches;
+ const show=()=>{const src=state?.browser_embed;if(!src||!wide())return false;
+  if(pane.hidden)bpBack=!$('#settings').hidden?'settings':document.querySelector('nav button.active')?.dataset.tab||'inbox';
+  for(const x of document.querySelectorAll('main>section'))x.hidden=x!==pane;
+  for(const b of document.querySelectorAll('nav button')){b.classList.remove('active');b.setAttribute('aria-current','false')}
+  $('#open-settings').setAttribute('aria-current','false');row.setAttribute('aria-current','page');
+  const f=$('#bp-frame');if(f.dataset.src!==src){f.dataset.src=src;f.src=src}
+  $('#bp-tab').href=row.getAttribute('href')||src;
+  if(location.hash!=='#browser'){from=location.hash;history.pushState(null,'',location.pathname+location.search+'#browser');pushed=true}return true};
+ const leave=()=>{if(pane.hidden)return;if(bpBack==='settings')showSettings();else document.querySelector(`nav [data-tab="${bpBack}"]`)?.click()};
+ row.addEventListener('click',e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button)return;if(show())e.preventDefault()});
+ // Settings from the pane goes on top of it, so Back shows the pane again (Settings itself replaces the address)
+ $('#open-settings').addEventListener('click',()=>{if(!pane.hidden&&location.hash==='#browser')history.pushState(null,'',location.pathname+location.search+'#browser')},true);
+ $('#bp-close').onclick=()=>{if(pushed&&location.hash==='#browser'){pushed=false;history.back()}else leave()};
+ new MutationObserver(()=>{if(!pane.hidden)return;row.setAttribute('aria-current','false');if(location.hash!=='#browser')return;
+  if(pushed&&!from){pushed=false;quiet=true;history.back()}else history.replaceState(null,'',location.pathname+location.search)}).observe(pane,{attributes:true,attributeFilter:['hidden']});
+ matchMedia('(min-width:1024px)').addEventListener('change',e=>{if(!e.matches)leave()});  // narrower than a computer: back to the view before
+ addEventListener('hashchange',e=>{if(quiet){quiet=false;return}if(location.hash==='#browser')show();else if(e.oldURL.endsWith('#browser')){pushed=false;leave()}});
+ if(location.hash==='#browser'){const t=Date.now(),wait=()=>location.hash!=='#browser'||show()||Date.now()-t>8000||setTimeout(wait,200);wait()}}
+// New card: the owner adds a card in their own words. It goes through the same path as the cards the review makes
+// (card_new), so it has the same states, buttons, chat, snooze and handoffs; the next review fills it in. Creating
+// it sends nothing. One field is enough; Work or Personal, a due date, a person and an email are optional chips.
+const nc={scope:null,due:null,about:[],attach:[],pick:null,hits:[],timer:null,busy:false};
+// "Friday", "in 2 weeks", "tomorrow", "24 Oct", "Oct 24", "24/10" or 2026-10-24, read as a date from today on.
+function ncDue(text,today=new Date()){const t=String(text||'').trim().toLowerCase().replace(/\s+/g,' ').replace(/^(by|on|due|before) /,'');if(!t)return null;
+ const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()),add=n=>{d.setDate(d.getDate()+n);return d};
+ const MONTHS=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],DAYS=['sun','mon','tue','wed','thu','fri','sat'];
+ const NUM={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+ if(t==='today'||t==='tonight')return d;if(t==='tomorrow'||t==='tmr')return add(1);
+ let m=/^in (\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten) (day|week|month)s?$/.exec(t);
+ if(m){const n=NUM[m[1]]||+m[1];if(m[2]==='month'){d.setMonth(d.getMonth()+n);return d}return add(m[2]==='week'?7*n:n)}
+ if(t==='next week')return add(((8-d.getDay())%7)||7);
+ if(t==='end of week'||t==='eow'||t==='this week')return add((5-d.getDay()+7)%7);
+ if(t==='end of month'||t==='eom')return new Date(d.getFullYear(),d.getMonth()+1,0);
+ m=/^(this |next )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/.exec(t);
+ if(m)return add((DAYS.indexOf(m[2])-d.getDay()+7)%7||7);
+ m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(t);if(m){const x=new Date(+m[1],+m[2]-1,+m[3]);return x.getMonth()===+m[2]-1?x:null}
+ const dm=(day,mon)=>{if(mon<0||day<1||day>31)return null;let x=new Date(d.getFullYear(),mon,day);if(x.getMonth()!==mon)return null;if(x<d)x=new Date(d.getFullYear()+1,mon,day);return x};
+ m=/^(\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]{3})[a-z]*$/.exec(t);if(m)return dm(+m[1],MONTHS.indexOf(m[2]));
+ m=/^([a-z]{3})[a-z]* (\d{1,2})(?:st|nd|rd|th)?$/.exec(t);if(m)return dm(+m[2],MONTHS.indexOf(m[1]));
+ m=/^(\d{1,2})[/.](\d{1,2})$/.exec(t);if(m)return dm(+m[1],+m[2]-1);
+ return null}
+const ncISO=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const ncRead=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}).replace(',','');
+function ncDialog(){let d=$('#new-card');if(d)return d;d=document.createElement('dialog');d.id='new-card';d.setAttribute('aria-labelledby','new-card-title');
+ d.innerHTML=`<form method="dialog"><div class="snooze-heading"><h2 id="new-card-title">New card</h2><button aria-label="Close">×</button></div></form><div class="chat-box"><textarea id="nc-text" rows="2" aria-label="What needs doing?" placeholder="What needs doing?" maxlength="2000" enterkeyhint="done"></textarea><div class="chat-tools"><button type="button" class="chat-send" id="nc-add" aria-label="Add the card" title="Add the card" disabled>${SEND}</button></div></div><div class="nc-chips" id="nc-chips" role="group" aria-label="Optional"></div><div class="nc-pick" id="nc-pick" hidden></div><p class="nc-error" id="nc-error" role="alert"></p><p class="nc-foot"><span>Nothing is sent. I’ll fill in the rest.</span><span class="nc-keys">Enter adds it</span></p>`;
+ document.body.append(d);
+ const text=$('#nc-text');text.addEventListener('input',()=>{$('#nc-add').disabled=!text.value.trim();text.style.height='auto';text.style.height=Math.min(200,Math.max(48,text.scrollHeight))+'px'});
+ text.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();ncCreate()}});
+ $('#nc-add').onclick=ncCreate;
+ $('#nc-chips').addEventListener('click',e=>{const x=e.target.closest('[data-nc-drop]');if(x){const[k,i]=x.dataset.ncDrop.split(':');if(k==='due')nc.due=null;else nc[k].splice(+i,1);ncChips();return}
+  const b=e.target.closest('[data-nc]');if(!b)return;const k=b.dataset.nc;
+  if(k==='work'||k==='personal'){nc.scope=nc.scope===k?null:k;ncChips();return}ncPick(nc.pick===k?null:k)});
+ $('#nc-pick').addEventListener('click',e=>{const h=e.target.closest('[data-nc-hit]');if(h)ncChoose(+h.dataset.ncHit)});
+ d.addEventListener('close',()=>{ncPick(null);if(nc.byPointer)setTimeout(()=>document.activeElement?.closest?.('[data-new-card]')&&document.activeElement.blur())});
+ return d}
+function ncChips(){const due=nc.due?`<button type="button" class="set" data-nc="due">Due ${esc(ncRead(nc.due))}<span class="x" data-nc-drop="due:0" aria-label="Remove the due date">×</span></button>`:`<button type="button" data-nc="due" aria-expanded="${nc.pick==='due'}">Due</button>`;
+ const set=(k,list,label)=>list.map((x,i)=>`<button type="button" class="set" data-nc="${k}">${esc(label(x))}<span class="x" data-nc-drop="${k}:${i}" aria-label="Remove">×</span></button>`).join('');
+ $('#nc-chips').innerHTML=[['work','Work'],['personal','Personal']].map(([k,t])=>`<button type="button" data-nc="${k}" aria-pressed="${nc.scope===k}">${t}</button>`).join('')+due
+  +set('about',nc.about,x=>x.name)+(nc.about.length<5?`<button type="button" data-nc="about" aria-expanded="${nc.pick==='about'}">Person</button>`:'')
+  +set('attach',nc.attach,x=>x.title||'Email')+(nc.attach.length<5?`<button type="button" data-nc="attach" aria-expanded="${nc.pick==='attach'}">Email</button>`:'')}
+const NC_PICK={due:['When is it due?','Friday, in 2 weeks, 24 Oct'],about:['Link a person','A name or a company'],attach:['Attach an email','Search your emails']};
+function ncPick(k){nc.pick=k;nc.hits=[];const box=$('#nc-pick');if(!box)return;ncChips();if(!k){box.hidden=true;box.innerHTML='';return}
+ box.hidden=false;box.innerHTML=`<input id="nc-find" type="search" autocomplete="off" aria-label="${NC_PICK[k][0]}" placeholder="${NC_PICK[k][1]}"><p class="nc-read" id="nc-read" aria-live="polite"></p><ul class="nc-hits" id="nc-hits"></ul>`;
+ const f=$('#nc-find');f.focus();
+ f.addEventListener('input',()=>{if(k==='due'){const d=ncDue(f.value);$('#nc-read').textContent=f.value.trim()?d?ncRead(d):'I can’t read that date yet':'';return}clearTimeout(nc.timer);nc.timer=setTimeout(()=>ncSearch(k,f.value),200)});
+ f.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();ncPick(null);$('#nc-text').focus();return}
+  if(e.key!=='Enter'||e.isComposing)return;e.preventDefault();if(k==='due'){const d=ncDue(f.value);if(d){nc.due=d;ncPick(null);$('#nc-text').focus()}}else if(nc.hits.length)ncChoose(0)})}
+async function ncSearch(k,q){q=q.trim();const list=$('#nc-hits');if(!list)return;if(q.length<2){nc.hits=[];list.innerHTML='';return}
+ try{if(k==='about'){const r=await request('api/graph?q='+encodeURIComponent(q));nc.hits=(r.found||[]).filter(n=>['person','org','project'].includes(n.kind)&&!nc.about.some(a=>a.id===n.id)).slice(0,6).map(n=>({id:n.id,name:n.name,note:n.kind==='person'?(n.ids||[])[0]||'':n.kind==='org'?n.domain||'Organisation':'Project'}))}
+  else{const r=await request('api/events?account=all&q='+encodeURIComponent(q));nc.hits=(Array.isArray(r)?r:[]).filter(e=>/\.message$|\.email$/.test(e.kind)&&!nc.attach.some(a=>a.id===e.id)).slice(0,6).map(e=>({id:e.id,title:e.title||'(no subject)',note:e.metadata?.from||''}))}}
+ catch(e){nc.hits=[]}
+ if(nc.pick!==k||$('#nc-find')?.value.trim()!==q)return;
+ list.innerHTML=nc.hits.length?nc.hits.map((h,i)=>`<li><button type="button" data-nc-hit="${i}">${esc(h.name||h.title)}${h.note?`<small>${esc(String(h.note).replace(/<[^>]*>/g,'').trim())}</small>`:''}</button></li>`).join(''):`<li class="nc-read">${k==='about'?'Nobody by that name.':'No emails match.'}</li>`}
+function ncChoose(i){const h=nc.hits[i];if(!h)return;if(nc.pick==='about')nc.about.push({id:h.id,name:h.name});else nc.attach.push({id:h.id,title:h.title});ncPick(null);$('#nc-text').focus()}
+// The sheet sits on the phone's keyboard: the keyboard's height, from the visual viewport.
+function ncKeyboard(){const d=$('#new-card'),v=window.visualViewport;if(!d||!v)return;d.style.setProperty('--nc-kb',(d.open?Math.max(0,Math.round(innerHeight-v.height-v.offsetTop)):0)+'px')}
+window.visualViewport?.addEventListener('resize',ncKeyboard);window.visualViewport?.addEventListener('scroll',ncKeyboard);
+function ncOpen(){const d=ncDialog();if(d.open)return;Object.assign(nc,{scope:scopeFilter==='work'||scopeFilter==='personal'?scopeFilter:null,due:null,about:[],attach:[],pick:null,busy:false,byPointer:false});
+ const t=$('#nc-text');t.value='';t.style.height='';$('#nc-add').disabled=true;$('#nc-error').textContent='';ncPick(null);d.showModal();t.focus();ncKeyboard()}
+async function ncCreate(){const text=$('#nc-text').value.trim();if(!text||nc.busy)return;nc.busy=true;$('#nc-add').disabled=true;$('#nc-error').textContent='';
+ try{const made=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_new',args:{text,scope:nc.scope,due:nc.due?ncISO(nc.due):null,about:nc.about.map(a=>a.id),attach:nc.attach.map(a=>a.id)}})});
+  $('#new-card').close();toast('Added');if(chatId)chatGo(made.id);else{showTab('inbox');history.replaceState(null,'',location.pathname+location.search+'#card='+made.id)}await refresh()}
+ catch(e){$('#nc-error').textContent=e.message||'Couldn’t add the card'}finally{nc.busy=false;const b=$('#nc-add');if(b)b.disabled=!$('#nc-text')?.value.trim()}}
+// Entry points: a row under Find a card on a computer, "+" in the top bar on a phone, C, and Ctrl/Cmd+K then "new".
+{const row=document.createElement('button');row.type='button';row.className='side-new';row.id='side-new';row.dataset.newCard='';row.title='New card (C)';row.setAttribute('aria-label','New card');
+ row.innerHTML=`${NC_PLUS}<span>New card</span><kbd>C</kbd>`;$('#side-search').after(row);
+ const plus=document.createElement('button');plus.type='button';plus.className='head-link settings-link new-card-link';plus.id='new-card-top';plus.dataset.newCard='';plus.title='New card';plus.setAttribute('aria-label','New card');
+ // With the phone drawer (#topbar), the sidebar row shows in the drawer and the "+" sits on the right of the top bar.
+ const top=$('#topbar');if(top){plus.className='topbar-menu new-card-top';plus.innerHTML=NC_PLUS;top.append(plus);document.documentElement.classList.add('nc-drawer')}
+ else{plus.innerHTML=`${NC_PLUS}<span class="lbl">New card</span>`;$('#open-settings').before(plus)}}
+document.addEventListener('click',e=>{if(e.target.closest('[data-new-card]')){e.preventDefault();if(typeof drawerClose==='function')drawerClose();ncOpen();nc.byPointer=e.detail>0}});
+const ncTyping=t=>t?.closest?.('input,textarea,select,[contenteditable=""],[contenteditable="true"],dialog[open]');
+document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.isComposing)return;
+ if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&e.key.toLowerCase()==='k'){e.preventDefault();const f=$('#side-find');if(f&&f.offsetParent){if(document.documentElement.dataset.side==='collapsed')sideSet(false);f.focus();f.select()}else ncOpen();return}
+ if(e.key.toLowerCase()==='c'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!ncTyping(e.target)&&!document.querySelector('dialog[open]')){e.preventDefault();ncOpen()}});
+const ncAsked=()=>{const q=$('#side-find').value.trim().toLowerCase();return q.length>=2&&(q==='+'||'new card'.startsWith(q))};
+$('#side-find').addEventListener('input',()=>$('#side-new').classList.toggle('hit',ncAsked()));
+$('#side-find').addEventListener('keydown',e=>{if(e.key==='Enter'&&ncAsked()){e.preventDefault();e.stopImmediatePropagation();e.target.value='';sideCards();$('#side-new').classList.remove('hit');ncOpen()}},true);
+
+// Merge offer on an owner's card: the review thought it is the same as another card. Only the owner's tap merges.
+function mergeOther(s){if(s.origin!=='owner'||!s.merge_offer||closed(s))return null;try{const o=JSON.parse(s.merge_offer);return o.kept?null:(state.suggestions||[]).find(x=>x.id===o.card_id&&!closed(x))||null}catch{return null}}
+function mergeOffer(s){const o=mergeOther(s);return o?`<div class="merge-offer"><span>Looks like the same as “${esc(o.title)}”. Merge?</span><button type="button" class="ghost" data-merge="yes" data-card="${esc(s.id)}">Merge</button><button type="button" class="quiet" data-merge="no" data-card="${esc(s.id)}">Keep both</button></div>`:''}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-merge]');if(!b)return;e.preventDefault();b.disabled=true;const id=b.dataset.card,merge=b.dataset.merge==='yes';
+ try{const r=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_merge',args:{suggestion_id:id,merge,decision_id:crypto.randomUUID()}})});
+  toast(merge?'Merged':'Kept both');if(merge&&chatId===id&&r?.merged)chatGo(r.id);await refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
+
+// Rename: the owner's title is kept over the generated one, on every surface. An input opens over the title in the
+// sidebar (the ⋯ on hover, a double click, a right click, a long press on a phone), the chat's header (a click, or
+// Rename in its menu) and the card (Rename in More; a click on the title on a computer). Enter saves, Esc cancels,
+// empty puts the old title back. Saved at once on screen; the chat gets a quiet "Renamed" line.
+const fine=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
+const ROWS='#side-cards a[href^="#chat="],.chat-side a[href^="#chat="]';
+const rowId=a=>a?.getAttribute('href')?.slice(6)||'';
+const cardOf=id=>(state.suggestions||[]).find(s=>s.id===id);
+let renaming=null;
+function renameClose(){document.querySelector('.rename-box')?.remove();renaming=null}
+// The input stays over the title while the page scrolls (a phone's keyboard opening scrolls it too).
+function renamePlace(){if(!renaming)return;let el=renaming.el;if(!el?.isConnected)el=renaming.el=titleEl(renaming.id,renaming.prefer);if(!el)return;
+ const r=el.getBoundingClientRect(),h=renaming.h,b=renaming.box;b.style.left=Math.max(8,r.left-4)+'px';b.style.top=Math.max(8,r.top+(r.height-h)/2)+'px'}
+function renameAt(id,el,prefer){const s=cardOf(id);if(!s||!el)return;renameClose();rowMenuClose();
+ let r=el.getBoundingClientRect();if(r.top<64||r.bottom>innerHeight-64){el.scrollIntoView({block:'center'});r=el.getBoundingClientRect()}
+ const box=document.createElement('div');box.className='rename-box';
+ const wide=(el.closest('h3')||el).getBoundingClientRect(),h=Math.max(30,Math.min(44,r.height)),w=Math.max(200,Math.min(wide.width,innerWidth-r.left-12));
+ Object.assign(box.style,{left:Math.max(8,r.left-4)+'px',top:Math.max(8,r.top+(r.height-h)/2)+'px',width:w+8+'px'});
+ box.innerHTML=`<input type="text" maxlength="200" aria-label="Card title" style="height:${h}px;font-size:${getComputedStyle(el).fontSize};font-weight:${getComputedStyle(el).fontWeight}">${s.title_suggested?'<button type="button" class="rename-reset">Reset to suggested title</button>':''}`;
+ document.body.append(box);const input=box.querySelector('input');input.value=s.title;input.focus();input.select();renaming={id,box,el,h,prefer};
+ let done=false;const finish=(save,reset=false)=>{if(done)return;done=true;const v=input.value;renameClose();if(save)renameSave(id,v,reset)};
+ input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(false)}});
+ input.addEventListener('blur',()=>setTimeout(()=>{if(!done&&!box.contains(document.activeElement))finish(true)},0));
+ const reset=box.querySelector('.rename-reset');if(reset){reset.addEventListener('mousedown',e=>e.preventDefault());reset.onclick=()=>finish(true,true)}}
+async function renameSave(id,value,reset=false){const s=cardOf(id);if(!s)return;const title=String(value||'').replace(/\s+/g,' ').trim().slice(0,200),before={title:s.title,title_suggested:s.title_suggested};
+ if(!reset&&(!title||title===s.title))return; // empty puts the old title back
+ if(reset){if(!s.title_suggested)return;Object.assign(s,{title:s.title_suggested,title_suggested:null})}
+ else Object.assign(s,{title,title_suggested:title===(s.title_suggested??null)?null:s.title_suggested??before.title});
+ render();
+ try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_rename',args:{suggestion_id:id,title:reset?null:title,reset,decision_id:crypto.randomUUID()}})});
+  await refresh();if(chatId===id)chatPoll()}
+ catch(e){Object.assign(s,before);render();toast(e.message||'Couldn’t rename the card',true)}}
+// Where the title of card id is on screen now: the chat header, the card's heading, or its sidebar row.
+const shownEl=sel=>[...document.querySelectorAll(sel)].find(n=>n.getClientRects().length)||null;
+function titleEl(id,prefer){const css=CSS.escape(id);return(prefer==='row'?shownEl(`#side-cards a[href="#chat=${css}"],.chat-side a[href="#chat=${css}"]`):null)
+ ||(chatId===id?document.querySelector('.chat-title'):null)||document.querySelector(`#task-${css} h3 .title-link,#task-${css} h3`)||document.querySelector(`#side-cards a[href="#chat=${css}"]`)}
+// The ⋯ on a sidebar row (on hover), and its small menu (also on a right click or a long press).
+const rowMore=document.createElement('button');rowMore.type='button';rowMore.className='row-more';rowMore.hidden=true;rowMore.setAttribute('aria-label','More for this card');rowMore.title='More';rowMore.innerHTML=DOTS;document.body.append(rowMore);
+let rowHover=null;
+document.addEventListener('mouseover',e=>{if(e.target.closest('.row-more'))return;const a=e.target.closest(ROWS);if(a===rowHover)return;rowHover=a;
+ if(!a||!fine()){rowMore.hidden=true;return}const r=a.getBoundingClientRect();Object.assign(rowMore.style,{left:r.right-28+'px',top:r.top+(r.height-24)/2+'px'});rowMore.dataset.id=rowId(a);rowMore.hidden=false});
+document.addEventListener('scroll',()=>{rowMore.hidden=true;rowHover=null;rowMenuClose();renamePlace()},true);addEventListener('resize',()=>renamePlace());
+function rowMenuClose(){document.querySelector('.row-menu')?.remove()}
+function rowMenu(id,x,y){rowMenuClose();const m=document.createElement('div');m.className='row-menu';m.setAttribute('role','menu');
+ m.innerHTML=`<button type="button" role="menuitem" data-row-rename="${esc(id)}">Rename</button><button type="button" role="menuitem" data-row-open="${esc(id)}">Open</button>`;document.body.append(m);
+ const r=m.getBoundingClientRect();Object.assign(m.style,{left:Math.max(8,Math.min(x,innerWidth-r.width-8))+'px',top:Math.max(8,Math.min(y,innerHeight-r.height-8))+'px'});m.querySelector('button').focus()}
+rowMore.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const r=rowMore.getBoundingClientRect();rowMenu(rowMore.dataset.id,r.left,r.bottom+4)});
+document.addEventListener('click',e=>{const rn=e.target.closest('[data-row-rename]'),op=e.target.closest('[data-row-open]');
+ if(rn){e.preventDefault();const id=rn.dataset.rowRename;rowMenuClose();renameAt(id,titleEl(id,'row'),'row');return}
+ if(op){e.preventDefault();rowMenuClose();chatGo(op.dataset.rowOpen);return}
+ if(!e.target.closest('.row-menu'))rowMenuClose()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.querySelector('.row-menu')){rowMenuClose();e.stopPropagation()}},true);
+document.addEventListener('contextmenu',e=>{const a=e.target.closest(ROWS);if(!a)return;e.preventDefault();rowMenu(rowId(a),e.clientX,e.clientY)});
+document.addEventListener('dblclick',e=>{const a=e.target.closest(ROWS);if(!a)return;e.preventDefault();const id=rowId(a);requestAnimationFrame(()=>renameAt(id,titleEl(id,'row'),'row'))});
+// A long press on a row on a phone opens the same menu; the tap that ends it doesn't open the card.
+{let timer=null,pressed=false,start=null;
+ document.addEventListener('touchstart',e=>{const a=e.target.closest(ROWS);if(!a||e.touches.length!==1)return;pressed=false;const t=e.touches[0];start=[t.clientX,t.clientY];
+  clearTimeout(timer);timer=setTimeout(()=>{pressed=true;navigator.vibrate?.(10);rowMenu(rowId(a),start[0],start[1]+8)},500)},{passive:true});
+ document.addEventListener('touchmove',e=>{if(timer&&start&&Math.hypot(e.touches[0].clientX-start[0],e.touches[0].clientY-start[1])>8){clearTimeout(timer);timer=null}},{passive:true});
+ document.addEventListener('touchend',()=>{clearTimeout(timer);timer=null},{passive:true});
+ document.addEventListener('click',e=>{if(pressed&&e.target.closest(ROWS)){e.preventDefault();e.stopImmediatePropagation();pressed=false}},true)}
+// Rename in a card's More menu (and so in the chat header's menu); a click on the chat's title; on a computer, a click
+// on a card's title. A tap on a phone still opens the card.
+document.addEventListener('click',e=>{const b=e.target.closest('[data-rename]');if(b){e.preventDefault();e.stopPropagation();b.closest('details')?.removeAttribute('open');const id=b.dataset.rename;requestAnimationFrame(()=>renameAt(id,titleEl(id)));return}
+ const ct=e.target.closest('.chat-title');if(ct&&chatId){e.preventDefault();renameAt(chatId,ct);return}
+ const tl=e.target.closest('.card h3 .title-link');if(tl&&fine()&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){const id=tl.closest('article')?.id.replace(/^task-/,'');if(cardOf(id)){e.preventDefault();e.stopPropagation();renameAt(id,tl)}}},true);
+document.addEventListener('mouseover',e=>{const t=e.target.closest('.card h3 .title-link');if(t&&fine()&&!t.classList.contains('chat-title'))t.title='Click to rename'});
 </script></html>

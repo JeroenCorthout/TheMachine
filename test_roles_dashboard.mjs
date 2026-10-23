@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Who's who: a review's roles with the line they came from, ✓ to confirm, Edit to change; relations and organisation roles;
@@ -46,9 +47,9 @@ try{
  await page.locator('#task-bbbbbbbbbbbbbbbb').waitFor();
  const order=await page.locator('#suggestions article[id^="task-"]').evaluateAll(a=>a.map(x=>x.id));
  assert.deepEqual(order.slice(0,2),['task-bbbbbbbbbbbbbbbb','task-aaaaaaaaaaaaaaaa']);
- await page.locator('nav [data-tab="people"]').click();
+ await navClick(page.locator('nav [data-tab="people"]'));
  const list=page.locator('#people-view');
- await list.locator('[data-graph-pane="roles"]').click();  // Who's who is its own sub-tab, last
+ await navClick(page.locator('.side-sub a[data-graph-sub="roles"]'));  // Who's who is its own row under Graph, last
  await list.locator('.whos').first().waitFor();
  let text=await list.textContent();
  assert.ok(text.includes('Who’s who')&&text.includes('“As the CFO at Client Ltd I look after the renewal”'));

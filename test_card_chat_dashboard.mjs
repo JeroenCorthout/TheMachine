@@ -77,9 +77,10 @@ try{
  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('#task-c1c1c1c1c1c1c1c1').waitFor();
  const shot=async n=>{if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/${n}.png`})};
- // The title opens the chat; so does a small, optional Chat link on the card's top row
+ // The small Chat link on the card's top row opens the chat (on a computer a click on the title renames the card;
+ // a tap on a phone opens the chat)
  assert.equal(await page.locator('#task-c1c1c1c1c1c1c1c1 .meta a.card-chat-link[href="#chat=c1c1c1c1c1c1c1c1"]').count(),1);
- await page.locator('#task-c1c1c1c1c1c1c1c1 h3 a').click();
+ await page.locator('#task-c1c1c1c1c1c1c1c1 .meta a.card-chat-link').click();
  await page.locator('.chat-layout .chat-head').waitFor();
  assert.equal(new URL(page.url()).hash,'#chat=c1c1c1c1c1c1c1c1');
  // The header: back, the title and a ⋯ menu with the card's other actions
@@ -329,7 +330,7 @@ try{
   assert.ok(m.left>=8&&m.right<=m.vw-8,`menu inside the screen at ${width}: ${m.left}–${m.right} of ${m.vw}`);
   await more.locator('summary').click()}
  await page.setViewportSize({width:1280,height:900});
- // On a phone: the page header steps aside, the task list is a drawer under ⋯
+ // On a phone: the page header steps aside, the app's drawer (the card list) opens from ⋯
  await page.setViewportSize({width:390,height:800});
  await page.evaluate(()=>{location.hash='#chat=c1c1c1c1c1c1c1c1'});
  await page.locator('h2.chat-title',{hasText:'Reply to the venue'}).waitFor();await page.waitForTimeout(1500);
@@ -344,10 +345,10 @@ try{
  assert.ok(fit.under<=1,'no space under the message box: '+fit.under);
  await page.locator('.chat-menu summary').click();
  await page.locator('.chat-menu-list [data-chat-drawer]').click();
- await page.waitForFunction(()=>document.querySelector('.chat-side').getBoundingClientRect().left>=0);
- await page.locator('.chat-side a',{hasText:'Renew the passport'}).click();
+ await page.waitForFunction(()=>document.documentElement.dataset.drawer==='open');  // All tasks opens the app's drawer
+ await page.locator('.side-cards a',{hasText:'Renew the passport'}).click();
  await page.locator('h2.chat-title',{hasText:'Renew the passport'}).waitFor();
- assert.ok(!(await page.locator('.chat-layout').evaluate(n=>n.classList.contains('drawer'))));
+ assert.ok(!(await page.evaluate(()=>document.documentElement.dataset.drawer)));
  // A cut-off or failed status answer is "offline": the quiet pill only, never a raw error; the next good one clears it
  for(const bad of [{status:200,body:'{"suggestions":[{"id',contentType:'application/json'},{status:502,body:'<html>Bad gateway</html>',contentType:'text/html'},{status:502,body:''},
   {status:503,body:'{"error":"The Machine is restarting…","restarting":true}',contentType:'application/json',headers:{'Retry-After':'5'},pill:/Restarting · retrying/}]){

@@ -62,6 +62,19 @@ class BrowserWaitTest(unittest.TestCase):
         self.assertEqual(assistant.browser_link({**config, 'browser_url': 'https://cp.example/open?to=browser'}), 'https://cp.example/open?to=browser')
         self.assertIsNone(assistant.browser_link({'browser_vnc': '/x.sock'}))  # no dashboard address for Telegram
 
+    def test_the_dashboard_shows_the_viewer_in_its_own_pane_only_on_its_own_address(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'vnc.html').write_text("<html><head></head><script>fetch('./defaults.json')</script></html>")
+            desktop = {'browser_vnc': '/run/user/1000/view/vnc.sock', 'dashboard_host': 'machine.example', 'browser_novnc': folder}
+            self.assertEqual(assistant.browser_embed(desktop, 'machine.example'), '/browser')
+            hosted = {'browser_url': 'https://cp.example/open?to=browser', 'dashboard_host': 'm.app.example', 'browser_novnc': folder}
+            self.assertIsNone(assistant.browser_embed(hosted))  # a Machine whose viewer files have no short page yet
+            (Path(folder) / 'index.html').write_text('<html></html>')
+            self.assertEqual(assistant.browser_embed(hosted), '/browser/')
+            self.assertIsNone(assistant.browser_embed({'browser_url': browser_viewer.VIEWER_URL, 'browser_novnc': folder}))  # 127.0.0.1: a tab
+            self.assertIsNone(assistant.browser_embed({'browser_url': 'https://elsewhere.example/viewer', 'browser_novnc': folder}))
+            self.assertIsNone(assistant.browser_embed({}))
+
     def test_the_short_viewer_page_and_its_settings(self):
         defaults, mandatory = browser_viewer.view_settings('/')
         self.assertEqual(defaults, {'autoconnect': True, 'reconnect': True, 'resize': 'off', 'view_clip': True, 'frame': 'window'})

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Network discovery (discovery.py): a permission card once; a person card under Suggestions only with a concrete
@@ -49,7 +50,7 @@ try{
   calls.length=0;await page.locator('#net-nia [data-net-rel="family"]').click();await page.waitForTimeout(200);
   assert.deepEqual(calls[0],{action:'fleet_network',args:{do:'connect',email:'nia@nia.example',relation:'family'}});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${scheme} ${width}px cards scroll sideways`);
-  await page.locator('nav [data-tab="fleet"]').click();await page.locator('[data-fleet-pane="network"]').click();await page.locator('#fleet-network').waitFor();
+  await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('[data-fleet-pane="network"]').click();await page.locator('#fleet-network').waitFor();
   const block=page.locator('#fleet-network');
   assert.match(await block.innerText(),/Check which of my contacts have a Machine/);assert.match(await block.innerText(),/Zed Zee/);
   assert.ok(await block.locator('[data-net-toggle="find_off"]').isChecked());

@@ -137,6 +137,13 @@ class FastFirstLook(unittest.TestCase):
         self.assertNotIn('full', report)
         self.assertEqual((report['cards'], report['first_action']), (1, 'dismiss'))
         self.assertTrue(report['first_card_at'] and report['first_card_shown_at'] and report['first_action_at'])
+        self.assertEqual((report['first_approved_at'], report['first_approved']), (None, None))  # Not needed is no approval
+        second = self.store.suggest('contract', 'Send Sam the contract', 'Sam asked.', [2])
+        self.store.decide(second['id'], 'complete', '', 'd2', 'dashboard')
+        with self.store.connect() as db:
+            report = a.first_cards_report(db, accounts)
+        self.assertEqual((report['first_action'], report['first_approved']), ('dismiss', 'done'))
+        self.assertTrue(report['first_approved_at'] >= report['first_action_at'])
         self.assertNotIn('eta_minutes', report)  # cards are there
         text = json.dumps(report)
         for secret in ('Secret', 'pricing', 'Sam', 'example.com', 'work'):
@@ -197,6 +204,115 @@ class FastFirstLook(unittest.TestCase):
             self.assertEqual(self.app.quick_first_review(db), 0)
         self.step(Runner('admitted'))
         self.assertTrue(all(r['window_hours'] is None for r in self.runs()))
+
+    def mail(self, source_id, sender, to='me@example.com', labels=(), hours_ago=2, thread=None):
+        when = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours_ago)).isoformat()
+        return {'account_id': 'work', 'source_id': source_id, 'kind': 'gmail.message', 'occurred_at': when, 'title': 'Hello',
+                'body': 'Text', 'metadata': {'from': sender, 'to': to, 'labels': list(labels), 'thread_id': thread or source_id}, 'deleted': False}
+
+    def test_the_quick_look_takes_what_most_likely_needs_the_owner_first(self):
+        a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
+        self.addCleanup(setattr, a.Store, 'accounts', [])
+        newsletters = [self.mail(f'news{n}', 'Shop <news@shop.example>', labels=['CATEGORY_PROMOTIONS'], hours_ago=1) for n in range(25)]
+        robots = [self.mail(f'robot{n}', 'noreply@service.example', hours_ago=1) for n in range(5)]
+        crowd = [self.mail('crowd', 'Ann <ann@example.org>', to='a@x.example, b@x.example, c@x.example, me@example.com', hours_ago=1)]
+        asked = [self.mail(f'ask{n}', f'Person {n} <p{n}@example.org>', hours_ago=30 + n) for n in range(3)]
+        answered = [self.mail('answered', 'Bo <bo@example.org>', hours_ago=20, thread='t-bo'),
+                    self.mail('reply', 'me@example.com', to='bo@example.org', labels=['SENT'], hours_ago=19, thread='t-bo')]
+        self.store.commit_page('work', {}, newsletters + robots + crowd + asked + answered)
+        self.step(Runner('admitted'))
+        run = self.runs()[0]
+        claim = self.store.begin_analysis(['work'], 40, a.REVIEW_SESSION_PREFIX + run['run_id'], run['run_id'])
+        with self.store.connect() as db:
+            names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
+        order = [names[e['id']] for e in claim['events']]
+        self.assertEqual(len(order), a.QUICK_LOOK_SIGNALS)
+        # People asking the owner, unanswered, newest first; then the owner's own mail; then the rest, automated last
+        self.assertEqual(order[:4], ['ask0', 'ask1', 'ask2', 'reply'])
+        self.assertEqual(order[4:6], ['crowd', 'answered'])  # one of many on it, or answered since
+        self.assertTrue(all(x.startswith(('news', 'robot')) for x in order[6:]))
+
+    def test_upcoming_events_and_a_burst_of_newsletters_never_crowd_out_who_waits(self):
+        a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
+        self.addCleanup(setattr, a.Store, 'accounts', [])
+        news = [self.mail(f'news{n}', 'Shop <news@shop.example>', labels=['CATEGORY_PROMOTIONS'], hours_ago=1) for n in range(600)]
+        soon = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=3)).isoformat()
+        upcoming = [{'account_id': 'work', 'source_id': f'event{n}', 'kind': 'calendar.event', 'occurred_at': soon, 'title': 'Sync',
+                     'body': 'Meeting', 'metadata': {}, 'deleted': False} for n in range(600)]
+        self.store.commit_page('work', {}, news + upcoming + [self.mail('ask', 'Sam <sam@example.org>', hours_ago=40)])
+        self.step(Runner('admitted'))
+        run = self.runs()[0]
+        claim = self.store.begin_analysis(['work'], 40, a.REVIEW_SESSION_PREFIX + run['run_id'], run['run_id'])
+        with self.store.connect() as db:
+            names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
+        self.assertEqual(names[claim['events'][0]['id']], 'ask')
+
+    def test_a_slack_dm_from_a_person_counts_like_any_direct_message(self):
+        a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
+        self.addCleanup(setattr, a.Store, 'accounts', [])
+        when = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        slack = lambda sid, kind: {'account_id': 'work', 'source_id': sid, 'kind': 'slack.message', 'occurred_at': when, 'title': 'Slack',
+                                   'body': 'Can you check this?', 'metadata': {'channel_id': 'C' + sid, 'conversation_type': kind, 'user_id': 'U2'},
+                                   'deleted': False}
+        self.store.commit_page('work', {}, [slack('channel', 'channel'), self.mail('mine', 'me@example.com', to='kim@example.org',
+                                                                                  labels=['SENT'], hours_ago=2), slack('dm', 'dm')])
+        self.step(Runner('admitted'))
+        run = self.runs()[0]
+        claim = self.store.begin_analysis(['work'], 40, a.REVIEW_SESSION_PREFIX + run['run_id'], run['run_id'])
+        with self.store.connect() as db:
+            names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
+        self.assertEqual([names[e['id']] for e in claim['events']], ['dm', 'mine', 'channel'])
+
+    def test_of_the_upcoming_appointments_the_soonest_come_first(self):
+        a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
+        self.addCleanup(setattr, a.Store, 'accounts', [])
+        at = lambda days: (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).isoformat()
+        events = [{'account_id': 'work', 'source_id': f'in{d}', 'kind': 'calendar.event', 'occurred_at': at(d), 'title': 'Sync',
+                   'body': 'Meeting', 'metadata': {}, 'deleted': False} for d in (30, 1, 9)]
+        self.store.commit_page('work', {}, events + [self.mail('ask', 'Sam <sam@example.org>', hours_ago=3)])
+        self.step(Runner('admitted'))
+        run = self.runs()[0]
+        claim = self.store.begin_analysis(['work'], 40, a.REVIEW_SESSION_PREFIX + run['run_id'], run['run_id'])
+        with self.store.connect() as db:
+            names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
+        self.assertEqual([names[e['id']] for e in claim['events']], ['ask', 'in1', 'in9', 'in30'])
+
+    def test_first_look_cards_that_want_a_draft_get_one_once_reviews_are_on(self):
+        self.store.commit_page('work', {}, [signal('m1'), signal('m2'), signal('m3')])
+        self.step(Runner('admitted'))
+        wanted = self.store.suggest('a', 'Reply to Sam about pricing', 'Sam asked.', [1], ahead=True)
+        plain = self.store.suggest('b', 'Note the new office hours', 'FYI.', [2])
+        touched = self.store.suggest('c', 'Answer Kim', 'Kim asked.', [3], ahead=True)
+        self.assertEqual((wanted['status'], wanted.get('preview')), ('pending', True))  # a preview: nothing prepared yet
+        with self.store.connect() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM preparations').fetchone())
+        self.store.decide(touched['id'], 'reject', 'No', 'd1', 'dashboard')
+        self.step(Runner('ok'), 2)
+        self.app.config.update(review_worker={'enabled': True}, delivery_enabled=True)  # reviews turn on
+        with patch.object(self.app, 'quick_first_review', return_value=0):
+            self.step(Runner('admitted'), 3)
+        with self.store.connect() as db:
+            prepared = {r[0] for r in db.execute('SELECT suggestion_id FROM preparations')}
+            status = dict(db.execute('SELECT id,status FROM suggestions'))
+            self.assertEqual(db.execute("SELECT status FROM deliveries WHERE suggestion_id=?", (wanted['id'],)).fetchone()[0], 'previewed')  # still never sent
+            self.assertIsNone(db.execute('SELECT 1 FROM first_look_ahead').fetchone())  # once
+        self.assertEqual(prepared, {wanted['id']})
+        self.assertEqual((status[wanted['id']], status[plain['id']], status[touched['id']]), ('accepted', 'pending', 'rejected'))
+
+    def test_an_owner_preview_prepares_nothing_later(self):
+        self.store.commit_page('work', {}, [signal('m1')])
+        self.app.start_preview()  # the owner's own, not the first look
+        self.store.suggest('a', 'Reply to Sam about pricing', 'Sam asked.', [1], ahead=True)
+        with self.store.connect() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM first_look_ahead').fetchone())
+
+    def test_review_live_names_the_newest_card(self):
+        self.assertEqual(self.app.review_live()['cards'], {'count': 0, 'newest': None})
+        self.store.commit_page('work', {}, [signal('m1')])
+        card = self.store.suggest('a', 'Reply to Sam', 'Sam asked.', [1])
+        with self.store.connect() as db:
+            created = db.execute('SELECT created_at FROM suggestions WHERE id=?', (card['id'],)).fetchone()[0]
+        self.assertEqual(self.app.review_live()['cards'], {'count': 1, 'newest': created})
 
 
 if __name__ == '__main__':

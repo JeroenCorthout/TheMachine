@@ -64,11 +64,16 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
 - **Layout**: every tab, and Settings, uses the same reading column: `--measure` (720px) plus 24px gutters, so `main`
   is 768px. No tab sets its own width, and the page keeps the scrollbar's room (`scrollbar-gutter: stable`), so a
   short tab like Events doesn't shift or look narrower than a long one.
-- **Tabs**: a sunken track; the current tab gets the accent tint and ink text. On a phone the row scrolls sideways
-  with a soft fade on the side that has more, and the current tab scrolls into view.
+- **Sidebar**: one component for every width. From 1024px it is a column on the left: the tabs as quiet rows with
+  icons, Find a card, the cards by section (Done folded), and Browser, Settings and the status at the bottom; it folds
+  to icons (Ctrl/⌘+B). Graph has its own rows, People, Organisations and Projects, each a coloured square and a count,
+  under a fold that is remembered; a row opens that pane and the address keeps it (`#graph=orgs`). Below 1024px the
+  same sidebar is a drawer under a slim top bar with a menu button: a swipe from the left edge or All tasks in a chat
+  also opens it, and ✕, the shade, Esc, back or a swipe to the left closes it, as does picking a row. Each page has a
+  serif title in the column.
 - **Sub-tabs** (Fleet, Graph, Connections): a row of round pills under the tabs, the current one tinted, with a count
   (orange when something needs you). It scrolls and fades like the tabs on a phone. Each pane is drawn at once and
-  shown one at a time; the choice is kept, and links open one (`#graph=roles`).
+  shown one at a time; the choice is kept, and links open one (`#graph=roles`). On the Graph the address follows the pane.
 - **Section heads**: the serif heading and its count as a small pill on one line, a one-line explainer below.
 - **Cards**: surface, 1px line, 14px radius; a slim tone mark at the top left for urgency; title in sans 600;
   body in secondary text; actions left to right, one primary.
