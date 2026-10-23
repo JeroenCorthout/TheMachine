@@ -758,6 +758,7 @@ strong.nb{white-space:nowrap}
 .skills-list .skill-ready{color:var(--mint)}.skill-notes{margin:6px 0 10px;padding-left:18px;font-size:.88rem}.skill-notes li{margin:2px 0}.skill-notes .warn{color:var(--orange,#e8a33d)}
 .hub-search{max-width:560px;display:flex;gap:8px}.hub-search input{flex:1;min-width:0}
 .note.skill-hint button.link{margin-left:4px}
+.card .note.handoff-contact{margin:4px 0 0;color:var(--faint);font-size:.88rem}.card .silent-note button.link{padding:0;min-height:0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .skill-import fieldset{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.88rem}.skill-import legend{color:var(--muted);font-size:.85rem;padding:0;margin-bottom:4px}
 .skill-import fieldset label{display:flex;align-items:center;gap:6px;color:var(--text)}.skill-import fieldset input{width:auto}
 #import-status{margin:0;font-size:.88rem;color:var(--muted)}#import-status.warn{color:var(--orange,#e8a33d)}#import-status:empty{display:none}
@@ -1073,9 +1074,9 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 .chat-work{align-self:flex-start}
 .chat-steps{font-size:.82rem;color:var(--chat-quiet)}.chat-steps summary{cursor:pointer;list-style:none;font-weight:400}.chat-steps summary::-webkit-details-marker{display:none}
 .chat-steps summary::before{content:none}.chat-steps summary::after{content:' ›'}.chat-steps[open] summary::after{content:' ‹'}.chat-steps ol{margin:6px 0 2px;padding-left:18px}
-.chat-event{align-self:center;max-width:88%;font-size:var(--chat-meta);line-height:1.4;color:var(--chat-quiet);text-align:center;font-variant-numeric:tabular-nums}.chat-event.mine{align-self:flex-end;text-align:right}
+.chat-event{align-self:center;max-width:88%;font-size:var(--chat-meta);line-height:1.4;color:var(--chat-quiet);text-align:center;font-variant-numeric:tabular-nums}
 /* The time on hover sits outside the line (left of a right-aligned one), so it never shifts or indents it */
-.chat-event{position:relative}.chat-event .chat-time{position:absolute;top:0;font-size:inherit;line-height:inherit;left:100%;margin-left:8px;white-space:nowrap;pointer-events:none}.chat-event.mine .chat-time{left:auto;right:100%;margin:0 8px 0 0}
+.chat-event{position:relative}.chat-event .chat-time{position:absolute;top:0;font-size:inherit;line-height:inherit;left:100%;margin-left:8px;white-space:nowrap;pointer-events:none}
 .chat-log>.chat-event.cont{margin-top:4px}
 .chat-event details{margin:0;padding:0;border:0;background:none;font:inherit}.chat-event summary{cursor:pointer;list-style:none;font:inherit;color:inherit;padding:0;margin:0}.chat-event summary::-webkit-details-marker{display:none}.chat-event summary::before{content:none}.chat-event .chev{margin-left:4px}.chat-event details[open] .chev{display:inline-block;transform:scaleX(-1)}
 .chat-event ol{margin:2px 0 0;padding:0;list-style:none}
@@ -2919,7 +2920,7 @@ const DECLINE_PICKS=['Not mine','Already done','No time this week'];
 function fleetNoteEditor(w,c){const id=esc(w.id),no=c==='decline';return`<div class="change-editor dismiss-editor fleet-note-editor"><p class="dismiss-q" id="fleet-note-q-${id}">${no?'Why?':'Note to '+esc(w.name)} <small>Optional</small></p>${no?`<div class="reason-chips" role="group" aria-labelledby="fleet-note-q-${id}">${DECLINE_PICKS.map(r=>`<button type="button" class="reason" aria-pressed="false" data-fleet-pick="${esc(r)}">${esc(r)}</button>`).join('')}</div>`:''}<textarea id="fleet-note-${id}" rows="1" maxlength="160" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><p class="muted">Only ${esc(w.name)} sees it.</p><div class="actions"><button class="primary" data-fleet-note-send="${id}" data-choice-f="${c}">${no?'Decline':'Accept'}</button><button type="button" class="ghost" data-fleet-note-cancel="${id}">Cancel</button></div></div>`}
 // A handoff a teammate declined (or let expire): the card is back, with what to do now.
 const handoffBackActions=s=>`<div class="actions"><button class="primary" data-handoff-mine="${esc(s.id)}">Do it myself</button>${canHandoff(s)?`<button class="ghost" data-fleet-handoff="${esc(s.id)}">Hand to someone else</button>`:''}<button class="ghost" data-id="${s.id}" data-choice="complete">Mark done</button></div>`;
-function handoffLine(h){const n=h.note?`: ${esc(h.note)}`:'';return ['asked','waiting for them'].includes(h.stage)?`Handed off to ${esc(String(h.name||'').split(' ')[0])}, waiting for an answer`:h.stage==='declined'?`${esc(h.name)} declined${n||'.'}`:h.stage==='expired'?`${esc(h.name)} didn’t answer in time.`:`Handed off to ${esc(h.name)}: ${esc(h.stage)}${h.note?` (${esc(h.note)})`:''}`}
+function handoffLine(h){const n=h.note?`: ${esc(h.note)}`:'';if(h.line)return esc(h.line);return ['asked','waiting for them'].includes(h.stage)?`Handed off to ${esc(String(h.name||'').split(' ')[0])}, waiting for an answer`:h.stage==='declined'?`${esc(h.name)} declined${n||'.'}`:h.stage==='expired'?`${esc(h.name)} didn’t answer in time.`:`Handed off to ${esc(h.name)}: ${esc(h.stage)}${h.note?` (${esc(h.note)})`:''}`}
 // Fleet items that need you are cards under Suggestions (tagged Fleet, Work), built from api/fleet: a teammate's
 // question or request (their words, shown quoted, never acted on), a meeting's follow-ups to split, and confirmations
 // the relay asks for. The Fleet tab keeps people, rules, briefs, your own asks and the log.
@@ -2987,7 +2988,10 @@ function fleetSync(force){if(!state?.fleet?.on)return Promise.resolve();if(fleet
 const fleetOn=(type,fn)=>{for(const el of [$('#fleet-view'),$('#suggestions')])el.addEventListener(type,fn)};
 function fleetIntroOffers(f,work,inFleet){const offers=(f.intro_offers||[]).filter(o=>inFleet(o,work));
  return offers.length?`<div class="list">${offers.map(o=>`<article><p><strong>${esc(o.name)}</strong> knows someone at ${esc(o.about)}.</p><form class="fleet-ask fleet-intro-form" data-fleet="${esc(o.fleet)}" data-member="${esc(o.member_id)}" data-about="${esc(o.about)}"><input name="note" maxlength="300" placeholder="Why, in a line (optional; they see it)" aria-label="Why"><button class="primary">Ask ${esc(o.name)} for an intro</button></form></article>`).join('')}</div>`:''}
-function fleetHandoff(s){if(s.fleet_handoff)return`<p class="note${s.fleet_handoff.back?'':' handled'} fleet">${handoffLine(s.fleet_handoff)}</p>${s.handoff_wait&&s.snoozed_until?`<p class="checkin-line" title="${esc(date(s.snoozed_until))}">${esc(checkinLabel(s))}</p>`:''}`;  // also once it is done
+function fleetHandoff(s){const contact=s.handoff_contact?`<p class="note handoff-contact">Contact: ${esc(s.handoff_contact)}</p>`:'';
+ if(s.handoff_silent&&!s.fleet_handoff&&!closed(s))return contact+`<p class="note fleet silent-note">${esc(s.handoff_silent.line)} · <button type="button" class="link" data-handoff-not-mine="${esc(s.id)}">Not mine</button></p>`;  // theirs by what they did; one tap undoes it
+ if(contact&&!s.fleet_handoff)return contact;
+ if(s.fleet_handoff)return`<p class="note${s.fleet_handoff.back?'':' handled'} fleet">${handoffLine(s.fleet_handoff)}</p>${s.handoff_wait&&s.snoozed_until?`<p class="checkin-line" title="${esc(date(s.snoozed_until))}">${esc(checkinLabel(s))}</p>`:''}`;  // also once it is done
  if(closed(s)||!state?.fleet?.on||s.scope!=='work')return'';
  if(s.fleet_handoff)return`<p class="note handled fleet">Handed off to ${esc(s.fleet_handoff.name)}: ${esc(s.fleet_handoff.stage)}</p>`;
  return''}  // the Hand off button sits with the card's other buttons (cardActions); its form with the other editors
@@ -3338,6 +3342,8 @@ $('#suggestions').addEventListener('click',async e=>{const b=e.target.closest('[
   else if(d.tpSkip)await fleetPost('task_page_dismiss',{suggestion_id:d.tpSkip});
   else if(d.tpStop){await fleetPost('task_page_stop',{suggestion_id:d.tpStop});toast('Stopped. The link no longer works.')}
   await refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
+$('#suggestions').addEventListener('click',async e=>{const b=e.target.closest('[data-handoff-not-mine]');if(!b)return;b.disabled=true;
+ try{await fleetPost('fleet_handoff_not_mine',{suggestion_id:b.dataset.handoffNotMine});toast('Undone. Your teammate is told it isn’t yours.');await refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
 $('#suggestions').addEventListener('click',async e=>{const b=e.target.closest('[data-handoff-mine]');if(!b)return;b.disabled=true;
  try{await fleetPost('fleet_handoff_mine',{suggestion_id:b.dataset.handoffMine});toast('It’s yours. The card keeps its usual buttons.');await refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
 $('#suggestions').addEventListener('click',async e=>{const b=e.target.closest('[data-fleet-take]');if(!b)return;b.disabled=true;

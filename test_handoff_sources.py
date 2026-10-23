@@ -41,7 +41,7 @@ class HandoffSources(unittest.TestCase):
         made = self.fleet.decide('q1', 'once')['card_id']
         row = self.card_row(made)
         self.assertEqual(row['title'], 'Send Sam the pricing')
-        self.assertEqual(row['body'], 'Pat asks you to take this on: “Send Sam the pricing for 40 seats.” Contact: sam@client.example.')
+        self.assertEqual(row['body'], 'Pat asks you to take this on: “Send Sam the pricing for 40 seats.”')  # the contact has its own line
         self.assertTrue(row['source_line'].startswith('Source: email from Sam Lee, via Pat · '))
         # (+1 is Sam's own email on this Machine, the contact's latest.) The handoff's own event is the card's text, not a source:
         rows = [{'kind': k, 'metadata': {'sender_display': 'Sam, via Pat'}, 'occurred_at': '2026-10-22T09:00:00+00:00'} for k in ('fleet.email', 'fleet.request')]

@@ -108,11 +108,10 @@ try{
  for(const t of await page.locator('#chat-log .chat-event').allTextContents())assert.doesNotMatch(t,/^You\s/);
  for(const text of ['Do it','Reopened','Snoozed','Unsnoozed','Marked done','Not needed','Try again','Snoozed in Telegram','You asked for a shorter draft'])
   assert.doesNotMatch(await page.evaluate(text=>chatEventText({kind:'event',mine:true,text}),text),/^You\s/,text);
- // Right-aligned lines end exactly at the user pills' right edge; the hover time sits to their left without moving them
- {const edge=await page.evaluate(()=>{const r=n=>n.getBoundingClientRect().right,ev=document.querySelector('#chat-log .chat-event.mine'),pill=document.querySelector('#chat-log .chat-msg.you .bubble'),t=ev.querySelector('.chat-time'),line=document.createRange();line.selectNodeContents(ev.querySelector('summary')||ev);line.setEndBefore(t);
-   return {line:line.getBoundingClientRect().right,ev:r(ev),pill:r(pill),time:r(t),evLeft:ev.getBoundingClientRect().left}});
-  assert.ok(Math.abs(edge.ev-edge.pill)<0.5&&Math.abs(edge.line-edge.pill)<1,`event line right ${edge.ev}/${edge.line} vs pill right ${edge.pill}`);
-  assert.ok(edge.time<=edge.evLeft,'the hover time sits left of the line, outside it')}
+ // Every event line, the owner's own too, is centred the same way; the hover time sits beside it without moving it
+ {const ev=await page.evaluate(()=>[...document.querySelectorAll('#chat-log .chat-event')].map(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect(),log=e.parentElement.getBoundingClientRect(),t=e.querySelector('.chat-time');
+   return {align:s.textAlign+' '+s.alignSelf,off:Math.abs((r.left+r.right)/2-(log.left+log.right)/2),time:t?getComputedStyle(t).position:'absolute'}}));
+  for(const e of ev)assert.ok(e.align==='center center'&&e.off<1&&e.time==='absolute',JSON.stringify(e))}
  await page.locator('#chat-log .chat-event.mine summary').click();
  assert.equal(await page.locator('#chat-log .chat-event.mine li').count(),3);
  assert.match(await page.locator('#chat-log .chat-event:not(.mine)').textContent(),/^Didn’t go out to Sam\d\d:\d\d$/);
