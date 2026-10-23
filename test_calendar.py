@@ -15,12 +15,17 @@ a = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(a)
 
 ACCOUNT = {'id': 'cal', 'email': 'owner@example.com', 'service': 'calendar', 'boundary': 'work:Example'}
+SHARED = {'id': 'partner-cal', 'email': 'owner@example.com', 'service': 'calendar', 'boundary': 'personal:Home', 'calendar_id': 'robin.lane@example.net'}
 
 
-def meeting(source_id, start, end, title='Pilot review', **extra):
+def meeting(source_id, start, end, title='Pilot review', account=ACCOUNT, **extra):
     raw = {'id': source_id, 'summary': title, 'start': start, 'end': end, 'status': 'confirmed', 'description': 'Private notes',
            'htmlLink': 'https://calendar.google.com/calendar/event?eid=' + source_id, **extra}
-    return a.calendar_event(ACCOUNT, raw, 'Europe/Brussels')
+    return a.calendar_event(account, raw, 'Europe/Brussels')
+
+
+def eid(event, calendar):
+    return a.base64.urlsafe_b64encode(f'{event} {calendar}'.encode()).decode().rstrip('=')
 
 
 class Calendar(unittest.TestCase):
@@ -48,7 +53,8 @@ class Calendar(unittest.TestCase):
         rows = self.store.calendar(['cal'], *self.week)
         self.assertEqual([r['title'] for r in rows], ['Late call', 'Pilot review', 'Odd link', 'Team offsite'])
         pilot = rows[1]
-        self.assertEqual(set(pilot), {'id', 'account_id', 'title', 'start', 'end', 'all_day', 'location', 'guests', 'url'})
+        self.assertEqual(set(pilot), {'id', 'account_id', 'title', 'start', 'end', 'all_day', 'location', 'guests', 'people', 'url', 'shared'})
+        self.assertEqual((pilot['people'], pilot['shared']), (['sam@client.example', 'kim@client.example'], None))
         self.assertEqual((pilot['start'], pilot['end'], pilot['location'], pilot['guests']),
                          ('2026-10-23T16:00:00+00:00', '2026-10-23T16:45:00+00:00', 'Zoom', 2))
         self.assertTrue(pilot['url'].startswith('https://calendar.google.com/'))
@@ -57,6 +63,48 @@ class Calendar(unittest.TestCase):
         self.assertTrue(rows[3]['all_day'])
         self.assertEqual(self.store.calendar([], *self.week), [])
         self.assertEqual(self.store.calendar(['other'], *self.week), [])
+
+    def shared_week(self):
+        at = lambda h: {'dateTime': f'2026-10-27T{h}:00:00+01:00'}
+        theirs = {'email': 'robin.lane@example.net', 'self': True}  # 'self' on a shared calendar is its owner
+        self.store.commit_page('partner-cal', {}, [
+            meeting('trip', {'dateTime': '2026-10-23T19:00:00+02:00'}, {'dateTime': '2026-10-25T19:00:00+01:00'}, 'Weekend away', SHARED, organizer=theirs),
+            meeting('parents', at('16'), at('17'), 'Parents evening', SHARED, organizer={'email': 'owner@example.com', 'displayName': 'Owner'},
+                    attendees=[{'email': 'robin.lane@example.net', 'self': True, 'responseStatus': 'accepted'}],
+                    htmlLink='https://www.google.com/calendar/event?eid=' + eid('abc123', 'robin.lane@example.net')),
+            meeting('dinner', at('19'), at('21'), 'Dinner with Alex', SHARED, organizer=theirs,
+                    attendees=[{'email': 'robin.lane@example.net', 'self': True}, {'email': 'owner@example.com', 'responseStatus': 'accepted'}]),
+            meeting('their-no', at('09'), at('10'), 'Dentist', SHARED, organizer=theirs,
+                    attendees=[{'email': 'owner@example.com', 'responseStatus': 'declined'}, {'email': 'robin.lane@example.net', 'self': True}])])
+        self.store.commit_page('cal', {}, [
+            meeting('parents-mine', at('16'), at('17'), 'Parents evening', organizer={'email': 'owner@example.com', 'self': True},
+                    htmlLink='https://www.google.com/calendar/event?eid=' + eid('abc123', 'owner@example.com')),
+            meeting('copy', at('12'), at('13'), 'Lunch  with Sam'), meeting('copy-2', at('12'), at('13'), 'lunch with sam')])
+        return {m['title']: m for m in self.store.calendar(['cal', 'partner-cal'], *self.week, owner={'Owner@example.com'})}
+
+    def test_a_shared_calendar_shows_marked_and_a_meeting_on_both_once_as_the_owners(self):
+        rows = self.shared_week()
+        # Someone else's event on a calendar shared with the owner: shown, with that person's first name
+        self.assertEqual((rows['Weekend away']['shared'], rows['Weekend away']['account_id']), ('Robin', 'partner-cal'))
+        # On both calendars (the same Google event): once, the owner's own copy
+        self.assertEqual((rows['Parents evening']['account_id'], rows['Parents evening']['shared']), ('cal', None))
+        # Invited on the shared calendar: theirs to attend, so it is the owner's meeting; declined stays out
+        self.assertIsNone(rows['Dinner with Alex']['shared'])
+        self.assertEqual(rows['Dinner with Alex']['guests'], 1)
+        self.assertNotIn('Dentist', rows)
+        # Two invites with the same start, end and title: once
+        self.assertEqual(sum(t.casefold().split() == ['lunch', 'with', 'sam'] for t in rows), 1)
+
+    def test_a_shared_calendar_never_makes_cards(self):
+        self.shared_week()
+        with self.store.connect() as db:
+            ids = dict(db.execute("SELECT source_id,id FROM events WHERE source_id IN ('trip','dinner')").fetchall())
+        with self.assertRaisesRegex(ValueError, "someone else's calendar"):
+            self.store.suggest('trip-prep', 'Pack for the weekend', 'Pack for it.', [ids['trip']])
+        self.assertEqual(self.store.suggest('dinner-prep', 'Book the dinner', 'Book a table.', [ids['dinner']])['status'], 'pending')
+        with self.store.connect() as db:
+            trip = dict(db.execute('SELECT * FROM events WHERE id=?', (ids['trip'],)).fetchone())
+        self.assertIn("Robin's calendar", a.review_view(trip)['not_owners'])
 
     def test_the_window_is_bounded_and_has_time_zones(self):
         for start, end in [('2026-10-23T00:00:00', '2026-10-24T00:00:00'), ('2026-10-23T00:00:00Z', '2026-11-23T00:00:00Z'),
