@@ -440,7 +440,7 @@ class SourceError(Exception):
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -3429,7 +3429,7 @@ class Store:
                   'next_row_offset': row_offset + len(shown) if row_offset + len(shown) < len(views) else None}
         return {'analysis_id': analysis_id, 'page': int(page), 'pages': pages, **result}
 
-    def finish_analysis(self, analysis_id, summary='', owner_session=None, owner_run=None, reviewed_ids=None, projects=None):
+    def finish_analysis(self, analysis_id, summary='', owner_session=None, owner_run=None, reviewed_ids=None, projects=None, stages=None):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM analyses WHERE id=?', (analysis_id,)).fetchone()
@@ -3455,6 +3455,18 @@ class Store:
                         raise ValueError('Project event IDs must belong to this batch')
                     if ids:
                         graph.label(db, ids, name, 'review', now())
+            moved = []
+            if stages is not None:
+                # Projects on a board moved by what a message in this batch means (graph.set_stage): the owner's own move wins
+                # until a newer message, and an older message never undoes a newer move.
+                if not isinstance(stages, list) or not all(isinstance(m, dict) for m in stages):
+                    raise ValueError('stages is [{"project", "board", "stage", "reason", "event_id", "next"}]')
+                batch = {i['id'] for i in items}
+                for m in stages:
+                    if not str(m.get('event_id') or '').isdigit() or int(m['event_id']) not in batch:
+                        raise ValueError('A move\'s event_id must belong to this batch')
+                    moved.append(graph.set_stage(db, m.get('project'), m.get('stage'), 'review', now(), board=m.get('board'), stages=m.get('stages'),
+                                                 reason=m.get('reason'), event_id=m['event_id'], next_step=m.get('next'), org=m.get('org')))
             for item in items:
                 if item.get('excluded'):
                     continue
@@ -3466,7 +3478,7 @@ class Store:
                            (item['version'], item['id'], item['version']))
             db.execute("UPDATE analyses SET status='complete',finished_at=?,summary=?,items=? WHERE id=?",
                        (now(), summary[:4000], encoded(items), analysis_id))
-        return {'status': 'complete'}
+        return {'status': 'complete', **({'stages': moved} if moved else {})}
 
     def suggest(self, dedupe_key, title, body, event_ids, when='now', digest_at='08:30', work=False, urgent=False, due=None, ahead=False, awaiting=None, project=None,
                 card_id=None, separate=False, reopen=False, match=False, _db=None, suggestion_id=None):
@@ -9476,6 +9488,7 @@ The assistant instructions (tools/personal-assistant/AGENTS.md) and the owner's 
 With the assistant_signals tool: call status, then ONE begin_analysis with account_ids {json.dumps(accounts)} and limit 120. The reply is paged: read every page with analysis_page before finishing, including next_row_offset continuations on the same page. Where body_clipped matters, read the rest with events (the account, event_ids and body_offset). Events replies contain events and remaining_event_ids; read the remaining IDs with the same accounts. Follow body_next_offset to the end of long bodies.
 Save only genuinely useful, distinct suggestions with suggest; the service delivers them. A card's agent_work in status is what Claude Code or Codex did (or is doing) on it, the latest truth of what was done: when you update a card, start from there and never offer work it reports done as the next step. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
+Boards: projects of one kind (partner listings, buyers, onboardings), one project per counterpart, stand in stages; begin_analysis boards lists them with each project's stage. When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new board also takes stages (its columns in order; "Stalled or declined" is always there). The owner's own move stands until a newer message changes things.
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
 Meeting notes (a Zoom summary or transcript) are that meeting's own record: use them for follow-ups on it, its next steps and who took them on, with the notes and the calendar event as evidence.
@@ -10165,9 +10178,11 @@ class App:
             if isinstance(result, dict) and result.get('analysis_id'):
                 with self.store.connect() as db:
                     result['projects'] = graph.active_projects(db)  # reuse these names in finish_analysis and suggest
+                    result['boards'] = graph.boards_brief(db)  # projects of one kind in stages, moved with finish_analysis stages
             return result
         if name == 'finish_analysis':
-            return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'))
+            return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
+                                             args.get('stages'))
         if name == 'graph':
             return self.graph_action(args)
         if name == 'enrich':  # the CLI: status, or one domain now
@@ -10383,6 +10398,13 @@ class App:
                 renamed = graph.rename(db, args.get('node_id'), args.get('name'), now())
             self.graph_build()
             return renamed
+        if name == 'graph_stage':
+            if not owner_dashboard:
+                raise ValueError('Only the owner moves a project by hand, on the dashboard; reviews use finish_analysis stages')
+            with self.store.connect() as db:
+                moved = graph.set_stage(db, str(args.get('node_id') or ''), args.get('stage'), 'owner', now())
+            self.graph_build()
+            return moved
         if name in ('graph_org_edit', 'graph_org_wrong'):
             if not owner_dashboard:
                 raise ValueError("Only the owner edits an organisation's details, on the dashboard")
@@ -13136,6 +13158,10 @@ class App:
                     raise ValueError('Every event must exist and be live')
                 graph.label(db, args['event_ids'], args['project'], 'agent', now())
                 changed = True
+            if args.get('project') and (args.get('stage') or args.get('board')):
+                said = graph.set_stage(db, args['project'], args.get('stage'), 'agent', now(), board=args.get('board'), stages=args.get('stages'),
+                                       reason=args.get('reason'), event_id=args.get('event_id'), next_step=args.get('next'), org=args.get('org'))
+                changed = changed or 'kept' not in said
             if args.get('close_project'):
                 if not db.execute('UPDATE projects SET closed_at=? WHERE name=? COLLATE NOCASE AND closed_at IS NULL', (now(), str(args['close_project']).strip())).rowcount:
                     raise ValueError('No open project by that name')
@@ -13403,7 +13429,10 @@ class App:
                                                for r in sorted(rows, key=lambda r: r['occurred_at'], reverse=True)]
                             self.output(200, found)
                         else:
-                            self.output(200, app.graph_action({'limit': 15}))
+                            found = app.graph_action({'limit': 15})
+                            with app.store.connect() as db:
+                                found['boards'] = graph.boards(db, now())  # the Projects board view
+                            self.output(200, found)
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'Not in the graph'})
                 elif path.path == '/api/agent-jobs':  # polled while a Claude Code or Codex job runs: small, unlike /api/status
@@ -13573,7 +13602,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_stage','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
