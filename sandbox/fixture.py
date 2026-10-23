@@ -75,7 +75,7 @@ SLACK = [('#sales', 'Can someone take the {company} renewal call tomorrow? I am 
 INTERCOM = ['How do I export all contacts with their custom fields?', 'We were charged twice this month, can you check?',
             'Is there a way to bulk assign accounts to a teammate?', 'The Outlook add-in shows a blank panel after the update.',
             'Can we get an extension of our trial for two more weeks?', 'Does your API support webhooks for deal stage changes?']
-FOLLOW_UPS = ['Thanks, that worked.', 'One more question: can teammates see each other’s notes?', 'Great, we will try it this week.']
+FOLLOW_UPS = ['For context: we are on the Growth plan, about 15 users.', 'Thanks, that worked.', 'One more question: can teammates see each other’s notes?', 'Great, we will try it this week.']
 LINKEDIN = ['Hi Alex, saw your post about shared inboxes. We are hiring at {company}, any advice on tooling?',
             'We are 12 in sales now, mostly on Outlook. Does that change anything?', 'Thanks, that helps. I will start a trial next week.']
 WHATSAPP = [('Morgan family', 'Groceries: oat milk, apples, bread, birthday candles 🎂'),
@@ -209,10 +209,18 @@ def build(profile):
             first = name.split()[0]
             crowd.append({'name': name, 'email': f"{first.lower()}@{company['domain']}", 'company': company['name'], 'domain': company['domain']})
     people += crowd
-    regulars = [p for p in people if p.get('story')] * 2
+    regulars = [p for p in people if p.get('story')] * 5
     events = []
     topics = {}  # an earlier email's key: (topic, person), for the closed cards
     said = {}  # (kind, person): messages so far in their conversation
+    last = {}  # (kind, person): when their conversation last moved
+
+    def reply_at(kind, p, minutes, n):
+        """A follow-up comes soon after the message before it, the way a chat goes (the Graph groups those)."""
+        if n:
+            minutes = max(1, last[kind, p['name']] - rng.randint(3, 25))
+        last[kind, p['name']] = minutes
+        return minutes
     days = 7
 
     def add(account, kind, minutes, title, body, meta, key):
@@ -226,7 +234,7 @@ def build(profile):
         total = max(total, 16) if kind == 'calendar.event' else total  # a busy week has meetings
         for i in range(total):
             minutes = int(rng.betavariate(1, 3) * days * 24 * 60) + rng.randint(1, 30)  # busier today than last week
-            p = rng.choice(crowd + regulars)  # the stories' people have a history too, so the Graph leads with them
+            p = rng.choice(crowd + regulars if kind in ('calendar.event', 'salesflare.meeting') else crowd)  # the stories' people meet too
             other = rng.choice(crowd)['name'].split()[0]
             key = f'{kind}:{i}'
             if kind in ('gmail.message', 'salesflare.email'):
@@ -253,6 +261,7 @@ def build(profile):
                      'message_ts': f'17610{i:05d}.000100', 'reply_count': rng.choice((0, 0, 1, 4)), 'source_url': f'https://lumenlabs.slack.example/archives/C1/p{i}'}, key)
             elif kind == 'intercom.conversation':  # one conversation per person, so the Graph shows it as one row
                 n = said[kind, p['name']] = said.get((kind, p['name']), -1) + 1
+                minutes = reply_at(kind, p, minutes, n)
                 conversation = 9000 + people.index(p)
                 add(account, kind, minutes, f"{p['name']} ({p['company']})", INTERCOM[people.index(p) % len(INTERCOM)] if n == 0 else FOLLOW_UPS[(n - 1) % len(FOLLOW_UPS)],
                     {'from': p['email'], 'state': rng.choice(('open', 'open', 'closed')), 'priority': rng.random() < 0.2,
@@ -266,6 +275,7 @@ def build(profile):
                 add(account, kind, minutes, app, text, {'app_name': app, 'package_name': 'example.' + app.lower(), 'truncated': False}, key)
             elif kind == 'linkedin.message':
                 n = said[kind, p['name']] = said.get((kind, p['name']), -1) + 1
+                minutes = reply_at(kind, p, minutes, n)
                 add(account, kind, minutes, p['name'], LINKEDIN[n % len(LINKEDIN)].format(company=p['company']),
                     {'from': p['name'], 'headline': f"Head of Sales at {p['company']}", 'conversation_id': 'li-' + slug(p['name']),
                      'source_url': 'https://linkedin.example/messaging/' + slug(p['name'])}, key)
