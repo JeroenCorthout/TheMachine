@@ -6793,6 +6793,96 @@
     "message-id": "<tbhalyardsyncdelay.1@halyard.example>",
     "source_url": "https://mail.example/#inbox/tbhalyardsyncdelay"
    }
+  },
+  {
+   "key": "hire:hiresupportlead:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 8700,
+   "title": "Support lead",
+   "body": "Hi Alex,\n\nApplying for the support lead role, CV attached.\n\nImogen",
+   "metadata": {
+    "from": "Imogen Hale <imogen@tallowcrest.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "thhiresupportlead",
+    "message-id": "<thhiresupportlead.0@tallowcrest.example>",
+    "source_url": "https://mail.example/#inbox/thhiresupportlead"
+   }
+  },
+  {
+   "key": "hire:hiresupportlead:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 5829,
+   "title": "Support lead",
+   "body": "Hi Imogen,\n\nThanks, can we talk Thursday.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "imogen@tallowcrest.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "thhiresupportlead",
+    "message-id": "<thhiresupportlead.1@tallowcrest.example>",
+    "source_url": "https://mail.example/#inbox/thhiresupportlead"
+   }
+  },
+  {
+   "key": "hire:hirebackendengineer:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 13020,
+   "title": "Backend engineer",
+   "body": "Hi Alex,\n\nThree backend candidates for you to look at.\n\nTobiah",
+   "metadata": {
+    "from": "Tobiah Renn <tobiah@gullwing.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "thhirebackendengineer",
+    "message-id": "<thhirebackendengineer.0@gullwing.example>",
+    "source_url": "https://mail.example/#inbox/thhirebackendengineer"
+   }
+  },
+  {
+   "key": "hire:hirebackendengineer:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2949,
+   "title": "Backend engineer",
+   "body": "Hi Tobiah,\n\nLet us meet the second one.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "tobiah@gullwing.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "thhirebackendengineer",
+    "message-id": "<thhirebackendengineer.1@gullwing.example>",
+    "source_url": "https://mail.example/#inbox/thhirebackendengineer"
+   }
+  },
+  {
+   "key": "hire:hireproductdesigner:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 4380,
+   "title": "Product designer",
+   "body": "Hi Alex,\n\nPortfolio for the product designer role.\n\nSigne",
+   "metadata": {
+    "from": "Signe Laurier <signe@mossgate.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "thhireproductdesigner",
+    "message-id": "<thhireproductdesigner.0@mossgate.example>",
+    "source_url": "https://mail.example/#inbox/thhireproductdesigner"
+   }
   }
  ],
  "cards": [
@@ -8013,6 +8103,7 @@
  "boards": [
   {
    "name": "Partner listings",
+   "about": "Partners we list our app with, one project per partner",
    "stages": [
     {
      "name": "Contacted",
@@ -8411,6 +8502,7 @@
   },
   {
    "name": "Customer onboarding",
+   "about": "New customers we are setting up, one project per customer",
    "stages": [
     {
      "name": "Kickoff",
@@ -8516,6 +8608,7 @@
   },
   {
    "name": "Support escalations",
+   "about": "Support cases that needed more than a reply",
    "stages": [
     {
      "name": "Open"
@@ -8570,6 +8663,53 @@
      "next": "Wait for the logs"
     }
    ]
+  },
+  {
+   "suggestion": {
+    "name": "Hiring",
+    "about": "Roles we are hiring for, one project per role",
+    "reason": "Three open roles, each with candidates writing in",
+    "stages": [
+     {
+      "name": "Sourced",
+      "hint": "Candidates found or applied"
+     },
+     {
+      "name": "Screening"
+     },
+     {
+      "name": "Interviews"
+     },
+     {
+      "name": "Offer"
+     },
+     {
+      "name": "Hired"
+     }
+    ],
+    "projects": [
+     {
+      "name": "Hire: support lead",
+      "events": [
+       "hire:hiresupportlead:0",
+       "hire:hiresupportlead:1"
+      ]
+     },
+     {
+      "name": "Hire: backend engineer",
+      "events": [
+       "hire:hirebackendengineer:0",
+       "hire:hirebackendengineer:1"
+      ]
+     },
+     {
+      "name": "Hire: product designer",
+      "events": [
+       "hire:hireproductdesigner:0"
+      ]
+     }
+    ]
+   }
   }
  ]
 }
