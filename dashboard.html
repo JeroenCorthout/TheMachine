@@ -1130,6 +1130,11 @@ dialog h2,.snooze-heading h2{font:var(--fw-heading) var(--fs-xl)/var(--lh-tight)
 /* Sub-tabs (Fleet, Graph, Connections): one pill row. On a phone it scrolls sideways with a fade on the side that
    has more (.more-left/.more-right from the script), like the main tabs. */
 :is(.fleet-tabs,.sub-tabs){scroll-padding:0 24px}
+/* A Graph page's tabs filter, the quiet menu at their right sets the order; on a narrow phone it drops under them, still right */
+.graph-tabbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:4px 0 12px}.graph-tabbar>.sub-tabs{flex:0 1 auto;min-width:0;margin:0}
+.graph-sort{margin-left:auto}.graph-sort>summary{width:auto;height:32px;gap:4px;display:inline-flex;margin:0;cursor:pointer;align-items:center;padding:0 10px;border-radius:999px;color:var(--muted);font:600 .85rem/1 var(--sans);white-space:nowrap}
+.graph-sort>summary:hover,.graph-sort[open]>summary{color:var(--text);background:var(--c-hover)}.graph-sort-list{min-width:170px}.graph-sort [aria-checked="true"]{color:var(--text);background:var(--sunken)}
+.graph-note{margin:0 0 12px;font-size:.88rem}
 :is(.fleet-tabs,.sub-tabs).more-right{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
 :is(.fleet-tabs,.sub-tabs).more-left{-webkit-mask-image:linear-gradient(90deg,transparent,#000 36px);mask-image:linear-gradient(90deg,transparent,#000 36px)}
 :is(.fleet-tabs,.sub-tabs).more-left.more-right{-webkit-mask-image:linear-gradient(90deg,transparent,#000 36px,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,transparent,#000 36px,#000 calc(100% - 36px),transparent)}
@@ -1191,10 +1196,10 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 @media(hover:hover) and (pointer:fine){.chat-back:hover,.chat-menu>summary:hover{background:var(--c-hover)}}.chat-menu[open]>summary{background:var(--c-hover)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
 .chat-title{flex:1;min-width:0;margin:calc((32px - 1.35em)/2 - .09em) 0 0;font:600 1rem/1.35 var(--sans);white-space:nowrap;overflow:hidden}
 /* The chat's title is one line at every width, fading out at the right edge; its full text is in the title attribute. */
-.chat-menu{position:relative;flex:none;margin:0}.chat-menu>summary{list-style:none}.chat-menu>summary::-webkit-details-marker{display:none}.chat-menu>summary::before,.chat-menu>summary::after{content:none}
-.chat-menu-list{position:absolute;right:0;top:calc(100% + 4px);z-index:7;display:flex;flex-direction:column;min-width:190px;padding:6px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 12px 30px #0004}
-.chat-menu-list>*{justify-content:flex-start;width:100%;min-height:38px;margin:0;padding:8px 12px;border:0;border-radius:9px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
-.chat-menu-list>*:hover{background:var(--sunken)}.chat-layout [data-chat-drawer]{display:none}
+:is(.chat-menu,.graph-sort){position:relative;flex:none;margin:0}:is(.chat-menu,.graph-sort)>summary{list-style:none}:is(.chat-menu,.graph-sort)>summary::-webkit-details-marker{display:none}:is(.chat-menu,.graph-sort)>summary::before,:is(.chat-menu,.graph-sort)>summary::after{content:none}
+:is(.chat-menu-list,.graph-sort-list){position:absolute;right:0;top:calc(100% + 4px);z-index:7;display:flex;flex-direction:column;min-width:190px;padding:6px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 12px 30px #0004}
+:is(.chat-menu-list,.graph-sort-list)>*{justify-content:flex-start;width:100%;min-height:38px;margin:0;padding:8px 12px;border:0;border-radius:9px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
+:is(.chat-menu-list,.graph-sort-list)>*:hover{background:var(--sunken)}.chat-layout [data-chat-drawer]{display:none}
 .chat-panel{margin:12px auto 0;width:min(100%,var(--chat-col));padding:0;background:none;box-shadow:none;border:0}.chat-panel:empty{display:none}
 /* The thread: one readable column, centered in the pane, with room between turns */
 .chat-log{display:flex;flex-direction:column;padding:20px max(2px,calc((100% - var(--chat-col))/2)) 28px;flex:1}.chat-log>:first-child{margin-top:auto}
@@ -1387,6 +1392,12 @@ body main{padding-top:0}
 .side-group.quiet a{color:var(--side-quiet)}
 @media(hover:hover) and (pointer:fine){.side-cards a:hover{background:var(--c-hover);color:var(--text)}}
 .side-cards a[aria-current]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
+.side-more,.side-more:hover{display:block;width:100%;min-height:0;margin:1px 0 0;padding:5px 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet,var(--c-text-3));font:500 12.5px/1.45 var(--sans);text-align:left;cursor:pointer}
+.side-more:hover{background:var(--c-hover);color:var(--text)}
+/* A long list's next page: a quiet row while it loads, never a spinner over the page */
+.pager-loading{margin:0;padding:12px 16px;color:var(--c-text-3);font-size:var(--fs-sm);animation:pager-breathe 1.4s ease-in-out infinite}
+@keyframes pager-breathe{50%{opacity:.45}}@media(prefers-reduced-motion:reduce){.pager-loading{animation:none}}
+.pager-empty{margin:0;padding:12px 16px}
 .side-cards a.fade{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
 .side-empty{margin:6px 10px;font-size:var(--fs-xs);color:var(--side-quiet)}
 .app-side .head-side{order:4;flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:stretch;gap:1px;margin:0;padding:8px 0 0;border-top:1px solid var(--c-line)}
@@ -1410,7 +1421,7 @@ body main{padding-top:0}
 #settings-browser{display:none!important}  /* Browser is in the sidebar */
 /* Graph's own rows: People, Organisations and Projects, each a small coloured square and a count, under a fold */
 .side-row{position:relative;display:flex;align-items:center}
-.side-row>button[data-tab]~.side-fold{right:auto;left:var(--fold-x,84px)}  /* right after the label, so the count keeps the rows' column */
+.side-row>button[data-tab]~.side-fold{right:auto;left:var(--fold-x,84px)}  /* just after the label, its hover box clear of the text, so the count keeps the rows' column */
 .app-side nav .side-fold{position:absolute;right:4px;top:50%;display:grid;place-items:center;justify-content:center;width:26px;height:26px;min-height:0;margin:-13px 0 0;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
 /* One row: hovering the chevron keeps the row's own highlight and only darkens the arrow, no box of its own; touch gets no hover at all */
 @media(hover:hover) and (pointer:fine){.app-side nav .side-fold:hover,[data-theme="light"] .app-side nav .side-fold:hover{background:none;color:var(--text)}.side-row:has(>.side-fold:hover)>button[data-tab]{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}}
@@ -1509,6 +1520,7 @@ body main{padding-top:0}
   .side-head{min-height:38px;font-size:var(--fs-sm)}
   .side-cards{flex:none;min-height:auto;margin-top:12px;overflow:visible;scrollbar-gutter:auto}  /* on a phone the whole drawer scrolls as one column */
   .side-cards a{padding:9px 10px;font-size:15px}
+  .side-more,.side-more:hover{padding:9px 10px;font-size:14px}
   .app-side .head-side>.live{min-height:36px}
   #open-browser:not([hidden]){display:flex}
   .page-head{display:flex;align-items:center;gap:12px;margin:4px 0 22px}
@@ -2779,6 +2791,33 @@ function learnedList(){
   groups.map(([k,title,blurb,rows])=>{const all=learnAll.has(k)||rows.length<=6;
    return `<section class="learn-group" data-group="${k}" aria-labelledby="learn-${k}"><div class="learn-head"><h3 id="learn-${k}">${title} <span class="count">${rows.length}</span></h3><p>${blurb}</p></div><div class="list">${(all?rows:rows.slice(0,5)).join('')}${rows.length>6?`<button type="button" class="quiet learn-all" data-learn-all="${k}" aria-expanded="${all}">${all?'Show fewer':'Show all '+rows.length}</button>`:''}</div></section>`}).join('');
 }
+// Long lists load a page at a time (Done, the Graph's tabs, its search): 30 rows, the next page by itself as the end
+// scrolls near, and a quiet Show more for keyboards, screen readers and when the scroll doesn't tell. A pager keeps what
+// it loaded, so a refresh, a tab switch or going back from a card or a person shows the same rows at the same place.
+const pagers=new Map();
+function pager(key,load,row){let p=pagers.get(key);if(!p){p={key,load,row,items:[],next:'0',total:null,busy:false,failed:false,html:''};pagers.set(key,p)}else{p.load=load;p.row=row}return p}
+function pagerDrop(prefix){for(const k of [...pagers.keys()])if(k===prefix||k.startsWith(prefix+':'))pagers.delete(k)}
+const pagerSlot=(key,empty='',rows='')=>`<div class="pager" data-pager="${esc(key)}" data-empty="${esc(empty)}" data-rows="${esc(rows)}"></div>`;
+const pagerFoot=p=>p.busy?'<p class="pager-loading" role="status">Loading…</p>':p.failed?'<button type="button" class="quiet more-rows" data-pager-more>Couldn’t load. Try again</button>':p.next!=null?'<button type="button" class="quiet more-rows" data-pager-more>Show more</button>':'';
+function pagerFootPaint(el,p){const empty=!p.items.length&&p.next==null&&!p.busy&&!p.failed;el.querySelector('.pager-foot').innerHTML=empty&&el.dataset.empty?`<p class="muted pager-empty">${esc(el.dataset.empty)}</p>`:pagerFoot(p)}
+function pagerMount(root=document){for(const el of root.querySelectorAll('[data-pager]')){const p=pagers.get(el.dataset.pager);if(!p)continue;
+ if(!el.firstChild){el.innerHTML=`<div class="pager-rows ${esc(el.dataset.rows||'')}">${p.html}</div><div class="pager-foot"></div>`;pagerSeen.observe(el.querySelector('.pager-foot'))}pagerFootPaint(el,p)}}
+const pagerNear=el=>{const f=el.querySelector('.pager-foot');if(!f||!el.offsetParent)return false;const r=f.getBoundingClientRect(),box=el.closest('.side-cards,.chat-side');return r.top<innerHeight+600&&r.bottom>-600&&!box};
+function pagerMore(key){const p=pagers.get(key);if(!p||p.next==null&&!p.busy)return Promise.resolve();if(p.busy)return p.pending;return p.pending=pagerLoad(key,p)}
+async function pagerLoad(key,p){p.busy=true;p.failed=false;const els=()=>[...document.querySelectorAll('[data-pager]')].filter(e=>e.dataset.pager===key);
+ for(const el of els())pagerFootPaint(el,p);let fresh='';
+ try{const r=await p.load(p.next);if(pagers.get(key)!==p)return;p.items.push(...r.items);fresh=r.items.map(x=>p.row(x)).join('');p.html+=fresh;p.next=r.next??null;p.total=r.total??p.total;p.onload?.(r.items)}catch{p.failed=true}finally{p.busy=false}
+ for(const el of els()){el.querySelector('.pager-rows')?.insertAdjacentHTML('beforeend',fresh);pagerFootPaint(el,p)}
+ if(fresh)requestAnimationFrame(()=>{for(const el of els())if(pagerNear(el)){pagerMore(key);break}})}
+const pagerSeen=new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){const el=e.target.closest('[data-pager]');if(el&&pagerNear(el))pagerMore(el.dataset.pager)}},{rootMargin:'0px 0px 600px 0px'});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-pager-more]');if(!b)return;e.preventDefault();e.stopPropagation();const el=b.closest('[data-pager]'),p=pagers.get(el?.dataset.pager);if(p?.failed)p.failed=false;if(el)pagerMore(el.dataset.pager)},true);
+// Done cards beyond the status payload: those loaded join the cards the page knows, so a chat or an action finds them
+const doneExtra=new Map();
+const closedAt=s=>s.closed_at||(state?.decisions||[]).filter(d=>d.suggestion_id===s.id&&['complete','reject'].includes(d.choice)).map(d=>d.created_at).sort().at(-1)||s.created_at;
+const doneKey=()=>'done:'+scopeFilter;
+function donePager(){return pager(doneKey(),cursor=>request(`api/cards/done?cursor=${encodeURIComponent(cursor)}${scopeFilter==='all'?'':'&scope='+scopeFilter}`).then(r=>{for(const c of r.cards)doneExtra.set(c.id,c);cardsMerge();return {items:r.cards,next:r.next,total:r.total}}),s=>suggestionCard(s))}
+function cardsMerge(){if(!state?.suggestions)return;const ids=new Set(state.suggestions.map(s=>s.id));for(const c of doneExtra.values())if(!ids.has(c.id))state.suggestions.push(c)}
+let doneSeen='';  // done counts and ids as last shown: when they change, the Done lists start over from the top
 const listShown={};const clipList=(id,rows,empty,n=3)=>{const k=listShown[id]||n;return rows.length?rows.slice(0,k).join('')+(rows.length>k?`<button type="button" class="quiet more-rows" data-more="${id}" data-shown="${k}">Show ${Math.min(10,rows.length-k)} more</button>`:''):empty};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-more]');if(!b)return;listShown[b.dataset.more]=(Number(b.dataset.shown)||listShown[b.dataset.more]||3)+10;render()});
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-promise]');if(!b)return;b.disabled=true;try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'promise_close',args:{id:Number(b.dataset.promise),status:b.dataset.close}})});toast(b.dataset.close==='kept'?'Marked done.':'Dropped.');refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
@@ -2857,8 +2896,9 @@ const needs=[...fleetCards,...outstanding.filter(needsDecision)],preparing=outst
 // Open cards: by deadline, then by who they're about (the people closest to you, and paying customers, first).
 // Later: in the order they come back, with a heading per day. Done: the last 7 days.
 later.sort((a,b)=>(a.snoozed_until||'').localeCompare(b.snoozed_until||''));
-const closedAt=s=>state.decisions.filter(d=>d.suggestion_id===s.id&&['complete','reject'].includes(d.choice)).map(d=>d.created_at).sort().at(-1)||s.created_at;
-const weekAgo=Date.now()-7*86400000,recent=finished.filter(s=>s.id===linkedCardId||Date.parse(closedAt(s))>=weekAgo).sort((a,b)=>closedAt(b).localeCompare(closedAt(a))),older=finished.length-recent.length;
+
+const recent=finished.sort((a,b)=>closedAt(b).localeCompare(closedAt(a))),doneTotal=state.done_counts?.[scopeFilter]??recent.length;
+{const seen=doneTotal+':'+recent.slice(0,30).map(s=>s.id).join(',');if(seen!==doneSeen){doneSeen=seen;pagerDrop('done')}}donePager();
 const backDay=s=>{const d=new Date(s.snoozed_until),t=new Date();t.setDate(t.getDate()+1);return localDay(d)===localDay(new Date())?'Today':localDay(d)===localDay(t)?'Tomorrow':d.toLocaleDateString([],{weekday:'long',day:'numeric',month:'short'})};
 const laterCards=items=>items.map((s,i)=>(i===0||backDay(s)!==backDay(items[i-1])?`<h3 class="day-head">${esc(backDay(s))}</h3>`:'')+suggestionCard(s,'Later')).join('');
 $('#suggestion-summary').innerHTML=`<div class="summary-row"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div></div>`;
@@ -2866,9 +2906,9 @@ $('#suggestion-stats').innerHTML=`<div class="stats">${[[ready,'Ready','mint','r
 $('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:scopeFilter==='personal'?0:state.fleet?.waiting||0))||'';$('#tab-fleet').hidden=!state.fleet?.on;$('#badge-fleet').textContent='';
 if(!chatOpen())$('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
 // Snoozed cards are out of the way by choice: folded by default, open state kept across refreshes.
-+(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed this week</span><span class="count">${recent.length}</span></summary>${recent.map(suggestionCard).join('')||'<p class="muted">Nothing finished or dismissed this week.</p>'}${older?`<p class="muted">${older} older ${older===1?'item is':'items are'} under Feedback.</p>`:''}</details>`;
++(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed</span><span class="count">${doneTotal}</span></summary>${(()=>{const l=recent.find(s=>s.id===linkedCardId);return l&&!pagers.get(doneKey())?.items.some(x=>x.id===l.id)?suggestionCard(l):''})()}${pagerSlot(doneKey(),'Nothing finished or dismissed yet.')}</details>`;if(!chatOpen())pagerMount($('#suggestions'));
 sideCounts={ready:ready.length,needs:needs.length,preparing:preparing.length,later:later.length,promises:(state.promises||[]).filter(p=>['open','card'].includes(p.state)).length};sideCards([[ready,'Ready','ready'],[needs.filter(x=>typeof x!=='string'),'To decide','needs'],[preparing,'Preparing','preparing'],[later,'Later','later'],[recent,'Done','done']]);
-{const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)chatMount(c.id,chatView(c,[[ready,'Ready'],[needs.filter(x=>typeof x!=='string'),'To decide'],[preparing,'Preparing'],[later,'Later'],[recent,'Done']]))}pageHead();
+{const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)chatMount(c.id,chatView(c,[[ready,'Ready','ready'],[needs.filter(x=>typeof x!=='string'),'To decide','needs'],[preparing,'Preparing','preparing'],[later,'Later','later'],[recent,'Done','done']]))}pageHead();
 for(const[id,v]of Object.entries(drafts)){const t=document.getElementById(id);if(t&&t.value!==v){t.value=v;t.classList.add('filled')}}
 for(const id of moreOpen){const menu=document.getElementById(id)?.querySelector('.more-actions');if(menu)menu.open=true}
 fleetSync();
@@ -3291,7 +3331,7 @@ function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…'
   :closed(s)?(s.status==='completed'?'Done':'Not needed'):s.preparation_status==='blocked'?p.status||cardState(s):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
- const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
+ const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.map(([items,title,key])=>{const cut=sideList(items,key);return cut.count?`<h3>${title}<span>${cut.count}</span></h3>${cut.list.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}${cut.more?sideMoreRow(key):''}`:''}).join('')}</aside>`;
  return `<div class="chat-layout${chatDrawer?' drawer':''}" data-chat="${s.id}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title" title="${esc(s.title)}">${esc(s.title)}</h2>
   <details class="chat-menu" id="chat-menu"><summary aria-label="More actions" title="More actions">${DOTS}</summary><div class="chat-menu-list" role="group" aria-label="More actions">${p.rest}<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button></div></details></header>
  <article id="task-${s.id}" class="chat-panel">${p.panel}</article><div class="chat-log" id="chat-log" aria-live="polite">${chatLog(s)}</div>
@@ -3441,7 +3481,7 @@ let sendTimer=null;const sendWatch=()=>{clearTimeout(sendTimer);if((state.sugges
 // A status read that started before an edit shown at once (a rename) is older than the screen: read again instead of
 // putting the old value back for a moment.
 let localEdits=0;
-async function refresh(){refreshes++;try{const edits=localEdits,next=wakeSnoozed(await request('api/status'));if(edits!==localEdits)return await refresh();state=next;browserPill(state);if(state.source_url)$('#source-code').href=state.source_url;if(uiVersionCheck())return;render();deviceRender();sendWatch();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);try{if(!$('#calendar').hidden)calendarView();else calBadge()}catch(e){console.error(e)}if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=e.retryAfter||Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=e.restarting?'Restarting · retrying':lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
+async function refresh(){refreshes++;try{const edits=localEdits,next=wakeSnoozed(await request('api/status'));if(edits!==localEdits)return await refresh();state=next;cardsMerge();browserPill(state);if(state.source_url)$('#source-code').href=state.source_url;if(uiVersionCheck())return;render();deviceRender();sendWatch();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);try{if(!$('#calendar').hidden)calendarView();else calBadge()}catch(e){console.error(e)}if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=e.retryAfter||Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=e.restarting?'Restarting · retrying':lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
 $('nav').onclick=e=>{const t=e.target.closest('button');if(!t?.dataset.tab)return;for(const b of document.querySelectorAll('nav button[data-tab]')){b.classList.toggle('active',b===t);b.setAttribute('aria-current',b===t?'page':'false')}for(const s of document.querySelectorAll('main>section'))s.hidden=s.id!==t.dataset.tab;if(t.dataset.tab==='people')people(graphNode,!!$('#people-view').innerHTML);if(t.dataset.tab==='health')savedLogins();if(t.dataset.tab==='fleet')fleetShown=fleetView(true);requestAnimationFrame(()=>document.querySelectorAll('.fleet-tabs,.sub-tabs').forEach(tabsShow))};
 // The desktop sidebar (from 1024px): the cards as a quiet list under the tabs, by section, each section folds (Done
 // starts folded) and the fold is remembered; a filter on the titles; the whole sidebar folds to icons.
@@ -3449,15 +3489,35 @@ const sideStore={get:k=>{try{return localStorage.getItem(k)}catch{return null}},
 const sideFolded=(()=>{try{const v=JSON.parse(sideStore.get('side-folded'));if(Array.isArray(v))return new Set(v)}catch{}return new Set(['done'])})();
 const CHEVRON='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 let sideGroups=[],sideCounts={},sideHTML='';
-function sideCards(groups){if(groups)sideGroups=groups;const q=$('#side-find').value.trim().toLowerCase(),box=$('#side-cards');
- const parts=sideGroups.map(([items,title,key])=>{const list=q?items.filter(x=>String(x.title||'').toLowerCase().includes(q)):items;if(!list.length)return'';const open=!!q||!sideFolded.has(key);
-  return `<div class="side-group${key==='done'||key==='later'?' quiet':''}"><button type="button" class="side-head" data-side-fold="${key}" aria-expanded="${open}">${CHEVRON}<span>${title}</span><span class="count">${list.length}</span></button>${open?list.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===chatId?' aria-current="page"':''}>${esc(x.title)}</a>`).join(''):''}</div>`}).join('');
+// The sidebar's groups show the first few (Done 10, an active group 8) and a quiet Show more adds 20 per tap; folding a
+// group starts it over. Done counts every done card and loads the next ones from the Machine as it goes. A search shows
+// every match, done cards too, also those not loaded yet.
+const SIDE_STEP=20,sideShown={},sideFirst=k=>k==='done'?10:8;
+const titleHas=(x,q)=>String(x.title||'').toLowerCase().includes(q);
+function sideAll(items,key,q=''){let all=q?items.filter(x=>titleHas(x,q)):items;if(key!=='done')return all;
+ const extra=[...pagers.get(doneKey())?.items||[],...q&&doneFound.q===q?doneFound.items:[]];if(!extra.length)return all;const seen=new Set(all.map(x=>x.id));
+ return [...all,...extra.filter(x=>!seen.has(x.id)&&(!q||titleHas(x,q)))].sort((a,b)=>closedAt(b).localeCompare(closedAt(a)))}
+function sideList(items,key){const all=sideAll(items,key),n=sideShown[key]||sideFirst(key),total=key==='done'?Math.max(all.length,state?.done_counts?.[scopeFilter]??0):all.length;
+ return {list:all.slice(0,n),more:all.length>n||total>all.length&&pagers.get(doneKey())?.next!=null,count:total}}
+const sideMoreRow=key=>`<button type="button" class="side-more" data-side-more="${key}">Show more</button>`;
+async function sideMore(key){sideShown[key]=(sideShown[key]||sideFirst(key))+SIDE_STEP;
+ if(key==='done'){const items=sideGroups.find(g=>g[2]==='done')?.[0]||[],p=donePager();for(let i=0;i<10&&sideAll(items,'done').length<sideShown.done&&p.next!=null&&!p.failed;i++)await pagerMore(doneKey())}
+ sideCards();if(chatOpen())render()}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-side-more]');if(!b)return;e.preventDefault();sideMore(b.dataset.sideMore)});
+// A search also asks the Machine for done cards beyond the ones loaded
+const doneFound={q:'',items:[]};let doneAsk=0;
+function doneSearch(q){if(!q||doneFound.q===q||(state?.done_counts?.[scopeFilter]??0)<=sideAll(sideGroups.find(g=>g[2]==='done')?.[0]||[],'done').length)return;const n=++doneAsk;
+ clearTimeout(doneSearch.t);doneSearch.t=setTimeout(async()=>{try{const r=await request(`api/cards/done?limit=50&q=${encodeURIComponent(q)}${scopeFilter==='all'?'':'&scope='+scopeFilter}`);if(n!==doneAsk)return;
+  for(const c of r.cards)doneExtra.set(c.id,c);cardsMerge();doneFound.q=q;doneFound.items=r.cards;sideCards()}catch{}},250)}
+function sideCards(groups){if(groups)sideGroups=groups;const q=$('#side-find').value.trim().toLowerCase(),box=$('#side-cards');doneSearch(q);
+ const parts=sideGroups.map(([items,title,key])=>{const open=!!q||!sideFolded.has(key),cut=q?{list:sideAll(items,key,q),more:false}:sideList(items,key),count=q?cut.list.length:cut.count;if(!count)return'';
+  return `<div class="side-group${key==='done'||key==='later'?' quiet':''}"><button type="button" class="side-head" data-side-fold="${key}" aria-expanded="${open}">${CHEVRON}<span>${title}</span><span class="count">${count}</span></button>${open?cut.list.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===chatId?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')+(cut.more?sideMoreRow(key):''):''}</div>`}).join('');
  const html=`<div class="side-label"><span>Cards</span>${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${parts||`<p class="side-empty">${q?'No cards match.':'No cards yet.'}</p>`}`;
  if(html!==sideHTML){sideHTML=html;box.innerHTML=html;requestAnimationFrame(chatFades)}}
 $('#side-find').addEventListener('input',()=>sideCards());
 $('#side-find').addEventListener('keydown',e=>{if(e.key==='Escape'){e.target.value='';sideCards()}if(e.key==='Enter'){const a=$('#side-cards a');if(a)a.click()}});
 $('#side-cards').addEventListener('click',e=>{const f=e.target.closest('[data-side-fold]');
- if(f){const k=f.dataset.sideFold;sideFolded.has(k)?sideFolded.delete(k):sideFolded.add(k);sideStore.set('side-folded',JSON.stringify([...sideFolded]));sideCards();return}
+ if(f){const k=f.dataset.sideFold;sideFolded.has(k)?sideFolded.delete(k):sideFolded.add(k);delete sideShown[k];sideStore.set('side-folded',JSON.stringify([...sideFolded]));sideCards();return}
  const sc=e.target.closest('[data-scope]');if(sc){linkedCardId=null;scopeFilter=sc.dataset.scope;sideStore.set('scope-filter',scopeFilter);render();return}
  const a=e.target.closest('a[href^="#chat="]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const id=a.getAttribute('href').slice(6);
  if(id===chatId){showTab('inbox');return}chatGo(id)});
@@ -3801,7 +3861,11 @@ function graphHead(){if(/^promise:/.test(graphNode||''))return '<div><p class="p
  const words={people:['person','people'],orgs:['organisation','organisations'],projects:['open project','open projects'],roles:['role to confirm','roles to confirm']}[graphShown];
  const mode=graphShown==='projects'&&!graphNode&&graphBoards.length?`<div class="view-mode" role="group" aria-label="View">${[['list','List'],['board','Board']].map(([v,t])=>`<button type="button" data-proj-view="${v}" aria-pressed="${projView()===v}">${t}</button>`).join('')}</div>`:'';
  return `<div><p class="page-crumb">Graph</p><h2 class="page-title">${esc(name)}</h2>${n&&!graphNode?`<p class="page-sub">${n} ${n===1?words[0]:words[1]}</p>`:''}</div>${mode}`}
-function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';helpLink(tab);
+// The browser tab's title follows the page: the card in a chat, the person or pane on the Graph, else the tab's name
+function docTitle(tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox'){
+ const node=tab==='people'&&graphNode?document.querySelector('#people-view .graph-crumbs [aria-current]')?.textContent:'',card=tab==='inbox'&&chatId?(state?.suggestions||[]).find(s=>s.id===chatId)?.title:'';
+ const t='The Machine · '+(card||node||(tab==='inbox'?'Suggestions':tab==='people'?GRAPH_SUBS[graphShown]||'Graph':PAGE_TITLES[tab]||'Suggestions'));if(document.title!==t)document.title=t}
+function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';helpLink(tab);docTitle(tab);
  if(tab==='inbox'&&chatId){h.hidden=true;return}
  const c=sideCounts,busy=[[c.ready,'ready for you'],[c.needs,'to decide'],[c.preparing,'preparing']].filter(([k])=>k).map(([k,t])=>k+' '+t),sub=(busy.length?busy:['All clear',c.later&&c.later+' coming back later',c.promises&&c.promises+(c.promises===1?' promise':' promises')+' kept track of'].filter(Boolean)).join(' · ');
  const html=tab==='inbox'?`<img class="page-avatar" src="brand/avatar.png" data-blink="brand/avatar-blink.png" alt="" width="40" height="40"><div><h2 class="page-title">${esc($('#tagline').textContent)}</h2>${sub?`<p class="page-sub">${esc(sub)}</p>`:''}</div>`:tab==='people'?(()=>{try{return graphHead()}catch{return '<h2 class="page-title">Graph</h2>'}})():tab==='calendar'?calHead():`<h2 class="page-title">${PAGE_TITLES[tab]||''}</h2>`;
@@ -4409,6 +4473,41 @@ const personSub=p=>[p.profile?.title,cap(p.role||p.closeness),(p.seen_only?'last
 const graphItem=n=>n.kind==='project'?`<article class="tap" data-node="${esc(n.id)}"><div class="graph-row">${nodeButton(n)}<span class="chip" style="--c:${PROJECT_COLOR[n.state]||'var(--muted)'}">${esc(n.state)}</span></div><p class="graph-sub" style="white-space:normal">Last signal ${esc(day(n.last_at))} · ${n.signals} signal${n.signals===1?'':'s'}${n.people?.length?' · '+esc(n.people.join(', ')):''}</p></article>`
  :n.kind==='org'?`<article class="tap" data-node="${esc(n.id)}"><div class="graph-row">${orgPic(n)}${nodeButton(n)}<small>${n.role?esc(cap(n.role))+' · ':''}${n.profile?.industry?esc(n.profile.industry)+' · ':''}${n.signals} ${n.signals===1?'person':'people'} · last contact ${esc(day(n.last_at))}</small></div></article>`
  :`<article class="tap person-item" data-node="${esc(n.id)}"><div class="graph-row one">${personPic(n)}${nodeButton(n)}${fleetChip(n)}${n.quiet?'<span class="chip" style="--c:var(--orange)">gone quiet</span>':''}${bar(n)}</div><p class="graph-sub" title="${esc(personSub(n)+(n.ids?.length?' · '+n.ids.slice(0,2).join(', '):''))}">${n.fleet?.machine?'Has a Machine · ':''}${esc(personSub(n))}${n.ids?.length?' · <span class="mono">'+esc(n.ids.slice(0,2).join(', '))+'</span>':''}</p></article>`;
+// Each Graph page's lists are tabs that filter (with their counts; an empty one is not shown) and a quiet menu sets the
+// order; every pair is one list on the Machine, loaded a page at a time. The pick is kept per page, also after a person.
+const GRAPH_TABS={people:{label:'People',tabs:[['people','All'],['quiet','Gone quiet'],['new','New this week']],sorts:[['closest','Closest'],['last','Last contact'],['name','Name A–Z']],
+  notes:{people:'From your messages, meetings and cards. Fades over about two months.',quiet:'People you talk with regularly, silent for much longer than usual.',new:'First seen this week.'},empty:'Nobody here yet.'},
+ orgs:{label:'Organisations',tabs:[['orgs','All'],['warmup','Warm up']],sorts:[['closest','Closest'],['last','Last contact'],['name','Name A–Z']],
+  notes:{orgs:'The ones you are most in touch with first.',warmup:'Mail from email warm-up tools, kept out of your graph.'},empty:'No organisations yet.'},
+ projects:{label:'Projects',tabs:[['projects','Open'],['projects_done','Done']],sorts:[['last','Last activity'],['name','Name A–Z'],['stage','Stage']],
+  notes:{projects:'Named by the reviews and your cards. Heat fades over about three weeks.',projects_done:'Closed projects.'},empty:'No projects yet.'}};
+const graphPick=(pane,what,fallback)=>{try{return localStorage.getItem(`graph-${what}-${pane}`)||fallback}catch{return fallback}};
+const graphKeep=(pane,what,v)=>{try{localStorage.setItem(`graph-${what}-${pane}`,v)}catch{}};
+// While a search shows, the list it covers is kept as it was (tab, sort, pages loaded, scroll): emptying the box brings it back at once.
+let graphKept=null;
+function graphStash(view){if(view.dataset.mode!=='list'||!view.firstChild)return;const scroll=scrollY,f=document.createDocumentFragment();f.append(...view.childNodes);graphKept={f,scroll}}
+function graphUnstash(view){if(!graphKept)return false;const k=graphKept;graphKept=null;view.replaceChildren(k.f);view.dataset.mode='list';
+ for(const el of view.querySelectorAll('[data-pager]')){const p=pagers.get(el.dataset.pager);if(p&&el.querySelectorAll('.pager-rows>*').length!==p.items.length)el.replaceChildren()}pagerMount(view);  /* rows a page brought in meanwhile */
+ notice('');requestAnimationFrame(()=>{if(view.querySelector(`[data-graph-panel="${CSS.escape(graphPane)}"]`))showGraphPane(graphPane);scrollTo(0,k.scroll)});return true}  /* the layout waits for the frame, still before it paints */
+let graphLists={},graphLocal=null;  // a Machine from before the paged lists sends them whole in the overview: they are sorted here
+const GRAPH_STAGE={active:0,cooling:1,dormant:2};
+const graphSorted=(items,sort)=>[...items].sort(sort==='name'?(a,b)=>(a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'}):sort==='last'?(a,b)=>String(b.last_at||'').localeCompare(String(a.last_at||'')):sort==='stage'?(a,b)=>(GRAPH_STAGE[a.state]??3)-(GRAPH_STAGE[b.state]??3)||(b.strength||0)-(a.strength||0):(a,b)=>(b.strength||0)-(a.strength||0));
+const warmRow=w=>`<div class="graph-sub relation"><span>${esc(w.name||w.domain)}${w.name&&w.name!==w.domain?` <span class="muted">${esc(w.domain)}</span>`:''}</span><button class="ghost" data-warmup-undo="${esc(w.domain)}">Undo</button></div>`;
+function graphListPager(list,sort){const p=pager(`graph:${list}:${sort}`,cursor=>graphLocal?Promise.resolve({items:graphSorted(graphLocal[list]||[],list==='warmup'?'name':sort),next:null}):request(`api/graph/list?list=${list}&sort=${sort}&cursor=${encodeURIComponent(cursor)}`).then(r=>({items:r.items,next:r.next,total:r.total})),list==='warmup'?warmRow:graphItem);
+ if(graphLocal&&!p.items.length&&p.next==='0'){p.items=graphSorted(graphLocal[list]||[],list==='warmup'?'name':sort);p.html=p.items.map(p.row).join('');p.next=null}return p}
+// The tabs, the order menu and the list sit in their own box, so a tab or order change repaints only them (a Projects
+// pane also holds the board)
+function graphTabs(pane){const h=graphTabsInner(pane);return h&&`<div data-graph-box="${pane}">${h}</div>`}
+function graphTabsInner(pane){const g=GRAPH_TABS[pane],shown=g.tabs.filter(([id])=>graphLists[id]>0);if(!shown.length)return'';
+ const tab=shown.some(([id])=>id===graphPick(pane,'tab',''))?graphPick(pane,'tab',''):shown[0][0],sort=g.sorts.some(([id])=>id===graphPick(pane,'sort',''))?graphPick(pane,'sort',''):g.sorts[0][0];
+ graphListPager(tab,sort);const label=g.sorts.find(([id])=>id===sort)[1];
+ const menu=tab==='warmup'?'':`<details class="graph-sort"><summary aria-label="Order: ${esc(label)}">${esc(label)} <span aria-hidden="true">▾</span></summary><div class="graph-sort-list" role="menu">${g.sorts.map(([id,t])=>`<button type="button" role="menuitemradio" aria-checked="${id===sort}" data-graph-sort="${id}">${esc(t)}</button>`).join('')}</div></details>`;
+ return `<div class="graph-tabbar" data-graph-tabs="${pane}">${subTabs(g.label,'data-graph-list',shown.map(([id,t])=>({id,label:t,badge:graphLists[id]})),tab)}${menu}</div>${g.notes[tab]?`<p class="graph-note muted">${esc(g.notes[tab])}</p>`:''}${pagerSlot(`graph:${tab}:${sort}`,g.empty,'graph-list')}`}
+function graphTabsPaint(pane){const box=document.querySelector(`[data-graph-panel="${pane}"] [data-graph-box]`);if(!box)return;box.innerHTML=graphTabsInner(pane);pagerMount(box);tabsShow(box.querySelector('.sub-tabs'))}
+$('#people-view').addEventListener('click',e=>{const t=e.target.closest('[data-graph-list]'),o=e.target.closest('[data-graph-sort]'),pane=e.target.closest('[data-graph-tabs]')?.dataset.graphTabs;if(!pane||!t&&!o)return;
+ if(t)graphKeep(pane,'tab',t.dataset.graphList);if(o)graphKeep(pane,'sort',o.dataset.graphSort);graphTabsPaint(pane);if(o)document.querySelector(`[data-graph-panel="${pane}"] .graph-sort summary`)?.focus()});
+document.addEventListener('click',e=>{for(const d of document.querySelectorAll('.graph-sort[open]'))if(!d.contains(e.target))d.open=false});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;const d=document.querySelector('.graph-sort[open]');if(d){d.open=false;d.querySelector('summary').focus()}});
 const graphSection=(title,note,items)=>items?.length?`<div class="section-head"><h2>${title}</h2><span class="count">${items.length}</span>${note?`<p>${note}</p>`:''}</div><div class="graph-list">${items.map(graphItem).join('')}</div>`:'';
 // Projects as a board: projects of one kind in stages (graph.boards), a view of Graph › Projects next to the list. Board by
 // default when there is a board; the choice is remembered on this device. Moves come from what the messages mean; the owner
@@ -4439,8 +4538,8 @@ function boardView(){const b=boardNow();if(!b)return '<div class="empty all-clea
   +`<div class="sub-tabs stage-tabs" role="tablist" aria-label="Stages">${b.stages.map(s=>`<button type="button" role="tab" data-stage-tab="${esc(s.name)}" aria-selected="${s.name===on}"><span class="ell">${esc(s.side?'Stalled':s.name)}</span> <span class="badge">${by(s).length}</span></button>`).join('')}</div>`
   +`<div class="pboard-wrap"><div class="pboard" style="--lanes:${main.length}">${b.stages.map(s=>lane(b,s,by(s),s.name===on)).join('')}</div></div>`}
 const projectsPane=g=>{graphBoards=g.boards||[];graphSuggest=g.board_suggestions||[];graphProjNames=g.project_names||[];const v=projView();
- if(!graphBoards.length){const list=graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects);return list||graphSuggest.length?suggestBox()+(graphSuggest.length?'':'<p class="board-start"><button type="button" class="ghost" data-board-new>Start a board</button></p>')+list:''}  /* no projects yet: no Projects pane */
- return suggestBox()+`<div class="proj-list"${v==='list'?'':' hidden'}>${graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)}</div><div class="proj-board"${v==='board'?'':' hidden'}>${boardView()}</div>`};
+ if(!graphBoards.length){const list=graphTabs('projects');return list||graphSuggest.length?suggestBox()+(graphSuggest.length?'':'<p class="board-start"><button type="button" class="ghost" data-board-new>Start a board</button></p>')+list:''}  /* no projects yet: no Projects pane */
+ return suggestBox()+`<div class="proj-list"${v==='list'?'':' hidden'}>${graphTabs('projects')}</div><div class="proj-board"${v==='board'?'':' hidden'}>${boardView()}</div>`};
 function boardRedraw(){const el=$('#people-view .proj-board');if(el){const x=el.querySelector('.pboard')?.scrollLeft||0;el.innerHTML=boardView();const nb=el.querySelector('.pboard');if(nb)nb.scrollLeft=x}}
 function projectsViewSet(v){sideStore.set('projects-view',v);const view=$('#people-view');view.querySelector('.proj-list')?.toggleAttribute('hidden',v!=='list');view.querySelector('.proj-board')?.toggleAttribute('hidden',v!=='board');pageHead()}
 async function boardMove(node,stage){const b=boardNow(),p=b?.projects.find(x=>x.id===node);if(!p||p.stage===stage)return;const was=p.stage;
@@ -4650,7 +4749,7 @@ document.addEventListener('submit',async e=>{const f=e.target.closest('.promise-
 // Graph links: #graph/<node id> opens a person, project or organisation; the browser's back goes to where you were.
 const GRAPH_KIND_PANE={person:['people','People'],project:['projects','Projects'],org:['orgs','Organisations']};
 const graphHash=id=>'#graph/'+encodeURIComponent(id);
-function graphOpen(id){if(location.hash!==graphHash(id))history.pushState(null,'',graphHash(id));people(id)}
+function graphOpen(id){if(!graphNode&&!$('#people').hidden)graphScroll=scrollY;if(location.hash!==graphHash(id))history.pushState(null,'',graphHash(id));people(id)}
 function graphBack(pane){if(pane){graphPane=pane;localStorage.setItem('graph-pane',pane)}if(/^#graph\//.test(location.hash))history.pushState(null,'',location.pathname+location.search+'#graph='+(graphPane||'people'));people('')}
 function graphRoute(){const pm=/^#promise\/(\d+)$/.exec(location.hash),m=/^#graph\/(.+)$/.exec(location.hash);let id=pm?'promise:'+pm[1]:'';try{id=id||(m?decodeURIComponent(m[1]):'')}catch{}
  if(id){if($('#people').hidden){graphNode=id;document.querySelector('nav [data-tab="people"]')?.click()}else if(graphNode!==id)people(id);return}
@@ -4659,7 +4758,7 @@ addEventListener('popstate',()=>{if(!drawerStep)graphRoute()});addEventListener(
 document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.fact-menu[open]'))if(!m.contains(e.target))m.open=false});
 document.addEventListener('click',e=>{const item=e.target.closest('.person-menu [role=menuitem]');if(item)item.closest('details').open=false});
 $('nav').addEventListener('click',e=>{const t=e.target.closest('button');if(t?.dataset.tab&&t.dataset.tab!=='people'&&/^#graph[/=]/.test(location.hash))history.replaceState(null,'',location.pathname+location.search);graphSubSync()});
-let graphShown='',graphNode='',graphRequest=0,editRole=false,graphPane=localStorage.getItem('graph-pane')||'';
+let graphScroll=null,graphShown='',graphNode='',graphRequest=0,editRole=false,graphPane=localStorage.getItem('graph-pane')||'';
 // Sub-tabs, as in Fleet: a pill row over panes that are all drawn at once and shown one at a time.
 const subTabs=(label,attr,panes,current)=>`<div class="sub-tabs" role="tablist" aria-label="${esc(label)}">${panes.map(p=>`<button type="button" role="tab" ${attr}="${esc(p.id)}" aria-selected="${p.id===current}"><span class="ell">${esc(p.label)}</span>${p.badge?` <span class="badge${p.warn?' warn':''}">${p.badge}</span>`:''}</button>`).join('')}</div>`;
 function tabsFade(row){const max=row.scrollWidth-row.clientWidth;row.classList.toggle('more-left',row.scrollLeft>2);row.classList.toggle('more-right',row.scrollLeft<max-2)}
@@ -4670,29 +4769,37 @@ new MutationObserver(()=>document.querySelectorAll(':is(.fleet-tabs,.sub-tabs):n
 // Graph: People (closest, gone quiet, new), Who's who (roles to confirm), Projects and Organisations.
 const GRAPH_PANES=['people','roles','projects','orgs'];
 function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);graphShown=id;graphHashSync();graphSubSync();const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
- for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'))}
-async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=html=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */const scroll=window.scrollY;view.innerHTML=html;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
- if(node&&/^promise:\d+$/.test(node)){const html=await promisePage(node.slice(8));draw(html);if(version!==graphRequest)return;$('#people').classList.add('graph-on-node');pageHead();if(!quiet)scrollTo({top:0});return}
+ for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'));tabsShow(view.querySelector(`[data-graph-panel="${CSS.escape(id)}"] .sub-tabs`))}
+async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=(html,mode='list')=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */const scroll=window.scrollY;view.innerHTML=html;view.dataset.mode=mode;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
+ if(node&&/^promise:\d+$/.test(node)){const html=await promisePage(node.slice(8));draw(html,'node');if(version!==graphRequest)return;graphKept=null;$('#people').classList.add('graph-on-node');pageHead();if(!quiet)scrollTo({top:0});return}
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
   const sub=n.kind==='person'?personSub({...n,role:null,profile:null})+(n.quiet?' · gone quiet':''):n.kind==='project'?(n.state+' · last signal '+day(n.last_at)+(n.probable_signals?' · '+n.probable_signals+' probably part of it':'')):(n.signals+' people · last contact '+day(n.last_at));
   const [paneId,paneName]=GRAPH_KIND_PANE[n.kind]||GRAPH_KIND_PANE.person;
   draw(`<div class="graph-crumbs" role="navigation" aria-label="Breadcrumb"><a href="#graph" data-crumb="">Graph</a><span aria-hidden="true">›</span><a href="#graph=${paneId}" data-crumb="${paneId}">${paneName}</a><span aria-hidden="true">›</span><span aria-current="page">${esc(n.name)}</span></div><article class="graph-detail${n.kind==='person'?' person-page':''}"><div class="name-row">${n.kind==='org'?orgPic(n,true):n.kind==='person'?personPic(n,true):''}${n.kind==='person'?`<div class="person-head"><h3>${esc(n.name)}</h3>${personJob(n)}</div>`:`<h3>${esc(n.name)}</h3>`}${n.kind==='org'?orgActions:n.kind==='person'?personMenu:'<button class="ghost" data-name-edit>Rename</button>'}</div>${n.kind==='org'?orgForm(n):`<form class="name-form inline-edit" data-node-id="${esc(n.id)}" hidden><input name="newname" maxlength="${n.kind==='project'?60:100}" value="${esc(n.name)}" placeholder="${n.kind==='project'?'Project name':'Leave empty to use the name from their messages'}" aria-label="Name"><button>Save</button></form>`}${deleteRow(n)}${personProfile(n)}<p class="graph-sub detail-sub">${esc(sub)}</p>${n.kind==='project'?stageBox(n):''}${fleetMember(n)}${orgProfile(n)}${n.kind==='org'?orgWrongRow(n):''}${n.ids?.length?`<p class="graph-sub mono">${esc(n.ids.join(' · '))}</p>`:''}${n.kind!=='project'?roleRow(n):''}${personOrgRow(n,n.org&&n.org_name?{id:n.org,name:n.org_name}:null)}${relationsRow(n)}${n.kind==='person'?joinedRow(n)+sameAsk(n):''}${[['person','People'],['project','Projects'],['org','Organisations']].map(([k,t])=>group(k).length?`<p class="graph-sub">${t}</p><div class="graph-links">${group(k).map(nodeButton).join('')}</div>`:'').join('')}</article>`+fleetAskRow(n)+openBetween(n)+knownAbout(n)+graphEvents(n));
   if(version!==graphRequest)return;
-  $('#people').classList.add('graph-on-node');if(location.hash!==graphHash(n.id)&&!$('#people').hidden)history.replaceState(null,'',graphHash(n.id));
+  view.dataset.mode='node';graphKept=null;docTitle();$('#people').classList.add('graph-on-node');if(location.hash!==graphHash(n.id)&&!$('#people').hidden)history.replaceState(null,'',graphHash(n.id));
   for(const p of view.querySelectorAll('.ge-preview'))p.classList.toggle('fade',p.scrollHeight>p.clientHeight+1);
   if(editRole===node){editRole=false;const f=view.querySelector('.role-form');if(f){f.hidden=false;f.elements[0].focus();f.elements[0].select()}}
   if(!quiet)scrollTo({top:0});return}
  $('#people').classList.remove('graph-on-node');
  const q=$('#people-query').value.trim();
- if(q){const r=await request('api/graph?q='+encodeURIComponent(q));draw(graphSection('Found','',r.found)||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nobody by that name.</strong>Try part of a name, an address or a company.</div></div>');return}
+ if(!q&&graphUnstash(view))return;if(!q&&view.dataset.mode==='search')draw('<p class="pager-loading" role="status">Loading…</p>');
+ if(q){const key='gsearch:'+q,p=pager(key,cursor=>request('api/graph?q='+encodeURIComponent(q)+'&cursor='+encodeURIComponent(cursor)).then(r=>({items:r.found,next:r.next})),graphItem);
+  graphStash(view);if(!p.items.length&&p.next!=null){if(view.dataset.mode!=='search'||!view.querySelector('.graph-found'))draw('<p class="pager-loading" role="status">Searching…</p>','search');await pagerMore(key)}
+  if(version!==graphRequest||$('#people-query').value.trim()!==q)return;  /* a late answer to an older search changes nothing */
+  if(p.failed&&!p.items.length)throw new Error('Couldn’t search. Try again.');
+  draw(p.items.length?`<div class="graph-found"><div class="section-head"><h2>Found</h2></div>${pagerSlot(key,'','graph-list')}</div>`:'<div class="empty all-clear graph-found"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nobody by that name.</strong>Try part of a name, an address or a company.</div></div>','search');pagerMount(view);return}
  const g=await request('api/graph'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';
- const panes=[{id:'people',label:'People',html:graphSection('Gone quiet','People you talk with regularly, silent for much longer than usual.',g.quiet)+graphSection('Closest','From your messages, meetings and cards. Fades over about two months.',g.people)+graphSection('New this week','',g.new)+sameList(g.same_person)},
+ const back=quiet?null:graphScroll;graphScroll=null;const lc=g.list_counts||Object.fromEntries(['people','quiet','new','orgs','warmup','projects','projects_done'].map(k=>[k,(g[k]||[]).length]));graphLocal=g.list_counts?null:g;
+ if(JSON.stringify(lc)!==JSON.stringify(graphLists)||!g.list_counts){pagerDrop('graph');graphLists=lc}
+ const panes=[{id:'people',label:'People',html:sameList(g.same_person)+graphTabs('people')},
   {id:'projects',label:'Projects',html:projectsPane(g)},
-  {id:'orgs',label:'Organisations',html:graphSection('Closest','The ones you are most in touch with.',g.orgs)+warmupList(g.warmup)},
+  {id:'orgs',label:'Organisations',html:graphTabs('orgs')},
   {id:'roles',label:'Who’s who',badge:waiting,html:whosWho(g.whos_who,waiting)}].filter(p=>p.html);
  const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;graphCountsSet(g.counts);if(version===graphRequest){graphShown=current||'';graphHashSync();graphSubSync()}
  rolesRow(panes.some(p=>p.id==='roles'),waiting);draw((panes.length?panes.map(p=>`<div class="sub-pane" role="tabpanel" data-graph-panel="${p.id}"${p.id===current?'':' hidden'}>${p.html}</div>`).join(''):'')
-  ||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing mapped yet.</strong>People appear as messages and meetings come in.</div></div>');if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
+  ||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing mapped yet.</strong>People appear as messages and meetings come in.</div></div>');
+ if(version===graphRequest){pagerMount(view);if(back!=null)scrollTo(0,back)}if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
 const graphPost=(action,args)=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
 $('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){for(const x of $('#people-view').querySelectorAll('.graph-events [hidden]'))x.hidden=false;e.target.closest('[data-ge-more]').remove();return}if(openEventFrom(e))return;
  const q=e.target.closest('[data-quote-event]');if(q){openEvent(q.dataset.quoteEvent,'');return}
@@ -4720,7 +4827,10 @@ $('#people-view').onsubmit=async e=>{const o=e.target.closest('.org-form');if(o)
  const n=e.target.closest('.name-form');if(n){e.preventDefault();const b=n.querySelector('button');b.disabled=true;try{const r=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'graph_rename',args:{node_id:n.dataset.nodeId,name:n.newname.value.trim()}})});n.hidden=true;toast(r.merged?'Joined '+r.name+'.':'Renamed.');await people(r.node_id||graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}return}
  const po=e.target.closest('.person-org-form');if(po){e.preventDefault();const b=po.querySelector('button');b.disabled=true;try{await graphPost('graph_person_org',{node_id:po.dataset.nodeId,org:po.org.value.trim()});po.hidden=true;toast(po.org.value.trim()?'Saved.':'Cleared.');await people(graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}return}
  const f=e.target.closest('.role-form');if(!f)return;e.preventDefault();const b=f.querySelector('button');b.disabled=true;try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'graph_role',args:{node_id:f.dataset.nodeId,role:f.role.value.trim()}})});f.hidden=true;toast(f.role.value.trim()?'Saved.':'Cleared.');await people(graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}};
-$('#people-find').onclick=()=>people('');$('#people-query').onkeydown=e=>{if(e.key==='Enter')people('')};
+// Typing searches after a short pause, Enter and Find at once; an empty box is the list again, with no wait.
+let graphTyping=0;const graphFind=()=>{clearTimeout(graphTyping);people('')};
+$('#people-find').onclick=graphFind;$('#people-query').onkeydown=e=>{if(e.key==='Enter')graphFind()};
+$('#people-query').oninput=()=>{clearTimeout(graphTyping);if(!$('#people-query').value.trim()){graphFind();return}graphTyping=setTimeout(()=>people(''),150)};
 async function search(){let account=$('#account').value||'all';const name=id=>{const c=(state.connectors||[]).find(c=>c.id===id);return c?(c.display_name||c.email||id):id};try{let rows=await request('api/events?account='+encodeURIComponent(account)+'&q='+encodeURIComponent($('#query').value));$('#results').innerHTML=rows.map(e=>`<article class="event tap" data-event="${e.id}" tabindex="0"><div class="event-head">${icon(kindService(e.kind))}<div><h3>${esc(e.title)}</h3><small>${account==='all'?esc(name(e.account_id))+' · ':''}<span>${esc(when(e))}</span>${e.kind==='calendar.event'?'':(' · '+esc(e.kind==='android.notification'?(e.metadata.app_name||e.metadata.package_name||'Unknown app'):['whatsapp.message','linkedin.message'].includes(e.kind)?('From '+(e.metadata.from_me?'You':e.metadata.sender_display||e.metadata.from||'Unknown sender')):(e.metadata.from||e.metadata.channel_name||e.metadata.chat_name||'')))}</small></div></div><p class="body clamp" style="--lines:3">${esc(e.body)}</p>${e.metadata.source_url?`<a class="open" href="${esc(e.metadata.source_url)}" target="_blank" rel="noreferrer">Open in ${e.kind==='calendar.event'?'Calendar':e.kind==='slack.message'?'Slack':e.kind==='linkedin.message'?'LinkedIn':e.kind.startsWith('salesflare.')?'Salesflare':e.kind.startsWith('github.')?'GitHub':e.kind==='stripe.event'?'Stripe':e.kind.startsWith('x.')?'X':e.kind==='gmail.message'?'Gmail':'the original'} ↗</a>`:''}${e.kind==='android.notification'?'<p class="note">Phone preview only. Check the app for the full message.</p>':e.metadata.truncated?'<p class="note">Some conversation history or text is omitted; check the original.</p>':''}</article>`).join('')||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>No matching signals.</strong>Try another account or a broader search.</div></div>';notice('')}catch(e){notice(e.message,true)}}
 $('#search').onclick=search;$('#account').onchange=search;
 $('#results').onclick=openEventFrom;

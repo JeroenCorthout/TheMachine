@@ -6092,6 +6092,72 @@ class Store:
                                              dt.datetime.fromisoformat(run['started_at'])).total_seconds()))
         return run
 
+    def card_views(self, db, cards, jobs=True):
+        """What the dashboard shows on cards beyond their row: the status payload and the Done pages alike. jobs=False
+        does the first half (labels, people, feedback); jobs=True the rest (preparations, results)."""
+        if not jobs:
+            labels = {r['suggestion_id']: {'accept': 'Add to ' + r['target_name'] if r['target_id'] else 'Create skill', 'reject': 'Not now'}
+                      for r in db.execute("SELECT suggestion_id,target_id,target_name FROM skill_clusters WHERE status IN ('pending','declined')")}
+            for card in cards:
+                if card['id'] in labels:
+                    card['labels'] = labels[card['id']]
+            # Written requests belong on the card too, even after preparation
+            # or a later button click, and beyond the recent-feedback limit.
+            for suggestion in cards:
+                if suggestion['status'] not in ('completed', 'rejected'):  # who it's about, to rank open cards by
+                    try:
+                        suggestion['people'], suggestion['weight'] = graph.card_people(db, json.loads(suggestion['event_ids'] or '[]'))
+                    except (sqlite3.Error, ValueError, TypeError):
+                        pass
+                if suggestion.get('next_action'):
+                    suggestion['next_action']=json.loads(suggestion['next_action'])
+                prompt=db.execute('SELECT status,error FROM feedback_prompts WHERE request_id=?',(suggestion.get('feedback_request_id'),)).fetchone()
+                if prompt:suggestion['change_prompt']=dict(prompt)
+                feedback = db.execute("SELECT id,feedback,choice,created_at,source FROM decisions WHERE suggestion_id=? AND trim(feedback)<>'' AND source IN ('telegram','dashboard') AND id NOT IN (SELECT decision_id FROM decision_annotations) ORDER BY created_at DESC,rowid DESC LIMIT 1", (suggestion['id'],)).fetchone()
+                suggestion['latest_feedback'] = dict(feedback) if feedback else None
+            return
+        few = len(cards) <= 200  # a Done page: only its own; the status payload: all at once
+        found={r['suggestion_id']:dict(r) for r in db.execute('SELECT p.*,d.choice cause FROM preparations p LEFT JOIN decisions d ON d.id=p.decision_id'
+                                                              +(' WHERE p.suggestion_id IN ('+','.join('?' for _ in cards)+')' if few else ''),[c['id'] for c in cards] if few else [])} if cards else {}
+        for suggestion in cards:
+            job=found.get(suggestion['id'])
+            if job: suggestion.update(preparation_status=job['status'],preparation_reason=job['reason'],preparation_error=job['error'],
+                                      preparation_details=job['details'],preparation_started_at=job['started_at'],preparation_retried=job['auto_retries']>0,
+                                      preparation_questions=blocker_questions(job.get('questions')),preparation_no_questions=job.get('questions')=='[]',
+                                      preparation_cause=job.get('cause'))
+            suggestion.update(self.suggestion_result(suggestion, db))
+
+    def done_rows(self, db, titles=False):
+        """Every done or dismissed card, the latest closed first, with its scope: light rows to count, filter and page."""
+        rows = db.execute("SELECT s.id," + ("s.title," if titles else "") + "s.account_ids,coalesce((SELECT max(d.created_at) FROM decisions d WHERE d.suggestion_id=s.id AND d.choice IN ('complete','reject')),s.created_at) closed_at "
+                          "FROM suggestions s WHERE s.status IN ('completed','rejected') ORDER BY closed_at DESC,s.id").fetchall()
+        return [{'id': r['id'], 'title': (r['title'] or '') if titles else '', 'closed_at': r['closed_at'],
+                 'scope': suggestion_scope(r['account_ids'], self.accounts) if getattr(self, 'accounts', None) and r['account_ids'] is not None else None} for r in rows]
+
+    def done_counts(self, db):
+        rows = self.done_rows(db)
+        return {'all': len(rows), 'work': sum(r['scope'] == 'work' for r in rows), 'personal': sum(r['scope'] == 'personal' for r in rows)}
+
+    def done_page(self, cursor=0, limit=30, query='', scope=''):
+        """A page of the Done list, the latest closed first, for the main pane and the sidebar; query matches card titles
+        (every done card, not only the ones loaded), scope is work or personal."""
+        offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit), 50))
+        words = [w for w in str(query or '').casefold().split() if w]
+        with self.connect() as db:
+            rows = [r for r in self.done_rows(db, titles=bool(words)) if (scope not in ('work', 'personal') or r['scope'] == scope)
+                    and all(w in r['title'].casefold() for w in words)]
+            ids = [r['id'] for r in rows[offset:offset + limit]]
+            by_id = {r['id']: dict(r) for r in db.execute('SELECT * FROM suggestions WHERE id IN (' + ','.join('?' for _ in ids) + ')', ids)} if ids else {}
+            cards = [by_id[i] for i in ids if i in by_id]
+            closed = {r['id']: r for r in rows[offset:offset + limit]}
+            self.card_views(db, cards, jobs=False)
+            self.card_views(db, cards, jobs=True)
+            for card in cards:
+                card['closed_at'] = closed[card['id']]['closed_at']
+                if closed[card['id']]['scope']:
+                    card['scope'] = closed[card['id']]['scope']
+        return {'cards': cards, 'next': str(offset + limit) if len(rows) > offset + limit else None, 'total': len(rows)}
+
     def snapshot(self, accounts):
         promises = self.promises()
         with self.connect() as db:
@@ -6116,25 +6182,9 @@ class Store:
                 result['condensed'] = {'at': last['at'], 'notes': db.execute("SELECT count(*) FROM facts WHERE merged_into IS NOT NULL AND substr(removed_at,1,10)=?", (day,)).fetchone()[0]}
             # Keep outstanding items visible even after a long completed history.
             result['suggestions'] = [dict(r) for r in db.execute("SELECT * FROM suggestions WHERE status NOT IN ('completed','rejected') OR id IN (SELECT id FROM suggestions WHERE status IN ('completed','rejected') ORDER BY created_at DESC LIMIT 100) ORDER BY created_at DESC")]
-            labels = {r['suggestion_id']: {'accept': 'Add to ' + r['target_name'] if r['target_id'] else 'Create skill', 'reject': 'Not now'}
-                      for r in db.execute("SELECT suggestion_id,target_id,target_name FROM skill_clusters WHERE status IN ('pending','declined')")}
-            for card in result['suggestions']:
-                if card['id'] in labels:
-                    card['labels'] = labels[card['id']]
-            # Written requests belong on the card too, even after preparation
-            # or a later button click, and beyond the recent-feedback limit.
-            for suggestion in result['suggestions']:
-                if suggestion['status'] not in ('completed', 'rejected'):  # who it's about, to rank open cards by
-                    try:
-                        suggestion['people'], suggestion['weight'] = graph.card_people(db, json.loads(suggestion['event_ids'] or '[]'))
-                    except (sqlite3.Error, ValueError, TypeError):
-                        pass
-                if suggestion.get('next_action'):
-                    suggestion['next_action']=json.loads(suggestion['next_action'])
-                prompt=db.execute('SELECT status,error FROM feedback_prompts WHERE request_id=?',(suggestion.get('feedback_request_id'),)).fetchone()
-                if prompt:suggestion['change_prompt']=dict(prompt)
-                feedback = db.execute("SELECT id,feedback,choice,created_at,source FROM decisions WHERE suggestion_id=? AND trim(feedback)<>'' AND source IN ('telegram','dashboard') AND id NOT IN (SELECT decision_id FROM decision_annotations) ORDER BY created_at DESC,rowid DESC LIMIT 1", (suggestion['id'],)).fetchone()
-                suggestion['latest_feedback'] = dict(feedback) if feedback else None
+            self.card_views(db, result['suggestions'], jobs=False)
+            # How many cards are done or dismissed, per scope: the Done lists' counts; they load the rest a page at a time
+            result['done_counts'] = self.done_counts(db)
             result['suggestion_counts'] = {r['status']: r['count'] for r in db.execute('SELECT status,count(*) count FROM suggestions GROUP BY status')}
             try:  # roles waiting in Graph, Who's who: the Graph tab's badge
                 result['graph_waiting'] = graph.waiting(db)
@@ -6170,14 +6220,7 @@ class Store:
                                              **(dict(row) if row else {}), **dict(counts), **channel_health})
             # Newest first: the dashboard shows the top few and says when each happened.
             result['deliveries'] = [dict(r) for r in db.execute('SELECT * FROM deliveries ORDER BY updated_at DESC,rowid DESC')]
-            jobs={r['suggestion_id']:dict(r) for r in db.execute('SELECT p.*,d.choice cause FROM preparations p LEFT JOIN decisions d ON d.id=p.decision_id')}
-            for suggestion in result['suggestions']:
-                job=jobs.get(suggestion['id'])
-                if job: suggestion.update(preparation_status=job['status'],preparation_reason=job['reason'],preparation_error=job['error'],
-                                          preparation_details=job['details'],preparation_started_at=job['started_at'],preparation_retried=job['auto_retries']>0,
-                                          preparation_questions=blocker_questions(job.get('questions')),preparation_no_questions=job.get('questions')=='[]',
-                                          preparation_cause=job.get('cause'))
-                suggestion.update(self.suggestion_result(suggestion, db))
+            self.card_views(db, result['suggestions'], jobs=True)
             counts = db.execute('SELECT count(*) total,sum(analyzed_version<version) pending,sum(analyzed_version=0) first_review,coalesce(sum(analyzed_version<version AND deferrals>=?),0) set_aside FROM events', (SET_ASIDE_AFTER,)).fetchone()
             result['review_health'] = {**dict(counts), 'last_completed': db.execute("SELECT max(finished_at) FROM analyses WHERE status='complete'").fetchone()[0]}
             result['review_runs'] = []
@@ -13990,6 +14033,19 @@ class App:
             result = graph.with_fleet(db, graph.overview(db, limit), marks)
             return {**result, 'changed': changed} if changed else result
 
+    def graph_find(self, query, cursor=0, limit=30):
+        """The Graph's search, a page at a time: every person, organisation and project that matches, strongest first."""
+        offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit), 50))
+        with self.store.connect() as db:
+            marks = self.graph_fleet_marks(db)
+            hits = graph.find(db, query, offset + limit + 1, also={k: m['name'] for k, m in marks.items() if m['name']})
+            found = [graph.node_view(r, graph.neighbours(db, r['id'], 6)) for r in hits[offset:offset + limit]]
+            return graph.with_fleet(db, {'found': found, 'next': str(offset + limit) if len(hits) > offset + limit else None}, marks)
+
+    def graph_list(self, name, sort='', cursor=0, limit=30):
+        with self.store.connect() as db:
+            return graph.with_fleet(db, graph.page(db, name, sort, cursor, limit), self.graph_fleet_marks(db))
+
     def account_view(self):
         """Settings, Account on a self-hosted Machine paired with the Network: its owner's account in short, from the
         control plane (fleet.Fleet.account). A hosted Machine's dashboard asks the control plane itself, with the owner's
@@ -14233,12 +14289,21 @@ class App:
                         self.output(200, found)
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'No such promise'})
+                elif path.path in ('/api/graph/list', '/api/cards/done'):  # the long lists, a page at a time
+                    args = {k: v[0] for k, v in urllib.parse.parse_qs(path.query).items()}
+                    try:
+                        if path.path == '/api/cards/done':
+                            self.output(200, app.store.done_page(args.get('cursor') or 0, args.get('limit') or 30, args.get('q', ''), args.get('scope', '')))
+                        else:
+                            self.output(200, app.graph_list(args.get('list', ''), args.get('sort', ''), args.get('cursor') or 0, args.get('limit') or 30))
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(400, {'error': 'Not a list'})
                 elif path.path == '/api/graph':
                     node = urllib.parse.parse_qs(path.query).get('node', [''])[0]
                     query = urllib.parse.parse_qs(path.query).get('q', [''])[0]
                     try:
                         if query.strip():
-                            self.output(200, app.graph_action({'query': query, 'limit': 20}))
+                            self.output(200, app.graph_find(query, urllib.parse.parse_qs(path.query).get('cursor', ['0'])[0] or 0))
                         elif node:
                             found = app.graph_action({'node_id': node, 'limit': 10, 'events': 120})  # a run of chat messages is one row
                             rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[int(line.split(' ', 1)[0]) for line in found['recent']])
