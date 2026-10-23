@@ -917,7 +917,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 .card-chat-link.had::after{content:'';position:absolute;left:16px;top:2px;width:6px;height:6px;border-radius:50%;background:var(--c-accent);box-shadow:0 0 0 2px var(--surface)}
 .saved-feedback .see-chat{margin-left:auto;font-size:.8rem;color:color-mix(in srgb,var(--text) 55%,var(--surface));text-decoration:none}.saved-feedback .see-chat:hover{color:var(--text);text-decoration:underline}
 @media(hover:hover){.card{transition:border-color .15s,box-shadow .15s}.card:hover{border-color:var(--c-line-strong)}}
-body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;margin-bottom:0}body.chat-open #suggestion-summary,body.chat-open #suggestion-stats,body.chat-open #first-look,body.chat-open #needs-you,body.chat-open .site-footer{display:none}
+/* The chat layout applies only while the Suggestions tab shows it; every other tab scrolls as a normal page */body.chat-open:has(#inbox:not([hidden])) main{max-width:calc(var(--measure) + 440px);padding-bottom:0;margin-bottom:0}body.chat-open:has(#inbox:not([hidden])) #suggestion-summary,body.chat-open:has(#inbox:not([hidden])) #suggestion-stats,body.chat-open:has(#inbox:not([hidden])) #first-look,body.chat-open:has(#inbox:not([hidden])) #needs-you,body.chat-open:has(#inbox:not([hidden])) .site-footer{display:none}
 /* Calm, like a chat app: replies are plain text, your own messages soft pills, sources light quotes, taps and times
    small and muted; only what the Machine made for you (a draft, an outcome, files, the call it needs) is a raised card. */
 .chat-layout{--chat-body:1rem;--chat-meta:.75rem;--chat-col:720px;--chat-quiet:color-mix(in srgb,var(--text) 55%,var(--bg));display:grid;grid-template-columns:240px minmax(0,1fr);gap:32px;align-items:start}
@@ -1032,10 +1032,10 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 .chat-send:disabled{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--chat-quiet);cursor:default}
 /* On a computer the list and the thread each scroll on their own inside the window; the page itself stays put */
 @media(min-width:861px){
-  html:has(body.chat-open),body.chat-open{height:100dvh;overflow:hidden}
-  body.chat-open main{display:flex;flex-direction:column;height:100dvh;min-height:0;padding-bottom:0}
-  body.chat-open main>*{flex:none}
-  body.chat-open #inbox,body.chat-open #suggestions{display:flex;flex-direction:column;flex:1 1 0;min-height:0}
+  html:has(body.chat-open #inbox:not([hidden])),body.chat-open:has(#inbox:not([hidden])){height:100dvh;overflow:hidden}
+  body.chat-open:has(#inbox:not([hidden])) main{display:flex;flex-direction:column;height:100dvh;min-height:0;padding-bottom:0}
+  body.chat-open:has(#inbox:not([hidden])) main>*{flex:none}
+  body.chat-open:has(#inbox:not([hidden])) #inbox,body.chat-open:has(#inbox:not([hidden])) #suggestions{display:flex;flex-direction:column;flex:1 1 0;min-height:0}
   .chat-layout{flex:1 1 0;min-height:0;grid-template-rows:minmax(0,1fr);align-items:stretch}
   .chat-side{position:static;max-height:none;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:16px}
   .chat-main{min-height:0}
@@ -1045,8 +1045,8 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 }
 @media(max-width:860px){
   .chat-layout{grid-template-columns:minmax(0,1fr)}
-  body.chat-open main>header,body.chat-open main>nav,body.chat-open .site-footer{display:none}
-  body.chat-open main{padding:0 20px}
+  body.chat-open:has(#inbox:not([hidden])) main>header,body.chat-open:has(#inbox:not([hidden])) main>nav,body.chat-open:has(#inbox:not([hidden])) .site-footer{display:none}
+  body.chat-open:has(#inbox:not([hidden])) main{padding:0 20px}
   .chat-main{min-height:100dvh}
   .chat-head{margin:0 -20px;padding:calc(10px + env(safe-area-inset-top)) 12px 12px 8px}
   .chat-log{padding:24px 0 12px}
