@@ -9,7 +9,7 @@ const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modul
 // - "One Fleet item waits for you under Suggestions." sits in a quiet notice card (pageNotice), its text centred with a
 //   Show button on the right, with room above the Fleet tabs; plural with two items; the Network off is the same card.
 // - Handoffs have their own box, not the "Who knows someone?" one: open ones first, accepted and done ones quieter with
-//   three shown and a Show more, the time leading the one-line summary (expanded on tap), and Open where the card is still there.
+//   three shown and a Show more, the time leading two lines of summary, and the whole row opening its card where it is still there.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const FL='fl_'+'a'.repeat(16),hex=n=>String(n).padStart(16,'c'),at=h=>new Date(Date.now()-h*3600e3).toISOString();
 const rules=()=>({relationships:{rule:'ask',details:false},handoff:{rule:'ask',details:false}});
@@ -73,24 +73,24 @@ try{
   assert.equal(await hos.locator('.fleet-ho.quiet').count(),5);
   assert.equal(await hos.locator('.fleet-ho[hidden]').count(),2);
   assert.equal(await hos.locator('.fleet-ho.quiet:not([hidden])').count(),3,'at most three quiet rows before Show more');
-  // The same layout on every row: the time leads the summary line (never under the name), Open centred on its row.
-  const rows=await hos.locator('.fleet-ho:not([hidden])').evaluateAll(li=>li.map(r=>{const b=e=>e&&e.getBoundingClientRect(),t=b(r.querySelector('.fleet-ho-sum time')),s=b(r.querySelector('.fleet-ho-sum')),o=b(r.querySelector('a.fleet-brief-open')),w=b(r);
-   return{inSum:!!t,line:t&&Math.abs(t.top-s.top)<=2,top:!r.querySelector('.fleet-ho-top time'),open:o?Math.abs((o.top+o.bottom)/2-(w.top+w.bottom)/2):0}}));
-  for(const r of rows){assert.ok(r.inSum&&r.line&&r.top,`${at_}: the time is on the summary line`);assert.ok(r.open<=2,`${at_}: Open is centred on its row (${r.open}px off)`)}
-  // Open where there is a card: Kim's under Suggestions, the card handed to Pat; none for a card that is gone.
-  assert.deepEqual(await hos.locator('.fleet-ho:not([hidden]) a.fleet-brief-open').evaluateAll(a=>a.map(x=>x.getAttribute('href'))),['#fleet=q_'+'0'.repeat(16),'#card='+hex(1),'#card='+hex(3)]);
-  // One line until tapped.
-  const sum=hos.locator('.fleet-ho-sum').nth(2);
-  assert.ok(await sum.evaluate(e=>e.scrollWidth>e.clientWidth||innerWidth>1000),`${at_}: the summary is clamped`);
-  const h1=await sum.evaluate(e=>e.offsetHeight);
-  await sum.click();assert.equal(await sum.getAttribute('aria-expanded'),'true');
-  if(width===390)assert.ok(await sum.evaluate(e=>e.offsetHeight)>h1,'expands on tap');
-  assert.match(await sum.innerText(),/Out until Monday/);
+  // The same layout on every row: the time leads the summary (never under the name), at most two lines of it.
+  const rows=await hos.locator('.fleet-ho:not([hidden])').evaluateAll(li=>li.map(r=>{const t=r.querySelector('.fleet-ho-sum time'),s=r.querySelector('.fleet-ho-sum');
+   return{inSum:!!t&&Math.abs(t.getBoundingClientRect().top-s.getBoundingClientRect().top)<=2,top:!r.querySelector('.fleet-ho-top time'),lines:Math.round(s.getBoundingClientRect().height/parseFloat(getComputedStyle(s).lineHeight))}}));
+  for(const r of rows){assert.ok(r.inSum&&r.top,`${at_}: the time is on the summary line`);assert.ok(r.lines<=2,`${at_}: two lines of summary at most (${r.lines})`)}
+  // No Open button: a row whose card is still there is a tap row with a chevron (Kim's under Suggestions, the cards
+  // handed to Pat); the others are plain, not focusable.
+  assert.equal(await hos.locator('a,button:not([data-ho-more])').count(),0);
+  assert.deepEqual(await hos.locator('.fleet-ho:not([hidden])').evaluateAll(li=>li.map(r=>r.classList.contains('tap')?r.dataset.hoGo:'')),['#fleet=q_'+'0'.repeat(16),'#card='+hex(1),'','#card='+hex(3),'','']);
+  assert.equal(await hos.locator('.fleet-ho.tap').first().evaluate(e=>getComputedStyle(e,'::after').content),'"›"');
+  assert.equal(await hos.locator('.fleet-ho:not(.tap)').first().evaluate(e=>getComputedStyle(e,'::after').content),'none');
+  assert.equal(await hos.locator('.fleet-ho:not(.tap)[tabindex]').count(),0);
+  assert.match(await hos.locator('.fleet-ho-sum').nth(2).innerText(),/Out until Monday/);
   await hos.locator('[data-ho-more]').click();
   assert.equal(await hos.locator('.fleet-ho[hidden]').count(),0);
   assert.ok(await page.evaluate(()=>[...document.querySelectorAll('.fleet-handoffs *')].every(e=>e.getBoundingClientRect().right<=innerWidth+.5)),`${at_}: Handoffs scroll sideways`);
-  // Open on a handed-off card shows it under Suggestions.
-  await hos.locator(`a[href="#card=${hex(1)}"]`).click();
+  // Tapping a row opens its card under Suggestions; Enter does too.
+  if(width===390)await hos.locator(`[data-ho-go="#card=${hex(1)}"] .fleet-ho-sum`).click();
+  else{await hos.locator(`[data-ho-go="#card=${hex(1)}"]`).focus();await page.keyboard.press('Enter')}
   await page.locator(`#task-${hex(1)}`).waitFor();
   // Two items: plural. The Network off: the same card, without a button.
   await open({...base,waiting:waitingIn(2)});

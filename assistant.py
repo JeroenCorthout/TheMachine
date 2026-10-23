@@ -6787,6 +6787,26 @@ def code_version(root=APP_ROOT):
     return result.stdout.strip() or None
 
 
+SOURCE_REPO = 'https://github.com/Salesflare/TheMachine'
+_SOURCE_URL = {}
+
+
+def source_url(root=APP_ROOT):
+    """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else its commit, else the repo."""
+    if 'url' in _SOURCE_URL and _SOURCE_URL['at'] > time.monotonic() - 600:
+        return _SOURCE_URL['url']
+    ref = None
+    try:
+        tag = subprocess.run(['git', '-C', str(root), 'describe', '--tags', '--exact-match', 'HEAD'], capture_output=True, text=True, timeout=10)
+        ref = tag.stdout.strip() if tag.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    ref = ref or code_version(root)
+    url = f'{SOURCE_REPO}/tree/{urllib.parse.quote(ref, safe="")}' if ref else SOURCE_REPO
+    _SOURCE_URL.update(at=time.monotonic(), url=url)
+    return url
+
+
 class FaultLog(logging.Handler):
     def __init__(self, store, version=None, root=APP_ROOT):
         super().__init__(logging.ERROR)
@@ -13720,7 +13740,7 @@ class App:
                     asset = BRAND_ASSETS[path.path]
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
                 elif path.path == '/api/status':
-                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'browser_link': browser_link(app.config),
+                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'source_url': source_url(), 'browser_link': browser_link(app.config),
                                       'browser_embed': browser_embed(app.config, self.headers.get('Host', ''))})
                     try:
                         app.store.note_card_shown()
