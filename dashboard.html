@@ -3156,7 +3156,10 @@ function calParts(it){const hm=v=>humanHM(new Date(v)),late=it.day==='overdue';
  if(it.kind==='promise'){const p=it.p;return {time:late?calShort(p.due):'Due',title:p.what,sub:calSaid(p),href:'#promises',tone:late?'late':'promise'}}
  const s=it.s;if(it.kind==='checkin')return {time:hm(s.snoozed_until),title:'Check in with '+s.handoff_wait.name,sub:'If no answer · '+s.title,href:'#chat='+s.id,tone:'back'};
  if(it.kind==='back')return {time:hm(s.snoozed_until),title:s.title,sub:'Comes back',href:'#chat='+s.id,tone:'back'};
- return {time:late?calShort(s.due):'Due',title:s.title,sub:label(s.status),href:'#chat='+s.id,tone:late?'late':'due'}}
+ return {time:late?calShort(s.due):'Due',title:s.title,sub:calCardWho(s),href:'#chat='+s.id,tone:late?'late':'due'}}
+// Who a due card is with, never its status: the person it waits on, or the promise it came from
+function calCardWho(s){let w={};try{w=JSON.parse(s.awaiting||'{}')||{}}catch{}const name=s.handoff_wait?.name||w.name;if(name)return 'Waiting on '+name;
+ const p=(state.promises||[]).find(p=>p.suggestion_id===s.id);return p?calSaid(p):''}
 function calRow(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'';
  return `<${tag} class="cal-item k-${x.tone}${it.past?' past':''}"${attrs}><span class="cal-time">${esc(x.time)}</span><span class="cal-dot" aria-hidden="true"></span><span class="cal-main"><span class="cal-title">${x.owner?`<span class="cal-owner">${esc(x.owner)}</span> `:''}${esc(x.title)}</span>${x.sub||x.prep?`<span class="cal-sub">${x.prep?`<span class="cal-prep">${esc(x.prep)}${x.sub?' · ':''}</span>`:''}${esc(x.sub)}</span>`:''}${(x.said||[]).map(t=>`<span class="cal-sub cal-said">${esc(t)}</span>`).join('')}</span><span class="cal-end">${x.badge||''}${x.url?'<span class="cal-go" aria-label="Opens in its calendar">↗</span>':x.href?'<span class="cal-go" aria-hidden="true">›</span>':''}</span></${tag}>`}
 function calChip(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'';

@@ -29,7 +29,7 @@ const meetings=[
 const card=(id,title,status,extra={})=>({id:id.repeat(16).slice(0,16),title,body:'Made-up card for the Calendar test.',status,scope:'work',created_at:now,event_ids:[],...extra});
 const cards=[
  card('a','Prep notes for the pilot review','prepared',{event_ids:'[102]',due:day(0)}),  // as /api/status sends it: JSON text
- card('b','Send the revised quote to Northwind','pending',{due:day(0)}),
+ card('b','Send the revised quote to Northwind','pending',{due:day(0),awaiting:JSON.stringify({delegated:true,name:'Pat Quinn'})}),
  card('c','Follow up on the unpaid invoice','snoozed',{snoozed_until:iso(at(1,9))}),
  card('d','Venue booking for the offsite','snoozed',{snoozed_until:iso(at(2,9)),handoff_wait:{name:'Robin'}}),
  card('e','Renew the shop domain','pending',{due:day(-1)}),
@@ -75,11 +75,11 @@ try{
   const ask=calendarAsks.at(-1);assert.equal(new Date(ask.from).getTime(),at(0,0).getTime());assert.equal(new Date(ask.to).getTime(),at(7,0).getTime());
   const b=await blocks(page),names=b.map(x=>x.day);
   assert.deepEqual(names.slice(0,3),['Overdue','Today','Tomorrow']);assert.equal(names.length,8);
-  assert.deepEqual(b[0].rows,[await page.evaluate(d=>calShort(d),day(-1))+' | Renew the shop domain | Needs your decision']);assert.match(b[0].rows[0],/^\w{3} \d{1,2} \|/);
+  assert.deepEqual(b[0].rows,[await page.evaluate(d=>calShort(d),day(-1))+' | Renew the shop domain | ']);assert.match(b[0].rows[0],/^\w{3} \d{1,2} \|/);
   const today=b[1].rows.join('\n');
   // The prepped meeting carries its card, which is not listed again as due; done cards and promises on a card stay out
   assert.match(today,/Pilot review with Northwind \| Prep ready · 18:00 to 18:45 · Zoom · 3 guests/);assert.ok(!today.includes('Prep notes'),'its card is the meeting');
-  assert.match(today,/Due \| Send the revised quote to Northwind \| Needs your decision/);assert.ok(!today.includes('Already done')&&!today.includes('On a card already'));
+  assert.match(today,/Due \| Send the revised quote to Northwind \| Waiting on Pat Quinn$/m);assert.ok(!today.includes('Already done')&&!today.includes('On a card already'));
   assert.ok(b[1].rows[0].startsWith('Due'),'dates without a time come first');
   const tomorrow=b[2].rows.join('\n');assert.match(tomorrow,/09:00 \| Follow up on the unpaid invoice \| Comes back/);assert.match(tomorrow,/14:00 \| Quarterly planning \| 14:00 to 15:30 · Room 2 · 8 guests/);
   assert.ok(tomorrow.indexOf('09:00')<tomorrow.indexOf('14:00'),'by time');
