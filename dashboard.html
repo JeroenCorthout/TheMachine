@@ -4862,6 +4862,9 @@ actionAdd(
  {id:'go-connections',group:'Go to',label:'Connections',keywords:'sources health accounts',keys:'g n',run:kbNav('nav [data-tab="health"]')},
  {id:'go-settings',group:'Go to',label:'Settings',keywords:'preferences',keys:'g ,',run:()=>showSettings()},
  {id:'go-settings-tabs',group:'Go to',each:()=>SETTINGS_TABS.filter(([t])=>{const b=document.querySelector(`[data-settings-tab="${t}"]`);return b&&!b.hidden}).map(([t,l])=>({id:'go-settings-'+t,label:'Settings: '+l,keywords:'settings '+t,run:()=>showSettings(t)}))},
+ // Projects as a board or a list, once there is a board; a new board from its editor (the page shows it only to the owner)
+ {id:'go-projects-view',group:'Go to',each:()=>graphBoards.length?[['board','Board'],['list','List']].map(([v,t])=>({id:'go-projects-'+v,label:'Projects: '+t+' view',keywords:'projects board list kanban stages',run:()=>{const go=()=>projectsViewSet(v);if(!$('#people').hidden&&graphShown==='projects'&&!graphNode)go();else{sideStore.set('projects-view',v);kbNav('.side-sub a[data-graph-sub="projects"]')()}}})):[]},
+ {id:'board-new',group:'Actions',label:'New board',keywords:'projects board stages kanban',when:()=>!$('#people').hidden&&graphShown==='projects'&&!!document.querySelector('#people-view [data-board-new]'),run:()=>edOpen()},
  {id:'go-connections-reviews',group:'Go to',label:'Connections: Reviews',keywords:'signal reviews runs delivery',run:()=>showTab('health','reviews')});
 // Actions
 actionAdd(

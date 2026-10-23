@@ -52,6 +52,8 @@ try{
  {const {context,page}=await open(1440,900);
   const s=await page.evaluate(()=>[palScore('set','Settings'),palScore('ings','Settings'),palScore('stg','Settings'),palScore('gts','Settings'),palScore('light','Switch to light mode'),palScore('sw li','Switch to light mode'),palScore('','x')]);
   assert.ok(s[0]>s[1]&&s[1]>s[2]&&s[2]>0,'prefix > inside > letters: '+s);assert.equal(s[3],-1);assert.ok(s[4]>=70&&s[5]>0);assert.equal(s[6],1);
+  // Board and List on Projects are listed once there is a board
+  assert.deepEqual(await page.evaluate(()=>{const ids=()=>actsFor(kbCtx()).map(a=>a.id).filter(x=>x.startsWith('go-projects-'));const a=ids();graphBoards=[{id:1,name:'Hiring',projects:[]}];const b=ids();graphBoards=[];return [a,b]}),[[],['go-projects-board','go-projects-list']]);
   await context.close()}
  // Linux and Windows: Ctrl+K. ⌘ does nothing there. Labels say Ctrl K.
  {const {context,page}=await open(1440,900);
