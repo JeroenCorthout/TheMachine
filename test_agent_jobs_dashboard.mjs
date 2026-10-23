@@ -122,9 +122,12 @@ try{
  const twin={...card,id:'c1c1c1c1c1c1c1c1'};state.suggestions.push(twin);
  for(const width of [1280,390,300]){await page.setViewportSize({width,height:900});await page.goto(base+'#chat='+twin.id);await page.reload();
   const b=page.locator('.chat-agent .agent-result');await b.waitFor({timeout:10000});
+  // Fonts differ per OS: wait for the header to have fitted itself (one row), whatever the metrics; fail only if it never does.
+  await page.waitForFunction(()=>{const h=document.querySelector('.chat-agent .agent-result .agent-head'),a=h?.querySelector('a.agent-app'),n=h?.firstElementChild;
+   return a&&a.getBoundingClientRect().top<n.getBoundingClientRect().bottom-1},null,{timeout:5000}).catch(()=>{});
   const look=await b.evaluate(el=>{const r=n=>n.getBoundingClientRect(),q=s=>el.querySelector(s),name=q('.agent-head .dm'),app=q('.agent-head a.agent-app'),cs=n=>getComputedStyle(n);
    const line=n=>{const h=parseFloat(cs(n).lineHeight)||parseFloat(cs(n).fontSize)*1.4;return r(n).height<h*1.6};
-   return {head:cs(q('.agent-head')).display,gap:r(app).left-r(name).right,sameRow:Math.abs(r(app).top-r(name).top)<4,appRight:Math.abs(r(app).right-r(q('.agent-head')).right)<1,
+   return {head:cs(q('.agent-head')).display,gap:r(app).left-r(name).right,sameRow:r(app).top<r(name).bottom-1&&r(name).top<r(app).bottom-1,appRight:Math.abs(r(app).right-r(q('.agent-head')).right)<1,
     chips:[...el.querySelectorAll(':scope>.agent-files>.agent-file')].map(n=>({border:cs(n).borderTopStyle,one:line(n),deco:cs(n).textDecorationLine})),
     tools:[...el.querySelectorAll('.agent-tools button')].map(n=>({border:cs(n).borderTopStyle,bg:cs(n).backgroundColor,one:line(n)})),
     wide:el.scrollWidth<=el.clientWidth+1}});
@@ -135,10 +138,16 @@ try{
   assert.ok(look.wide,width)}
  state.suggestions.pop();
  // The card's header keeps one row too: where "Open in Codex" doesn't fit next to the name it reads "Open".
- for(const [width,label] of [[1280,'Open in Codex ↗'],[390,'Open ↗'],[300,'Open ↗']]){await page.setViewportSize({width,height:900});await page.goto(base);await page.reload();
-  const h=c.locator('.agent-result .agent-head');await h.waitFor();await page.waitForTimeout(100);
-  const r=await h.evaluate(el=>{const a=el.querySelector('a.agent-app'),n=el.firstElementChild;return {same:Math.abs(a.getBoundingClientRect().top-n.getBoundingClientRect().top)<4,label:a.innerText.trim(),aria:a.getAttribute('aria-label')}});
-  assert.deepEqual(r,{same:true,label,aria:'Open in Codex'},String(width))}
+ // Measured, not assumed from font metrics: "Open" only where the full label really doesn't fit beside the name.
+ for(const [width,want] of [[1280,'long'],[390,null],[300,'short']]){await page.setViewportSize({width,height:900});await page.goto(base);await page.reload();
+  const h=c.locator('.agent-result .agent-head');await h.waitFor();
+  const r=await h.evaluate(el=>new Promise(ok=>{const t=Date.now(),one=()=>{const a=el.querySelector('a.agent-app').getBoundingClientRect(),n=el.firstElementChild.getBoundingClientRect();return a.top<n.bottom-1&&n.top<a.bottom-1};
+   const go=()=>{if(!one()&&Date.now()-t<5000)return requestAnimationFrame(go);const a=el.querySelector('a.agent-app'),tight=el.classList.contains('tight'),out={same:one(),label:a.innerText.trim(),aria:a.getAttribute('aria-label'),tight};
+    if(tight){el.classList.remove('tight');out.longFits=one();el.classList.add('tight')}ok(out)};go()}));
+  assert.ok(r.same&&r.aria==='Open in Codex',JSON.stringify({width,...r}));
+  assert.equal(r.label,r.tight?'Open ↗':'Open in Codex ↗',JSON.stringify({width,...r}));
+  if(r.tight)assert.equal(r.longFits,false,JSON.stringify({width,...r}));  // shortened only when the full label wraps
+  if(want)assert.equal(r.tight?'short':'long',want,JSON.stringify({width,...r}))}
  await page.setViewportSize({width:1280,height:900});await page.goto(base);await c.waitFor();
  // Without the tools on this Machine, no Hand to buttons.
  delete card.agent_job;state.agent_tools=[];await page.evaluate(()=>refresh());
