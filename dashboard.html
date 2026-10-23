@@ -501,7 +501,12 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 .zz{position:absolute;bottom:64px;margin:0;min-height:0;padding:8px;border:0;background:none;box-shadow:none;font:800 var(--s,26px)/1 ui-monospace,monospace;color:var(--lavender);animation:zz var(--d,3s) linear forwards}
 .zz:hover{background:none}.zz.gold{color:var(--amber)}
 .zz.got{animation:pop .25s ease-out forwards;pointer-events:none}
-@keyframes zz{from{transform:translate(0,0) rotate(-8deg);opacity:0}10%{opacity:1}50%{transform:translate(var(--w,14px),-130px) rotate(8deg)}to{transform:translate(0,-270px) rotate(-8deg);opacity:.15}}
+@keyframes zz{from{transform:translate(0,0) rotate(-8deg);opacity:0}10%{opacity:1}50%{transform:translate(var(--w,14px),calc(var(--rise,270px)*-.48)) rotate(8deg)}to{transform:translate(0,calc(var(--rise,270px)*-1)) rotate(-8deg);opacity:.15}}
+/* A mouse is one exact point, where a finger gets the browser's fuzzy touch targeting, so on a computer each Z
+   catches in an invisible area around it (at least 56px, more on a taller board) that shows the pointer and a glow. */
+@media(pointer:fine){.zz::before{content:"";position:absolute;inset:calc(var(--pad,14px)*-1);border-radius:50%}.zz:hover{color:var(--lavender);text-shadow:0 0 12px currentColor}.zz.gold:hover{color:var(--amber)}}
+.zz-plus{position:absolute;margin:0;font:800 .95rem/1 ui-monospace,monospace;color:var(--cream);pointer-events:none;translate:-50% -50%;animation:zz-plus .6s ease-out forwards}.zz-plus.gold{color:var(--amber)}
+@keyframes zz-plus{from{opacity:1}to{opacity:0;transform:translateY(-26px)}}
 @keyframes pop{to{scale:1.9;opacity:0}}
 .game-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}.game-foot p{margin:0;color:var(--muted)}.game-foot button{flex:none;white-space:nowrap}
 @media(prefers-reduced-motion:reduce){#game-field .zz{animation:zz var(--d,3s) linear forwards!important}#game-field .zz.got{animation:none!important;opacity:0}}.all-clear strong{font-size:1.05rem;margin-bottom:2px}
@@ -2159,24 +2164,29 @@ const h=document.createElement('span');h.className='poke-hint';h.setAttribute('a
 setTimeout(pokeHint,4000);setInterval(()=>{if(Math.random()<.4)pokeHint()},25000);
 let game=null;
 const zzzBest=()=>+localStorage.getItem('zzz-best')||0;
-function openGame(){stopGame();$('#game-field').querySelectorAll('.zz').forEach(z=>z.remove());$('#game-best').textContent=zzzBest();$('#game-score').textContent=0;$('#game-time').textContent=20;$('#game-bot').src='brand/sleepy.webp';
+function openGame(){stopGame();$('#game-field').querySelectorAll('.zz,.zz-plus').forEach(z=>z.remove());$('#game-best').textContent=zzzBest();$('#game-score').textContent=0;$('#game-time').textContent=20;$('#game-bot').src='brand/sleepy.webp';
 $('#game-msg').textContent='Tap the Z’s before they float away. Gold ones count three.';$('#game-start').textContent='Start';$('#game-start').hidden=false;$('#game-dialog').showModal()}
-function startGame(){openGame();const field=$('#game-field');game={score:0,end:Date.now()+20000};$('#game-start').hidden=true;$('#game-msg').textContent='Go!';
+// The rise and the hit area follow the board's height, so a Z is on screen as long on any board size.
+function startGame(){openGame();const field=$('#game-field'),h=field.clientHeight;field.style.setProperty('--rise',Math.max(120,h-50)+'px');field.style.setProperty('--pad',Math.max(14,Math.round(h*.045))+'px');
+game={score:0,best:zzzBest(),end:Date.now()+20000};$('#game-start').hidden=true;$('#game-msg').textContent='Go!';
 const spawn=()=>{if(!game)return;if(Date.now()>=game.end)return finishGame();const left=(game.end-Date.now())/20000,z=document.createElement('button');
 z.type='button';z.className='zz'+(Math.random()<.12?' gold':'');z.textContent='Z';z.setAttribute('aria-label','Z');z.style.left=Math.round(12+Math.random()*Math.max(0,field.clientWidth-64))+'px';
 z.style.setProperty('--d',(1.5+left*1.6+Math.random()*.6).toFixed(2)+'s');z.style.setProperty('--w',Math.round((Math.random()-.5)*70)+'px');z.style.setProperty('--s',Math.round(22+Math.random()*14)+'px');
 z.addEventListener('animationend',()=>z.remove());field.append(z);game.spawn=setTimeout(spawn,320+left*480)};
 game.tick=setInterval(()=>{if(game)$('#game-time').textContent=Math.max(0,Math.ceil((game.end-Date.now())/1000))},200);spawn()}
-function finishGame(){const score=game.score,prev=zzzBest(),record=score>prev;stopGame();if(record)localStorage.setItem('zzz-best',score);
+// Best follows the score during a round and is kept when the round ends, also when it's closed early.
+const keepBest=()=>{if(game&&game.score>zzzBest())localStorage.setItem('zzz-best',game.score)};
+function finishGame(){const score=game.score,prev=game.best,record=score>prev;keepBest();stopGame();
 $('#game-best').textContent=Math.max(score,prev);$('#game-time').textContent=0;$('#game-bot').src=record?'brand/party.webp':'brand/sleepy.webp';
 $('#game-msg').textContent=record?`New best: ${score}! Back to sleep now.`:score?`${score} caught. ${['Not bad for a sleepy robot.','The Z’s were quick tonight.','Your inbox would be proud.'][score%3]}`:'The Z’s got away. Again?';
 $('#game-start').textContent='Play again';$('#game-start').hidden=false}
 function stopGame(){if(!game)return;clearTimeout(game.spawn);clearInterval(game.tick);clearTimeout(game.bot);game=null}
 $('#game-field').addEventListener('pointerdown',e=>{const z=e.target.closest('.zz');if(!z||!game||z.classList.contains('got'))return;e.preventDefault();
-game.score+=z.classList.contains('gold')?3:1;$('#game-score').textContent=game.score;z.style.transform=getComputedStyle(z).transform;z.classList.add('got');
+const pts=z.classList.contains('gold')?3:1;game.score+=pts;$('#game-score').textContent=game.score;$('#game-best').textContent=Math.max(game.score,game.best);z.style.transform=getComputedStyle(z).transform;z.classList.add('got');
+if(e.pointerType!=='touch'){const f=e.currentTarget.getBoundingClientRect(),p=document.createElement('span');p.className='zz-plus'+(pts>1?' gold':'');p.textContent='+'+pts;p.style.left=(e.clientX-f.left)+'px';p.style.top=(e.clientY-f.top)+'px';p.addEventListener('animationend',()=>p.remove());e.currentTarget.append(p)}
 const bot=$('#game-bot');bot.src='brand/laugh.webp';clearTimeout(game.bot);game.bot=setTimeout(()=>{bot.src='brand/sleepy.webp'},450)});
 $('#game-start').onclick=startGame;
-$('#game-dialog').addEventListener('close',()=>{stopGame();$('#game-field').querySelectorAll('.zz').forEach(z=>z.remove())});
+$('#game-dialog').addEventListener('close',()=>{keepBest();stopGame();$('#game-field').querySelectorAll('.zz,.zz-plus').forEach(z=>z.remove())});
 $('#suggestions').addEventListener('click',e=>{if(e.target.closest('.all-clear .poke'))poke();else if(e.target.closest('.all-clear .play'))openGame()});
 // Work/Personal filter, remembered on this device.
 // Tapping a count tile (or a section heading) folds or unfolds that section; remembered on this device.
