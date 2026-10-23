@@ -68,7 +68,8 @@ try{
   assert.equal((await page.locator('.graph-detail .person-job').textContent()).trim(),'Head of Sales');
   assert.equal(await page.locator('.graph-detail .name-row .person-head h3 + .person-job').count(),1);  // title under the name, beside the photo
   assert.equal(await page.locator('[data-person-lookup]').count(),0);
-  assert.equal(await page.locator('.graph-detail .person-delete [data-person-delete]').textContent(),'Delete permanently');
+  assert.ok(await page.locator('.graph-detail [data-person-delete]').isHidden());  // in the ⋯ menu, not on the page
+  assert.equal(await page.locator('.graph-detail .name-row>button').count(),0);  // Rename is in the menu too
   assert.ok(await page.locator('.person-delete-confirm').isHidden());
   if(width>=700){const [head,sub]=await page.evaluate(()=>[document.querySelector('.graph-detail .person-head').getBoundingClientRect().left,document.querySelector('.graph-detail .org-row').getBoundingClientRect().left]);
    assert.ok(Math.abs(head-sub)<=2,`details line up with the name: ${head} ${sub}`)}
@@ -91,7 +92,15 @@ try{
  await navClick(page.locator('nav [data-tab="people"]'));
  await navClick(page.locator('.side-sub a[data-graph-sub="people"]'));
  await page.locator('#people-view article[data-node="email:lee@globex.example"] button.node').click();
- await page.locator('[data-person-delete]').click();
+ const menu=page.locator('.graph-detail .person-menu');
+ await menu.locator('summary').click();
+ assert.deepEqual(await menu.locator('[role=menuitem]').allTextContents(),['Rename','Delete permanently…']);
+ if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/menu-390-light.png`});
+ await menu.locator('[data-name-edit]').click();
+ await page.locator('.graph-detail .name-form:not([hidden])').waitFor();
+ assert.equal(await menu.evaluate(d=>d.open),false);
+ await menu.locator('summary').click();
+ await menu.locator('[data-person-delete]').click();
  const ask=page.locator('.person-delete-confirm');
  await ask.waitFor();
  assert.equal((await ask.locator('p').first().textContent()).trim(),'Delete Lee Parker and everything The Machine knows about them? This can’t be undone.');
@@ -101,7 +110,8 @@ try{
  await ask.locator('[data-person-delete-no]').click();
  assert.ok(await ask.isHidden());
  assert.ok(!calls.some(c=>c.action==='graph_person_delete'));
- await page.locator('[data-person-delete]').click();
+ await menu.locator('summary').click();
+ await menu.locator('[data-person-delete]').click();
  await ask.locator('[data-person-delete-yes]').click();
  await page.waitForFunction(()=>!document.querySelector('.graph-detail')&&document.querySelector('#people-view article[data-node]'));
  assert.deepEqual(calls.at(-1),{action:'graph_person_delete',args:{node_id:'email:lee@globex.example'}});

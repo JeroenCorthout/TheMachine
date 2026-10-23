@@ -68,7 +68,7 @@ try{
  for(let i=0;i<100&&calls.length<2;i++)await page.waitForTimeout(20);
  assert.deepEqual(calls[1],{action:'promise_close',args:{id:7,status:'kept'}});
  // The owner renames them; the detail shows the new name.
- await page.locator('[data-name-edit]').click();
+ await page.locator('.person-menu summary').click();await page.locator('[data-name-edit]').click();  // Rename is in the ⋯ menu
  assert.equal(await page.locator('.name-form input').inputValue(),'Ann Example');
  await page.locator('.name-form input').fill('Ann Exemplar');
  await page.locator('.name-form button').click();
