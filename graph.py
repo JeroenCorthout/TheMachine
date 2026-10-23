@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS boards(id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQ
 CREATE TABLE IF NOT EXISTS project_moves(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL,board_id INTEGER,stage TEXT NOT NULL,reason TEXT,
   event_id INTEGER,source TEXT NOT NULL,at TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS project_moves_project ON project_moves(project_id,at);
+CREATE TABLE IF NOT EXISTS board_offers(id INTEGER PRIMARY KEY CHECK(id=1),run_id TEXT,offered_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS board_suggestions(id INTEGER PRIMARY KEY,name TEXT NOT NULL,stages TEXT NOT NULL,about TEXT,projects TEXT NOT NULL,
   reason TEXT,source TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',board_id INTEGER,created_at TEXT NOT NULL,decided_at TEXT);
 '''
@@ -1981,15 +1982,6 @@ def boards_brief(db, limit=150):
         out.append({'board': b['name'], 'stages': stage_names(b), 'projects': {r['name']: r['stage'] for r in rows},
                     **({'about': b['about']} if b['about'] else {}), **({'to_sort': sort} if sort else {})})
     return out
-
-
-def off_boards(db, limit=60):
-    """For a review: open projects on no board (newest first) and the boards already suggested, so it can suggest one
-    for a group of the same kind of work, once."""
-    names = [r['name'] for r in db.execute('SELECT name FROM projects WHERE board_id IS NULL AND closed_at IS NULL '
-                                            'ORDER BY created_at DESC LIMIT ?', (limit,))]
-    said = [r['name'] for r in db.execute('SELECT name FROM board_suggestions ORDER BY id DESC LIMIT 30')]
-    return {'projects': names, **({'suggested': said} if said else {})}
 
 
 def clean_stages(stages):

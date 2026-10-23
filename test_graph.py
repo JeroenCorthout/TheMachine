@@ -868,7 +868,7 @@ class Boards(unittest.TestCase):
             self.assertEqual([b['name'] for b in graph.boards(db, NOW.isoformat())], ['Listings'])
             sug, = graph.board_suggestions(db)
             self.assertEqual(([s['name'] for s in sug['stages']], len(sug['projects'])), (['Sourced', 'Interviews', 'Hired'], 3))
-            self.assertIn('Hire: designer', graph.off_boards(db)['projects']); self.assertEqual(graph.off_boards(db)['suggested'], ['Hiring'])
+        self.assertEqual(self.store.boards_text('run1'), '')  # no new offer while a suggestion is open
         with self.assertRaises(ValueError):
             self.app.action('board_save', {'name': 'Hiring', 'stages': ['Sourced'], 'about': ''})  # owner only
         self.app.graph_build = lambda *a, **k: None
