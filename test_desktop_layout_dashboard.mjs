@@ -210,22 +210,22 @@ try{
    assert.ok(q.tag<=1&&q.named,'no tagline on a phone, still there for screen readers, at '+w);assert.ok(!q.sub,'no counts line over the cards on a phone (the section heads carry them) at '+w);
    assert.ok(q.head>=q.bar+12&&q.head<=q.bar+64,'the first section head sits calmly under the top bar at '+w+': '+(q.head-q.bar))}
   assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
-  // Find a card: a search icon in the top bar on the cards screen, left of the +; a tap turns the bar into the field with
-  // Cancel and the matching cards under it; Esc and Cancel close it, a pick opens the card's chat
+  // Search: a search icon in the top bar, left of the +; a tap opens the palette (cards and commands in one field);
+  // Esc closes it and gives focus back to the icon, a picked card opens its chat; the icon is on every page
   {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {t:r('#topbar-title'),f:r('#find-open'),p:r('#new-card-top'),bar:r('#topbar')}});
    assert.ok(b.f.width>=40&&b.f.left>b.t.right&&b.f.right<=b.p.left+1&&b.p.right>=b.bar.right-14,'the search icon sits left of the + at '+w+': '+JSON.stringify(b))}
-  await page.locator('#find-open').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'find-q','the field has focus');
-  assert.ok(!(await page.locator('#topbar-title').isVisible())&&!(await page.locator('#drawer-open').isVisible()),'the field takes the bar');assert.ok(await page.locator('#find-cancel').isVisible());
-  await page.keyboard.type('number 7');await page.locator('#find-results a').first().waitFor();
-  assert.deepEqual(await page.locator('#find-results a').allTextContents(),[cards[7].title],'it finds the card');
+  const palItems=()=>page.locator('#pal-list .pal-item .pal-label').allTextContents();
+  await page.locator('#find-open').click();await page.locator('#palette[open]').waitFor();assert.equal(await page.evaluate(()=>document.activeElement.id),'pal-q','the field has focus');
+  assert.equal(await page.locator('#pal-q').getAttribute('placeholder'),'Search or type a command');
+  await page.keyboard.type('number 7');await page.waitForFunction(t=>[...document.querySelectorAll('#pal-list .pal-label')].some(e=>e.textContent===t),cards[7].title);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'search fits at '+w);
-  await page.keyboard.press('Escape');assert.ok(await page.locator('#topbar-title').isVisible()&&!(await page.locator('#find-results').isVisible()),'Esc closes it');
-  await page.locator('#find-open').click();await page.keyboard.type('nothing like this');assert.equal(await page.locator('#find-results').innerText(),'No cards match.');
-  await page.locator('#find-cancel').click();assert.ok(await page.locator('#topbar-title').isVisible()&&!(await page.locator('#find-results').isVisible()),'Cancel closes it');
-  await page.locator('#find-open').click();await page.keyboard.type('number 4');await page.locator('#find-results a').first().click();await page.locator('#chat-log').waitFor();
-  assert.equal(new URL(page.url()).hash,'#chat='+cards[4].id,'a pick opens its chat');assert.ok(!(await page.locator('#find-results').isVisible()));
-  await page.goBack();await page.locator('#suggestions .chat-layout').waitFor({state:'detached'});assert.ok(!(await page.locator('#topbar-find').isVisible()),'back on the cards the bar is the bar again');
-  for(const t of TABS){await tab(page,t);assert.equal(await page.locator('#find-open').isVisible(),t==='inbox','the search icon only on the cards screen: '+t+' at '+w);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
+  await page.keyboard.press('Escape');assert.ok(!(await page.locator('#palette[open]').count())&&await page.evaluate(()=>document.activeElement.id)==='find-open','Esc closes it');
+  await page.locator('#find-open').click();await page.keyboard.type('new');assert.ok((await palItems()).includes('New card'),'commands in the same field');
+  await page.locator('#pal-q').fill('number 4');await page.waitForFunction(t=>[...document.querySelectorAll('#pal-list .pal-label')].some(e=>e.textContent===t),cards[4].title);
+  await page.locator('#pal-list .pal-item',{hasText:cards[4].title}).first().click();await page.locator('#chat-log').waitFor();
+  assert.equal(new URL(page.url()).hash,'#chat='+cards[4].id,'a pick opens its chat');assert.ok(!(await page.locator('#palette[open]').count()));
+  await page.goBack();await page.locator('#suggestions .chat-layout').waitFor({state:'detached'});
+  for(const t of TABS){await tab(page,t);assert.ok(await page.locator('#find-open').isVisible(),'the search icon on every page: '+t+' at '+w);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
   await tab(page,'inbox');await page.evaluate(()=>scrollTo(0,0));
   // The menu button opens it: nearly the full width, the rest of the page inert, focus on its ✕, the rows and the cards in it, Settings at the bottom
   await page.locator('#drawer-open').click();await settle(page);assert.ok(await isOpen(page));
