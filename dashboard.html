@@ -1029,7 +1029,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 /* Back and ⋯ share one 32px box; the title's first line is centred on it (its x-height on the chevron), on one line or two */.chat-back,.chat-menu>summary{display:grid;place-items:center;flex:none;width:32px;height:32px;margin:0;border-radius:50%;color:var(--text);text-decoration:none;cursor:pointer}
 .chat-back:hover,.chat-menu>summary:hover,.chat-menu[open]>summary{background:var(--c-hover)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
 .chat-title{flex:1;min-width:0;margin:calc((32px - 1.35em)/2 - .09em) 0 0;font:600 1rem/1.35 var(--sans);white-space:nowrap;overflow:hidden}
-@media(max-width:860px){.chat-title{white-space:normal;max-height:2.7em}.chat-title.fade{-webkit-mask:linear-gradient(#000,#000) 0 0/100% 1.35em no-repeat,linear-gradient(to right,#000 calc(var(--fade-x,100%) - 56px),transparent var(--fade-x,100%)) 0 1.35em/100% 1.35em no-repeat;mask:linear-gradient(#000,#000) 0 0/100% 1.35em no-repeat,linear-gradient(to right,#000 calc(var(--fade-x,100%) - 56px),transparent var(--fade-x,100%)) 0 1.35em/100% 1.35em no-repeat}}
+/* The chat's title is one line at every width, fading out at the right edge; its full text is in the title attribute. */
 .chat-menu{position:relative;flex:none;margin:0}.chat-menu>summary{list-style:none}.chat-menu>summary::-webkit-details-marker{display:none}.chat-menu>summary::before,.chat-menu>summary::after{content:none}
 .chat-menu-list{position:absolute;right:0;top:calc(100% + 4px);z-index:7;display:flex;flex-direction:column;min-width:190px;padding:6px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 12px 30px #0004}
 .chat-menu-list>*{justify-content:flex-start;width:100%;min-height:38px;margin:0;padding:8px 12px;border:0;border-radius:9px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
@@ -1229,7 +1229,11 @@ body main{padding-top:0}
 .app-side .head-side>.live::before{flex:none}
 .page-head{display:flex;align-items:center;gap:14px;margin:0 0 32px}.page-head[hidden]{display:none}
 .page-title{margin:0;font:var(--fw-display) 30px/1.2 var(--serif);letter-spacing:-.015em;color:var(--text);text-wrap:balance}
-.page-head.greet .page-title{font-size:28px}
+/* The tagline is a quiet line, not a headline: about body size, muted, one line where it fits; the count stays readable under it. */
+.page-head.greet{align-items:center;gap:12px;margin-bottom:24px}
+.page-head.greet .page-title{font:400 var(--fs-lg)/1.35 var(--serif);letter-spacing:0;color:var(--c-text-2);text-wrap:pretty}
+.page-head.greet .page-sub{margin-top:2px;color:var(--c-text-2)}
+.page-head.greet .page-avatar{width:32px;height:32px}
 .page-avatar{width:40px;height:40px;flex:none;object-fit:contain}
 .page-sub{margin:4px 0 0;color:var(--side-quiet);font-size:var(--fs-sm)}
 #inbox #suggestion-summary,#inbox #suggestion-stats{display:none}
@@ -1333,7 +1337,11 @@ body main{padding-top:0}
   .app-side .head-side>.live{min-height:36px}
   #open-browser:not([hidden]){display:flex}
   .page-head{display:flex;align-items:center;gap:12px;margin:4px 0 22px}
-  .page-title{font-size:26px}.page-head.greet .page-title{font-size:24px}
+  .page-title{font-size:26px}
+  /* A phone shows only the counts under the top bar; the tagline stays for screen readers */
+  .page-head.greet{margin:6px 0 20px}
+  .page-head.greet .page-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .page-head.greet .page-sub{margin:0;font-size:var(--fs-md)}
   .page-avatar{display:none}  /* the top bar carries the mascot on a phone */
   .chat-layout [data-chat-drawer]{display:flex}
 }
