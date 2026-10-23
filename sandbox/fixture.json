@@ -2114,6 +2114,24 @@
    }
   },
   {
+   "key": "story:same:mail0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 3000,
+   "title": "Timetable data for the pilot",
+   "body": "Hi Alex, a quick one about this. Thanks!",
+   "metadata": {
+    "from": "Theo Marchetti <theo@vantagerail.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "t-same0",
+    "message-id": "<t-same0@mail.example>",
+    "source_url": "https://mail.example/#inbox/t-same0"
+   }
+  },
+  {
    "key": "slack.message:27",
    "account_id": "work-slack",
    "kind": "slack.message",
@@ -2520,6 +2538,24 @@
    }
   },
   {
+   "key": "story:same:mail1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2600,
+   "title": "Running club on Saturday",
+   "body": "Hi Alex, a quick one about this. Thanks!",
+   "metadata": {
+    "from": "Theo Marchetti <theo.marchetti@mail.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "t-same1",
+    "message-id": "<t-same1@mail.example>",
+    "source_url": "https://mail.example/#inbox/t-same1"
+   }
+  },
+  {
    "key": "x.mention:2",
    "account_id": "work-x",
    "kind": "x.mention",
@@ -2600,6 +2636,24 @@
     "thread_id": "t288744499817",
     "message-id": "<t288744499817.10@pinecrestlegal.example>",
     "source_url": "https://mail.example/#inbox/t288744499817"
+   }
+  },
+  {
+   "key": "story:same:mail2",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2500,
+   "title": "Podcast slot next week",
+   "body": "Hi Alex, a quick one about this. Thanks!",
+   "metadata": {
+    "from": "Nina <nina.k@saltmarshmedia.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "t-same2",
+    "message-id": "<t-same2@mail.example>",
+    "source_url": "https://mail.example/#inbox/t-same2"
    }
   },
   {
@@ -2837,6 +2891,25 @@
    }
   },
   {
+   "key": "story:same:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2200,
+   "title": "School forms",
+   "body": "Can you sign the school forms tonight? Sent from work.",
+   "metadata": {
+    "from": "Robin Morgan <robin.morgan@harborlinehealth.example>",
+    "to": "alex@lumenlabs.example",
+    "cc": "Robin Morgan <robin@mail.example>",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "t-school",
+    "message-id": "<t-school.0@harborlinehealth.example>",
+    "source_url": "https://mail.example/#inbox/t-school"
+   }
+  },
+  {
    "key": "linkedin.message:2",
    "account_id": "work-linkedin",
    "kind": "linkedin.message",
@@ -2906,6 +2979,25 @@
     "group": true,
     "sender_display": "Robin Morgan",
     "message_id": "wa26"
+   }
+  },
+  {
+   "key": "story:same:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2100,
+   "title": "Re: School forms",
+   "body": "Signed, they are on the kitchen table.",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "Robin Morgan <robin.morgan@harborlinehealth.example>",
+    "cc": "Robin Morgan <robin@mail.example>",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "t-school",
+    "message-id": "<t-school.1@lumenlabs.example>",
+    "source_url": "https://mail.example/#inbox/t-school"
    }
   },
   {
@@ -3079,6 +3171,24 @@
     "group": false,
     "sender_display": "Sam Whitlock",
     "message_id": "wa4"
+   }
+  },
+  {
+   "key": "story:same:mail3",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 1900,
+   "title": "Podcast questions",
+   "body": "Hi Alex, a quick one about this. Thanks!",
+   "metadata": {
+    "from": "Nina Kowalczyk <nina@saltmarshmedia.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "t-same3",
+    "message-id": "<t-same3@mail.example>",
+    "source_url": "https://mail.example/#inbox/t-same3"
    }
   },
   {
@@ -3609,6 +3719,23 @@
    }
   },
   {
+   "key": "story:same:wa0",
+   "account_id": "home-whatsapp",
+   "kind": "whatsapp.message",
+   "minutes_ago": 1400,
+   "title": "Robin Morgan",
+   "body": "Home by 7, shall I get pizza?",
+   "metadata": {
+    "chat_name": "Robin Morgan",
+    "chat_id": "robin-morgan@chat.example",
+    "from_me": false,
+    "from": "Robin Morgan",
+    "sender_id": "robin-morgan@chat.example",
+    "group": false,
+    "message_id": "wa-same0"
+   }
+  },
+  {
    "key": "whatsapp.message:19",
    "account_id": "home-whatsapp",
    "kind": "whatsapp.message",
@@ -3622,6 +3749,23 @@
     "group": false,
     "sender_display": "Dana Kerrigan",
     "message_id": "wa19"
+   }
+  },
+  {
+   "key": "story:same:wa1",
+   "account_id": "home-whatsapp",
+   "kind": "whatsapp.message",
+   "minutes_ago": 1390,
+   "title": "Robin Morgan",
+   "body": "Yes please",
+   "metadata": {
+    "chat_name": "Robin Morgan",
+    "chat_id": "robin-morgan@chat.example",
+    "from_me": true,
+    "from": "You",
+    "sender_id": null,
+    "group": false,
+    "message_id": "wa-same1"
    }
   },
   {
@@ -5277,6 +5421,23 @@
     "thread_id": "t-api",
     "message-id": "<t-api.2@glasswingapps.example>",
     "source_url": "https://mail.example/#inbox/t-api"
+   }
+  },
+  {
+   "key": "story:same:wa2",
+   "account_id": "home-whatsapp",
+   "kind": "whatsapp.message",
+   "minutes_ago": 300,
+   "title": "Robin Morgan",
+   "body": "On my way",
+   "metadata": {
+    "chat_name": "Robin Morgan",
+    "chat_id": "robin-morgan@chat.example",
+    "from_me": false,
+    "from": "Robin Morgan",
+    "sender_id": "robin-morgan@chat.example",
+    "group": false,
+    "message_id": "wa-same2"
    }
   },
   {

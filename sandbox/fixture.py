@@ -475,6 +475,25 @@ def build(profile):
     add('work-stripe', 'stripe.event', 20160, 'invoice.payment_failed', 'Cobalt & Finch: €1,180.00, card expired',
         {'customer_name': 'Cobalt & Finch', 'type': 'invoice', 'source_url': 'https://dashboard.stripe.example/invoices/inv-4821'}, 'story:invoice:stripe')
     cards[2]['events'].append('story:invoice:stripe')
+    # Same person? Robin writes from work with their own address in CC and chats on WhatsApp: one person by itself. Two
+    # Theo Marchettis at two addresses stay two, with a question; so do Nina and Nina Kowalczyk, both at Saltmarsh Media.
+    robin_work, robin_home = 'Robin Morgan <robin.morgan@harborlinehealth.example>', 'Robin Morgan <robin@mail.example>'
+    add('work-gmail', 'gmail.message', 2200, 'School forms', 'Can you sign the school forms tonight? Sent from work.',
+        {'from': robin_work, 'to': OWNER['email'], 'cc': robin_home, 'labels': ['INBOX'], 'thread_id': 't-school', 'message-id': '<t-school.0@harborlinehealth.example>',
+         'source_url': 'https://mail.example/#inbox/t-school'}, 'story:same:0')
+    add('work-gmail', 'gmail.message', 2100, 'Re: School forms', 'Signed, they are on the kitchen table.',
+        {'from': f"{OWNER['name']} <{OWNER['email']}>", 'to': robin_work, 'cc': robin_home, 'labels': ['SENT'], 'thread_id': 't-school',
+         'message-id': '<t-school.1@lumenlabs.example>', 'source_url': 'https://mail.example/#inbox/t-school'}, 'story:same:1')
+    for n, (minutes, mine, text) in enumerate(((1400, False, 'Home by 7, shall I get pizza?'), (1390, True, 'Yes please'), (300, False, 'On my way'))):
+        add('home-whatsapp', 'whatsapp.message', minutes, 'Robin Morgan', text, {'chat_name': 'Robin Morgan', 'chat_id': 'robin-morgan@chat.example', 'from_me': mine,
+            'from': 'You' if mine else 'Robin Morgan', 'sender_id': None if mine else 'robin-morgan@chat.example', 'group': False, 'message_id': f'wa-same{n}'}, f'story:same:wa{n}')
+    for n, (who, minutes, subject) in enumerate((('Theo Marchetti <theo@vantagerail.example>', 3000, 'Timetable data for the pilot'),
+                                                 ('Theo Marchetti <theo.marchetti@mail.example>', 2600, 'Running club on Saturday'),
+                                                 ('Nina <nina.k@saltmarshmedia.example>', 2500, 'Podcast slot next week'),
+                                                 ('Nina Kowalczyk <nina@saltmarshmedia.example>', 1900, 'Podcast questions'))):
+        add('work-gmail', 'gmail.message', minutes, subject, 'Hi Alex, a quick one about this. Thanks!',
+            {'from': who, 'to': OWNER['email'], 'labels': ['INBOX'], 'thread_id': f't-same{n}', 'message-id': f'<t-same{n}@mail.example>',
+             'source_url': f'https://mail.example/#inbox/t-same{n}'}, f'story:same:mail{n}')
     events.sort(key=lambda e: -e['minutes_ago'])
 
     closed = profile['cards_by_status']
