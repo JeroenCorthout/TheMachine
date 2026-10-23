@@ -3709,11 +3709,16 @@ function calRender(){const box=$('#calendar-view');if(!box||!state)return;const 
  // Earlier days coming in above, or a week's meetings arriving, never move what is on screen; the time grid keeps its hour
  const keep=list&&!$('#calendar').hidden?calAnchor(box):null,pane=box.querySelector('.cal-tg-scroll'),hash=calHash(),y=pane&&calGridShown===hash?pane.scrollTop:null;
  if(box.innerHTML!==html){box.innerHTML=html;if(keep){const el=box.querySelector(`[data-day="${keep.day}"]`),d=el?el.getBoundingClientRect().top-keep.top:0;if(Math.abs(d)>.5)scrollBy(0,d)}calObserve(box)}
- const p=box.querySelector('.cal-tg-scroll');if(p){if(y!=null)p.scrollTop=y;else if(calMeetings&&p.clientHeight){p.scrollTop=calFirstHour(box,p.clientHeight/CAL_HOUR)*CAL_HOUR;calGridShown=hash}}  // a hidden pane can't scroll: wait until it shows
+ const p=box.querySelector('.cal-tg-scroll');calFill(p);if(p){if(y!=null)p.scrollTop=y;else if(calMeetings&&p.clientHeight){p.scrollTop=calFirstHour(box,p.clientHeight/CAL_HOUR)*CAL_HOUR;calGridShown=hash}}  // a hidden pane can't scroll: wait until it shows
  calBadge();pageHead()}
 // The time grid opens a little before the range's first timed meeting, or 08:00 when that is earlier; later in
 // the day the now line stays in view. Also on ‹ › and Today
 let calGridShown='';
+// On a desktop the time grid fills the window down to its bottom edge (the footer goes below the fold), so more
+// hours show at once; the phone keeps its own height
+function calFill(p){if(!p)return;if(!DESK.matches){p.style.maxHeight='';return}const top=p.getBoundingClientRect().top+scrollY;
+ if(!p.clientHeight&&!top)return;p.style.maxHeight=Math.max(320,Math.round(innerHeight-top-16))+'px'}
+addEventListener('resize',()=>{if(!$('#calendar').hidden)calFill($('#calendar-view .cal-tg-scroll'))});
 function calFirstHour(box,shown=8){const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR).filter(t=>t>=0);
  let h=Math.max(0,Math.min(8,...tops)-.5);const now=box.querySelector('.cal-now');
  if(now){const n=parseFloat(now.style.top)/CAL_HOUR;if(n>h+shown-.5)h=Math.max(0,n-Math.min(2,shown/3))}
@@ -3756,7 +3761,7 @@ async function calShowNow(day){if(calList()){const mon=calAt,thisWeek=+mon===+ca
 function calGo(n){if(calMode==='month')calMonth=n?new Date(calMonth.getFullYear(),calMonth.getMonth()+n,1):calFirst(new Date());
  else if(calThree())calStart=n?calAdd(calStart,3*n):calDay(0);
  else calAt=n?calAdd(calAt,7*n):calMonday(new Date());
- calPush();return calShowNow()}
+ calGridShown='';calPush();return calShowNow()}  // Today on today's range opens at its first meeting again
 // Switching views keeps the period: Month after a week shows that week's month, Week after a month its first week
 function calSetMode(v,day){if(calMode===v&&!day)return;const at=day||calFocus();calMode=v;sideStore.set('cal-mode',v);calSetAll(at);calPush();return calShowNow(day)}
 // Back and forward, and a shared link: #calendar?view=week&date=2026-10-26
