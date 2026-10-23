@@ -1,9 +1,11 @@
+import http.client
 import http.server
 import json
 import threading
 import unittest
 import urllib.parse
 from pathlib import Path
+from unittest.mock import patch
 
 import test_graph as tg
 
@@ -308,6 +310,152 @@ class Enrichment(unittest.TestCase):
         self.app.config = {**tg.CONFIG, 'enrichment': {**self.config['enrichment']}}  # a service without a people address
         self.assertFalse(self.app.lookups_view()['people_available'])
 
+
+    def test_a_photo_is_saved_once_here_and_shown_from_here(self):
+        JPEG = b'\xff\xd8\xff\xe0' + b'0' * 100
+        self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee Parker <lee@globex.com>', ('SENT',)))
+        self.build()
+        now, asked = tg.NOW.isoformat(), []
+        fetch = lambda url: asked.append(url) or (JPEG, 'image/jpeg')
+        self.assertEqual(enrichment.people_step(self.store.connect, self.people_config(), now), 1)
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=fetch), 1)
+        self.assertEqual(asked, ['https://media.example/lee.jpg'])
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=fetch), 0)  # once: never asked again
+        self.assertEqual(len(asked), 1)
+        self.build()
+        key = enrichment.photo_key('email:lee@globex.com')
+        self.assertEqual(self.node('email:lee@globex.com')['profile']['photo'], 'api/person-photo?p=' + key)  # from here, not the service
+        with self.store.connect() as db:
+            self.assertEqual(enrichment.photo(db, key), (JPEG, 'image/jpeg'))
+            self.assertIsNone(enrichment.photo(db, '../' + key))
+            self.assertNotIn('media.example', db.execute('SELECT profile FROM person_profiles').fetchone()[0])
+            # Looked up again with a link that has expired by then: the saved photo stays, and no 30-day look-up.
+            enrichment.save_person(db, 'email:lee@globex.com', 'found', {'title': 'Head of Sales', 'photo': 'https://media.example/lee.jpg?e=1700000000&t=x'}, now)
+            self.assertEqual(enrichment.people_due(db, (tg.NOW + tg.dt.timedelta(days=40)).isoformat(), 10), [])
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=fetch), 0)
+        self.assertEqual(len(asked), 1)
+        self.build()
+        self.assertEqual(self.node('email:lee@globex.com')['profile']['photo'], 'api/person-photo?p=' + key)
+        # Delete permanently takes the photo too.
+        with self.store.connect() as db:
+            graph.delete_person(db, 'email:lee@globex.com', tg.CONFIG, now)
+            self.assertEqual(db.execute('SELECT count(*) FROM person_photos').fetchone()[0], 0)
+
+    def test_an_expired_or_broken_photo_link_is_skipped_and_looked_up_again_in_30_days(self):
+        self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee Parker <lee@globex.com>', ('SENT',)),
+                 tg.mail(3, 'Rae Quinn <rae@initech.example>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Rae Quinn <rae@initech.example>', ('SENT',)))
+        self.build()
+        now, asked = tg.NOW.isoformat(), []
+        expired = 'https://media.licdn.com/dms/image/v2/x/profile-displayphoto-shrink_200_200/0?e=1700000000&v=beta&t=abc'
+        later = str(int(tg.NOW.timestamp()) + 86400)
+        self.assertTrue(enrichment.link_expired(expired, now))
+        self.assertFalse(enrichment.link_expired(expired.replace('1700000000', later), now))
+        self.assertTrue(enrichment.link_expired('https://s3.example/p.jpg?X-Amz-Date=20261001T000000Z&X-Amz-Expires=3600', now))
+        self.assertFalse(enrichment.link_expired('https://media.example/lee.jpg', now))
+        with self.store.connect() as db:
+            enrichment.people_due(db, now, 10)  # the backfill starts (and ends: nobody was looked up before)
+            enrichment.save_person(db, 'email:lee@globex.com', 'found', {'title': 'Head of Sales', 'photo': expired}, now)
+            enrichment.save_person(db, 'email:rae@initech.example', 'found', {'title': 'CTO', 'photo': 'https://media.example/gone.jpg'}, now)
+            self.assertNotIn('photo"', db.execute("SELECT profile FROM person_profiles WHERE identifier='email:lee@globex.com'").fetchone()[0])
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=lambda url: asked.append(url)), 0)  # Rae's: a 404
+        self.assertEqual(asked, ['https://media.example/gone.jpg'])  # the expired one is never asked for
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=lambda url: asked.append(url)), 0)
+        self.assertEqual(len(asked), 1)  # one try per link
+        self.build()
+        self.assertNotIn('photo', self.node('email:lee@globex.com')['profile'])  # initials show
+        with self.store.connect() as db:
+            day = lambda n: (tg.NOW + tg.dt.timedelta(days=n)).isoformat()
+            self.assertEqual(enrichment.people_due(db, day(29), 10), [])
+            self.assertEqual({p['identifier'] for p in enrichment.people_due(db, day(31), 10)}, {'email:lee@globex.com', 'email:rae@initech.example'})
+
+    def test_a_photo_download_takes_only_a_small_image_from_a_public_address(self):
+        import socket
+        self.assertEqual(enrichment.image_type(b'\x89PNG\r\n\x1a\n' + b'0' * 10), 'image/png')
+        self.assertEqual(enrichment.image_type(b'RIFF\x00\x00\x00\x00WEBPVP8 '), 'image/webp')
+        self.assertIsNone(enrichment.image_type(b'<svg xmlns="http://www.w3.org/2000/svg"/>'))
+        self.assertIsNone(enrichment.image_type(b'<html>'))
+        resolve = socket.getaddrinfo
+        self.addCleanup(setattr, socket, 'getaddrinfo', resolve)
+        for address in ('127.0.0.1', '10.0.0.8', '169.254.169.254', '::1'):
+            socket.getaddrinfo = lambda *args, address=address, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, 443))]
+            self.assertIsNone(enrichment.download_photo('https://photos.example/me.jpg'))  # never to this Machine or its network
+        self.assertIsNone(enrichment.download_photo('http://photos.example/me.jpg'))
+
+    def test_the_one_time_backfill_looks_everyone_up_once_closest_first(self):
+        self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee Parker <lee@globex.com>', ('SENT',)),
+                 tg.mail(3, 'Kai Novak <kai@hooli.example>', 'sam@acme.com'), tg.mail(3, 'Rae Quinn <rae@initech.example>', 'sam@acme.com'))
+        self.build()
+        before, now = (tg.NOW - tg.dt.timedelta(days=10)).isoformat(), tg.NOW.isoformat()
+        with self.store.connect() as db:  # looked up by the old code, ten days ago: not due by the normal interval
+            enrichment.save_person(db, 'email:lee@globex.com', 'found', {'title': 'Head of Sales'}, before)
+            enrichment.save_person(db, 'email:kai@hooli.example', 'none', None, before)
+            enrichment.save_person(db, 'email:rae@initech.example', 'none', None, before)
+        capped = self.people_config(people_per_day=2)
+        self.assertEqual(enrichment.people_step(self.store.connect, capped, now, per_pass=5), 1)  # the day's limit: two of three
+        asked = [urllib.parse.parse_qs(urllib.parse.urlsplit(p).query)['name'][0] for p, _ in Service.seen if p.startswith('/enrich/people')]
+        self.assertEqual(asked[0], 'Lee Parker')  # closest first (wrote both ways)
+        self.assertEqual(len(asked), 2)
+        with self.store.connect() as db:
+            self.assertFalse(db.execute("SELECT value FROM enrich_prefs WHERE key='people_backfill'").fetchone()[0].startswith('done'))
+        tomorrow = (tg.NOW + tg.dt.timedelta(days=1)).isoformat()
+        enrichment.people_step(self.store.connect, capped, tomorrow)
+        self.assertEqual(len([p for p, _ in Service.seen if p.startswith('/enrich/people')]), 3)  # the rest the next day
+        with self.store.connect() as db:
+            self.assertEqual(enrichment.people_due(db, tomorrow, 10), [])
+            self.assertTrue(db.execute("SELECT value FROM enrich_prefs WHERE key='people_backfill'").fetchone()[0].startswith('done'))
+            enrichment.save_person(db, 'email:kai@hooli.example', 'none', None, before)  # an old row again: no second backfill
+            self.assertEqual(enrichment.people_due(db, tomorrow, 10), [])  # no match: the normal 90 days
+
+    def test_the_dashboard_serves_a_saved_photo_to_the_owner_only_as_an_image(self):
+        JPEG = b'\xff\xd8\xff\xe0' + b'1' * 50
+        with self.store.connect() as db:
+            enrichment.save_person(db, 'email:lee@globex.com', 'found', {'title': 'Head of Sales', 'photo': 'https://media.example/lee.jpg'}, tg.NOW.isoformat())
+        enrichment.photos_step(self.store.connect, tg.NOW.isoformat(), fetch=lambda url: (JPEG, 'image/jpeg'))
+        app = object.__new__(a.App)
+        app.store, app.token, app.stop, app.graph_dirty, app.owner_token = self.store, 'test-token', threading.Event(), threading.Event(), 'owner-key'
+        app.config = {'accounts': [], 'tailscale_owner': 'owner@example.com', 'dashboard_host': 'machine.example:8443', 'port': 0, 'http_timeout': 1}
+        servers, real = [], a.http.server.ThreadingHTTPServer
+        def capture(*args, **kwargs):
+            servers.append(real(*args, **kwargs)); return servers[-1]
+        for patcher in (patch.object(a.http.server, 'ThreadingHTTPServer', side_effect=capture), patch.object(a.signal, 'signal'),
+                        patch.object(a.App, 'preparation_worker'), patch.object(a.App, 'delivery_worker')):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        thread = threading.Thread(target=app.serve, daemon=True)
+        thread.start()
+        while not servers:
+            pass
+        self.addCleanup(lambda: (app.stop.set(), thread.join(5)))
+        def get(path, owner=True):
+            conn = http.client.HTTPConnection('127.0.0.1', servers[0].server_address[1], timeout=10)
+            conn.request('GET', path, headers={'Host': 'machine.example:8443', **({'Tailscale-User-Login': 'owner@example.com'} if owner else {})})
+            r = conn.getresponse()
+            body = r.read()
+            conn.close()
+            return r.status, r.getheader('Content-Type'), r.getheader('X-Content-Type-Options'), body
+        key = enrichment.photo_key('email:lee@globex.com')
+        self.assertEqual(get('/api/person-photo?p=' + key), (200, 'image/jpeg', 'nosniff', JPEG))
+        self.assertEqual(get('/api/person-photo?p=' + key, owner=False)[0], 403)
+        self.assertEqual(get('/api/person-photo?p=' + 'f' * 32)[0], 404)
+        self.assertEqual(get('/api/person-photo?p=email:lee@globex.com')[0], 404)
+
+    def test_a_paired_self_hosted_machine_gets_the_hosted_budget(self):
+        asked = []
+        real = enrichment.people_due
+        def due(db, now, limit):
+            asked.append(limit)
+            return real(db, now, limit)
+        now = tg.NOW.isoformat()
+        with patch.object(enrichment, 'people_due', side_effect=due):
+            enrichment.people_step(self.store.connect, self.people_config(), now)
+            enrichment.people_step(self.store.connect, self.people_config(), now, paired=True)
+            with self.store.connect() as db:
+                db.executemany('INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,?,?,?)',
+                               [(f'email:p{n}@x.example', 'none', None, now) for n in range(2990)])
+            enrichment.people_step(self.store.connect, self.people_config(), now, paired=True)  # 10 left of today's 3,000
+            enrichment.people_step(self.store.connect, self.people_config(people_per_day=100), now, paired=True)  # the owner's own cap wins
+        self.assertEqual(asked, [5, 25, 10, 0])
+        self.assertEqual(enrichment.PAIRED_PEOPLE_PER_DAY, 3000)
 
 if __name__ == '__main__':
     unittest.main()
