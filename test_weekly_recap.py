@@ -109,13 +109,24 @@ class WeeklyRecap(unittest.TestCase):
         self.store.commit_page('cal', {}, [meeting('b', 'Board meeting', '2026-10-28T08:00:00+00:00'),
                                            meeting('w', 'Weekly one-on-one', '2026-10-27T08:00:00+00:00', recurring_event_id='r1'),
                                            meeting('d', 'Declined lunch', '2026-10-27T11:00:00+00:00', me='declined'),
-                                           meeting('n', 'Next month', '2026-11-20T08:00:00+00:00')])
+                                           meeting('n', 'Next month', '2026-11-20T08:00:00+00:00'),
+                                           meeting('t', 'Team offsite', '2026-10-29T08:00:00+00:00', ical_uid='u1')])
+        # A partner's calendar shared with the owner: there 'self' is the partner. Their own appointments aren't the owner's;
+        # one the owner is invited to is, and shows once next to the owner's own copy.
+        shared = lambda source_id, title, at, guests, **meta: {'account_id': 'cal', 'source_id': source_id, 'kind': 'calendar.event', 'occurred_at': at,
+            'title': title, 'body': '', 'deleted': False, 'metadata': {'access': 'shared_read_only', 'credential_account': 'owner@example.com',
+            'attendees': [{'email': 'partner@example.com', 'self': True, 'responseStatus': 'accepted'}, *guests], **meta}}
+        self.store.commit_page('cal', {}, [shared('s1', 'Dentist with Robin', '2026-10-27T13:00:00+00:00', [{'email': 'dentist@example.com'}]),
+                                           shared('s2', 'Team offsite', '2026-10-29T08:00:00+00:00', [{'email': 'owner@example.com', 'responseStatus': 'accepted'}, {'email': 'pat@acme.example'}], ical_uid='u1'),
+                                           shared('s3', 'Parents evening', '2026-10-30T16:00:00+00:00', [{'email': 'owner@example.com', 'responseStatus': 'needsAction'}, {'email': 'school@example.com'}])])
         with self.store.connect() as db:
             board = db.execute("SELECT id FROM events WHERE source_id='b'").fetchone()[0]
         prep = self.store.suggest('prep', 'Prep notes for the board', 'Body.', [board])['id']
         text = a.weekly_recap(self.store, self.config, dt.datetime.fromisoformat(FRIDAY))
         self.assertIn(f'**Next week**\n• Wed 28 Oct 09:00 Board meeting, 1 person · [card](https://m.example/assistant/#card={prep})', text)
-        for routine in ('Weekly one-on-one', 'Declined lunch', 'Next month'):
+        self.assertEqual(text.count('Team offsite'), 1)
+        self.assertIn('• Fri 30 Oct 17:00 Parents evening, 2 people', text)  # the partner and the school, not the owner
+        for routine in ('Weekly one-on-one', 'Declined lunch', 'Next month', 'Dentist with Robin'):
             self.assertNotIn(routine, text)
 
     def test_new_people_by_name_only(self):

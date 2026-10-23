@@ -9341,24 +9341,33 @@ def recap_presentation(buttons):
 
 
 def recap_meetings(db, start, end, cards):
-    """The week ahead's meetings worth a line: with other people, said yes or not answered, and either a one-off or one with
-    a card on it (a weekly one-on-one is routine, unless something is prepared for it). Doubles across calendars once."""
+    """The week ahead's meetings worth a line: the owner's own (calendar_owned: on a shared calendar, only those they
+    organise or are invited to), with other people, said yes or not answered, and either a one-off or one with a card on
+    it (a weekly one-on-one is routine, unless something is prepared for it). A meeting on two calendars shows once."""
     seen, out = set(), []
     for r in db.execute("SELECT id,title,occurred_at,metadata FROM events WHERE kind='calendar.event' AND deleted=0 AND occurred_at>=? AND occurred_at<? "
                         'ORDER BY occurred_at,id LIMIT 300', (start, end)):
         m = json.loads(r['metadata'])
+        if not calendar_owned(m):
+            continue
         people = [x for x in m.get('attendees') or [] if isinstance(x, dict)]
-        me = next((x for x in people if x.get('self')), {})
+        if m.get('access') == 'shared_read_only':  # 'self' there is the calendar's owner: the Machine's owner is by address
+            mine = str(m.get('credential_account') or '').lower()
+            is_me = lambda x: str(x.get('email') or '').lower() == mine
+        else:
+            is_me = lambda x: bool(x.get('self'))
+        me = next((x for x in people if is_me(x)), {})
         card = cards.get(r['id'])
         if m.get('all_day') or me.get('responseStatus') == 'declined' or m.get('status') == 'cancelled':
             continue
-        if not any(not x.get('self') for x in people) or (m.get('recurring_event_id') and not card):
+        others = [x for x in people if not is_me(x)]
+        if not others or (m.get('recurring_event_id') and not card):
             continue
-        key = (str(r['title']).strip().casefold(), r['occurred_at'])
-        if key in seen:
+        keys = calendar_keys(m, r['title'], r['occurred_at'], None)
+        if keys & seen:
             continue
-        seen.add(key)
-        out.append({'at': r['occurred_at'], 'title': r['title'], 'guests': sum(1 for x in people if not x.get('self')), 'card': card})
+        seen |= keys
+        out.append({'at': r['occurred_at'], 'title': r['title'], 'guests': len(others), 'card': card})
     return out
 
 
