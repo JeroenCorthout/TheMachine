@@ -25,7 +25,7 @@ const meetings=[
  {id:106,account_id:'cal',title:'Dentist',start:iso(at(6,8,30)),end:iso(at(6,9)),all_day:false,location:'',guests:0,url:null}];
 const card=(id,title,status,extra={})=>({id:id.repeat(16).slice(0,16),title,body:'Made-up card for the Calendar test.',status,scope:'work',created_at:now,event_ids:[],...extra});
 const cards=[
- card('a','Prep notes for the pilot review','prepared',{event_ids:[102],due:day(0)}),
+ card('a','Prep notes for the pilot review','prepared',{event_ids:'[102]',due:day(0)}),  // as /api/status sends it: JSON text
  card('b','Send the revised quote to Northwind','pending',{due:day(0)}),
  card('c','Follow up on the unpaid invoice','snoozed',{snoozed_until:iso(at(1,9))}),
  card('d','Venue booking for the offsite','snoozed',{snoozed_until:iso(at(2,9)),handoff_wait:{name:'Robin'}}),
