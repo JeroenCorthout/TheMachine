@@ -116,14 +116,12 @@ class RecapAndPreferences(unittest.TestCase):
             db.execute("UPDATE decisions SET created_at=? WHERE suggestion_id=?",(t(4),early))
             db.execute(job,('j4',early,'r4',t(3),t(3)))
             db.execute("INSERT INTO rule_changes(at,kind,text,ref) VALUES(?,'file','PREPARATION.md edited','abc')",(t(2),))
-        self.assertIn('◦ Since the writing rules last changed (',a.weekly_recap(self.store,{},None,None))
-        self.assertIn('): none sent yet',a.weekly_recap(self.store,{},None,None))
+        self.assertIn('• Adjusted: 1 edit to the drafting guide. No drafts sent since then yet.',a.weekly_recap(self.store,{},None,None))
         later=self.store.suggest('l','Answer Bo','Body.',[3])['id']
         with self.store.connect() as db: db.execute(job,('j5',later,'r5',t(1),t(1)))
         b=self.store.behaviour(7);self.assertEqual((b['since_rules']['as_written'],b['since_rules']['edited']),(1,0))
         recap=a.weekly_recap(self.store,{},None,None)
-        self.assertIn('• Drafts: 1 sent as written, 1 changed by you first\n\u00a0\u00a0\u00a0◦ Since the writing rules last changed (',recap)
-        self.assertIn('): 1 of 1 sent as written\n',recap)
+        self.assertIn('• Adjusted: 1 edit to the drafting guide. Since then, 1 of 1 drafts went out as written (0 of 1 before).\n',recap)
         with self.store.connect() as db: db.execute("DELETE FROM action_jobs WHERE id='j4'")  # every send after the change: nothing to compare
         self.assertIsNone(self.store.behaviour(7)['since_rules'])
 
@@ -152,12 +150,14 @@ class RecapAndPreferences(unittest.TestCase):
         self.assertIn('Your draft: Dear Sir',edits);self.assertIn('The owner changed it to: Hi Tom, here it is.',edits)
         self.assertIn('The owner changed it to: Hi Tom',a.preparation_prompt({'job_id':'j'*16,'suggestion_id':self.sid},'',None,edits))
         recap=a.weekly_recap(self.store,{},None,None)
-        self.assertIn('**What I noticed**\n• Drafts: 0 sent as written, 1 changed by you first\n• 1 dismissed within minutes\n• Snoozed more than once:\n\u00a0\u00a0\u00a0◦ Review the Q4 budget\n',recap)
+        self.assertIn('• Drafts: 0 of 1 went out as written.',recap)
+        self.assertIn(f'**Snoozed more than once**\n2. Review the Q4 budget, 2 times\n',recap)
 
     def test_recap_content(self):
         text=a.weekly_recap(self.store,{},None,{'input':1e6,'cacheRead':9e6,'output':4e4,'runs':3,'usd':3.3})
-        self.assertTrue(text.startswith('**Your week with The Machine**\n'));self.assertIn('• 1 new:',text);self.assertIn('1 dismissed',text);self.assertIn('$3.30',text)
-        self.assertIn('• #leads (work): 24 this week',text)
+        self.assertTrue(text.startswith('**Your week with The Machine** · '));self.assertIn('0% of cards worth it (0 of 1).',text)
+        self.assertTrue(text.split('\n')[-1].startswith('_Behind the scenes: ') and '$3.30' in text)
+        self.assertIn('1. #leads (work): 24 this week, no cards',text)
 
     def test_recap_goes_out_once_on_friday_afternoon(self):
         sent=[]

@@ -440,7 +440,7 @@ class SourceError(Exception):
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -2337,6 +2337,12 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS note_kinds(decision_id TEXT PRIMARY KEY,suggestion_id TEXT NOT NULL,kind TEXT NOT NULL,source TEXT NOT NULL,created_at TEXT NOT NULL)')
             # Changes to how cards and drafts are made, shown on the hit-rate chart.
             db.execute('CREATE TABLE IF NOT EXISTS rule_changes(id INTEGER PRIMARY KEY,at TEXT NOT NULL,kind TEXT NOT NULL,text TEXT NOT NULL,ref TEXT)')
+            # The weekly recap as sent (its text, so a tap's result shows in place) and the lines it offers a choice on:
+            # a busy source to filter or keep, a card snoozed again and again to drop, do now or keep.
+            if 'text' not in {r[1] for r in db.execute('PRAGMA table_info(recaps)')}:
+                db.execute('ALTER TABLE recaps ADD COLUMN text TEXT')
+            db.execute('CREATE TABLE IF NOT EXISTS recap_items(id TEXT PRIMARY KEY,week TEXT NOT NULL,n INTEGER NOT NULL,kind TEXT NOT NULL,ref TEXT,'
+                       'line TEXT NOT NULL,data TEXT NOT NULL,status TEXT NOT NULL,decision_id TEXT,decided_at TEXT)')
             # How the owner writes, a short block per channel (and All): learned from their style notes, their edits
             # and their own messages, editable in Settings. Like facts, what was learned, not what messages say.
             db.execute('CREATE TABLE IF NOT EXISTS voices(channel TEXT PRIMARY KEY,text TEXT NOT NULL,source TEXT NOT NULL,ref TEXT,updated_at TEXT NOT NULL)')
@@ -9196,137 +9202,313 @@ def assistant_token_usage(since_ms, path=None):
     return totals
 
 
-def recap_graph_lines(store):
-    """What's alive this week: projects heating up or cooling, who has gone quiet (with what they are to
-    the owner, or their organisation's role: "a customer went quiet"), and roles waiting for the owner's ✓."""
+def recap_escape(text):
+    """Owner data in the recap's Telegram markdown: shown as written, never as formatting or a link."""
+    return re.sub(r'([\\`*_\[\]~])', r'\\\1', str(text))
+
+
+def recap_clip(text, limit=70):
+    text = ' '.join(str(text or '').split())
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
+
+
+def recap_day(value, with_time=False):
+    """Fri 23 Oct (and 09:30) in the owner's time zone, from a date or a time."""
+    if len(str(value)) <= 10:
+        d = dt.date.fromisoformat(str(value)[:10])
+        return f'{d:%a} {d.day} {d:%b}'
+    t = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(local_tz())
+    return f'{t:%a} {t.day} {t:%b}' + (f' {t:%H:%M}' if with_time else '')
+
+
+def recap_noise(db, since):
+    """Automated sources that were busy this week and led to no card, each with the `exclude` rule that would filter it:
+    {(account, where): {'n', 'rule'}}. Only automated sources are candidates, never people's own conversations: a group chat
+    the owner writes in this week, or a small circle of people, is someone's own chat (friends, family), not noise."""
+    used = set()
+    for (ids,) in db.execute('SELECT event_ids FROM suggestions'):
+        used |= set(json.loads(ids))
+    noise, circle = {}, collections.defaultdict(lambda: {'mine': 0, 'people': set()})
+    for i, account, kind, m in db.execute('SELECT id,account_id,kind,metadata FROM events WHERE ingested_at>=?', (since,)):
+        m = json.loads(m)
+        if kind == 'whatsapp.message' and str(m.get('chat_id', '')).endswith('@g.us'):
+            chat = circle[(account, m['chat_id'])]  # who takes part, from every message in it (cards or not)
+            if m.get('from_me'):
+                chat['mine'] += 1
+            elif m.get('sender_id') or m.get('from'):
+                chat['people'].add(m.get('sender_id') or m.get('from'))
+        if i in used:
+            continue
+        sender = re.sub(r'.*<|>.*', '', str(m.get('from') or '')).strip()
+        if kind == 'slack.message' and m.get('channel_name') and not str(m['channel_name']).startswith('DM '):
+            where, rule = '#' + m['channel_name'], {'channels': [m['channel_name']]}
+        elif kind == 'whatsapp.message' and str(m.get('chat_id', '')).endswith('@g.us'):
+            where, rule = m.get('chat_name') or 'WhatsApp group', {'chats': [m['chat_id']]}
+        elif kind == 'android.notification' and m.get('package_name'):
+            app = str(m.get('app_name') or android_app_name(m['package_name']))
+            app = app.rsplit('.', 1)[-1] if re.fullmatch(r'[\w]+(?:\.[\w]+)+', app) else app  # com.Slack → Slack
+            where, rule = app[:1].upper() + app[1:] + ' notifications', {'packages': [m['package_name']]}
+        elif kind in ('gmail.message', 'salesflare.email') and sender and re.search(r'(?i)no-?reply|notification|alert|digest|news|mailer|updates?@', sender):
+            where, rule = sender, {'senders': [sender.lower()]}
+        else:
+            continue
+        noise.setdefault((account, where), {'n': 0, 'rule': rule})['n'] += 1
+    own = lambda account, rule: any(c['mine'] or len(c['people']) <= RECAP_CIRCLE for c in [circle[(account, rule['chats'][0])]]) if 'chats' in rule else False
+    return {k: v for k, v in noise.items() if not own(k[0], v['rule'])}
+
+
+def recap_named(node):
+    """Someone known by a name of their own: not an address or a domain, and not their organisation's own name
+    (a company's desk writing as the company, like a support team signing with the product's name)."""
+    name = ' '.join(str(node.get('name') or '').split())
+    if not name or '@' in name or re.search(r'\S\.[a-z]{2,}\b', name, re.I):
+        return False
+    org = str(node.get('org') or '').removeprefix('org:').casefold()
+    labels = [label for label in org.split('.')[:-1] if label]
+    return not (len(name.split()) == 1 and any(name.casefold() in label for label in labels))
+
+
+def recap_graph_lines(store, since=None):
+    """What's alive this week: projects heating up or cooling, who is new (by name), who has gone quiet (with what they
+    are to the owner, or their organisation's role: "a customer went quiet"), and roles waiting for the owner's ✓."""
     try:
         with store.connect() as db:
             view = graph.overview(db, 3)
             orgs = {r['id']: (r['name'], json.loads(r['info']).get('role')) for r in db.execute("SELECT id,name,info FROM graph_nodes WHERE kind='org'")}
+            made = [(r['name'], r['made']) for r in db.execute("SELECT name,json_extract(info,'$.created_at') made FROM graph_nodes WHERE kind='project' "
+                                                                "AND json_extract(info,'$.closed_at') IS NULL ORDER BY strength DESC")]
     except sqlite3.Error:
         return []
     out = []
     for state in ('heating up', 'active', 'cooling'):
-        names = [p['name'] for p in view['projects'] if p['state'] == state][:3]
+        names = [recap_escape(p['name']) for p in view['projects'] if p['state'] == state][:3]
         if names:
             out.append(f"• {state[0].upper() + state[1:]}: {', '.join(names)}")
 
     def who(p):
         org, org_role = orgs.get(p.get('org'), (None, None))
         what = p.get('role') or (f'at {org}, {org_role}' if org_role else None)
-        return p['name'] + ' (' + (what + ', ' if what else '') + ('usually daily)' if round(p['usual_gap_days']) <= 1 else f"usually every {round(p['usual_gap_days'])} days)")
+        return recap_escape(p['name'] + ' (' + (what + ', ' if what else '') + ('usually daily)' if round(p['usual_gap_days']) <= 1 else f"usually every {round(p['usual_gap_days'])} days)"))
+    named = [p for p in view['new'] if recap_named(p)]
+    unnamed = sum(1 for p in view['new'] if '@' in str(p.get('name') or ''))  # known only by their address so far
+    if named:
+        more = f', and {unnamed} more known only by address' if unnamed else ''
+        out.append(f"• New people: {', '.join(recap_escape(p['name']) for p in named[:4])}{more}")
+    # New projects, once the graph is older than this week (on its first week every project is new).
+    if since and made and all(m for _, m in made) and min(m for _, m in made) < since:
+        fresh = [recap_escape(n) for n, m in made if m >= since][:3]
+        if fresh:
+            out.append(f"• New projects: {', '.join(fresh)}")
     if view['quiet']:
         out.append('• Gone quiet: ' + ', '.join(who(p) for p in view['quiet']))
-    if view['new']:
-        out.append(f"• New this week: {', '.join(p['name'] for p in view['new'][:3])}")
     if view['whos_who']:
         n = len(view['whos_who'])
         out.append(f"• {n} role{'s' if n != 1 else ''} to confirm in the Graph tab's Who's who")
     return out
 
 
-def weekly_recap(store, config, current=None, usage=None):
-    """Friday recap: what the assistant suggested, what the owner did, what it cost, what's noisy."""
+RECAP_CIRCLE = 8  # a group chat with this many others or fewer is a circle of people, not a broadcast
+RECAP_CHOICES = {'noise': ('filter', 'keep', 'undo'), 'snoozed': ('drop', 'now', 'keep')}
+RECAP_DONE = {'filtered': 'Filtered', 'kept': 'Kept', 'dropped': 'Dropped', 'started': 'Started'}
+
+
+def recap_buttons(items):
+    """One row per line still open: Filter / Keep for a busy source, Drop / Do it now / Keep for a card snoozed again and
+    again; a filtered source keeps Undo. The number matches the line's number in the text."""
+    rows = []
+    for item in items:
+        n, value = item['n'], f"assistant:recap:{item['id']}:"
+        if item['status'] == 'open':
+            labels = [('Filter', 'filter'), ('Keep', 'keep')] if item['kind'] == 'noise' else [('Drop', 'drop'), ('Do it now', 'now'), ('Keep', 'keep')]
+            rows.append([{'text': f'{label} {n}', 'value': value + choice} for label, choice in labels])
+        elif item['status'] == 'filtered':
+            rows.append([{'text': f'Undo {n}', 'value': value + 'undo'}])
+    return rows
+
+
+def recap_view(text, items):
+    """The recap as it stands now: each decided line says what was done, and only open lines keep their buttons."""
+    for item in items:
+        if item['status'] in RECAP_DONE:
+            text = text.replace(item['line'], item['line'] + ' · **' + RECAP_DONE[item['status']] + '**', 1)
+    return {'text': text, 'buttons': recap_buttons(items)}
+
+
+def recap_presentation(buttons):
+    """The same rows as Telegram presentation blocks for the message tool (send and edit)."""
+    blocks = [{'type': 'buttons', 'buttons': [{'label': b['text'], 'action': {'type': 'callback', 'value': b['value']}} for b in row]} for row in buttons]
+    return {'blocks': blocks or [{'type': 'buttons', 'buttons': []}]}
+
+
+def recap_meetings(db, start, end, cards):
+    """The week ahead's meetings worth a line: the owner's own (calendar_owned: on a shared calendar, only those they
+    organise or are invited to), with other people, said yes or not answered, and either a one-off or one with a card on
+    it (a weekly one-on-one is routine, unless something is prepared for it). A meeting on two calendars shows once."""
+    seen, out = set(), []
+    for r in db.execute("SELECT id,title,occurred_at,metadata FROM events WHERE kind='calendar.event' AND deleted=0 AND occurred_at>=? AND occurred_at<? "
+                        'ORDER BY occurred_at,id LIMIT 300', (start, end)):
+        m = json.loads(r['metadata'])
+        if not calendar_owned(m):
+            continue
+        people = [x for x in m.get('attendees') or [] if isinstance(x, dict)]
+        if m.get('access') == 'shared_read_only':  # 'self' there is the calendar's owner: the Machine's owner is by address
+            mine = str(m.get('credential_account') or '').lower()
+            is_me = lambda x: str(x.get('email') or '').lower() == mine
+        else:
+            is_me = lambda x: bool(x.get('self'))
+        me = next((x for x in people if is_me(x)), {})
+        card = cards.get(r['id'])
+        if m.get('all_day') or me.get('responseStatus') == 'declined' or m.get('status') == 'cancelled':
+            continue
+        others = [x for x in people if not is_me(x)]
+        if not others or (m.get('recurring_event_id') and not card):
+            continue
+        keys = calendar_keys(m, r['title'], r['occurred_at'], None)
+        if keys & seen:
+            continue
+        seen |= keys
+        out.append({'at': r['occurred_at'], 'title': r['title'], 'guests': len(others), 'card': card})
+    return out
+
+
+def weekly_recap_message(store, config, current=None, usage=None):
+    """Friday recap, made to act on: what needs the owner first (late promises, their own with a date), the week ahead,
+    what changed and whether it works, then busy sources and cards snoozed again and again, each with a one-tap choice
+    that changes only the owner's own filters or cards. Behind the scenes in one line at the end.
+    Returns {'text', 'items'}: items are the numbered lines with a choice (not stored yet)."""
     current = current or dt.datetime.fromisoformat(now())
+    tz = local_tz()
     since = (current - dt.timedelta(days=7)).isoformat()
+    today = current.astimezone(tz).date()
+    # The week ahead: tomorrow through the same weekday next week (a Friday recap: Saturday to Friday).
+    tomorrow = today + dt.timedelta(days=1)
+    start_ahead = dt.datetime.combine(tomorrow, dt.time(), tz).astimezone(dt.timezone.utc).isoformat()
+    ahead = dt.datetime.combine(tomorrow + dt.timedelta(days=7), dt.time(), tz).astimezone(dt.timezone.utc).isoformat()
+    in_week = lambda day: tomorrow.isoformat() <= str(day)[:10] < (tomorrow + dt.timedelta(days=7)).isoformat()
+    root = 'https://' + config['dashboard_host'] + config.get('dashboard_path', '/') if config.get('dashboard_host') else ''
+    link = lambda text, card: f'[{recap_escape(text)}]({root}#card={card})' if root and card else recap_escape(text)
+    names = {x['id']: x.get('display_name') or x.get('email') or x['id'] for x in config.get('accounts', [])}
     with store.connect() as db:
-        sug = [dict(r) for r in db.execute('SELECT id,status,created_at,account_ids FROM suggestions WHERE created_at>=?', (since,))]
-        dec = [dict(r) for r in db.execute("SELECT suggestion_id,choice,created_at FROM decisions WHERE created_at>=? AND source IN ('telegram','dashboard')", (since,))]
-        preps = dict(db.execute("SELECT status,count(*) FROM preparations WHERE updated_at>=? GROUP BY status", (since,)).fetchall())
         runs = db.execute("SELECT count(*) FROM review_runs WHERE started_at>=?", (since,)).fetchone()[0]
         batches = [json.loads(r[0]) for r in db.execute("SELECT items FROM analyses WHERE status='complete' AND finished_at>=?", (since,))]
         reviewed = sum(sum(1 for i in items if not i.get('deferred') and not i.get('excluded')) for items in batches)
-        backlog, aside = db.execute('SELECT count(*),coalesce(sum(deferrals>=?),0) FROM events WHERE analyzed_version<version', (SET_ASIDE_AFTER,)).fetchone()
-        collected = db.execute('SELECT count(*) FROM events WHERE ingested_at>=?', (since,)).fetchone()[0]
-        used = set()
-        for (ids,) in db.execute('SELECT event_ids FROM suggestions'):
-            used |= set(json.loads(ids))
-        noise = collections.Counter()
-        for i, account, kind, m in db.execute('SELECT id,account_id,kind,metadata FROM events WHERE ingested_at>=?', (since,)):
-            if i in used:
-                continue
-            m = json.loads(m)
-            # Only automated sources are filter candidates, never people's conversations.
-            sender = re.sub(r'.*<|>.*', '', str(m.get('from') or ''))
-            if kind == 'slack.message' and not str(m.get('channel_name', '')).startswith('DM '):
-                where = '#' + m['channel_name']
-            elif kind == 'whatsapp.message' and str(m.get('chat_id', '')).endswith('@g.us'):
-                where = m.get('chat_name') or 'WhatsApp group'
-            elif kind == 'android.notification':
-                where = str(m.get('app_name') or m.get('package_name') or 'app').rsplit('.', 1)[-1] + ' notifications'  # com.Slack → Slack
-            elif kind in ('gmail.message', 'salesflare.email') and re.search(r'(?i)no-?reply|notification|alert|digest|news|mailer|updates?@', sender):
-                where = sender
-            else:
-                continue
-            noise[(account, where)] += 1
-    choices = collections.Counter(d['choice'] for d in dec)
-    first = {}
-    for d in sorted(dec, key=lambda d: d['created_at']):
-        first.setdefault(d['suggestion_id'], d['created_at'])
-    waits = sorted((dt.datetime.fromisoformat(first[x['id']]) - dt.datetime.fromisoformat(x['created_at'])).total_seconds() / 60
-                   for x in sug if x['id'] in first)
-    open_now = collections.Counter(x['status'] for x in sug if x['status'] not in ('completed', 'rejected'))
-    # Short sections with a bold heading and one point per line, so it reads at a glance on a phone.
-    n = lambda v: f'{v:,}'
-    tz = local_tz()
+        backlog = db.execute('SELECT count(*) FROM events WHERE analyzed_version<version').fetchone()[0]
+        noise = recap_noise(db, since)
+        open_cards = {r['id']: dict(r) for r in db.execute(
+            "SELECT id,title,status,due,event_ids FROM suggestions WHERE status IN ('pending','accepted','instructions','prepared','snoozed')")}
+        on_event = {}
+        for card in open_cards.values():
+            for e in json.loads(card['event_ids']):
+                on_event.setdefault(e, card)
+        meetings = recap_meetings(db, start_ahead, ahead, on_event)
+        snoozed = [dict(r) for r in db.execute(
+            "SELECT d.suggestion_id id,count(*) n,max(d.created_at) last FROM decisions d JOIN suggestions s ON s.id=d.suggestion_id WHERE d.choice='snooze' "
+            "AND d.source IN ('telegram','dashboard') AND d.created_at>=? AND s.status IN ('snoozed','pending') GROUP BY d.suggestion_id HAVING n>=2 ORDER BY n DESC,last DESC",
+            (since,))]
+        # A source or card the owner said Keep to in an earlier recap isn't offered again (a card only until it is snoozed again).
+        kept = [dict(r) for r in db.execute("SELECT kind,ref,data,decided_at FROM recap_items WHERE status='kept'")]
+        changes = [dict(r) for r in db.execute('SELECT at,kind,text FROM rule_changes WHERE at>=? ORDER BY at', (since,))]
+    kept_rules = [json.loads(k['data']).get('rule') for k in kept if k['kind'] == 'noise']
+    kept_cards = {k['ref']: k['decided_at'] for k in kept if k['kind'] == 'snoozed'}
     start_local, end_local = dt.datetime.fromisoformat(since).astimezone(tz), current.astimezone(tz)
     span = f"{start_local.day}–{end_local.day} {end_local:%b}" if (start_local.month, start_local.year) == (end_local.month, end_local.year) else f"{start_local.day} {start_local:%b} – {end_local.day} {end_local:%b}"
-    lines = ['**Your week with The Machine**', span]
-    week, before = store.quality(7, current.isoformat()), store.quality(7, since)
-    if week['hit_rate'] is not None:
-        then = f" (week before: {before['hit_rate']}%)" if before['hit_rate'] is not None else ''
-        lines += ['', f"**{week['hit_rate']}% worth it**{then}",
-                  f"{week['worth_it']} of the {week['worth_it'] + week['dismissed']} cards you decided on were worth it."
-                  + (f" Do it got it right the first time {week['first_time']} of {week['do_it']} times"
-                     + (f" (week before: {before['first_time_rate']}%)" if before['first_time_rate'] is not None else '') + '.' if week['do_it'] else '')]
-    cards = [f"• {n(len(sug))} new: {choices['accept']} accepted, {choices['complete']} done, {choices['reject']} dismissed, {choices['snooze']} snoozed"]
-    if waits:
-        cards.append(f"• You usually responded within {round(waits[len(waits) // 2])} min")
-    if open_now:
-        cards.append(f"• Open now: {sum(open_now.values())} ({', '.join(f'{v} {k}' for k, v in open_now.items())})")
-    if preps:
-        cards.append(f"• Do it: {preps.get('done', 0)} ready, {preps.get('cancelled', 0)} stopped by you, {preps.get('blocked', 0) or 'none'} stuck")
-    lines += ['', '**Cards**', *cards]
-    promised = store.promises(7)
-    if promised:
-        today = current.astimezone(tz).date().isoformat()
-        count = lambda direction, *states: sum(1 for p in promised if p['direction'] == direction and p['state'] in states)
-        late = sum(1 for p in promised if p['state'] in ('open', 'card') and p['due'] and p['due'] < today)
-        lines += ['', '**Promises**', f"• Yours: {count('mine', 'kept')} kept, {count('mine', 'open', 'card')} open",
-                  f"• To you: {count('theirs', 'kept', 'answered')} came through, {count('theirs', 'open', 'card')} still waiting"]
-        if late:
-            lines.append(f"• {late} past {'its' if late == 1 else 'their'} date")
-    alive = recap_graph_lines(store)
+    lines = [f'**Your week with The Machine** · {span}']
+
+    # 1. What needs the owner: promises made to them that are late, then their own open ones with a date.
+    promised = [p for p in store.promises(7) if p['state'] in ('open', 'card')]
+    card_of = lambda p: p['suggestion_id'] if p['state'] == 'card' and p['suggestion_id'] in open_cards else None
+    late_to = [p for p in promised if p['direction'] == 'theirs' and ((p['due'] and p['due'] < today.isoformat()) or (not p['due'] and p['check_at'] <= current.isoformat()))]
+    soon = (today + dt.timedelta(days=14)).isoformat()  # their own: late ones and those due in the next two weeks
+    mine = sorted((p for p in promised if p['direction'] == 'mine' and p['due'] and p['due'] <= soon), key=lambda p: p['due'])
+    needs = [f"• Waiting on {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+             + (f"due {recap_day(p['due'])}" if p['due'] else f"since {recap_day(p['made_at'])}") for p in late_to[:4]]
+    needs += [f"• Promised {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+              + (f"was due {recap_day(p['due'])}" if p['due'] < today.isoformat() else f"due {recap_day(p['due'])}") for p in mine[:4]]
+    more = max(0, len(late_to) - 4) + max(0, len(mine) - 4)
+    if needs:
+        lines += ['', '**Needs you**', *needs] + ([f'• {more} more in Promises' + (f' on the [dashboard]({root})' if root else '')] if more else [])
+
+    # 2. The week ahead: meetings worth preparing, cards due and dates others promised.
+    week = []
+    for m in meetings[:5]:
+        card = m['card']
+        prep = (' · ' + link('prep ready' if card['status'] == 'prepared' else 'card', card['id'])) if card else ''
+        week.append((m['at'], f"• {recap_day(m['at'], True)} {recap_escape(recap_clip(m['title'], 60))}, {m['guests']} {'person' if m['guests'] == 1 else 'people'}{prep}"))
+    listed = {m['card']['id'] for m in meetings[:5] if m['card']}
+    for card in open_cards.values():
+        if card['due'] and in_week(card['due']) and card['id'] not in listed:
+            week.append((card['due'], f"• {recap_day(card['due'][:10])}: {link(recap_clip(card['title']), card['id'])} is due"))
+    for p in promised:
+        same = lambda q: q['direction'] == 'mine' and q['who'] == p['who'] and q['what'].lower() == p['what'].lower()
+        if p['direction'] == 'theirs' and p['due'] and in_week(p['due']) and not any(map(same, mine)):  # today's are on time, late ones are under Needs you, a shared plan shows once
+            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {link(recap_clip(p['what']), card_of(p))}"))
+    if week:
+        when = lambda v: str(v) if len(str(v)) <= 10 else dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')).astimezone(tz).strftime('%Y-%m-%dT%H:%M')
+        week.sort(key=lambda w: when(w[0]))
+        lines += ['', '**Next week**', *[w for _, w in week[:8]]]
+
+    # 3. What changed: the hit rate in one line, what it learned and whether that works.
+    q, before = store.quality(7, current.isoformat()), store.quality(7, since)
+    changed = []
+    if q['hit_rate'] is not None:
+        was = before['hit_rate']
+        trend = '' if was is None else ', same as the week before' if was == q['hit_rate'] else f", up from {was}%" if q['hit_rate'] > was else f", down from {was}%"
+        first = f" Do it was right first time in {q['first_time']} of {q['do_it']}." if q['do_it'] else ''
+        changed.append(f"• {q['hit_rate']}% of cards worth it ({q['worth_it']} of {q['worth_it'] + q['dismissed']}){trend}.{first}")
+    learned = store.behaviour(7)
+    rules = sum(1 for c in changes if c['kind'] == 'draft_rule' and not c['text'].startswith('Removed'))
+    voices = sum(1 for c in changes if c['kind'] == 'voice')
+    guide = sum(1 for c in changes if c['kind'] == 'file' and c['text'] == 'PREPARATION.md edited')  # what behaviour() counts as a rule change
+    filters = sum(1 for c in changes if c['kind'] == 'filter' and not c['text'].startswith('Removed'))
+    plural = lambda n, one, many: f'{n} {one if n == 1 else many}'
+    bits = [b for n, b in ((rules, plural(rules, 'writing rule', 'writing rules')), (voices, plural(voices, 'update', 'updates') + ' to how you write'),
+                           (guide, plural(guide, 'edit', 'edits') + ' to the drafting guide'), (filters, plural(filters, 'new filter', 'new filters'))) if n]
+    sent = learned['sent_as_written'] + learned['sent_edited']
+    s = learned['since_rules']
+    if bits:
+        done = (s['as_written'] + s['edited']) if s else 0
+        works = (f" Since then, {s['as_written']} of {done} drafts went out as written" + (f" ({learned['sent_as_written'] - s['as_written']} of {sent - done} before)." if sent > done else '.')
+                 if s and done else ' No drafts sent since then yet.' if s else '')
+        changed.append('• Adjusted: ' + ', '.join(bits) + '.' + works)
+    elif sent:
+        changed.append(f"• Drafts: {learned['sent_as_written']} of {sent} went out as written.")
+    if changed:
+        lines += ['', '**What changed**', *changed]
+    alive = recap_graph_lines(store, since)
     if alive:
         lines += ['', '**People and projects**', *alive]
-    learned = store.behaviour(7)
-    noticed = []
-    if learned['sent_as_written'] or learned['sent_edited']:
-        noticed.append(f"• Drafts: {learned['sent_as_written']} sent as written, {learned['sent_edited']} changed by you first")
-        if learned['since_rules']:
-            s, day = learned['since_rules'], dt.datetime.fromisoformat(learned['since_rules']['at']).astimezone(tz)
-            done = s['as_written'] + s['edited']
-            noticed.append(f"\u00a0\u00a0\u00a0◦ Since the writing rules last changed ({day:%a} {day.day} {day:%b}): "
-                           + (f"{s['as_written']} of {done} sent as written" if done else 'none sent yet'))
-    if learned['quick_dismissed']:
-        noticed.append(f"• {len(learned['quick_dismissed'])} dismissed within minutes")
-    if learned['snoozed_again']:
-        noticed.append('• Snoozed more than once:')
-        noticed += ['\u00a0\u00a0\u00a0◦ ' + t for t, _ in learned['snoozed_again'][:3]]
-    if noticed:
-        lines += ['', '**What I noticed**', *noticed, "I'll take this into account in my next reviews and drafts."]
-    names = {x['id']: x.get('display_name') or x.get('email') or x['id'] for x in config.get('accounts', [])}
-    busy = [(k, v) for k, v in noise.most_common() if k and v >= 20][:3]
-    if busy:
-        lines += ['', '**Busy without results**', *(f"• {where} ({names.get(account, account)}): {n(v)} this week" for (account, where), v in busy),
-                  'Tell me if any of these should be filtered.']
-    lines += ['', '**Behind the scenes**',
-              f"• {n(reviewed)} signals reviewed in {n(len(batches))} batches over {n(runs)} runs",
-              f"• {n(collected)} new this week, {n(backlog)} waiting" + (f" ({n(aside)} set aside)" if aside else '')]
+
+    # 4. One-tap choices: nothing changes until the owner taps, and a tap changes only their own filters or cards.
+    items = []
+    busy = [(k, v) for k, v in sorted(noise.items(), key=lambda kv: -kv[1]['n']) if k[0] and v['n'] >= 20 and v['rule'] not in kept_rules][:3]
+    for (account, where), v in busy:
+        items.append({'kind': 'noise', 'ref': account, 'data': {'account': account, 'rule': v['rule'], 'label': f'{where} ({names.get(account, account)})'},
+                      'line': f"{len(items) + 1}. {recap_escape(where)} ({recap_escape(names.get(account, account))}): {v['n']:,} this week, no cards"})
+    if items:
+        lines += ['', '**Busy without results**', *(i['line'] for i in items)]
+    again = [s for s in snoozed if s['id'] in open_cards and not (s['id'] in kept_cards and s['last'] <= kept_cards[s['id']])][:3]
+    first_card = len(items)
+    for s in again:
+        items.append({'kind': 'snoozed', 'ref': s['id'], 'data': {'title': open_cards[s['id']]['title']},
+                      'line': f"{len(items) + 1}. {link(recap_clip(open_cards[s['id']]['title']), s['id'])}, {s['n']} times"})
+    if len(items) > first_card:
+        lines += ['', '**Snoozed more than once**', *(i['line'] for i in items[first_card:])]
+    if items:
+        lines.append('Nothing changes until you tap.')
+
+    # 5. Behind the scenes, in one line.
+    tail = f"{reviewed:,} signals reviewed in {runs:,} runs, {backlog:,} waiting"
     if usage:
-        lines.append(f"• Tokens: {usage['input'] / 1e6:.1f}M in, {usage['cacheRead'] / 1e6:.1f}M cached, {usage['output'] / 1e3:.0f}K out over {usage['runs']} sessions."
-                     f" About ${usage['usd']:.2f} at Azure list price (GPT-6.1 Sol, Sweden Central); it runs on your subscription.")
-    return '\n'.join(lines)
+        tail += f"; about ${usage['usd']:.2f} at API list price, on your subscription"
+    lines += ['', f'_Behind the scenes: {tail}._']
+    for n, item in enumerate(items, 1):
+        item.update(id='r_' + secrets.token_hex(6), n=n, status='open')
+    return {'text': '\n'.join(lines), 'items': items}
+
+
+def weekly_recap(store, config, current=None, usage=None):
+    """The recap's text (weekly_recap_message without storing its choices)."""
+    return weekly_recap_message(store, config, current, usage)['text']
 
 
 def profile_prompt(run_id, counts, room=PROFILE_ROOM):
@@ -10138,6 +10320,8 @@ class App:
             if not owner_dashboard:
                 raise ValueError('Task pages are shared from the dashboard')
             return self.task_pages.action(name, args)
+        if name == 'recap_decide':  # a tap on the weekly recap's Filter, Keep, Undo, Drop or Do it now
+            return self.recap_decide(args, owner_dashboard)
         if name.startswith('fleet_') or name in FAMILY_ACTIONS:
             return self.fleet_action(name, args, owner_dashboard)
         if name == 'related':
@@ -12736,20 +12920,22 @@ class App:
         return {'run_id': run_id, 'started_at': started, 'waiting': waiting, 'signals': min(waiting, budget)}
 
     def recap_push(self, message, week):
-        """Without Telegram the recap's start goes to the dashboard app as a notification."""
+        """Without Telegram the recap's start goes to the dashboard app as a notification: what needs the owner first."""
         with self.store.connect() as db:
             subscriptions = [dict(r) for r in db.execute('SELECT endpoint,p256dh,auth FROM push_subscriptions')]
         if subscriptions and self.config.get('dashboard_host'):
             root = 'https://' + self.config['dashboard_host'] + self.config.get('dashboard_path', '/')
+            body = '\n'.join(message.split('\n')[1:])  # the title says it is the week; the first section leads
             try:
                 push_node(self.config, {'action': 'send', 'subscriptions': subscriptions,
-                                        'payload': {'title': 'Your week', 'body': plain(message), 'url': root, 'tag': 'recap-' + week}})
+                                        'payload': {'title': 'Your week', 'body': plain(body), 'url': root, 'tag': 'recap-' + week}})
             except (subprocess.TimeoutExpired, ValueError, KeyError) as error:
                 LOG.warning('push recap error=%s', type(error).__name__)
         return {'messageId': 'web-recap-' + week}
 
     def recap_step(self, sender=None, current=None):
-        """Send the weekly recap once, Fridays from 16:00."""
+        """Send the weekly recap once, Fridays from 16:00. Its choices are stored with it, so a tap on one of its
+        buttons is checked against the message it came from."""
         settings = self.config.get('weekly_recap') or {}
         if not settings.get('enabled'):
             return None
@@ -12767,11 +12953,22 @@ class App:
             usage = assistant_token_usage(int((current - dt.timedelta(days=7)).timestamp() * 1000))
         except Exception:
             usage = None
-        text = weekly_recap(self.store, self.config, current, usage)
-        if sender is None and not telegram_on(self.config):
+        recap = weekly_recap_message(self.store, self.config, current, usage)
+        text, items = recap['text'], recap['items']
+        on_telegram = sender is not None or telegram_on(self.config)
+        if not on_telegram:  # the dashboard app gets the text; its buttons need Telegram
+            items = []
+        with self.store.connect() as db:
+            db.execute('UPDATE recaps SET text=? WHERE week=?', (text, week))
+            for item in items:
+                db.execute("INSERT INTO recap_items(id,week,n,kind,ref,line,data,status) VALUES(?,?,?,?,?,?,?,'open')",
+                           (item['id'], week, item['n'], item['kind'], item['ref'], item['line'], encoded(item['data'])))
+        if sender is None and not on_telegram:
             sender = lambda message: self.recap_push(message, week)
+        buttons = recap_buttons(items)
         sender = sender or (lambda message: telegram_request(self.config, {'action': 'send', 'channel': 'telegram', 'accountId': telegram_account(self.config),
-                                                                           'target': self.config.get('telegram_owner'), 'message': message}))
+                                                                           'target': self.config.get('telegram_owner'), 'message': message,
+                                                                           'presentation': recap_presentation(buttons)}))
         status, message_id, error = 'uncertain', None, None
         try:
             receipt = sender(text)
@@ -12783,10 +12980,102 @@ class App:
             error = 'delivery_outcome_unknown'  # never resend blindly
         with self.store.connect() as db:
             if status == 'not_sent':
+                db.execute('DELETE FROM recap_items WHERE week=?', (week,))
                 db.execute('DELETE FROM recaps WHERE week=?', (week,))  # nothing went out; try again later
             else:
                 db.execute('UPDATE recaps SET status=?,message_id=?,error=? WHERE week=?', (status, message_id, error, week))
         return status
+
+    def recap_view(self, week):
+        with self.store.connect() as db:
+            row = db.execute('SELECT text,message_id FROM recaps WHERE week=?', (week,)).fetchone()
+            items = [dict(r) for r in db.execute('SELECT * FROM recap_items WHERE week=? ORDER BY n', (week,))]
+        return (recap_view(row['text'] or '', items), row['message_id']) if row else (None, None)
+
+    def recap_retell(self, week):
+        """The recap message brought up to date after a tap: the line says what was done, its buttons go."""
+        try:
+            view, message_id = self.recap_view(week)
+            if view and message_id and telegram_on(self.config) and not str(message_id).startswith('web-'):
+                telegram_request(self.config, {'action': 'edit', 'channel': 'telegram', 'accountId': telegram_account(self.config),
+                                               'target': self.config.get('telegram_owner'), 'messageId': str(message_id),
+                                               'message': view['text'], 'presentation': recap_presentation(view['buttons'])})
+        except Exception as error:
+            LOG.warning('recap edit error=%s', type(error).__name__)
+
+    def recap_filter(self, data, add):
+        """Add (or, for Undo, take out) one `exclude` rule on one of the owner's own accounts, in config.json and at
+        once for new signals. Signals already stored stay; only new ones are skipped."""
+        import onboarding
+        if not getattr(self, 'config_path', None):
+            raise ValueError('Filters on this Machine are set in config.json')
+        config = onboarding.load(self.config_path)
+        account = next((x for x in config.get('accounts', []) if x.get('id') == data.get('account')), None)
+        if not account or not isinstance(data.get('rule'), dict):
+            raise ValueError('That source is no longer connected')
+        rules = account.setdefault('exclude', [])
+        if add and data['rule'] not in rules:
+            rules.append(data['rule'])
+        elif not add:
+            account['exclude'] = [r for r in rules if r != data['rule']]
+        onboarding.save(self.config_path, config)
+        live = next((x for x in self.config.get('accounts', []) if x.get('id') == account['id']), None)
+        if live is not None:
+            live['exclude'] = account['exclude']
+            self.store.exclusions[account['id']] = (live.get('exclude') or []) + default_exclusions(self.config, live)
+
+    def recap_decide(self, args, owner_dashboard=False):
+        """A tap on the weekly recap: Filter, Keep or Undo on a busy source; Drop, Do it now or Keep on a card snoozed
+        again and again. Only the owner's own filters and cards change; nothing is sent to anyone. From Telegram only
+        on the recap message that offered it."""
+        item_id, choice = str(args.get('id') or ''), str(args.get('choice') or '')
+        if not owner_dashboard and args.get('source') != 'telegram':
+            raise ValueError('Recap choices come from the recap message')
+        with self.store.connect() as db:
+            item = db.execute('SELECT i.*,r.message_id FROM recap_items i JOIN recaps r ON r.week=i.week WHERE i.id=?', (item_id,)).fetchone()
+        if not item:
+            raise ValueError('That recap line is no longer known')
+        item = dict(item)
+        if not owner_dashboard and str(item['message_id'] or '') != str(args.get('message_id') or ''):
+            raise ValueError('That Telegram message is not the recap this line was sent in')
+        if choice not in RECAP_CHOICES[item['kind']]:
+            raise ValueError('Unknown choice')
+        decision = str(args.get('decision_id') or '') or 'recap:' + secrets.token_hex(8)
+        if item['decision_id'] == decision:
+            return {'status': item['status'], 'duplicate': True}
+        if (choice == 'undo') != (item['status'] == 'filtered') or (choice != 'undo' and item['status'] != 'open'):
+            return {'status': item['status'], 'reason': 'Already done: ' + RECAP_DONE.get(item['status'], 'open').lower() + '.'}
+        data, status = json.loads(item['data']), {'filter': 'filtered', 'keep': 'kept', 'undo': 'open', 'drop': 'dropped', 'now': 'started'}[choice]
+        source = 'dashboard' if owner_dashboard else 'telegram'
+        if choice in ('filter', 'undo'):
+            self.recap_filter(data, choice == 'filter')
+            with self.store.connect() as db:
+                db.execute("INSERT INTO rule_changes(at,kind,text,ref) VALUES(?,'filter',?,?)",
+                           (now(), ('Filter: ' if choice == 'filter' else 'Removed filter: ') + data.get('label', ''), item['id']))
+        elif choice in ('drop', 'now'):
+            card = item['ref']
+            with self.store.connect() as db:
+                row = db.execute('SELECT status FROM suggestions WHERE id=?', (card,)).fetchone()
+            if not row or row['status'] in ('completed', 'rejected'):
+                status = 'dropped' if row and row['status'] == 'rejected' else 'kept'
+                reason = 'That card is already closed.'
+            else:
+                reason = None
+                if choice == 'drop':
+                    self.store.decide(card, 'reject', 'Dropped from the weekly recap', decision + ':drop', source)
+                else:  # Unsnooze, then Do it: preparing never sends anything without the owner's own tap on the card
+                    result = self.store.decide(card, 'accept', '', decision + ':back', source) if row['status'] == 'snoozed' else {'status': row['status']}
+                    if result.get('status') == 'pending':
+                        self.store.decide(card, 'accept', '', decision + ':do', source)
+            if reason:
+                with self.store.connect() as db:
+                    db.execute('UPDATE recap_items SET status=?,decision_id=?,decided_at=? WHERE id=?', (status, decision, now(), item['id']))
+                threading.Thread(target=self.recap_retell, args=(item['week'],), daemon=True).start()
+                return {'status': status, 'reason': reason}
+        with self.store.connect() as db:
+            db.execute('UPDATE recap_items SET status=?,decision_id=?,decided_at=? WHERE id=?', (status, decision, now(), item['id']))
+        threading.Thread(target=self.recap_retell, args=(item['week'],), daemon=True).start()
+        return {'status': status}
 
     def profile_step(self, runner=None):
         """Start and follow the one profile turn `assistant profile` asked for (reviews may be off)."""
