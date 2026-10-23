@@ -71,6 +71,7 @@ BROWSER_LEASE = WORKSPACE / 'data/browser-lease/lease.json'
 # Served from the bundled brand/ folder. Replace these files to rebrand the dashboard.
 BRAND_ASSETS = {
     '/brand/avatar.png': ROOT / 'brand/app-icon-192.png',
+    '/brand/avatar-blink.png': ROOT / 'brand/avatar-blink.png',  # the same robot, eyes closed: replace it with avatar.png
     '/brand/favicon-32.png': ROOT / 'brand/app-icon-192.png',
     '/brand/favicon-512.png': ROOT / 'brand/app-icon-maskable-512.png',
     # Empty-state stickers: any image works; the defaults reuse the app icon.
