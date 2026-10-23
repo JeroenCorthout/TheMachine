@@ -25,8 +25,8 @@ const meetings=[
  mtg(1,'Design review',at(0,10),at(0,11)),mtg(2,'Pilot call',at(0,10,30),at(0,11)),mtg(8,'Vendor demo',at(0,10,30),at(0,11,15)),
  mtg(3,'Lunch with Kai',at(0,12),at(0,13)),mtg(10,'Quick call',at(0,13,15),at(0,13,30)),mtg(11,'Follow-up',at(0,13,30),at(0,14)),mtg(9,'Quarterly check-in with Harborline',at(0,14,15),at(0,14,45)),
  mtg(4,'Conference',at(1,0),at(3,0),{all_day:true}),mtg(5,'Their dentist',at(1,9),at(1,10),{shared:'Robin',url:''}),
- // The weekend of the clock change: 10:00 on Saturday (summer time) and on Sunday (winter time)
- mtg(20,'Saturday brunch',new Date('2026-10-24T08:00:00Z'),new Date('2026-10-24T09:00:00Z')),mtg(21,'Sunday walk',new Date('2026-10-25T09:00:00Z'),new Date('2026-10-25T10:00:00Z')),
+ // The weekend of the clock change: 07:00 on Saturday (summer time) and on Sunday (winter time), before anything else that day
+ mtg(20,'Saturday run',new Date('2026-10-24T05:00:00Z'),new Date('2026-10-24T06:00:00Z')),mtg(21,'Sunday walk',new Date('2026-10-25T06:00:00Z'),new Date('2026-10-25T07:00:00Z')),
  // A busy day in October 2026
  ...[8,9,10,11,14].map((h,i)=>mtg(30+i,'Call '+(i+1),new Date(2026,9,14,h),new Date(2026,9,14,h,30)))];
 const promises=[{id:7,direction:'mine',who:'Wren Fairhaven',what:'send the pilot recap',due:key(at(1,0)),state:'open',made_at:now,check_at:now}];
@@ -78,11 +78,11 @@ try{
   await fits(page,'month 1440');await shot(page,'grid-month-1440');
   await busy.locator('.cal-mmore').click();await page.waitForFunction(()=>location.hash==='#calendar?view=agenda&date=2026-10-12');
   assert.equal(await page.locator('#calendar-view .cal-block[data-day="2026-10-14"] .cal-item').count(),5);
-  // The weekend of the clock change: 10:00 sits at 10:00 on both days
-  await go(page,'#calendar?view=week&date=2026-10-19');await page.locator('.cal-tg-col[data-col="2026-10-25"] .cal-blk').waitFor();
+  // The weekend of the clock change: 07:00 sits at 07:00 on both days
+  await go(page,'#calendar?view=week&date=2026-10-19');await page.locator('.cal-tg-col[data-col="2026-10-25"] .cal-blk',{hasText:'Sunday walk'}).waitFor();
   assert.equal(await range(page),'19 – 25 Oct 2026');
-  const tops=await page.evaluate(()=>[['2026-10-24','Saturday brunch'],['2026-10-25','Sunday walk']].map(([k,t])=>{const b=[...document.querySelectorAll(`.cal-tg-col[data-col="${k}"] .cal-blk`)].find(b=>b.textContent.includes(t));return [parseFloat(b.style.top),parseFloat(b.style.height)]}));
-  assert.deepEqual(tops,[[680,66],[680,66]],'an hour at 10:00 on both sides of the change');
+  const tops=await page.evaluate(()=>[['2026-10-24','Saturday run'],['2026-10-25','Sunday walk']].map(([k,t])=>{const b=[...document.querySelectorAll(`.cal-tg-col[data-col="${k}"] .cal-blk`)].find(b=>b.textContent.includes(t));return [parseFloat(b.style.top),parseFloat(b.style.height)]}));
+  assert.deepEqual(tops,[[476,66],[476,66]],'an hour at 07:00 on both sides of the change');
   // This week: seven columns from Monday, today marked with the now line, overlaps side by side, All day on top
   await page.keyboard.press('t');await page.locator('.cal-tg-col.today').waitFor();
   assert.ok(await page.locator('.cal-today.now').count(),'Today is quiet on this week');
