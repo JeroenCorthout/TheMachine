@@ -1571,6 +1571,33 @@ def disconnect(config_path, account_id):
     return account
 
 
+def enable_replies(config_path, account_id, token):
+    """Intercom replies for one account, from the owner's own Sign in with Intercom: the token goes in its own
+    credential file (<account>-reply, mode 600), apart from the read token, with the admin it belongs to (GET /me),
+    who is the only one replies go out as. Refused for an account from a Fleet grant: a shared token only reads.
+    Returns (admin id, name)."""
+    config = load(config_path)
+    account = next((a for a in config.get('accounts', []) if a.get('id') == account_id and a.get('service') == 'intercom'), None)
+    if not account:
+        raise SetupError('That Intercom account is not connected here')
+    a = assistant()
+    plugin = a.load_connector('intercom')
+    if plugin.received(account):
+        raise SetupError('A token shared through your Fleet only reads', 'sign in with Intercom yourself to reply')
+    try:
+        admin, name = plugin.reply_profile(config, account, token, a.CONNECTOR_HELPERS)
+    except a.SourceError as error:
+        raise SetupError(f'Intercom replies are not on: {error}', 'sign in with Intercom again, in the same workspace')
+    name_ = f'{account_id}-reply'
+    if name_ == account.get('credential'):
+        raise SetupError('The reply token needs its own credential file')
+    path = Path(config.setdefault('credentials', {}).setdefault(name_, str(data_dir(config) / f'{name_}.env'))).expanduser()
+    write_private(path, token.strip() + '\n')
+    account.update(reply_credential=name_, reply_admin_id=admin, reply_admin_name=name)
+    save(config_path, config)
+    return admin, name
+
+
 # ---------------------------------------------------------------- service, first sync
 
 def service_active(config_path=None):
