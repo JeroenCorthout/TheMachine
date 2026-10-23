@@ -1564,6 +1564,10 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         # task_pages() brings in answers from task pages (task_pages.TaskPages.round)
         self.task_pages = None
         self.last['removals'] = None
+        # connect_delivered(body) -> {'ok', 'name'?, 'error'?, 'replies'?}: a sign-in the control plane sealed for this
+        # paired Machine (Sign in with Intercom on its owner's Account page), opened here (connects_round)
+        self.connect_delivered = None
+        self.connects_due = False
         with self.connect() as db:
             ensure(db)
 
@@ -2635,6 +2639,8 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         if sealing:
             sealing.flush()  # answers kept while the Network was away go first
         found = self.relay.call('GET', f'/inbox?wait={int(wait)}&notices=1&ack=1', timeout=wait + 15)
+        if found.get('connects'):
+            self.connects_due = True  # a sign-in waits for this Machine: picked up right after (connects_round)
         for ask in found.get('asks', []):
             if sealing and ask.get('id') and sealing.taken(ask['id']):
                 continue  # taken before: its answer is sent or waits in the outbox, so it's never acted on twice
@@ -2775,6 +2781,44 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
             done.append(item['id'])
         return done
 
+    def connects_round(self):
+        """Sign-ins for this paired self-hosted Machine: its owner pressed Sign in with Intercom for it on their Account
+        page, and the control plane sealed the token for this Machine's own key (network_crypto.open_box). Each is
+        handed out once; it is opened here, connected through connect_delivered (which checks it, GET /me, before
+        keeping it) and how it went is reported back, in a few words. Nothing of what it carries is logged."""
+        if not self.connects_due or not self.connect_delivered:
+            return []
+        self.connects_due = False
+        private = getattr(self.relay, 'private', None)
+        if not private:
+            return []
+        try:
+            found = self.relay.call('GET', '/connects', timeout=30)
+        except (Off, Unavailable, OSError, ValueError):
+            return []
+        done = []
+        # This Machine's device id, as the control plane named it when it paired: the answer says, over this Machine's
+        # own token (a pairing from before kept no id). Each connect is sealed bound to it and to its own id.
+        device = str((found or {}).get('device') or '')
+        for item in (found or {}).get('connects', [])[:5]:
+            if not isinstance(item, dict) or not isinstance(item.get('id'), str):
+                continue
+            try:
+                body = network.nc.open_box(item.get('sealed'), private, {'p': 'connect', 't': device, 'r': item['id']})
+                result = self.connect_delivered(body)
+            except network.nc.SealError:
+                LOG.warning('connect not opened id=%s', item['id'])
+                result = {'ok': False, 'error': 'It could not be opened on this Machine. Pair it again, then sign in again.'}
+            except Exception as error:  # noqa: BLE001 - reported, so the Account page says it did not happen
+                LOG.error('connect error=%s', type(error).__name__)
+                result = {'ok': False, 'error': 'The setup stopped unexpectedly.'}
+            try:
+                self.relay.call('POST', '/connects', {'id': item['id'], 'result': result}, timeout=30)
+            except (Off, Unavailable, OSError, ValueError):
+                pass
+            done.append(item['id'])
+        return done
+
     def run(self, stop):
         backoff = away = 0
         while not stop.is_set():
@@ -2782,6 +2826,10 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                 self.removals_round()
             except Exception as error:  # noqa: BLE001 - never stops the Fleet
                 LOG.error('work removal round error=%s', type(error).__name__)
+            try:
+                self.connects_round()
+            except Exception as error:  # noqa: BLE001 - never stops the Fleet
+                LOG.error('connect round error=%s', type(error).__name__)
             try:
                 self.step()
                 self.off, backoff, away = False, 0, 0

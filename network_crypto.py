@@ -27,6 +27,11 @@ from pathlib import Path
 
 VERSION = 1
 ALG = 'x25519-hkdf-sha256-hmacctr-ed25519'
+# A sign-in the control plane sealed for this Machine (fleet.py connects_round): the same sealing, without a sender
+# signature, since this Machine fetched it from the control plane itself over its own token. Its own domain, so it is
+# never taken for a message from another Machine.
+ALG_BOX = 'x25519-hkdf-sha256-hmacctr-box'
+BOX_INFO = b'tm-device-connect/1'
 MAX_BODY = 64 * 1024
 
 try:  # fast path
@@ -373,6 +378,44 @@ def open_sealed(env, private, from_public, context):
         raise SealError('changed on the way')
     if len(ct) > MAX_BODY:
         raise SealError('too big')
+    try:
+        return json.loads(_stream(keys[:32], nonce, ct))
+    except ValueError:
+        raise SealError('not readable') from None
+
+
+# ---------------------------------------------------------------- sealed for this Machine by the control plane
+def seal_box(body, to_box, context):
+    """`body` sealed for the Machine whose X25519 public key is `to_box` (bytes), unsigned: what the control plane does
+    for a sign-in (cloud/device_connect.py). Here for tests and symmetry."""
+    data = json.dumps(body, separators=(',', ':'), sort_keys=True).encode()
+    if len(data) > MAX_BODY:
+        raise SealError('too big')
+    eph = secrets.token_bytes(32)
+    eph_pub = x25519_public(eph)
+    keys = _hkdf(x25519(eph, to_box), eph_pub + to_box, BOX_INFO + context_bytes(context))
+    nonce = secrets.token_bytes(16)
+    ct = _stream(keys[:32], nonce, data)
+    return {'v': VERSION, 'alg': ALG_BOX, 'eph': b64(eph_pub), 'n': b64(nonce), 'ct': b64(ct),
+            'mac': b64(hmac.new(keys[32:], nonce + ct, hashlib.sha256).digest())}
+
+
+def open_box(env, private, context):
+    """A sign-in sealed for this Machine and bound to `context` ({'p': 'connect', 't': device id, 'r': connect id});
+    SealError otherwise. Only for what this Machine fetched from the control plane itself: it carries no signature."""
+    if not isinstance(env, dict) or env.get('alg') != ALG_BOX or env.get('v') != VERSION:
+        raise SealError('not sealed for this Machine')
+    for field, size in (('eph', 32), ('n', 16), ('mac', 32)):
+        unb64(env.get(field), size)
+    ct = unb64(env.get('ct'))
+    if len(ct) > MAX_BODY:
+        raise SealError('too big')
+    box = unb64(private['box'], 32)
+    eph_pub = unb64(env['eph'], 32)
+    keys = _hkdf(x25519(box, eph_pub), eph_pub + x25519_public(box), BOX_INFO + context_bytes(context))
+    nonce = unb64(env['n'], 16)
+    if not hmac.compare_digest(hmac.new(keys[32:], nonce + ct, hashlib.sha256).digest(), unb64(env['mac'], 32)):
+        raise SealError('changed on the way, or not for this Machine')
     try:
         return json.loads(_stream(keys[:32], nonce, ct))
     except ValueError:

@@ -1598,6 +1598,72 @@ def enable_replies(config_path, account_id, token):
     return admin, name
 
 
+DELIVERED = {'intercom'}  # sources a sign-in on the account page connects on a paired self-hosted Machine
+
+
+class AnswersUI(UI):
+    """onboarding.UI with the answers and keys a sign-in brought along: everything else takes its default, nothing is
+    approved, and nothing is printed (what it says could quote a key)."""
+    def __init__(self, answers=None, secrets=None):
+        super().__init__(interactive=True)
+        self.answers, self.secrets = dict(answers or {}), dict(secrets or {})
+
+    def _match(self, table, prompt):
+        return next((v for k, v in table.items() if k.lower() in str(prompt).lower()), None)
+
+    def say(self, text=''):
+        pass
+
+    def ask(self, prompt, default=''):
+        found = self._match(self.answers, prompt)
+        return str(found) if found not in (None, '') else default
+
+    def secret(self, prompt):
+        return str(self._match(self.secrets, prompt) or '')
+
+    def yes(self, prompt, default=True):
+        return False
+
+    def choose(self, prompt, options):
+        wanted = self._match(self.answers, prompt)
+        for value, label_ in options:
+            if wanted is not None and str(label_).lower() == str(wanted).lower():
+                return value
+        if self._match(self.secrets, prompt) and any(value is None for value, _ in options):
+            return None  # the key it brought beats the saved ones offered first
+        return options[0][0]
+
+
+def connect_delivered(config_path, args):
+    """A sign-in from the owner's account page, sealed for this paired self-hosted Machine (fleet.py connects_round):
+    {source, answers, secrets, replies?, another?}, as a hosted Machine's `connect` command. Only the sources in
+    DELIVERED, and only the key that source asks for. The connector checks the key first (Intercom: GET /me, its
+    workspace and admin) and keeps it in its private credential file. replies: the owner's own Sign in with Intercom,
+    which also replies as them (enable_replies checks their admin first). Returns {'ok', 'name', 'replies'?}."""
+    source = args.get('source') if isinstance(args, dict) else None
+    service = SERVICES.get(source, source)
+    if source not in DELIVERED or not setup_of(service).get('secret'):
+        raise SetupError('That source is not connected this way')
+    prompt = setup_of(service)['secret']
+    given = args.get('secrets') if isinstance(args.get('secrets'), dict) else {}
+    token = given.get(prompt)
+    if set(given) != {prompt} or not isinstance(token, str) or not 8 <= len(token) <= 512 or any(c.isspace() for c in token):
+        raise SetupError(f'No {prompt} came with it', 'sign in again on your account page')
+    answers = {k: v for k, v in (args.get('answers') or {}).items() if isinstance(k, str) and isinstance(v, str) and len(k) < 200 and len(v) < 200} \
+        if isinstance(args.get('answers'), dict) else {}
+    if args.get('another') is True:  # a new account next to the ones you have, not one of those again
+        answers['You already have'] = f'add another {label(service)} account'
+    account = connect(config_path, source, AnswersUI(answers, {prompt: token}), restart=False)
+    result = {'ok': True, 'name': account.get('workspace_name') or account.get('company') or label(service)}
+    if args.get('replies') is True and service == 'intercom':
+        try:
+            enable_replies(config_path, account['id'], token)
+            result['replies'] = True
+        except SetupError:
+            result['replies'] = False
+    return result
+
+
 # ---------------------------------------------------------------- service, first sync
 
 def service_active(config_path=None):

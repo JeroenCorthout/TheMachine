@@ -9681,6 +9681,7 @@ class App:
             self.fleet.own_event = lambda event: own_or_joined(event, self.store.owner_user_ids)  # silent acceptance: only what the owner did
             self.fleet.notify_brief = self.fleet_notify_brief
             self.fleet.remove_work = self.fleet_remove_work
+            self.fleet.connect_delivered = self.fleet_connect_delivered  # Sign in with Intercom for this Machine (fleet.py)
         # Skills (skills.py): the owner's how-tos, written to the OpenClaw workspace; shared ones come in through the Fleet.
         self.skills = skills.Skills(self.store.connect, config.get('openclaw_workspace') or WORKSPACE, self.fleet, config=config)
         self.skills.finder = self.skills_find_start
@@ -13117,6 +13118,26 @@ class App:
         LOG.info('work removal accounts=%s events=%s cards=%s', len(result['accounts']), result['events'], result['cards'])
         if result['accounts']:
             result['restarting'] = restart_self(5)
+        return result
+
+    def fleet_connect_delivered(self, body):
+        """A sign-in sealed for this paired Machine (fleet.py connects_round): connected the way the dashboard's
+        Connections, Add does (onboarding.connect_delivered), then a restart reads it. Only the `connect` command."""
+        import onboarding
+        if not isinstance(body, dict) or body.get('command') != 'connect' or not isinstance(body.get('args'), dict):
+            return {'ok': False, 'error': 'Not something this Machine connects this way.'}
+        if not getattr(self, 'config_path', None):
+            return {'ok': False, 'error': 'This Machine cannot save its settings.'}
+        lock = self.__dict__.setdefault('connect_lock', threading.Lock())
+        with lock:
+            if any(v['state'] == 'running' for v in self.__dict__.setdefault('connect_sessions', {}).values()):
+                return {'ok': False, 'error': 'Another source is being added on this Machine. Sign in again once that is done.'}
+            try:
+                result = onboarding.connect_delivered(self.config_path, body['args'])
+            except onboarding.SetupError as error:  # its words name the step, never what it carried
+                return {'ok': False, 'error': error.message}
+        LOG.info('connect delivered source=%s replies=%s', body['args'].get('source'), result.get('replies'))
+        result['restarting'] = restart_self(3)
         return result
 
     def graph_build(self):

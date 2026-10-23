@@ -317,6 +317,17 @@ Your Machine then shares the addresses of its work accounts with your Fleet, so 
 them, and nothing else about you. Everything in "You decide, per Fleet" and "Safe by construction" applies the same
 way. You can disconnect it from your account at any time; its key then stops working.
 
+**Sign-ins for it.** Some sources sign in on the account page, like Sign in with Intercom. For a paired Machine, each
+row under Self-hosted Machines has that button. The control plane seals what the sign-in hands back for the key this
+Machine published after pairing (`network_crypto.open_box`, in its own domain and never taken for a message from another
+Machine). It refuses when that key changed since, until you pair again. The Network's inbox says one waits, and the
+Machine fetches it once (`GET /connects`, main node only). It is deleted there as it is handed out, and is gone after 15
+minutes if not picked up. The Machine opens it and connects it as Connections, Add would (`onboarding.connect_delivered`:
+only the sources listed there, and only the key that source asks for). The connector checks the key first (Intercom:
+`GET /me`, its workspace and admin). Replies turn on only for the owner's own Sign in with Intercom, as that admin, and
+never for a token shared through a Fleet. Then the Machine reports back in a few words (`POST /connects`), and the row
+says "Connected to <workspace>". Nothing it carries is logged on either side.
+
 Pairing is free, and so are Friends and Family Fleets on the Network. In a Work Fleet, while a self-hosted Machine
 answers for someone, the Network costs €4 a month for that member, plus VAT where it applies, paid by the Fleet's owner
 and confirmed before it starts; nothing while the Fleet is free. Each Fleet is billed on its own, with its own card,
