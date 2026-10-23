@@ -233,12 +233,13 @@ class Promises(unittest.TestCase):
         self.assertIn('Open promises (the owner\'s and those made to them):\n- #', prompt)
         self.assertNotIn('Open promises', a.review_prompt('run', ['work']))
 
-    def test_weekly_recap_counts_promises(self):
+    def test_weekly_recap_leaves_out_settled_and_undated_promises(self):
         promise = self.record(due='2026-10-16')['id']
         self.app().action('promise', {'direction': 'mine', 'event_id': self.mine, 'who': 'Alex', 'what': 'send the Q3 deck'})
         self.app().action('promise_close', {'id': promise, 'status': 'kept'}, owner_dashboard=True)
         recap = a.weekly_recap(self.store, {'accounts': [GMAIL]}, a.dt.datetime.fromisoformat('2026-10-23T15:00:00+00:00'))
-        self.assertIn('**Promises**\n• Yours: 0 kept, 1 open\n• To you: 1 came through, 0 still waiting', recap)
+        self.assertNotIn('Sam Lee', recap)  # kept: nothing left to do
+        self.assertNotIn('Alex', recap)  # open, but without a date it isn't due yet
 
     def test_cli_lists_open_promises(self):
         self.record(due='2026-10-23')
