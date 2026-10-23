@@ -424,7 +424,7 @@ button.node:hover{text-decoration:underline;background:none}
 .fact-menu-list{position:absolute;right:0;top:calc(100% + 4px);z-index:5;display:flex;flex-direction:column;min-width:230px;padding:6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);box-shadow:var(--shadow-sm)}
 .fact-menu-list button{display:grid;gap:2px;margin:0;padding:8px 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--text);font:var(--fw-medium) var(--fs-sm)/1.3 var(--sans);text-align:left;min-height:0}
 .fact-menu-list button small{color:var(--faint);font-weight:400;font-size:var(--fs-xs)}
-.fact-menu-list button:hover{background:var(--tile)}.fact-menu-list button.danger{color:var(--orange)}
+.fact-menu-list button.danger{background:none;border:0;color:var(--orange)}.fact-menu-list button:hover,.fact-menu-list button.danger:hover{background:var(--tile)}
 /* Events: by day, rows on hairlines, no boxes; each its source, who wrote it, when, and the start of the text. */
 .ge-day{font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans);color:var(--faint);letter-spacing:.02em;margin:var(--sp-5) 0 var(--sp-1)}
 .graph-events>.ge-day:first-child{margin-top:0}
@@ -3017,7 +3017,7 @@ new MutationObserver(()=>document.querySelectorAll(':is(.fleet-tabs,.sub-tabs):n
 const GRAPH_PANES=['people','roles','projects','orgs'];
 function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
  for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'))}
-async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),scroll=window.scrollY,oldHtml=view.innerHTML;const draw=html=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */view.innerHTML=html;if(quiet)window.scrollTo(0,scroll)};try{
+async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=html=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */const scroll=window.scrollY;view.innerHTML=html;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
   const sub=n.kind==='person'?personSub({...n,role:null})+(n.quiet?' · gone quiet':''):n.kind==='project'?(n.state+' · last signal '+day(n.last_at)+(n.probable_signals?' · '+n.probable_signals+' probably part of it':'')):(n.signals+' people · last contact '+day(n.last_at));
   const [paneId,paneName]=GRAPH_KIND_PANE[n.kind]||GRAPH_KIND_PANE.person;
