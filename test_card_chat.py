@@ -320,5 +320,16 @@ class CardChat(unittest.TestCase):
         self.assertNotIn('wrote to you in the chat', next(c['message'] for c in calls if c.get('message')))
 
 
+class ChatHandleTest(unittest.TestCase):
+    def test_raw_chat_handles_never_name_anyone(self):
+        import assistant
+        self.assertEqual(assistant.chat_draft({'kind': 'slack', 'body': 'hi', 'to_name': 'andrea', 'to_email': 'andrea@example.com'})['to'], ['Andrea'])
+        self.assertEqual(assistant.chat_draft({'kind': 'slack', 'body': 'hi', 'to': ['#DM']})['to'], [])
+        for handle in ('#DM', '#DM U0A3LDWTNUS', 'D0A4EP54JM6', '#general'):
+            self.assertTrue(assistant.CHAT_HANDLE.fullmatch(handle), handle)
+            self.assertEqual(assistant.chat_name(handle, {}, 'Andrea Bustos'), 'Andrea')
+        self.assertEqual(assistant.chat_name('sam@example.com', {}, ''), 'sam@example.com')
+
+
 if __name__ == '__main__':
     unittest.main()

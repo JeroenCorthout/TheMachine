@@ -24,6 +24,7 @@ const cards=[
  {id:'c6c6c6c6c6c6c6c6',title:'Andrea needs your call on 60 mailboxes',body:'Drafted your note for Andrea. Nothing sent.\n\n[Draft and sources](memory/assistant/note.md)',status:'prepared',scope:'work',created_at:now,event_ids:[6],
   result_files:[{name:'note.md',path:'memory/assistant/note.md'}]},
  // A draft with a send path: Send leads, on the card and on the draft in the chat
+ {id:'c8c8c8c8c8c8c8c8',title:'Waiting on Andrea',body:'Sent the nudge.',status:'completed',scope:'work',created_at:now,event_ids:[8]},
  {id:'c7c7c7c7c7c7c7c7',title:'Nudge Andrea about the signup',body:'Drafted a short nudge to Andrea.',status:'prepared',scope:'work',created_at:now,event_ids:[7],
   next_action:{kind:'menu',actions:[{kind:'slack',label:'Send to Andrea',body:'did you get a chance to try it?',revision:'r7',to_name:'andrea',account_id:'work-slack'}]},
   next_actions:[{kind:'slack',label:'Send to Andrea',body:'did you get a chance to try it?',revision:'r7',to_name:'andrea',account_id:'work-slack'}]}];
@@ -45,10 +46,13 @@ const actions=[];let live=null;
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(url.pathname==='/api/status'){res.end(JSON.stringify(state()));return}
- if(url.pathname==='/api/result'){res.end(JSON.stringify({text:'Hi Andrea,\n\nEach person who uses the CRM needs their own seat; the mailbox count alone does not.'}));return}
+ if(url.pathname==='/api/result'){res.end(JSON.stringify({text:'# Acme: draft internal answer for Andrea\n\n> Each person who uses the CRM needs their own seat;\n>\n> the mailbox count alone does not.\n\n## Verification\n- [Pricing](https://example.com/pricing): per user.'}));return}
  if(url.pathname==='/api/action'){const r=JSON.parse(body);actions.push({...r,csrf:req.headers['x-csrf-token']});
   if(r.action==='card_chat'){
-   if(r.args.suggestion_id==='c6c6c6c6c6c6c6c6'){res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k6',items:[{kind:'reply',text:'Drafted your note for Andrea. Nothing sent.',drafts:[],files:[{label:'Draft and sources',path:'memory/assistant/note.md'}],at:t0}]}));return}
+   if(r.args.suggestion_id==='c6c6c6c6c6c6c6c6'){res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k6',items:[{kind:'source',from:'Andrea',via:'intercom',note:true,text:'We need to ask J.',mine:false,at:t0-1000},{kind:'reply',text:'Drafted your note for Andrea. Nothing sent.',drafts:[],files:[{label:'Draft and sources',path:'memory/assistant/note.md'}],at:t0}]}));return}
+   if(r.args.suggestion_id==='c8c8c8c8c8c8c8c8'){const m={kind:'slack',to:['Andrea'],subject:'',body:'how did it go?',reply:false};res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k8',items:[
+    {kind:'reply',text:'Drafted a nudge.',drafts:[m],at:t0},{kind:'event',text:'Send cancelled',mine:true,at:t0+1000},{kind:'reply',text:'Fixed her name.',drafts:[m],at:t0+2000},
+    {kind:'event',text:'Sent to Andrea on Slack',sent:'how did it go?',mine:true,at:t0+3000}]}));return}
    if(r.args.suggestion_id==='c7c7c7c7c7c7c7c7'){res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k7',items:[{kind:'reply',text:'Drafted a short nudge to Andrea.',drafts:[{kind:'slack',to:['andrea'],subject:'',body:'did you get a chance to try it?',reply:false}],at:t0}]}));return}
    if(['c2c2c2c2c2c2c2c2','c5c5c5c5c5c5c5c5'].includes(r.args.suggestion_id)){res.end(JSON.stringify({session:false,active:false,status:null,items:[],cursor:null}));return}
    if(live){const step=live.shift();res.end(JSON.stringify(r.args.cursor?{session:true,active:true,status:'running',cursor:'k2',unchanged:true,live:{text:step}}:{...history,active:true,status:'running',live:{text:step}}));if(!live.length)live=null;return}
@@ -193,13 +197,29 @@ try{
  // A draft result shows the draft: copy-only leads with Copy draft (and says why); the result file is a chip, never a bare title
  await page.locator('.chat-side a',{hasText:'60 mailboxes'}).click();await page.locator('#chat-log .chat-result.current').waitFor();
  await page.locator('#chat-log .chat-result.current',{hasText:'Each person who uses the CRM needs their own seat'}).waitFor();
- assert.equal(await page.locator('#chat-log .chat-result.current .chat-result-title').textContent(),'Draft and sources');
+ assert.equal(await page.locator('#chat-log .chat-result.current .chat-result-title').textContent(),'Internal answer for Andrea · Intercom note');
+ // Only the draft shows, as a quote-free text: no heading, no raw ">", no sources section (that is behind Open)
+ {const d=await page.locator('#chat-log .chat-result.current .chat-draft-text').innerText();assert.match(d,/^Each person who uses the CRM/);assert.doesNotMatch(d,/>|Verification|Pricing|Acme/)}
+ assert.equal(await page.evaluate(()=>{const t=document.createElement('div');t.innerHTML=chatMarkdown('Before\n> quoted\nAfter');return t.querySelector('blockquote')?.textContent+'|'+t.textContent.includes('>')}),'quoted|false');
  assert.equal(await page.locator('#chat-log .chat-result.current .chat-why').count(),1);
  assert.equal(await page.locator('#chat-log .chat-result.current .chat-options button.primary').textContent(),'Copy draft');
  assert.equal(await page.locator('#chat-log .bubble',{hasText:/^\s*Draft and sources\s*$/}).count(),0);
  await page.locator('.chat-side a',{hasText:'Nudge Andrea'}).click();await page.locator('#chat-log .chat-draft.current').waitFor();
  assert.match(await page.locator('#chat-log .chat-draft.current').textContent(),/did you get a chance to try it\?/);
  assert.match(await page.locator('#chat-log .chat-draft.current .chat-draft-foot button.primary').textContent(),/send to Andrea/i);
+ // The header: back, the title's first line and ⋯ on one centre line (the title's x-height centre on the chevron's)
+ {const m=await page.evaluate(()=>{const q=s=>document.querySelector(s),R=n=>n.getBoundingClientRect(),c=r=>r.top+r.height/2,h=q('.chat-title'),cs=getComputedStyle(h),cv=document.createElement('canvas').getContext('2d');cv.font=cs.font;
+  const f=cv.measureText('x'),L=parseFloat(cs.lineHeight),base=R(h).top+(L-(f.fontBoundingBoxAscent+f.fontBoundingBoxDescent))/2+f.fontBoundingBoxAscent;
+  return {x:base-f.actualBoundingBoxAscent/2,back:c(R(q('.chat-back path'))),menu:c(R(q('.chat-menu>summary svg')))}});
+  assert.ok(Math.abs(m.x-m.back)<1&&Math.abs(m.back-m.menu)<0.5,JSON.stringify(m))}
+ // A snooze whose time passed is back before the service's wake-up reaches the page; the Browser pill shows only with a browser view
+ assert.deepEqual(await page.evaluate(()=>{const st=wakeSnoozed({suggestions:[{status:'snoozed',snoozed_until:new Date(Date.now()-60000).toISOString(),resume_status:'prepared'},{status:'snoozed',snoozed_until:new Date(Date.now()+3600000).toISOString()}]});
+  return st.suggestions.map(s=>s.status)}),['prepared','snoozed']);
+ assert.deepEqual(await page.evaluate(()=>{const a=document.querySelector('#open-browser'),r=[];browserPill({browser_link:'https://machine.example/browser'});r.push(a.hidden,a.getAttribute('href'),a.target);browserPill({browser_link:'javascript:alert(1)'});r.push(a.hidden);browserPill(state);return r}),[false,'https://machine.example/browser','_blank',true]);
+ // Only the draft that went out says Sent; the cancelled one before it, with the same text, says Not sent
+ await page.locator('.chat-side a',{hasText:'Waiting on Andrea'}).click();await page.locator('#chat-log .chat-draft .went-tag').first().waitFor();
+ assert.deepEqual(await page.locator('#chat-log .chat-draft .went-tag').allTextContents(),['Not sent','Sent']);
+ assert.equal(await page.locator('#chat-log',{hasText:'#DM'}).count(),0);
  // The cards agree: Copy draft leads a copy-only draft (Mark done steps back, one line why); Send leads one with a send path
  const lead=await page.evaluate(()=>Object.fromEntries(['c6c6c6c6c6c6c6c6','c7c7c7c7c7c7c7c7'].map(id=>{const t=document.createElement('template');t.innerHTML=suggestionCard(state.suggestions.find(x=>x.id===id),'Ready');
   return [id,{primary:[...t.content.querySelectorAll('.actions .primary')].map(b=>b.textContent),why:!!t.content.querySelector('.copy-why'),copyLink:t.content.querySelectorAll('.foot-links [data-result="copy"]').length}]})));

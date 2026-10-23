@@ -6944,6 +6944,9 @@ def chat_draft(action):
         return None
     to = action.get('to')
     to = [str(t) for t in to] if isinstance(to, list) else [str(to)] if to else []
+    if not to and (action.get('to_name') or action.get('to_email')):  # a chat send names its person apart from the channel
+        to = [str(action.get('to_name') or action.get('to_email'))]
+    to = [chat_plain_name(t) for t in to if not CHAT_HANDLE.fullmatch(t.strip())]
     return {'kind': action['kind'], 'to': [clamp(t, 200) for t in to[:10]], 'subject': clamp(str(action.get('subject') or ''), 300),
             'body': chat_text(action['body'], chars=8000), 'reply': bool(action.get('in_reply_to') or action.get('thread_id'))}
 
@@ -6963,12 +6966,27 @@ def chat_person(name):
     return f'{match[2].strip()} {match[1].strip()}' if match else name
 
 
+# A raw chat handle is never shown: a channel ("#DM", "#general"), a Slack or WhatsApp ID, or both together
+CHAT_HANDLE = re.compile(r'(?:#[\w.-]*|[CDGUW][A-Z0-9]{8,})(?:\s+[UW][A-Z0-9]{8,})?|\d{6,}@(?:s\.whatsapp\.net|g\.us|lid)')
+CHAT_ON = {'slack': ' on Slack', 'whatsapp': ' on WhatsApp', 'linkedin': ' on LinkedIn', 'x': ' on X'}
+
+
+def chat_plain_name(name):
+    """A bare lower-case first name as a handle ("andrea") reads as a name ("Andrea")."""
+    name = str(name).strip()
+    return name.title() if re.fullmatch(r"[a-z][a-z'-]{0,30}(?: [a-z][a-z'-]{0,30}){0,2}", name) else name
+
+
 def chat_name(address, names, fallback=''):
     """Who a draft goes to, by first name when a source message names them; a chat handle that is no email address
     (a WhatsApp or Slack ID) is the person the card is about (`fallback`)."""
     found = names.get(_address(address))
     if found:
         return found.split()[0]
+    if CHAT_HANDLE.fullmatch(str(address).strip()):
+        return (fallback.split() or ['them'])[0]
+    if not _address(address) or '@' not in str(address):
+        return chat_plain_name(str(address)).split()[0] if str(address).strip() else (fallback.split() or ['them'])[0]
     email = re.fullmatch(r'[^\s@<>]+@[\w.-]+\.[a-z]{2,}', _address(address) or '') and not re.search(r'@(s\.whatsapp\.net|g\.us|lid)$', _address(address))
     return _address(address) if email else (fallback.split() or [_address(address) or str(address)])[0]
 
@@ -10966,6 +10984,19 @@ class App:
             if text or v['title']:
                 owner.append({'kind': 'source', 'from': clamp(who, 120), 'via': via, 'title': clamp(v['title'], 200),
                               'text': text, 'mine': v['from'] == 'You', 'at': at})
+        # A chat source has only its channel and handle ("#DM U…"): name it after the person the card's sends go to
+        for r in db.execute('SELECT payload FROM action_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)):
+            try:
+                person = (chat_draft(json.loads(r['payload'])) or {}).get('to', [])
+            except ValueError:
+                continue
+            if person:
+                break
+        else:
+            person = []
+        for i in owner:
+            if i['kind'] == 'source' and CHAT_HANDLE.fullmatch(str(i['from']).strip()):
+                i['from'] = person[0] if len(person) == 1 else ''
         runs = [r['started_at'] for r in db.execute('SELECT started_at FROM preparation_runs WHERE suggestion_id=?', (suggestion_id,))]
         about = max(((i['at'], i['from']) for i in owner if i['kind'] == 'source' and not i['mine'] and i['from']), default=(0, ''))[1]  # the latest who wrote
         for r in db.execute("SELECT choice,feedback,source,created_at FROM decisions WHERE suggestion_id=? AND source IN ('dashboard','telegram') "
@@ -10991,6 +11022,7 @@ class App:
             draft = chat_draft(payload)
             if draft:
                 to = ', '.join(chat_name(t, names, about) for t in draft['to'][:3]) or (about.split() or ['them'])[0]
+                to += CHAT_ON.get(draft['kind'], '')
                 text = {'sent': f'Sent to {to}', 'cancelled': 'Send cancelled', 'failed': f'Didn’t go out to {to}'}.get(r['status'], f'Sending to {to}…')
                 owner.append({'kind': 'event', 'text': text, 'sent': draft['body'] if r['status'] == 'sent' else None,
                               'mine': r['source'] != 'auto' and r['status'] != 'failed', 'at': chat_ms(r['created_at'])})
@@ -12264,7 +12296,7 @@ class App:
                     asset = BRAND_ASSETS[path.path]
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
                 elif path.path == '/api/status':
-                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version()})
+                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'browser_link': browser_link(app.config)})
                     try:
                         app.store.note_card_shown()
                     except sqlite3.Error as error:
