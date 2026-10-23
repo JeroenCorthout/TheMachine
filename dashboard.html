@@ -1451,8 +1451,6 @@ body main{padding-top:0}
 .nc-foot{display:flex;justify-content:space-between;gap:12px;margin:12px 2px 0;color:var(--muted);font-size:.8rem}
 .nc-error{margin:10px 2px 0;color:var(--c-orange,var(--orange));font-size:.88rem}
 .nc-error:empty{display:none}
-.chat-side-new{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;margin:0 0 10px;padding:0 12px;border:0;border-radius:12px;background:none;box-shadow:none;color:var(--text);font:500 .95rem/1.2 var(--sans);text-align:left;cursor:pointer}
-.chat-side-new:hover{background:var(--c-hover)}.chat-side-new svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 /* An owner's card: quiet "Added by you"; their own words open its chat. */
 .card .added-by{color:var(--muted);font-size:.8rem;margin-right:8px}
 @media(max-width:560px){.card .meta-side:has(.added-by)>time{display:none}}
@@ -1461,14 +1459,14 @@ body main{padding-top:0}
 .merge-offer button{min-height:30px;margin:0;padding:4px 12px}
 .chat-panel .merge-offer{margin:12px 0}
 /* Rename: an input over the title, wherever the title is the card's own heading. */
-.rename-box{position:fixed;z-index:60;display:flex;flex-direction:column;gap:4px}
+.rename-box{position:fixed;z-index:71;display:flex;flex-direction:column;gap:4px}
 .rename-box input{width:100%;min-height:0;height:100%;margin:0;padding:2px 8px;border:1px solid var(--c-accent,var(--mint));border-radius:8px;background:var(--surface);color:var(--text);font:inherit;box-shadow:0 0 0 3px color-mix(in srgb,var(--c-accent,var(--mint)) 22%,transparent);outline:none}
 .rename-box .rename-reset{align-self:flex-start;min-height:0;margin:0;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 6px 16px #0003;color:var(--muted);font:500 .8rem/1.3 var(--sans);cursor:pointer}
 .rename-box .rename-reset:hover{color:var(--text)}
 .row-more{position:fixed;z-index:30;display:grid;place-items:center;width:24px;height:24px;min-height:0;margin:0;padding:0;border:0;border-radius:6px;background:var(--c-hover);box-shadow:none;color:var(--side-ink,var(--muted));cursor:pointer}
 .row-more:hover{color:var(--text)}
 .row-more svg{width:16px;height:16px}
-.row-menu{position:fixed;z-index:61;display:flex;flex-direction:column;min-width:150px;padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 30px #0005}
+.row-menu{position:fixed;z-index:72;display:flex;flex-direction:column;min-width:150px;padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 30px #0005}
 .row-menu button{min-height:0;margin:0;padding:7px 12px;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
 .row-menu button:hover{background:var(--c-hover)}
 @media(hover:hover) and (pointer:fine){.card h3 .title-link{cursor:text}}
@@ -2792,7 +2790,7 @@ function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…'
   :closed(s)?(s.status==='completed'?'Done':'Not needed'):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':s.preparation_status==='blocked'?p.status:'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
- const side=`<aside class="chat-side" aria-label="Tasks"><button type="button" class="chat-side-new" data-new-card>${NC_PLUS}<span>New card</span></button><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
+ const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
  return `<div class="chat-layout${chatDrawer?' drawer':''}" data-chat="${s.id}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title" title="${esc(s.title)}">${esc(s.title)}</h2>
   <details class="chat-menu" id="chat-menu"><summary aria-label="More actions" title="More actions">${DOTS}</summary><div class="chat-menu-list" role="group" aria-label="More actions">${p.rest}<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button></div></details></header>
  <article id="task-${s.id}" class="chat-panel">${p.panel}</article><div class="chat-log" id="chat-log" aria-live="polite">${chatLog(s)}</div>
