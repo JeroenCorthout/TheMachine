@@ -12,7 +12,7 @@ const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8
 const now=new Date().toISOString();
 const card=(n,status,scope,extra={})=>({id:(n+'').padStart(2,'0').repeat(8),title:'Card number '+n+' with a long title that does not fit the sidebar',body:'Some text for card '+n+'.',status,scope,created_at:now,event_ids:[n+1],...extra});
 const cards=[...Array.from({length:12},(_,n)=>card(n,n%3?'pending':'prepared',n%2?'work':'personal')),...Array.from({length:12},(_,n)=>card(20+n,'completed','work'))];
-const state=()=>({suggestions:cards,promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]},connectors:[],fleet:{on:false,fleets:[]}});
+const state=()=>({suggestions:cards,promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]},connectors:[],fleet:fleetOn?{on:true,waiting:0}:{on:false,fleets:[]}});let fleetOn=false;
 const history={session:true,status:'ok',active:false,cursor:'k1',items:Array.from({length:30},(_,n)=>({kind:'reply',text:'Reply '+n,at:Date.now()-100000+n*1000}))};
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
@@ -74,6 +74,11 @@ try{
   await page.locator('#side-search').click();assert.ok((await side(page)).w>=220);assert.equal(await page.evaluate(()=>document.activeElement.id),'side-find');
   await context.close()}
  // Storage refused for the sidebar's keys: the page still works and the sidebar still folds (just not remembered)
+ // In a Fleet the Fleet tab is a sidebar row like the others, and its page scrolls
+ fleetOn=true;{const {context,page}=await open(1440,900);await page.locator('nav [data-tab="fleet"]').waitFor();
+  assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('.app-side nav [data-tab]')].filter(b=>!b.hidden&&b.offsetHeight).map(b=>b.dataset.tab)),['inbox','events','people','fleet','feedback','health']);
+  await tab(page,'fleet');await scrolls(page,'fleet tab at 1440');assert.equal(await page.locator('#page-head').innerText(),'Fleet');await context.close()}
+ fleetOn=false;
  {const {context,page}=await open(1440,900,{noStorage:true});await page.locator('#side-toggle').click();assert.ok((await side(page)).w<=72);await context.close()}
  // Every tab scrolls at each desktop width, and nothing is wider than the window
  for(const [w,h] of [[1024,768],[1920,1080]]){const {context,page}=await open(w,h);
