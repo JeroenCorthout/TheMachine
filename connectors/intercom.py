@@ -33,7 +33,7 @@ SETUP = {'label': 'Intercom', 'what': 'Customer conversations in your Intercom w
                      'credential': 'intercom', 'poll_seconds': 600},
          'note': 'In Intercom\'s Developer Hub, open your app, then Authentication, and copy its access token.',
          'secret': 'Intercom access token',
-         # On a hosted Machine its account page also offers Sign in with Intercom (the read-only app), as well as pasting
+         # On a hosted Machine its account page also offers Sign in with Intercom (the app The Machine), as well as pasting
          'account_page': 'source-intercom',
          # Always work, for the company the workspace names: connecting doesn't ask (connect() sets work:<workspace name>)
          'boundary': 'workspace',
