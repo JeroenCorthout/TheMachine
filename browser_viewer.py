@@ -46,8 +46,10 @@ NEEDS = {'Xtigervnc': 'tigervnc-standalone-server', 'websockify': 'websockify', 
 # The short address (a folder's index.html, e.g. a hosted Machine's /browser/): with no query of its own, it sets what
 # the long vnc.html?autoconnect=1&... link puts in its query, the same way noVNC keeps settings itself (localStorage,
 # which every noVNC release reads), so the address stays short. A phone gets the phone's size, others a scaled view.
+# The websocket path is the long link's: older noVNC reads it from the root (/browser/websockify), newer ones relative
+# to the page, which stays under /browser/ too; websockify takes a websocket on any path.
 SHORT_SETTINGS = ('<script>try{if(!location.search&&!location.hash){const phone=/Mobile|Android|iPhone|iPad/.test(navigator.userAgent);'
-                  "for(const[k,v]of Object.entries({autoconnect:'true',reconnect:'true',resize:phone?'remote':'scale',path:'websockify'}))"
+                  "for(const[k,v]of Object.entries({autoconnect:'true',reconnect:'true',resize:phone?'remote':'scale',path:'browser/websockify'}))"
                   'localStorage.setItem(k,v)}}catch(e){}</script>')
 
 

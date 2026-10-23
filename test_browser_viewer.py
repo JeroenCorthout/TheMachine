@@ -133,7 +133,7 @@ class FocusTest(unittest.TestCase):
             index = (web / 'index.html').read_text()  # the short /browser/ address on a hosted Machine
             self.assertFalse((web / 'index.html').is_symlink())
             self.assertTrue(index.startswith('<html><head><script>try{if(!location.search&&!location.hash)'))
-            self.assertIn("resize:phone?'remote':'scale'", index)
+            self.assertIn("resize:phone?'remote':'scale',path:'browser/websockify'", index)  # as the long link: also older noVNC
             self.assertIn('src="machine-view.js"', index)
             self.assertEqual(index.replace(browser_viewer.SHORT_SETTINGS, ''), (web / 'vnc.html').read_text())
             self.assertIn("params.get('frame') === 'window'", (web / 'machine-view.js').read_text())
