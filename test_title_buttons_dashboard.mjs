@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // A long organisation name wraps; its Edit button keeps its shape on a phone. The tagline can say since when The Machine reads.
@@ -33,9 +34,8 @@ try{
   assert.ok([...lines].some(l=>/^Professionally nosy since /.test(l)),'a start-date tagline');
   assert.ok([...lines].some(l=>l==='Day 10 of reading everything. Still not bored.'),'a day-count tagline');
   assert.ok(![...lines].some(l=>/October 9/.test(l)),'no fixed date');
-  // On mobile the fifth tab is outside the horizontal viewport: scroll it into view first.
-  await page.locator('nav').evaluate(nav=>{nav.style.scrollSnapType='none';nav.scrollLeft=nav.scrollWidth});
-  await page.locator('nav [data-tab="people"]').click();
+  // On a phone the tabs are in the drawer
+  await navClick(page.locator('nav [data-tab="people"]'));
   await page.evaluate(id=>people(id),org.id);
   const edit=page.locator('#people-view .graph-detail .name-row [data-org-edit]');await edit.waitFor();
   const box=await edit.evaluate(b=>{const r=b.getBoundingClientRect(),lh=parseFloat(getComputedStyle(b).lineHeight)||20;return {h:r.height,lh,w:r.width,sw:b.scrollWidth}});

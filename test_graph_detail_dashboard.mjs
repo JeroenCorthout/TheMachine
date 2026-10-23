@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // A person's page in the Graph keeps the dashboard's header and tabs, with a breadcrumb back; it has its own link and
@@ -55,11 +56,11 @@ try{
  page.on('pageerror',e=>errors.push(e.message));
  const dialogs=[];page.on('dialog',async d=>{dialogs.push(d.message());await(dialogs.length===1?d.dismiss():d.accept())});
  await page.goto(base);
- await page.locator('nav [data-tab="people"]').click();
+ await navClick(page.locator('nav [data-tab="people"]'));
  await page.locator('#people-view article[data-node="wa:3247000001"] button.node').click();
  await page.locator('.graph-crumbs').waitFor();
- // The header and the tabs stay, Graph current; the breadcrumb says where this is.
- assert.ok(await page.locator('header h1').isVisible()&&await page.locator('nav [data-tab="people"].active').isVisible());
+ // The page's title stays (the pane, under a quiet Graph), Graph current (in the drawer on a phone); the breadcrumb says where this is.
+ assert.ok(await page.locator('#page-head .page-title',{hasText:'People'}).isVisible()&&await page.locator('#page-head .page-crumb',{hasText:'Graph'}).isVisible()&&await page.locator('nav [data-tab="people"].active').count()===1);
  assert.equal(await page.evaluate(()=>scrollY),0);
  assert.equal((await page.locator('.graph-crumbs').textContent()).replace(/\s+/g,' '),'Graph›People›Ann Example');
  assert.equal(await page.locator('.graph-back').count(),0);
@@ -148,19 +149,19 @@ try{
  await page.waitForFunction(()=>!document.querySelector('.graph-known'));
  // The breadcrumb goes back to the list; the browser's back button returns to Ann, forward to the list again.
  await page.locator('.graph-crumbs [data-crumb="people"]').click();
- await page.locator('#people-view [data-graph-pane="people"]').waitFor();
+ await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();
  assert.ok(await page.locator('.people-search').isVisible());
  await page.goBack();
  await page.locator('.graph-crumbs').waitFor();
  await page.goBack();
- await page.locator('#people-view [data-graph-pane="people"]').waitFor();
+ await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();
  // Another tab drops the link; a deep link opens the page straight away, with the tabs.
- await page.locator('nav [data-tab="events"]').click();
+ await navClick(page.locator('nav [data-tab="events"]'));
  assert.equal(new URL(page.url()).hash,'');
  const fresh=await context.newPage();fresh.on('pageerror',e=>errors.push(e.message));
  await fresh.goto(base+'#graph/wa%3A3247000001');
  await fresh.locator('.graph-crumbs').waitFor();
- assert.ok(await fresh.locator('nav [data-tab="people"].active').isVisible()&&await fresh.locator('header h1').isVisible());
+ assert.ok(await fresh.locator('nav [data-tab="people"].active').count()===1&&await fresh.locator('#page-head .page-title',{hasText:'Graph'}).isVisible());
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({days,dialogs:dialogs.length,actions:calls.length,page_errors:errors}));
 }finally{if(browser)await browser.close();await new Promise(r=>server.close(r))}

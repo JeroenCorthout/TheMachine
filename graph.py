@@ -1029,7 +1029,15 @@ def overview(db, limit=12):
             'orgs': rows("SELECT * FROM graph_nodes WHERE kind='org' ORDER BY strength DESC LIMIT ?", 8),
             'whos_who': unconfirmed(db),
             'waiting': waiting(db),
-            'warmup': hidden_list(db)}
+            'warmup': hidden_list(db),
+            'counts': counts(db)}
+
+
+def counts(db):
+    """How many people and organisations the graph knows, and how many projects are open: the sidebar's Graph rows."""
+    found = dict(db.execute("SELECT kind,COUNT(*) FROM graph_nodes WHERE kind IN ('person','org') GROUP BY kind").fetchall())
+    found['project'] = db.execute("SELECT COUNT(*) FROM graph_nodes WHERE kind='project' AND json_extract(info,'$.closed_at') IS NULL").fetchone()[0]
+    return {kind: found.get(kind, 0) for kind in ('person', 'org', 'project')}
 
 
 def headline(db, node_id):

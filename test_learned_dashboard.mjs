@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Feedback, What I've learned: one block per kind with a heading and count, channels show 2 lines with More,
@@ -43,7 +44,7 @@ try{
   const context=await browser.newContext({viewport:{width,height:900},colorScheme:scheme}),page=await context.newPage();
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port+'/#feedback');
-  await page.locator('[data-tab="feedback"]').first().click();
+  await navClick(page.locator('[data-tab="feedback"]').first());
   const learned=page.locator('#facts');await learned.locator('.learn-group').first().waitFor();
   // Separate blocks, each with its own heading, count, line and card.
   assert.deepEqual(await learned.locator('.learn-group').evaluateAll(g=>g.map(x=>x.dataset.group)),['voices','facts','rules','skills']);

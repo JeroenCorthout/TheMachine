@@ -130,14 +130,19 @@ await page.locator('.rename-reset').click();
   {const b=await page.locator('#new-card').boundingBox();assert.ok(Math.abs(b.y+b.height-844)<=1&&b.x<=1&&b.width>=389,'on a phone the composer is a bottom sheet');}
   await page.locator('#nc-text').fill('Call Sam back');
   await page.locator('#nc-add').tap();await page.locator('#new-card').waitFor({state:'hidden'});assert.equal(sent('card_new')[0].args.text,'Call Sam back');
+  // New card is in the drawer too: the row opens the composer and closes the drawer
+  await page.locator('#drawer-open').tap();await page.locator('#side-new').waitFor();await page.waitForTimeout(400);await page.locator('#side-new').tap();
+  await page.locator('#new-card').waitFor();assert.notEqual(await page.evaluate(()=>document.documentElement.dataset.drawer),'open','the drawer closes');
+  await page.locator('#new-card form button[aria-label="Close"]').tap();await page.locator('#new-card').waitFor({state:'hidden'});
   await page.waitForTimeout(800);await page.locator('#task-'+id(1)+' h3 .title-link').tap();await page.locator('#chat-log').waitFor();assert.equal(await page.locator('.rename-box').count(),0,'a tap opens the card');
-  await page.locator('[data-chat-drawer]').evaluate(b=>b.click());const link=page.locator(`.chat-side a[href="#chat=${id(2)}"]`);await link.waitFor();
+  await page.locator('[data-chat-drawer]').evaluate(b=>b.click());const link=page.locator(`#side-cards a[href="#chat=${id(2)}"]`);await link.waitFor();
   await page.waitForTimeout(500);const box=await link.boundingBox();const cdp=await context.newCDPSession(page);
   const touch=(type,points)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:points});
   await touch('touchStart',[{x:box.x+20,y:box.y+box.height/2}]);await page.waitForTimeout(650);await touch('touchEnd',[]);
   await page.locator('.row-menu [data-row-rename]').tap();await renameTo(page,'Deck');await until(()=>sent('card_rename').length===1,'long press');
   assert.equal(await page.locator('.chat-title').textContent(),'Send Sam the signed contract','still on the same chat');
-  await page.locator('[data-chat-drawer]').evaluate(b=>b.click());await page.waitForTimeout(500);
+  if(await page.evaluate(()=>document.documentElement.dataset.drawer==='open'))await page.locator('#side-toggle').tap();  // the list is the app's drawer on a phone
+  await page.waitForFunction(()=>document.documentElement.dataset.drawer!=='open');await page.waitForTimeout(500);
   await page.locator('.chat-title').tap();await renameTo(page,'Contract');await until(()=>sent('card_rename').length===2,'phone chat title');
   await context.close()}
  assert.deepEqual(errors,[]);

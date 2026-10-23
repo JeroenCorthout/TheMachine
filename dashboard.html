@@ -1174,74 +1174,95 @@ main{padding-top:calc(28px + env(safe-area-inset-top));padding-left:max(24px,env
 #settings .settings-list{max-width:none}
 .agents-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:end}.agents-grid>label{display:flex;flex-direction:column;gap:6px;min-width:0}.agents-grid>label.wide{grid-column:1/-1}.agents-grid input{width:100%;min-width:0;box-sizing:border-box}
 @media(max-width:420px){.agents-grid{grid-template-columns:1fr}}
-@media(min-width:1024px){#settings-browser{display:none!important}}  /* Browser is in the sidebar */
 /* The folded sidebar's tooltip: a small pill to the right of the row, the theme's text colour as its ground */
 #side-tip{position:fixed;z-index:1000;transform:translateY(-50%);padding:5px 9px;border-radius:7px;background:var(--text);color:var(--bg);font:500 var(--fs-xs)/1.25 var(--sans);white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px -6px #0006}#side-tip[hidden]{display:none}
-/* App sidebar. On a phone and a tablet it is the old top: the brand, the status pills and the tab row, in the page's
-   column. From 1024px it is a fixed column on the left, like a chat app: the brand, a card filter, the tabs as quiet
-   rows with icons, the cards as a list, and Browser, Settings and the status at the bottom. It folds to icons. */
-.app-side{width:100%;max-width:calc(var(--measure) + 48px);margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) 0 max(24px,env(safe-area-inset-left))}
+/* App sidebar: one component. From 1024px it is a fixed column on the left, like a chat app: the brand, a card filter,
+   the tabs as quiet rows with icons (Graph with its People, Organisations and Projects), the cards as a list, and Browser,
+   Settings and the status at the bottom; it folds to icons. Below 1024px the same sidebar is a drawer that slides in from
+   the left under a slim top bar with a menu button. */
+:root{--side-w:260px;--side-bg:color-mix(in srgb,var(--c-sunken) 55%,var(--c-bg));--side-ink:var(--c-text-2);--side-quiet:var(--c-text-3)}
+.topbar,.drawer-scrim{display:none}
 body main{padding-top:0}
-.side-toggle,.side-search,.side-cards,.page-head,nav .ni{display:none}
-@media(max-width:560px){.app-side{padding:calc(18px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left))}}
-/* A tablet with a chat open: the top stays, the chat fills the rest of the window */
-@media(min-width:861px) and (max-width:1023px){body.chat-open:has(#inbox:not([hidden])) main{height:auto;flex:1 1 0}body.chat-open:has(#inbox:not([hidden])) .app-side{flex:none}}
-@media(max-width:860px){body.chat-open:has(#inbox:not([hidden])) .app-side{display:none}}
+.side-toggle .ic-x{display:none}
+.app-side>header{display:contents}
+.app-side .brand{order:0;flex:none;display:flex;align-items:center;gap:10px;min-height:36px;padding:0 0 0 8px}
+.app-side .avatar{width:28px;height:28px}
+.app-side h1{font:var(--fw-heading) 19px/1.2 var(--serif);letter-spacing:-.01em;white-space:nowrap}
+.app-side #tagline{display:none}
+.side-toggle{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0 0 0 auto;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
+.side-toggle:hover{background:var(--c-hover);color:var(--text)}
+.side-toggle svg,.side-search svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.side-search{order:1;flex:none;display:flex;align-items:center;gap:8px;height:34px;margin:12px 0 8px;padding:0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:color-mix(in srgb,var(--c-bg) 70%,transparent);color:var(--side-quiet);cursor:text}
+.side-search:focus-within{border-color:var(--c-line-strong)}
+.side-search input,.side-search input:focus{flex:1;min-width:0;height:100%;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;outline:none;color:var(--text);font:400 var(--fs-sm)/1 var(--sans)}
+.side-search input::placeholder{color:var(--side-quiet);opacity:1}
+.app-side nav,[data-theme="light"] .app-side nav{order:2;flex:none;flex-direction:column;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:none;overflow:visible}
+.app-side nav button,.app-side .head-side>.settings-link{position:relative;flex:none;display:flex;justify-content:flex-start;align-items:center;gap:10px;width:100%;min-height:34px;margin:0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
+.app-side nav button[hidden]{display:none}
+.app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
+.app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);box-shadow:none;font-weight:600}
+.app-side nav .ni,.app-side .head-side>.settings-link svg{display:block;flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.app-side nav .badge,.app-side nav button.active .badge,[data-theme="light"] .app-side nav button.active .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans)}
+.app-side nav .badge.warn,.app-side nav button.active .badge.warn{color:var(--c-orange)}
+.side-cards{order:3;display:block;flex:1 1 0;min-height:0;margin:14px -8px 0 0;padding:0 2px 16px 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.side-label{display:flex;align-items:center;gap:2px;margin:0 0 2px;padding:0 4px 0 10px;min-height:26px;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);color:var(--side-quiet)}
+.side-label>span{margin-right:auto}
+.side-label button{min-height:0;margin:0;padding:3px 7px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);font:inherit;cursor:pointer}
+.side-label button:hover{color:var(--text)}
+.side-label button[aria-pressed="true"]{color:var(--text);background:var(--c-hover)}
+.side-head{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;margin:6px 0 0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);text-align:left;cursor:pointer}
+.side-head:hover{color:var(--text)}
+.side-head .count{margin-left:auto;font-variant-numeric:tabular-nums}
+.side-head svg{width:12px;height:12px;flex:none;margin-left:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
+.side-head[aria-expanded="false"] svg{transform:rotate(-90deg)}
+.side-cards a{display:block;padding:5px 10px;border-radius:var(--r-sm);color:var(--side-ink);font:400 13px/1.45 var(--sans);text-decoration:none;white-space:nowrap;overflow:hidden}
+.side-group.quiet a{color:var(--side-quiet)}
+.side-cards a:hover{background:var(--c-hover);color:var(--text)}
+.side-cards a[aria-current]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
+.side-cards a.fade{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
+.side-empty{margin:6px 10px;font-size:var(--fs-xs);color:var(--side-quiet)}
+.app-side .head-side{order:4;flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:stretch;gap:1px;margin:0;padding:8px 0 0;border-top:1px solid var(--c-line)}
+.app-side .head-side>.settings-link[hidden]{display:none}
+.app-side .head-side>.settings-link .lbl{display:inline}
+.app-side .head-side>.live,[data-theme="light"] .app-side .head-side>.live{display:flex;justify-content:flex-start;gap:10px;min-height:30px;margin:0;padding:0 10px 0 16px;border:0;background:none;color:var(--side-quiet);font:400 var(--fs-xs)/1 var(--sans);cursor:pointer}
+.app-side .head-side>.live::before{flex:none}
+.page-head{display:flex;align-items:center;gap:14px;margin:0 0 32px}.page-head[hidden]{display:none}
+.page-title{margin:0;font:var(--fw-display) 30px/1.2 var(--serif);letter-spacing:-.015em;color:var(--text);text-wrap:balance}
+.page-head.greet .page-title{font-size:28px}
+.page-avatar{width:40px;height:40px;flex:none;object-fit:contain}
+.page-sub{margin:4px 0 0;color:var(--side-quiet);font-size:var(--fs-sm)}
+#inbox #suggestion-summary,#inbox #suggestion-stats{display:none}
+/* All clear: the title's line says it, so the block below is only the robot and its line */
+#suggestions .all-clear:not(.first-look-empty){padding-top:24px}#suggestions .all-clear:not(.first-look-empty)>div>strong{display:none}
+.chat-layout{grid-template-columns:minmax(0,1fr)}.chat-layout>.chat-side{display:none}
+#settings-browser{display:none!important}  /* Browser is in the sidebar */
+/* Graph's own rows: People, Organisations and Projects, each a small coloured square and a count, under a fold */
+.side-row{position:relative;display:flex;align-items:center}
+.side-row>button[data-tab]{padding-right:36px!important}
+.app-side nav .side-fold{position:absolute;right:4px;top:50%;display:grid;place-items:center;width:26px;height:26px;min-height:0;margin:-13px 0 0;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
+.app-side nav .side-fold:hover{background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
+.app-side nav .side-fold svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
+.app-side nav .side-fold[aria-expanded="false"] svg{transform:rotate(-90deg)}
+@media(hover:hover){.app-side nav .side-fold{opacity:0;transition:opacity var(--dur) var(--ease)}.side-row:hover .side-fold,.app-side nav .side-fold:focus-visible,.app-side nav .side-fold[aria-expanded="false"]{opacity:1}}  /* calm until wanted */
+.side-sub{display:flex;flex-direction:column;gap:1px}.side-sub[hidden]{display:none}
+.side-sub a{display:flex;align-items:center;gap:10px;min-height:32px;padding:0 10px 0 20px;border-radius:var(--r-sm);color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
+.side-sub a:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
+.side-sub a[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);font-weight:600}
+.side-sub .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans);font-variant-numeric:tabular-nums}
+.sq{display:grid;place-items:center;flex:none;width:16px;height:16px;border-radius:4px;background:var(--sq)}
+.sq svg{width:11px;height:11px;fill:none;stroke:var(--bg);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.sq-people{--sq:var(--lavender)}.sq-orgs{--sq:var(--mint)}.sq-projects{--sq:var(--amber)}.sq-roles{--sq:var(--orange)}
+.side-sub a[hidden]{display:none}
+.side-sub #count-roles:not(:empty){color:var(--c-accent)}
+.side-row:has(+.side-sub:not([hidden])) .badge{display:none}  /* the rows say it: Who's who has the count */
+.page-crumb{margin:0 0 2px;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);letter-spacing:.02em}
+.app-side nav button.active.sub-on{background:none;font-weight:600}
 @media(min-width:1024px){
-  :root{--side-w:260px;--side-bg:color-mix(in srgb,var(--c-sunken) 55%,var(--c-bg));--side-ink:var(--c-text-2);--side-quiet:var(--c-text-3)}
   :root[data-side="collapsed"]{--side-w:60px}
   body{display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:1fr auto;min-height:100dvh}
   .app-side{grid-column:1;grid-row:1/3;position:sticky;top:0;align-self:start;z-index:20;display:flex;flex-direction:column;width:auto;max-width:none;height:100dvh;margin:0;padding:12px 10px 10px;border-right:1px solid var(--c-line);background:var(--side-bg);overflow:hidden}
   body main{grid-column:2;grid-row:1;width:100%;max-width:calc(var(--measure) + 112px);margin:0 auto;padding:44px 56px 64px}
   .site-footer{grid-column:2;grid-row:2;width:100%;max-width:calc(var(--measure) + 112px);padding-left:56px;padding-right:56px;background-size:calc(100% - 112px) 1px}
-  .app-side>header{display:contents}
-  .app-side .brand{order:0;flex:none;display:flex;align-items:center;gap:10px;min-height:36px;padding:0 0 0 8px}
-  .app-side .avatar{width:28px;height:28px}
-  .app-side h1{font:var(--fw-heading) 19px/1.2 var(--serif);letter-spacing:-.01em;white-space:nowrap}
-  .app-side #tagline{display:none}
-  .side-toggle{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0 0 0 auto;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
-  .side-toggle:hover{background:var(--c-hover);color:var(--text)}
-  .side-toggle svg,.side-search svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .side-search{order:1;flex:none;display:flex;align-items:center;gap:8px;height:34px;margin:12px 0 8px;padding:0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:color-mix(in srgb,var(--c-bg) 70%,transparent);color:var(--side-quiet);cursor:text}
-  .side-search:focus-within{border-color:var(--c-line-strong)}
-  .side-search input,.side-search input:focus{flex:1;min-width:0;height:100%;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;outline:none;color:var(--text);font:400 var(--fs-sm)/1 var(--sans)}
-  .side-search input::placeholder{color:var(--side-quiet);opacity:1}
-  .app-side nav,[data-theme="light"] .app-side nav{order:2;flex:none;flex-direction:column;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:none;overflow:visible}
-  .app-side nav button,.app-side .head-side>.settings-link{position:relative;flex:none;display:flex;justify-content:flex-start;align-items:center;gap:10px;width:100%;min-height:34px;margin:0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
-  .app-side nav button[hidden]{display:none}
-  .app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
-  .app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);box-shadow:none;font-weight:600}
-  .app-side nav .ni,.app-side .head-side>.settings-link svg{display:block;flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .app-side nav .badge,.app-side nav button.active .badge,[data-theme="light"] .app-side nav button.active .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans)}
-  .app-side nav .badge.warn,.app-side nav button.active .badge.warn{color:var(--c-orange)}
-  .side-cards{order:3;display:block;flex:1 1 0;min-height:0;margin:14px -8px 0 0;padding:0 2px 16px 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
-  .side-label{display:flex;align-items:center;gap:2px;margin:0 0 2px;padding:0 4px 0 10px;min-height:26px;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);color:var(--side-quiet)}
-  .side-label>span{margin-right:auto}
-  .side-label button{min-height:0;margin:0;padding:3px 7px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);font:inherit;cursor:pointer}
-  .side-label button:hover{color:var(--text)}
-  .side-label button[aria-pressed="true"]{color:var(--text);background:var(--c-hover)}
-  .side-head{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;margin:6px 0 0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);text-align:left;cursor:pointer}
-  .side-head:hover{color:var(--text)}
-  .side-head .count{margin-left:auto;font-variant-numeric:tabular-nums}
-  .side-head svg{width:12px;height:12px;flex:none;margin-left:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
-  .side-head[aria-expanded="false"] svg{transform:rotate(-90deg)}
-  .side-cards a{display:block;padding:5px 10px;border-radius:var(--r-sm);color:var(--side-ink);font:400 13px/1.45 var(--sans);text-decoration:none;white-space:nowrap;overflow:hidden}
-  .side-group.quiet a{color:var(--side-quiet)}
-  .side-cards a:hover{background:var(--c-hover);color:var(--text)}
-  .side-cards a[aria-current]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
-  .side-cards a.fade{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
-  .side-empty{margin:6px 10px;font-size:var(--fs-xs);color:var(--side-quiet)}
-  .app-side .head-side{order:4;flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:stretch;gap:1px;margin:0;padding:8px 0 0;border-top:1px solid var(--c-line)}
-  .app-side .head-side>.settings-link[hidden]{display:none}
-  .app-side .head-side>.settings-link .lbl{display:inline}
-  .app-side .head-side>.live,[data-theme="light"] .app-side .head-side>.live{display:flex;justify-content:flex-start;gap:10px;min-height:30px;margin:0;padding:0 10px 0 16px;border:0;background:none;color:var(--side-quiet);font:400 var(--fs-xs)/1 var(--sans);cursor:pointer}
-  .app-side .head-side>.live::before{flex:none}
-  .page-head{display:flex;align-items:center;gap:14px;margin:0 0 32px}.page-head[hidden]{display:none}
-  .page-title{margin:0;font:var(--fw-display) 30px/1.2 var(--serif);letter-spacing:-.015em;color:var(--text);text-wrap:balance}
-  .page-head.greet .page-title{font-size:28px}
-  .page-avatar{width:40px;height:40px;flex:none;object-fit:contain}
-  .page-sub{margin:4px 0 0;color:var(--side-quiet);font-size:var(--fs-sm)}
-  #inbox #suggestion-summary,#inbox #suggestion-stats{display:none}
   /* A chat open: the list is in the sidebar, so the chat gets the whole main area */
   /* the thread scrolls across the whole main area, so its thin bar sits at the window's right edge */
   html:has(body.chat-open #inbox:not([hidden])){scrollbar-gutter:auto}body.chat-open:has(#inbox:not([hidden])) main{max-width:none;padding:0}
@@ -1251,10 +1272,7 @@ body main{padding-top:0}
   body.chat-open:has(#inbox:not([hidden])) .chat-title{text-overflow:ellipsis}
   body.chat-open:has(#inbox:not([hidden])) .chat-title.fade{-webkit-mask-image:none;mask-image:none}
   body.chat-open:has(#inbox:not([hidden])) .chat-log{padding-top:12px}
-  /* All clear: the title's line says it, so the block below is only the robot and its line */
-  #suggestions .all-clear:not(.first-look-empty){padding-top:24px}#suggestions .all-clear:not(.first-look-empty)>div>strong{display:none}
   body.chat-open:has(#inbox:not([hidden])) .chat-log{padding-left:max(24px,calc((100% - var(--chat-col))/2));padding-right:max(24px,calc((100% - var(--chat-col))/2))}
-  .chat-layout{grid-template-columns:minmax(0,1fr)}.chat-layout>.chat-side{display:none}
   /* Folded to icons: the labels, the filter text and the list step out; the order and the places stay */
   :root[data-side="collapsed"] .app-side{padding:12px 8px 10px}
   :root[data-side="collapsed"] .app-side .brand{justify-content:center;padding:0}
@@ -1268,6 +1286,55 @@ body main{padding-top:0}
   :root[data-side="collapsed"] .app-side nav .badge:not(:empty){position:absolute;top:6px;right:8px;width:7px;height:7px;padding:0;border-radius:50%;background:var(--c-accent);font-size:0}
   :root[data-side="collapsed"] .app-side nav .badge.warn:not(:empty){background:var(--c-orange)}
   :root[data-side="collapsed"] .side-cards{visibility:hidden}
+
+  :root[data-side="collapsed"] .app-side nav .side-fold{display:none}
+  :root[data-side="collapsed"] .side-row>button[data-tab]{padding:0!important}
+  :root[data-side="collapsed"] .side-sub a{justify-content:center;padding:0}
+  :root[data-side="collapsed"] .side-sub .badge{display:none}
+}
+/* A phone and a tablet: a slim top bar with the menu button, the page's title in the column, and the sidebar as a drawer */
+@media(max-width:1023px){
+  :root{--side-bg:var(--bg)}
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+  .topbar-title{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 26px);transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:var(--r-sm);color:var(--text);font:var(--fw-heading) 17px/1 var(--serif);letter-spacing:-.01em;text-decoration:none;white-space:nowrap}
+  .topbar-title img{width:22px;height:22px;object-fit:contain}
+  .topbar>:not(.topbar-title):last-child:not(:first-child){margin-left:auto}  /* a button on the right (New card) */
+  .topbar-menu{display:grid;place-items:center;width:44px;height:44px;min-height:0;margin:0;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--c-text-2);cursor:pointer}
+  .topbar-menu:hover{background:var(--c-hover);color:var(--text)}
+  .topbar-menu svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .topbar-menu .dot{position:absolute;margin:-14px 0 0 16px;width:7px;height:7px;border-radius:50%;background:var(--c-orange)}.topbar-menu .dot[hidden]{display:none}
+  body.chat-open:has(#inbox:not([hidden])) .topbar{display:none}
+  .app-side{position:fixed;top:0;bottom:0;left:0;z-index:70;display:flex;flex-direction:column;width:min(88vw,380px);max-width:none;height:100dvh;margin:0;padding:calc(8px + env(safe-area-inset-top)) 12px calc(6px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border-right:1px solid var(--c-line);background:var(--bg);box-shadow:var(--shadow-pop);overflow:hidden;overscroll-behavior:contain;transform:translateX(-104%);visibility:hidden;transition:transform .26s var(--ease),visibility 0s linear .26s}
+  :root[data-drawer="open"] .app-side{transform:none;visibility:visible;transition:transform .26s var(--ease)}
+  .app-side.dragging{transition:none!important}
+  .drawer-scrim{display:block;position:fixed;inset:0;z-index:65;background:#0008;opacity:0;pointer-events:none;transition:opacity .26s var(--ease)}
+  :root[data-drawer="open"] .drawer-scrim{opacity:1;pointer-events:auto}
+  :root[data-drawer="open"],:root[data-drawer="open"] body{overflow:hidden}
+  .app-side .brand{gap:4px;min-height:44px;padding:0}
+  .app-side .avatar{display:none}
+  .app-side h1{font-size:22px}
+  .side-toggle{order:-1;width:44px;height:44px;margin:0 2px 0 -4px;color:var(--c-text-2)}
+  .side-toggle svg{width:22px;height:22px}
+  .side-toggle .ic-panel{display:none}.side-toggle .ic-x{display:block}
+  @media(hover:none){.side-toggle:hover,.topbar-menu:hover{background:none}}
+  .side-search{height:44px;margin:8px 0 10px;padding:0 12px;border-color:transparent;border-radius:var(--r-md,12px);background:color-mix(in srgb,var(--text) 6%,transparent)}
+  .side-search input,.side-search input:focus{font-size:16px}  /* 16px: no zoom on focus on an iPhone */
+  .app-side nav button,.app-side .head-side>.settings-link{min-height:44px;gap:12px;font-size:var(--fs-md)}
+  .app-side nav .ni,.app-side .head-side>.settings-link svg{width:20px;height:20px}
+  .app-side nav .badge,.side-sub .badge{font-size:var(--fs-sm)}
+  .side-sub a{min-height:40px;gap:12px;padding-left:22px;font-size:var(--fs-md)}
+  .side-sub .sq{width:18px;height:18px}
+  .app-side nav .side-fold{width:36px;height:36px;margin-top:-18px}
+  .side-label{min-height:34px;font-size:var(--fs-sm)}.side-label button{padding:6px 9px}
+  .side-head{min-height:38px;font-size:var(--fs-sm)}
+  .side-cards{margin-top:12px;scrollbar-gutter:auto}
+  .side-cards a{padding:9px 10px;font-size:15px}
+  .app-side .head-side>.live{min-height:36px}
+  #open-browser:not([hidden]){display:flex}
+  .page-head{display:flex;align-items:center;gap:12px;margin:4px 0 22px}
+  .page-title{font-size:26px}.page-head.greet .page-title{font-size:24px}
+  .page-avatar{display:none}  /* the top bar carries the mascot on a phone */
+  .chat-layout [data-chat-drawer]{display:flex}
 }
 @media(prefers-reduced-motion:reduce){*{transition-duration:0s!important;animation-duration:0s!important}}
 /* Saved sign-ins (Connections, Sign-ins): one calm row per site, a letter tile, the username, a faint "Password saved"
@@ -1384,8 +1451,6 @@ body main{padding-top:0}
 .nc-foot{display:flex;justify-content:space-between;gap:12px;margin:12px 2px 0;color:var(--muted);font-size:.8rem}
 .nc-error{margin:10px 2px 0;color:var(--c-orange,var(--orange));font-size:.88rem}
 .nc-error:empty{display:none}
-.chat-side-new{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;margin:0 0 10px;padding:0 12px;border:0;border-radius:12px;background:none;box-shadow:none;color:var(--text);font:500 .95rem/1.2 var(--sans);text-align:left;cursor:pointer}
-.chat-side-new:hover{background:var(--c-hover)}.chat-side-new svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 /* An owner's card: quiet "Added by you"; their own words open its chat. */
 .card .added-by{color:var(--muted);font-size:.8rem;margin-right:8px}
 @media(max-width:560px){.card .meta-side:has(.added-by)>time{display:none}}
@@ -1394,20 +1459,21 @@ body main{padding-top:0}
 .merge-offer button{min-height:30px;margin:0;padding:4px 12px}
 .chat-panel .merge-offer{margin:12px 0}
 /* Rename: an input over the title, wherever the title is the card's own heading. */
-.rename-box{position:fixed;z-index:60;display:flex;flex-direction:column;gap:4px}
+.rename-box{position:fixed;z-index:71;display:flex;flex-direction:column;gap:4px}
 .rename-box input{width:100%;min-height:0;height:100%;margin:0;padding:2px 8px;border:1px solid var(--c-accent,var(--mint));border-radius:8px;background:var(--surface);color:var(--text);font:inherit;box-shadow:0 0 0 3px color-mix(in srgb,var(--c-accent,var(--mint)) 22%,transparent);outline:none}
 .rename-box .rename-reset{align-self:flex-start;min-height:0;margin:0;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 6px 16px #0003;color:var(--muted);font:500 .8rem/1.3 var(--sans);cursor:pointer}
 .rename-box .rename-reset:hover{color:var(--text)}
 .row-more{position:fixed;z-index:30;display:grid;place-items:center;width:24px;height:24px;min-height:0;margin:0;padding:0;border:0;border-radius:6px;background:var(--c-hover);box-shadow:none;color:var(--side-ink,var(--muted));cursor:pointer}
 .row-more:hover{color:var(--text)}
 .row-more svg{width:16px;height:16px}
-.row-menu{position:fixed;z-index:61;display:flex;flex-direction:column;min-width:150px;padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 30px #0005}
+.row-menu{position:fixed;z-index:72;display:flex;flex-direction:column;min-width:150px;padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 30px #0005}
 .row-menu button{min-height:0;margin:0;padding:7px 12px;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
 .row-menu button:hover{background:var(--c-hover)}
 @media(hover:hover) and (pointer:fine){.card h3 .title-link{cursor:text}}
 .chat-title{cursor:text}
 </style>
-<aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20.5V16.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M12 13.2l-2.4-2.3a1.5 1.5 0 0 1 2.1-2.1l.3.3.3-.3a1.5 1.5 0 0 1 2.1 2.1z"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="topbar" id="topbar"><button type="button" class="topbar-menu" id="drawer-open" aria-label="Open the menu" aria-controls="app-side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><span class="dot" id="drawer-dot" hidden></span></button><a class="topbar-title" href="#" id="topbar-title" aria-label="The Machine, to the top"><img src="brand/avatar.png" alt="" width="22" height="22"><span>The Machine</span></a></div><div class="drawer-scrim" id="drawer-scrim"></div>
+<aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg class="ic-panel" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><svg class="ic-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><div class="side-row"><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button type="button" class="side-fold" id="graph-fold" aria-expanded="true" aria-controls="graph-sub" aria-label="Hide People, Organisations and Projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div><div class="side-sub" id="graph-sub" role="group" aria-label="Graph"><a href="#graph=people" data-graph-sub="people"><span class="sq sq-people"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.2"/><path d="M5.5 19.5c.8-3.4 3.4-5.2 6.5-5.2s5.7 1.8 6.5 5.2"/></svg></span><span class="nl">People</span><span class="badge" id="count-people"></span></a><a href="#graph=orgs" data-graph-sub="orgs"><span class="sq sq-orgs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V5.5h8V20M14 9.5h4V20M4 20h16M9 9h2M9 12.5h2M9 16h2"/></svg></span><span class="nl">Organisations</span><span class="badge" id="count-orgs"></span></a><a href="#graph=projects" data-graph-sub="projects"><span class="sq sq-projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5V18a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 18V9.5A1.5 1.5 0 0 0 18.5 8H12l-2-2.5H5.5A1.5 1.5 0 0 0 4 7z"/></svg></span><span class="nl">Projects</span><span class="badge" id="count-projects"></span></a><a href="#graph=roles" data-graph-sub="roles" hidden><span class="sq sq-roles"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="6" width="15" height="12" rx="2"/><circle cx="9.5" cy="11" r="1.8"/><path d="M7 15.2c.6-1.2 1.5-1.8 2.5-1.8s1.9.6 2.5 1.8M14.5 10h2.5M14.5 13h2.5"/></svg></span><span class="nl">Who’s who</span><span class="badge" id="count-roles"></span></a></div><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20.5V16.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M12 13.2l-2.4-2.3a1.5 1.5 0 0 1 2.1-2.1l.3.3.3-.3a1.5 1.5 0 0 1 2.1 2.1z"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div id="needs-you" role="status" hidden></div><div class="page-head" id="page-head" hidden></div>
 <dialog id="send-dialog" aria-labelledby="send-title"><form method="dialog"><div class="snooze-heading"><h2 id="send-title">Send this email?</h2><button aria-label="Cancel send">×</button></div></form><fieldset id="send-recipients" hidden><legend>Who should get this?</legend><div></div></fieldset><dl id="send-head" class="send-head"></dl><div id="send-preview" class="send-body"></div><div id="send-editor" hidden><label id="send-subject-label">Subject<input id="send-subject" maxlength="250"></label><label>Message<textarea id="send-body"></textarea></label></div><div id="send-files" class="attachments" hidden></div><p id="send-fine" class="fine" hidden></p><p id="send-error" role="status"></p><div class="actions send-act"><button id="send-confirm" class="primary">Send now</button><button id="send-edit" class="ghost">Edit</button><button id="send-cancel">Cancel</button></div></dialog><p id="notice" role="status"></p><section id="inbox"><div id="suggestion-summary"></div><div id="suggestion-stats" aria-live="polite"></div><div id="first-look" class="first-look" role="status" hidden></div><div id="suggestions"></div></section>
 <section id="events" hidden><div class="search"><select id="account" aria-label="Account"><option value="all">All accounts</option></select><input id="query" type="search" placeholder="Search by meaning or words" aria-label="Search"><button id="search" class="primary">Search</button></div><div id="results"></div></section>
@@ -1694,7 +1760,7 @@ function settingsSync(){const s=$('#settings'),bar=$('#settings-tabs'),shown=new
 new MutationObserver(settingsSync).observe($('#settings'),{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
 const settingsHash=()=>{if(!$('#settings').hidden)history.replaceState(null,'',location.pathname+location.search+'#settings/'+settingsNow)};
 function showSettings(tab){if(SETTINGS_TABS.some(t=>t[0]===tab)){settingsTab=tab;localStorage.setItem('settings-tab',tab)}const was=!$('#settings').hidden;
- for(const b of document.querySelectorAll('nav button')){b.classList.remove('active');b.setAttribute('aria-current','false')}for(const x of document.querySelectorAll('main>section'))x.hidden=x.id!=='settings';$('#open-settings').setAttribute('aria-current','page');
+ for(const b of document.querySelectorAll('nav button[data-tab]')){b.classList.remove('active');b.setAttribute('aria-current','false')}for(const x of document.querySelectorAll('main>section'))x.hidden=x.id!=='settings';$('#open-settings').setAttribute('aria-current','page');
  settingsSync();settingsHash();if(!was)scrollTo(0,0);requestAnimationFrame(()=>tabsShow($('#settings-tabs')))}
 $('#open-settings').onclick=()=>showSettings();
 $('#settings-tabs').onclick=e=>{const b=e.target.closest('[data-settings-tab]');if(!b)return;showSettings(b.dataset.settingsTab)};
@@ -2386,7 +2452,7 @@ const backDay=s=>{const d=new Date(s.snoozed_until),t=new Date();t.setDate(t.get
 const laterCards=items=>items.map((s,i)=>(i===0||backDay(s)!==backDay(items[i-1])?`<h3 class="day-head">${esc(backDay(s))}</h3>`:'')+suggestionCard(s,'Later')).join('');
 $('#suggestion-summary').innerHTML=`<div class="summary-row"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div></div>`;
 $('#suggestion-stats').innerHTML=`<div class="stats">${[[ready,'Ready','mint','ready'],[needs,'To decide','amber','needs'],[preparing,'Preparing','lavender','preparing'],[later,'Later','lavender','later']].map(([items,title,t,key])=>`<button type="button" class="stat t-${t}${items.length?'':' zero'}" data-fold-tile="${key}" aria-expanded="${!!items.length&&(key==='later'?laterOpen:!folded.has(key))}" aria-label="${items.length} ${title}${items.length?', tap to show or hide':''}" ${items.length?'':'disabled'}><b>${items.length}</b><span>${title}</span></button>`).join('')}</div>`;
-$('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:scopeFilter==='personal'?0:state.fleet?.waiting||0))||'';$('#tab-fleet').hidden=!state.fleet?.on;navFade();$('#badge-fleet').textContent='';
+$('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:scopeFilter==='personal'?0:state.fleet?.waiting||0))||'';$('#tab-fleet').hidden=!state.fleet?.on;$('#badge-fleet').textContent='';
 if(!chatOpen())$('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
 // Snoozed cards are out of the way by choice: folded by default, open state kept across refreshes.
 +(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed this week</span><span class="count">${recent.length}</span></summary>${recent.map(suggestionCard).join('')||'<p class="muted">Nothing finished or dismissed this week.</p>'}${older?`<p class="muted">${older} older ${older===1?'item is':'items are'} under Feedback.</p>`:''}</details>`;
@@ -2724,7 +2790,7 @@ function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…'
   :closed(s)?(s.status==='completed'?'Done':'Not needed'):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':s.preparation_status==='blocked'?p.status:'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
- const side=`<aside class="chat-side" aria-label="Tasks"><button type="button" class="chat-side-new" data-new-card>${NC_PLUS}<span>New card</span></button><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
+ const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
  return `<div class="chat-layout${chatDrawer?' drawer':''}" data-chat="${s.id}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title" title="${esc(s.title)}">${esc(s.title)}</h2>
   <details class="chat-menu" id="chat-menu"><summary aria-label="More actions" title="More actions">${DOTS}</summary><div class="chat-menu-list" role="group" aria-label="More actions">${p.rest}<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button></div></details></header>
  <article id="task-${s.id}" class="chat-panel">${p.panel}</article><div class="chat-log" id="chat-log" aria-live="polite">${chatLog(s)}</div>
@@ -2757,6 +2823,8 @@ function chatFades(){document.querySelectorAll('.chat-side a,.chat-title,.side-c
  while(lo>1&&/\s/.test(txt.data[lo-1]))lo--;r.setStart(txt,Math.max(0,lo-1));r.setEnd(txt,lo);n.style.setProperty('--fade-x',Math.round(r.getBoundingClientRect().right-box.left)+'px')})}
 addEventListener('resize',()=>chatFades());
 // A scrolled box shows its thin thumb while it moves
+// Fonts that arrive late change the widths: measure the fades again then
+document.fonts?.ready.then(()=>requestAnimationFrame(chatFades));document.fonts?.addEventListener?.('loadingdone',()=>requestAnimationFrame(chatFades));
 document.addEventListener('scroll',e=>{const b=e.target;if(!b.matches?.('.chat-log,.chat-side,.side-cards'))return;b.classList.add('scrolling');clearTimeout(b._scrolling);b._scrolling=setTimeout(()=>b.classList.remove('scrolling'),900)},{capture:true,passive:true});
 // A result file shown in the thread (a copy-only draft): read once, then kept while the page is open
 const chatFiles=new Map();
@@ -2805,7 +2873,7 @@ let chatScrolledAt=0,chatDown=null;
 addEventListener('scroll',()=>{chatScrolledAt=Date.now()},{passive:true});
 document.addEventListener('pointerdown',e=>{chatDown={x:e.clientX,y:e.clientY,at:Date.now(),scrolled:Date.now()-chatScrolledAt<250}},{passive:true,capture:true});
 const chatRealTap=e=>!(chatDown&&(chatDown.scrolled||Math.hypot(e.clientX-chatDown.x,e.clientY-chatDown.y)>8));
-function chatGo(id){if(!chatId){history.pushState(null,'',location.pathname+location.search+'#chat='+id);chatPushed=true}else history.replaceState(null,'',location.pathname+location.search+'#chat='+id);openChatLink()}
+function chatGo(id){if(history.state?.drawer){history.replaceState(null,'',location.pathname+location.search+'#chat='+id);chatPushed=true}else if(!chatId){history.pushState(null,'',location.pathname+location.search+'#chat='+id);chatPushed=true}else history.replaceState(null,'',location.pathname+location.search+'#chat='+id);openChatLink()}
 // In-page links, also when the page's base is another path; the "You asked" note opens the chat too.
 $('#suggestions').addEventListener('click',e=>{const a=e.target.closest('a[href^="#chat="],a[href^="#card="]'),note=!a&&e.target.closest('[data-chat-open]');
  if(note&&!e.target.closest('a,button')){if(chatRealTap(e))chatGo(note.dataset.chatOpen);return}
@@ -2821,7 +2889,7 @@ $('#suggestions').addEventListener('focusout',e=>{if(e.target.id!=='chat-input')
 $('#suggestions').addEventListener('keydown',e=>{if(e.target.id!=='chat-input'||e.key!=='Enter'||e.shiftKey||e.isComposing||e.ctrlKey||e.metaKey||matchMedia('(pointer: coarse)').matches)return;e.preventDefault();$('[data-chat-send]')?.click()});
 $('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
  const layout=e.target.closest('.chat-layout');if(e.target===layout&&chatDrawer){chatDrawer=false;layout.classList.remove('drawer');return}
- if(e.target.closest('[data-chat-drawer]')){chatDrawer=!chatDrawer;layout.classList.toggle('drawer',chatDrawer);e.target.closest('[data-chat-drawer]').setAttribute('aria-expanded',chatDrawer);e.target.closest('details')?.removeAttribute('open');return}
+ if(e.target.closest('[data-chat-drawer]')){e.target.closest('details')?.removeAttribute('open');drawerOpen();return}
  if(e.target.closest('.chat-menu-list button'))setTimeout(()=>$('#chat-menu')?.removeAttribute('open'));
  const scope=e.target.closest('.chat-side [data-scope]');if(scope){e.stopPropagation();scopeFilter=scope.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render();return}
  const un=e.target.closest('[data-unclamp]');if(un){e.stopPropagation();const k=un.dataset.unclamp;chatOpenSet.has(k)?chatOpenSet.delete(k):chatOpenSet.add(k);paintChat();return}
@@ -2838,7 +2906,9 @@ $('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
 const TAB_LINKS={inbox:'inbox',suggestions:'inbox',events:'events',graph:'people',people:'people',feedback:'feedback',connections:'health',health:'health'};
 function showTab(tab,pane){if(tab==='people'&&pane){graphPane=pane;localStorage.setItem('graph-pane',pane);graphNode='';$('#people-query').value=''}
  if(tab==='health'&&pane){healthPane=pane==='phone'?'other':pane;healthPicked=true}document.querySelector(`nav [data-tab="${tab}"]`)?.click();if(tab==='health')renderHealthTabs()}
-function openTabLink(){const st=/^#settings(?:[/=]([a-z]+))?$/.exec(location.hash);if(st){if($('#settings').hidden||st[1]&&st[1]!==settingsNow)showSettings(st[1]);return}const m=/^#([a-z]+)(?:=([a-z]+))?$/.exec(location.hash);if(!m||!TAB_LINKS[m[1]])return;history.replaceState(null,'',location.pathname+location.search);showTab(TAB_LINKS[m[1]],m[2])}
+function openTabLink(){const st=/^#settings(?:[/=]([a-z]+))?$/.exec(location.hash);if(st){if($('#settings').hidden||st[1]&&st[1]!==settingsNow)showSettings(st[1]);return}const m=/^#([a-z]+)(?:=([a-z]+))?$/.exec(location.hash);if(!m||!TAB_LINKS[m[1]])return;
+ const tab=TAB_LINKS[m[1]];if(tab==='people'&&GRAPH_PANES.includes(m[2])){if(!$('#people').hidden&&!graphNode&&graphShown===m[2])return;showTab(tab,m[2]);return}
+ history.replaceState(null,'',location.pathname+location.search);showTab(tab,m[2])}
 window.addEventListener('hashchange',()=>{openChatLink();openSnoozeLink();openResultLink();openCardLink();openFleetLink();openTabLink()});
 function noteSplit(n){if(!n)return'';const parts=[['style','style'],['fact','missing facts'],['continue','keep going'],['new_ask','new asks'],['unsorted','not sorted']].filter(([k])=>n[k]);
 return parts.length?`<div class="notes-split"><span>Your Change notes</span><div>${parts.map(([k,t])=>`<span class="chip t-${{style:'lavender',fact:'amber',continue:'orange',new_ask:'mint',unsorted:'muted'}[k]}">${n[k]} ${t}</span>`).join('')}</div></div>`:''}
@@ -2868,11 +2938,7 @@ function wakeSnoozed(st){const now=Date.now();let next=Infinity;for(const s of s
  clearTimeout(wakeTimer);if(next<Infinity&&next-now<864e5)wakeTimer=setTimeout(()=>refresh(),next-now+3000);return st}
 let sendTimer=null;const sendWatch=()=>{clearTimeout(sendTimer);if((state.suggestions||[]).some(s=>chatSends(s).some(x=>['queued','sending'].includes(x.st.status))))sendTimer=setTimeout(()=>{refreshWhenReady();if(chatId)chatPoll()},2000)};
 async function refresh(){refreshes++;try{state=wakeSnoozed(await request('api/status'));browserPill(state);if(uiVersionCheck())return;render();sendWatch();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=e.retryAfter||Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=e.restarting?'Restarting · retrying':lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
-// On a phone the tab row scrolls sideways: a fade shows on the side with more tabs, and the current tab scrolls into view.
-function navFade(){const n=$('nav'),max=n.scrollWidth-n.clientWidth;n.classList.toggle('more-left',n.scrollLeft>2);n.classList.toggle('more-right',n.scrollLeft<max-2)}
-$('nav').addEventListener('scroll',navFade,{passive:true});addEventListener('resize',navFade);navFade();
-const navShow=t=>{const n=$('nav');if(n.scrollWidth>n.clientWidth)n.scrollTo({left:Math.max(0,t.offsetLeft-(n.clientWidth-t.offsetWidth)/2),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})};
-$('nav').onclick=e=>{const t=e.target.closest('button');if(!t?.dataset.tab)return;navShow(t);for(const b of document.querySelectorAll('nav button')){b.classList.toggle('active',b===t);b.setAttribute('aria-current',b===t?'page':'false')}for(const s of document.querySelectorAll('main>section'))s.hidden=s.id!==t.dataset.tab;if(t.dataset.tab==='people')people(graphNode,!!$('#people-view').innerHTML);if(t.dataset.tab==='health')savedLogins();if(t.dataset.tab==='fleet')fleetShown=fleetView(true);requestAnimationFrame(()=>document.querySelectorAll('.fleet-tabs,.sub-tabs').forEach(tabsShow))};
+$('nav').onclick=e=>{const t=e.target.closest('button');if(!t?.dataset.tab)return;for(const b of document.querySelectorAll('nav button[data-tab]')){b.classList.toggle('active',b===t);b.setAttribute('aria-current',b===t?'page':'false')}for(const s of document.querySelectorAll('main>section'))s.hidden=s.id!==t.dataset.tab;if(t.dataset.tab==='people')people(graphNode,!!$('#people-view').innerHTML);if(t.dataset.tab==='health')savedLogins();if(t.dataset.tab==='fleet')fleetShown=fleetView(true);requestAnimationFrame(()=>document.querySelectorAll('.fleet-tabs,.sub-tabs').forEach(tabsShow))};
 // The desktop sidebar (from 1024px): the cards as a quiet list under the tabs, by section, each section folds (Done
 // starts folded) and the fold is remembered; a filter on the titles; the whole sidebar folds to icons.
 const sideStore={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
@@ -2911,7 +2977,7 @@ function sideTipHide(){clearTimeout(sideTipTimer);if(sideTipFor){if(sideTipFor.d
 function sideTipShow(el){if(document.documentElement.dataset.side!=='collapsed'||!matchMedia('(min-width:1024px)').matches)return;sideLabels();const text=sideTipText(el);if(!text)return;
  if(el.title){el.dataset.tipTitle=el.title;el.title=''}  /* no second, native tooltip */
  sideTipFor=el;sideTip.textContent=text;const r=el.getBoundingClientRect(),side=$('#app-side').getBoundingClientRect();sideTip.style.left=Math.round(side.right+8)+'px';sideTip.style.top=Math.round(r.top+r.height/2)+'px';sideTip.hidden=false}
-const SIDE_TIP_ON='.app-side nav [data-tab],#side-toggle,#side-search,.app-side .head-side>.settings-link,#live';
+const SIDE_TIP_ON='.app-side nav [data-tab],.side-sub a,#side-toggle,#side-search,.app-side .head-side>.settings-link,#live';
 $('#app-side').addEventListener('pointerover',e=>{const el=e.target.closest(SIDE_TIP_ON);if(!el||el===sideTipFor||e.pointerType==='touch')return;sideTipHide();sideTipTimer=setTimeout(()=>sideTipShow(el),300)});
 $('#app-side').addEventListener('pointerout',e=>{const el=e.target.closest(SIDE_TIP_ON);if(el&&!el.contains(e.relatedTarget))sideTipHide()});
 $('#app-side').addEventListener('focusin',e=>{const el=e.target.closest(SIDE_TIP_ON);sideTipHide();if(el&&el.matches(':focus-visible'))sideTipShow(el)});
@@ -2922,12 +2988,72 @@ addEventListener('keydown',e=>{if(e.key==='Escape')sideTipHide();if(!(e.ctrlKey|
 sideSet(document.documentElement.dataset.side==='collapsed',false);
 $('#side-toggle').onclick=()=>sideSet(document.documentElement.dataset.side!=='collapsed');
 $('#side-search').addEventListener('click',()=>{if(document.documentElement.dataset.side==='collapsed'&&matchMedia('(min-width:1024px)').matches){sideSet(false);$('#side-find').focus()}});
+// Below 1024px the sidebar is a drawer: the menu button, a swipe from the left edge or All tasks in a chat opens it; ✕,
+// the shade, Esc, a swipe to the left and the back button close it, and so does picking a row in it. While it is open
+// the rest of the page is inert, so focus stays in it.
+const DESK=matchMedia('(min-width:1024px)'),drawerIs=()=>document.documentElement.dataset.drawer==='open';
+let drawerInert=[],drawerPopping=false,drawerStep=false,drawerFrom=null;
+function drawerShow(on){const root=document.documentElement;if(on)root.dataset.drawer='open';else delete root.dataset.drawer;$('#drawer-open').setAttribute('aria-expanded',String(on));
+ for(const el of drawerInert)el.inert=false;drawerInert=[];
+ if(on)for(const el of document.body.children)if(!['app-side','drawer-scrim','side-tip'].includes(el.id)&&el.tagName!=='DIALOG'&&el.tagName!=='SCRIPT'&&!el.inert){el.inert=true;drawerInert.push(el)}}
+function drawerOpen(){if(DESK.matches||drawerIs())return;drawerFrom=document.activeElement;sideTipHide();drawerShow(true);if(!history.state?.drawer)history.pushState({drawer:1},'',location.href);
+ requestAnimationFrame(()=>$('#side-toggle').focus({preventScroll:true}))}
+// visual only: a row that navigates takes the drawer's place on the history itself
+function drawerHide(){if(!drawerIs())return;const back=document.activeElement&&$('#app-side').contains(document.activeElement);drawerShow(false);if(back&&!chatId)(drawerFrom?.isConnected&&drawerFrom.offsetParent?drawerFrom:$('#drawer-open')).focus({preventScroll:true})}
+function drawerClose(){if(!drawerIs())return;drawerHide();if(history.state?.drawer){drawerPopping=true;history.back()}}
+// back closes it; back onto the entry it pushed (it closed some other way meanwhile) steps over that entry; back from
+// #graph=… to the plain page leaves the Graph for Suggestions
+// (a step that only opened or closed the drawer is no navigation: drawerStep tells the other back handlers to sit it out)
+addEventListener('popstate',()=>{const step=()=>{drawerStep=true;setTimeout(()=>{drawerStep=false})};if(drawerPopping){drawerPopping=false;step();return}if(drawerIs()&&!history.state?.drawer){drawerHide();step();return}
+ if(history.state?.drawer&&!drawerIs()){drawerPopping=true;step();history.back();return}
+ if(!location.hash&&!$('#people').hidden&&!graphNode)showTab('inbox')});
+$('#drawer-open').onclick=drawerOpen;$('#topbar-title').onclick=e=>{e.preventDefault();scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})};$('#drawer-scrim').onclick=drawerClose;
+$('#side-toggle').addEventListener('click',e=>{if(DESK.matches)return;e.stopImmediatePropagation();drawerClose()},true);
+addEventListener('keydown',e=>{if(e.key==='Escape'&&drawerIs()&&!document.querySelector('dialog[open]')){e.preventDefault();drawerClose()}});
+DESK.addEventListener('change',()=>{if(DESK.matches&&drawerIs()){drawerShow(false);if(history.state?.drawer)history.replaceState(null,'',location.href)}});
+// picking a tab, a card, a Graph row, Settings or Browser closes it
+$('#app-side').addEventListener('click',e=>{if(!drawerIs()||!e.isTrusted)return;const t=e.target.closest('nav button[data-tab],.side-cards a,.side-sub a,#open-settings,#open-browser');if(!t||e.ctrlKey||e.metaKey||e.shiftKey)return;
+ drawerHide();setTimeout(()=>{if(history.state?.drawer){drawerPopping=true;history.back()}})},true);
+// swipe: from the left edge to open, to the left on the drawer to close
+{let sw=null;
+ addEventListener('touchstart',e=>{if(DESK.matches||e.touches.length!==1)return;const t=e.touches[0],open=drawerIs();
+  if(!open&&t.clientX>24||document.querySelector('dialog[open]'))return;if(open&&!$('#app-side').contains(e.target)&&e.target.id!=='drawer-scrim')return;sw={x:t.clientX,y:t.clientY,open,dx:0,lock:null}},{passive:true});
+ addEventListener('touchmove',e=>{if(!sw)return;const t=e.touches[0],dx=t.clientX-sw.x,dy=t.clientY-sw.y;
+  if(sw.lock===null&&Math.hypot(dx,dy)>8)sw.lock=Math.abs(dx)>Math.abs(dy)*1.3?'x':'y';if(sw.lock!=='x'){if(sw.lock==='y')sw=null;return}
+  sw.dx=dx;const side=$('#app-side'),w=side.offsetWidth;side.classList.add('dragging');
+  if(sw.open)side.style.transform=`translateX(${Math.min(0,dx)}px)`;else{if(!drawerIs()){document.documentElement.dataset.drawer='open';side.style.transform=`translateX(-${w}px)`}side.style.transform=`translateX(${Math.min(0,dx-w)}px)`}},{passive:true});
+ addEventListener('touchend',()=>{if(!sw)return;const {open,dx,lock}=sw,side=$('#app-side');sw=null;side.classList.remove('dragging');side.style.transform='';if(lock!=='x')return;
+  if(open){if(dx<-60)drawerClose()}else{delete document.documentElement.dataset.drawer;if(dx>60)drawerOpen()}});
+ addEventListener('touchcancel',()=>{if(!sw)return;const side=$('#app-side');side.classList.remove('dragging');side.style.transform='';if(!sw.open&&!drawerInert.length)delete document.documentElement.dataset.drawer;sw=null})}
+// The menu button wears a dot when a connection needs a look
+new MutationObserver(()=>{$('#drawer-dot').hidden=!$('#badge-health').textContent.trim()}).observe($('#badge-health'),{childList:true,characterData:true,subtree:true});
+// Graph's rows: People, Organisations and Projects open the Graph on that pane, the address says which (#graph=orgs), the
+// row of the pane on screen is lit, and the group folds (remembered).
+const GRAPH_SUBS={people:'People',orgs:'Organisations',projects:'Projects',roles:'Who’s who'};let graphCounts=null;
+function graphCountsSet(c){if(!c)return;graphCounts=c;for(const [k,n] of Object.entries({people:c.person,orgs:c.org,projects:c.project})){const b=$('#count-'+k);if(b)b.textContent=n?String(n):''}graphSubLabels();pageHead()}
+let rolesWaiting=0;
+function rolesRow(on,n){rolesWaiting=on?n||0:0;const a=$('.side-sub a[data-graph-sub="roles"]');a.hidden=!on;$('#count-roles').textContent=on&&n?String(n):'';graphSubLabels();if(!$('#people').hidden)pageHead()}
+function graphSubLabels(){for(const a of document.querySelectorAll('.side-sub a')){const n=a.querySelector('.badge').textContent.trim(),label=GRAPH_SUBS[a.dataset.graphSub]+(n?' · '+n:'');if(a.getAttribute('aria-label')!==label)a.setAttribute('aria-label',label)}}
+function graphSubSync(){pageHead();const on=!$('#people').hidden,graph=$('nav [data-tab="people"]');let lit=false;
+ for(const a of document.querySelectorAll('.side-sub a')){const me=on&&a.dataset.graphSub===graphShown;lit||=me;if(me)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')}graph.classList.toggle('sub-on',lit)}
+function graphHashSync(){if($('#people').hidden||graphNode||!graphShown)return;const h=location.hash;if(h&&!/^#(graph|people)(=[a-z]+)?$/.test(h))return;const want='#graph='+graphShown;if(h!==want)history.replaceState(null,'',location.pathname+location.search+want)}
+$('#graph-sub').addEventListener('click',e=>{const a=e.target.closest('a[data-graph-sub]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const url=location.pathname+location.search+'#graph='+a.dataset.graphSub;
+ if(history.state?.drawer)history.replaceState(null,'',url);else if(location.hash!=='#graph='+a.dataset.graphSub)history.pushState(null,'',url);openTabLink();graphSubSync();if(!DESK.matches)scrollTo(0,0)});
+{const fold=$('#graph-fold'),set=open=>{fold.setAttribute('aria-expanded',String(open));fold.setAttribute('aria-label',open?'Hide People, Organisations and Projects':'Show People, Organisations and Projects');$('#graph-sub').hidden=!open};
+ set(sideStore.get('graph-sub')!=='closed');fold.onclick=()=>{const open=fold.getAttribute('aria-expanded')!=='true';set(open);sideStore.set('graph-sub',open?'open':'closed')}}
+// The counts come with the Graph; fetch it once at the start so the rows show them before it is opened
+setTimeout(()=>{if(!graphCounts)request('api/graph').then(g=>graphCountsSet(g?.counts)).catch(()=>{})},1500);
+
 // A title over the main area on a computer: the tagline on Suggestions, else the tab's name
 const PAGE_TITLES={events:'Events',people:'Graph',fleet:'Fleet',feedback:'Feedback',health:'Connections',settings:'Settings'};
+// The Graph's title is the pane on screen, with Graph as a quiet crumb and the same count as its row in the sidebar
+function graphHead(){const name=GRAPH_SUBS[graphShown];if(!name)return '<h2 class="page-title">Graph</h2>';const c=graphCounts||{},n={people:c.person,orgs:c.org,projects:c.project,roles:rolesWaiting}[graphShown];
+ const words={people:['person','people'],orgs:['organisation','organisations'],projects:['open project','open projects'],roles:['role to confirm','roles to confirm']}[graphShown];
+ return `<div><p class="page-crumb">Graph</p><h2 class="page-title">${esc(name)}</h2>${n&&!graphNode?`<p class="page-sub">${n} ${n===1?words[0]:words[1]}</p>`:''}</div>`}
 function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';
  if(tab==='inbox'&&chatId){h.hidden=true;return}
  const c=sideCounts,busy=[[c.ready,'ready for you'],[c.needs,'to decide'],[c.preparing,'preparing']].filter(([k])=>k).map(([k,t])=>k+' '+t),sub=(busy.length?busy:['All clear',c.later&&c.later+' coming back later',c.promises&&c.promises+(c.promises===1?' promise':' promises')+' kept track of'].filter(Boolean)).join(' · ');
- const html=tab==='inbox'?`<img class="page-avatar" src="brand/avatar.png" alt="" width="40" height="40"><div><h2 class="page-title">${esc($('#tagline').textContent)}</h2>${sub?`<p class="page-sub">${esc(sub)}</p>`:''}</div>`:`<h2 class="page-title">${PAGE_TITLES[tab]||''}</h2>`;
+ const html=tab==='inbox'?`<img class="page-avatar" src="brand/avatar.png" alt="" width="40" height="40"><div><h2 class="page-title">${esc($('#tagline').textContent)}</h2>${sub?`<p class="page-sub">${esc(sub)}</p>`:''}</div>`:tab==='people'?(()=>{try{return graphHead()}catch{return '<h2 class="page-title">Graph</h2>'}})():`<h2 class="page-title">${PAGE_TITLES[tab]||''}</h2>`;
  h.classList.toggle('greet',tab==='inbox');if(h.innerHTML!==html)h.innerHTML=html;h.hidden=false}
 {const o=new MutationObserver(()=>pageHead());document.querySelectorAll('main>section').forEach(x=>o.observe(x,{attributes:true,attributeFilter:['hidden']}));o.observe($('#tagline'),{childList:true,characterData:true,subtree:true})}
 $('#suggestions').oninput=e=>{if(e.target.tagName==='TEXTAREA')e.target.classList.toggle('filled',!!e.target.value)};
@@ -3541,14 +3667,14 @@ const graphEvents=n=>{const all=n.recent||[],soon=Date.now();if(!all.length)retu
 const GRAPH_KIND_PANE={person:['people','People'],project:['projects','Projects'],org:['orgs','Organisations']};
 const graphHash=id=>'#graph/'+encodeURIComponent(id);
 function graphOpen(id){if(location.hash!==graphHash(id))history.pushState(null,'',graphHash(id));people(id)}
-function graphBack(pane){if(pane){graphPane=pane;localStorage.setItem('graph-pane',pane)}if(/^#graph\//.test(location.hash))history.pushState(null,'',location.pathname+location.search);people('')}
+function graphBack(pane){if(pane){graphPane=pane;localStorage.setItem('graph-pane',pane)}if(/^#graph\//.test(location.hash))history.pushState(null,'',location.pathname+location.search+'#graph='+(graphPane||'people'));people('')}
 function graphRoute(){const m=/^#graph\/(.+)$/.exec(location.hash);let id='';try{id=m?decodeURIComponent(m[1]):''}catch{}
  if(id){if($('#people').hidden){graphNode=id;document.querySelector('nav [data-tab="people"]')?.click()}else if(graphNode!==id)people(id);return}
  if(!$('#people').hidden&&graphNode)people('')}
-addEventListener('popstate',graphRoute);addEventListener('hashchange',graphRoute);setTimeout(graphRoute);
+addEventListener('popstate',()=>{if(!drawerStep)graphRoute()});addEventListener('hashchange',graphRoute);setTimeout(graphRoute);
 document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.fact-menu[open]'))if(!m.contains(e.target))m.open=false});
-$('nav').addEventListener('click',e=>{const t=e.target.closest('button');if(t?.dataset.tab&&t.dataset.tab!=='people'&&/^#graph\//.test(location.hash))history.replaceState(null,'',location.pathname+location.search)});
-let graphNode='',graphRequest=0,editRole=false,graphPane=localStorage.getItem('graph-pane')||'';
+$('nav').addEventListener('click',e=>{const t=e.target.closest('button');if(t?.dataset.tab&&t.dataset.tab!=='people'&&/^#graph[/=]/.test(location.hash))history.replaceState(null,'',location.pathname+location.search);graphSubSync()});
+let graphShown='',graphNode='',graphRequest=0,editRole=false,graphPane=localStorage.getItem('graph-pane')||'';
 // Sub-tabs, as in Fleet: a pill row over panes that are all drawn at once and shown one at a time.
 const subTabs=(label,attr,panes,current)=>`<div class="sub-tabs" role="tablist" aria-label="${esc(label)}">${panes.map(p=>`<button type="button" role="tab" ${attr}="${esc(p.id)}" aria-selected="${p.id===current}"><span class="ell">${esc(p.label)}</span>${p.badge?` <span class="badge${p.warn?' warn':''}">${p.badge}</span>`:''}</button>`).join('')}</div>`;
 function tabsFade(row){const max=row.scrollWidth-row.clientWidth;row.classList.toggle('more-left',row.scrollLeft>2);row.classList.toggle('more-right',row.scrollLeft<max-2)}
@@ -3558,7 +3684,7 @@ document.addEventListener('scroll',e=>{if(e.target.matches?.('.fleet-tabs,.sub-t
 new MutationObserver(()=>document.querySelectorAll(':is(.fleet-tabs,.sub-tabs):not([data-faded])').forEach(r=>{r.dataset.faded='';tabsShow(r)})).observe(document.querySelector('main'),{childList:true,subtree:true});
 // Graph: People (closest, gone quiet, new), Who's who (roles to confirm), Projects and Organisations.
 const GRAPH_PANES=['people','roles','projects','orgs'];
-function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
+function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);graphShown=id;graphHashSync();graphSubSync();const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
  for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'))}
 async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=html=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */const scroll=window.scrollY;view.innerHTML=html;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
@@ -3575,11 +3701,11 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
  if(q){const r=await request('api/graph?q='+encodeURIComponent(q));draw(graphSection('Found','',r.found)||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nobody by that name.</strong>Try part of a name, an address or a company.</div></div>');return}
  const g=await request('api/graph'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';
  const panes=[{id:'people',label:'People',html:graphSection('Gone quiet','People you talk with regularly, silent for much longer than usual.',g.quiet)+graphSection('Closest','From your messages, meetings and cards. Fades over about two months.',g.people)+graphSection('New this week','',g.new)},
-  {id:'projects',label:'Projects',html:graphSection('Projects','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)},
-  {id:'orgs',label:'Organisations',html:graphSection('Organisations','',g.orgs)+warmupList(g.warmup)},
+  {id:'projects',label:'Projects',html:graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)},
+  {id:'orgs',label:'Organisations',html:graphSection('Closest','The ones you are most in touch with.',g.orgs)+warmupList(g.warmup)},
   {id:'roles',label:'Who’s who',badge:waiting,html:whosWho(g.whos_who,waiting)}].filter(p=>p.html);
- const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;
- draw((panes.length?subTabs('Graph','data-graph-pane',panes,current)+panes.map(p=>`<div class="sub-pane" role="tabpanel" data-graph-panel="${p.id}"${p.id===current?'':' hidden'}>${p.html}</div>`).join(''):'')
+ const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;graphCountsSet(g.counts);if(version===graphRequest){graphShown=current||'';graphHashSync();graphSubSync()}
+ rolesRow(panes.some(p=>p.id==='roles'),waiting);draw((panes.length?panes.map(p=>`<div class="sub-pane" role="tabpanel" data-graph-panel="${p.id}"${p.id===current?'':' hidden'}>${p.html}</div>`).join(''):'')
   ||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing mapped yet.</strong>People appear as messages and meetings come in.</div></div>');if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
 const graphPost=(action,args)=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
 $('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){for(const x of $('#people-view').querySelectorAll('.graph-events [hidden]'))x.hidden=false;e.target.closest('[data-ge-more]').remove();return}if(openEventFrom(e))return;
