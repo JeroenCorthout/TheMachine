@@ -47,12 +47,12 @@ try{
   // More opens a menu; tapping elsewhere closes it
   await page.locator('#task-r1 .more-actions>summary').click();await page.locator('#task-r1 .more-menu').getByRole('button',{name:'Change'}).waitFor();
   await page.mouse.click(2,2);assert.equal(await page.locator('#task-r1 .more-actions').evaluate(d=>d.open),false);
-  // Hand off: the form sits below the source line, labels above full-width fields, and the card's buttons hide meanwhile
+  // Hand off: the sheet sits below the source line, the task and the note full width, and the card's buttons hide meanwhile
   {await page.locator('#task-p1 .more-actions>summary').click();await page.locator('#task-p1 [data-fleet-handoff]').click();
    const form=page.locator('#task-p1 .fleet-handoff-form');await form.waitFor();
    assert.equal(await page.locator('#task-p1 .actions>[data-choice="accept"],#task-p1 .more-actions').count(),0);
-   const box=sel=>form.locator(sel).evaluate(e=>e.getBoundingClientRect().toJSON());const area=await box('textarea'),title=await box('input[name="title"]'),to=await box('select');
-   assert.ok(Math.abs(title.width-area.width)<2&&Math.abs(to.width-area.width)<2,'Title and Hand off to are as wide as the textarea');
+   const box=sel=>form.locator(sel).evaluate(e=>e.getBoundingClientRect().toJSON());const task=await box('textarea[name="task"]'),note=await box('textarea[name="note"]'),sheet=await box(':scope');
+   assert.ok(Math.abs(task.width-note.width)<2&&task.width>sheet.width-40,'The task and the note take the sheet’s width');
    const foot=await page.locator('#task-p1 .card-foot').evaluate(e=>e.getBoundingClientRect().bottom),top=(await form.evaluate(e=>e.getBoundingClientRect().top));
    assert.ok(foot<=top,'The source line stays with the card body, above the form');
    await page.locator('#task-p1').screenshot({path:`/tmp/card-handoff-${width}.png`});

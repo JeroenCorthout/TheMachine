@@ -595,11 +595,9 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 .card .actions .more-menu button{margin:0;padding:6px 12px;border:0;border-radius:8px;background:none;color:var(--text);font-size:.92rem;line-height:1.35;font-weight:500;text-align:left;min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .actions .more-menu button:hover{background:var(--tile)}.card .actions .more-menu button.quiet{color:var(--muted)}
 /* Hand off: labels above full-width fields, even spacing. */
-.card .fleet-handoff-form{display:flex;flex-direction:column;gap:14px;padding-top:16px}
-.card .fleet-handoff-form>label{display:flex;flex-direction:column;gap:6px;margin:0;color:var(--muted);font-size:.9rem}
-.card .fleet-handoff-form>label:has(>input[type=checkbox]){flex-direction:row;align-items:center;gap:8px;color:var(--text)}
-.card .fleet-handoff-form :is(input:not([type=checkbox]),select,textarea){width:100%;max-width:none;box-sizing:border-box;margin:0;font-size:1rem;color:var(--text)}
-.card .fleet-handoff-form textarea{min-height:96px}.card .fleet-handoff-form>.actions{margin-top:2px}
+.agent-sheet.fleet-handoff-form textarea.handoff-task,.agent-sheet.fleet-handoff-form textarea.handoff-task:focus{min-height:0;padding:6px 0;border:0;border-bottom:1px solid transparent;border-radius:0;background:none;font-size:1rem;color:var(--text)}.agent-sheet.fleet-handoff-form textarea.handoff-task:focus{border-bottom-color:var(--border-strong);outline:none}
+.fleet-handoff-form .handoff-email,.fleet-handoff-form .handoff-pick{width:100%;max-width:none;box-sizing:border-box;margin:0;min-height:36px;padding:6px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg);font:inherit;font-size:.95rem;color:var(--text)}.fleet-handoff-form .handoff-pick{width:auto;border-radius:999px}
+.agent-get .chip-x{margin:0 -4px 0 2px;padding:0 4px;min-height:0;border:0;background:none;color:var(--faint);font-size:1rem;line-height:1;cursor:pointer}.agent-get .chip-x:hover{color:var(--text)}
 /* Not needed: one compact choice. A reason is optional; Confirm decides. */
 .card .dismiss-q{margin:0 0 8px;font-weight:600}.card .dismiss-q small{font-weight:400;color:var(--faint)}
 .card .reason-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
@@ -2756,8 +2754,21 @@ function fleetHandoff(s){if(s.fleet_handoff)return`<p class="note${s.fleet_hando
  if(closed(s)||!state?.fleet?.on||s.scope!=='work')return'';
  if(s.fleet_handoff)return`<p class="note handled fleet">Handed off to ${esc(s.fleet_handoff.name)}: ${esc(s.fleet_handoff.stage)}</p>`;
  return''}  // the Hand off button sits with the card's other buttons (cardActions); its form with the other editors
-function handoffEditor(s){const d=handingOff.get(s.id);if(!d||closed(s))return'';
- return`<form class="change-editor fleet-handoff-form" data-card="${esc(s.id)}"><label>Hand off to <select name="to">${d.who.map(([f,m,n])=>`<option value="${esc(f)}|${esc(m)}"${d.to===f+'|'+m?' selected':''}>${esc(n)}</option>`).join('')}<option value="email"${d.to==='email'?' selected':''}>Someone else, by email</option></select></label>${d.to==='email'?`<label>Their email<input name="email" type="email" maxlength="254" autocomplete="off" value="${esc(d.email||'')}" required></label><p class="muted">You get an email draft on this card to read and send yourself. It has a link that brings the task to a Machine of their own, if they want one.</p>`:''}<label>Title<input name="title" maxlength="120" value="${esc(d.title)}"></label><label>What they need to know (only this goes to them)<textarea name="summary" maxlength="1000">${esc(d.summary)}</textarea></label>${d.contact&&d.to!=='email'?`<label><input type="checkbox" name="contact" value="${esc(d.contact)}"${d.with_contact!==false?' checked':''}> With the contact: ${esc(d.contact)}</label>`:''}${d.sources?.length&&d.to!=='email'?`<label><input type="checkbox" name="sources"${d.with_sources!==false?' checked':''}> Includes: ${esc(d.sources.map(x=>x.label).join('; '))}</label>`:''}<div class="actions"><button class="primary">Hand off</button><button type="button" class="ghost" data-handoff-cancel="${esc(s.id)}">Cancel</button></div></form>`}
+// Hand off to a teammate: the same calm sheet as Hand to Codex / Claude Code (.agent-sheet). Who, then what they are
+// asked to do as editable lead text, what goes along as chips with a quiet ×, an optional note.
+function handoffEditor(s){const d=handingOff.get(s.id);if(!d||closed(s))return'';const id=esc(s.id),mail=d.to==='email';
+ const opts=[...d.who.map(([f,m,n])=>[f+'|'+m,n]),['email','By email']];
+ const pick=opts.length<=4?`<span class="agent-switch" role="radiogroup" aria-label="Hand off to">${opts.map(([v,n])=>`<label><input type="radio" name="to" value="${esc(v)}"${d.to===v?' checked':''}><span>${esc(n)}</span></label>`).join('')}</span>`
+  :`<select name="to" class="handoff-pick" aria-label="Hand off to">${opts.map(([v,n])=>`<option value="${esc(v)}"${d.to===v?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
+ const name=mail?'them':esc((d.who.find(([f,m])=>f+'|'+m===d.to)||[])[2]||'them');
+ const x=(what,attr)=>`<button type="button" class="chip-x" ${attr} aria-label="Leave out ${esc(what)}" title="Leave out">×</button>`;
+ const chips=mail?'':[...(d.contact&&d.with_contact!==false?[`<span class="agent-get"><i class="via-ico via-link" aria-hidden="true"></i>Contact: ${esc(d.contact)}${x(d.contact,'data-handoff-drop="contact"')}</span>`]:[]),
+  ...(d.sources||[]).map((v,n)=>d.dropped?.includes(n)?'':`<span class="agent-get"><i class="via-ico via-${v.kind==='email'?'mail':'chat'}" aria-hidden="true"></i>${esc(v.label)}${x(v.label,`data-handoff-drop="${n}"`)}</span>`)].join('');
+ return`<form class="fleet-handoff-form agent-sheet" data-card="${id}"><div class="agent-sheet-head"><span class="agent-sheet-title">Hand off to</span>${pick}</div><input type="hidden" name="title" value="${esc(d.title)}">
+ ${mail?`<input name="email" type="email" class="handoff-email" maxlength="254" autocomplete="off" value="${esc(d.email||'')}" placeholder="Their email" aria-label="Their email" required><p class="agent-what">You get an email draft on this card to send yourself, with a link that brings the task to a Machine of their own.</p>`:''}
+ <textarea name="task" class="agent-note handoff-task" rows="1" maxlength="1000" aria-label="What they are asked to do">${esc(d.task??d.summary)}</textarea>${chips?`<div class="agent-gets" aria-label="Goes along">${chips}</div>`:''}
+ <textarea name="note" class="agent-note" rows="1" maxlength="600" placeholder="Add a note for ${name}" aria-label="Add a note for ${name}">${esc(d.note||'')}</textarea>
+ <div class="agent-sheet-foot"><button type="button" class="ghost" data-handoff-cancel="${id}">Cancel</button><button class="primary">Hand off</button></div></form>`}
 // Hand to Claude Code / Hand to Codex (agent_jobs.py): the owner reads and edits the brief; the card then follows the job:
 // Sent, Running (or Waiting for their computer), a Result to mark done, ask changes on or hand off again, or Failed.
 const agentEditing=new Map(),agentAsking=new Set(),AGENT_ACTIVE=['sent','running','waiting'];
@@ -3029,15 +3040,18 @@ fleetOn('click',async e=>{const b=e.target.closest('[data-fleet-adjust],[data-sp
    await fleetPost('fleet_split_adjust',{id:b.dataset.fleetAdjust,text});toast('Accepted with your change.')}
   await fleetView();await refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
 $('#suggestions').addEventListener('click',async e=>{const c=e.target.closest('[data-handoff-cancel]');if(c){handingOff.delete(c.dataset.handoffCancel);render();return}
+ const drop=e.target.closest('[data-handoff-drop]'),dd=drop&&handingOff.get(drop.closest('form').dataset.card);
+ if(dd){const v=drop.dataset.handoffDrop;if(v==='contact')dd.with_contact=false;else dd.dropped=[...(dd.dropped||[]),+v];render();return}
  const b=e.target.closest('[data-fleet-handoff]');if(!b)return;b.disabled=true;
  try{const d=await fleetPost('fleet_handoff_draft',{suggestion_id:b.dataset.fleetHandoff});const who=d.fleets.flatMap(x=>x.members.map(m=>[x.id,m.member_id,d.fleets.length>1?`${m.name} (${x.name})`:m.name]));
   handingOff.set(d.suggestion_id,{...d,who,to:who.length?who[0][0]+'|'+who[0][1]:'email'});render()}catch(err){b.disabled=false;toast(err.message,true)}});
 $('#suggestions').addEventListener('input',e=>{const t=e.target.closest('.fleet-handoff-form');const d=t&&handingOff.get(t.dataset.card);if(!d)return;
- const moved=d.to!==t.elements.to.value;Object.assign(d,{to:t.elements.to.value,email:t.elements.email?t.elements.email.value:d.email,title:t.elements.title.value,summary:t.elements.summary.value,with_contact:t.elements.contact?t.elements.contact.checked:false,with_sources:t.elements.sources?t.elements.sources.checked:d.with_sources});if(moved)render()});
-$('#suggestions').addEventListener('submit',async e=>{const t=e.target;if(!t.classList.contains('fleet-handoff-form'))return;e.preventDefault();const [fleet,member_id]=t.elements.to.value.split('|');
- if(t.elements.to.value==='email'){try{await fleetPost('fleet_handoff_email',{suggestion_id:t.dataset.card,email:t.elements.email.value.trim(),title:t.elements.title.value.trim(),summary:t.elements.summary.value.trim()});
+ const moved=d.to!==t.elements.to.value;Object.assign(d,{to:t.elements.to.value,email:t.elements.email?t.elements.email.value:d.email,task:t.elements.task.value,note:t.elements.note.value});if(moved)render()});
+$('#suggestions').addEventListener('submit',async e=>{const t=e.target;if(!t.classList.contains('fleet-handoff-form'))return;e.preventDefault();const [fleet,member_id]=t.elements.to.value.split('|'),d=handingOff.get(t.dataset.card)||{};
+ const note=t.elements.note.value.trim(),summary=[t.elements.task.value.trim(),note&&'My note: '+note].filter(Boolean).join(' ');
+ if(t.elements.to.value==='email'){try{await fleetPost('fleet_handoff_email',{suggestion_id:t.dataset.card,email:t.elements.email.value.trim(),title:t.elements.title.value.trim(),summary});
   handingOff.delete(t.dataset.card);toast('Your email is ready on the card. Read it, then send it yourself.');await refresh()}catch(err){toast(err.message,true)}return}
- try{await fleetPost('fleet_handoff',{suggestion_id:t.dataset.card,fleet,member_id,title:t.elements.title.value.trim(),summary:t.elements.summary.value.trim(),contact:t.elements.contact?.checked?t.elements.contact.value:'',sources:t.elements.sources?t.elements.sources.checked:false});
+ try{await fleetPost('fleet_handoff',{suggestion_id:t.dataset.card,fleet,member_id,title:t.elements.title.value.trim(),summary,contact:d.contact&&d.with_contact!==false?d.contact:'',sources:(d.sources||[]).map((_,n)=>n).filter(n=>!d.dropped?.includes(n))});
   handingOff.delete(t.dataset.card);toast('Handed off. The card shows how it goes.');await refresh()}catch(err){toast(err.message,true)}});
 $('#suggestions').addEventListener('click',async e=>{const b=e.target.closest('[data-handoff-mine]');if(!b)return;b.disabled=true;
  try{await fleetPost('fleet_handoff_mine',{suggestion_id:b.dataset.handoffMine});toast('It’s yours. The card keeps its usual buttons.');await refresh()}catch(err){b.disabled=false;toast(err.message,true)}});

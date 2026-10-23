@@ -53,11 +53,11 @@ default, Always accept, Never), and nothing happens on your side until you accep
    know best there, from their own work email: it asks that person first whether they want the introduction. The draft
    is built by plain code from their own graph, signed with their name, and goes out only with their own **Send**, like
    any other draft. You follow it in your Fleet tab, on your phone and in Telegram: asked, accepted, sent, or declined.
-5. **Handoffs.** **Hand off to a teammate** on a work card shows what would go: the card's title, what they are asked
-   to do (the card's next step, plus your own note on it), its outside contact, its due date and the card's sources
-   ("Includes: email from Stripe Alerts, Fri 23 Oct"). You read and edit it, untick the sources to leave them out,
-   pick the teammate and send. They get "<you> hands you: ..." with **Accept** and **Decline**; accepting makes a card
-   on their side titled "Take over from <you>: ...", which leads with the ask in your words, then the contact, with
+5. **Handoffs.** **Hand off to a teammate** on a work card opens a small sheet: who, what they are asked to do (the
+   card's next step, to edit), what goes along as chips (its outside contact and the card's sources, "Email from
+   Stripe Alerts · Fri 23 Oct"; × leaves one out) and an optional note. Its title and due date go too. They get "<you> hands you: ..." with **Accept** and **Decline**; accepting makes a card
+   on their side titled "Take over from <you>: ...", which leads with the ask in your words ("<you> asks you to take this
+   on: ..."), then the contact, with
    copies of the sources as its own sources: they read in the card chat and under **Read the thread** like any
    email, from their own Machine, without access to your mailbox. Only that card's own emails and messages go (up to
    three, about 6,000 characters each: sender, date, subject and text; attachments don't travel). The contact is the

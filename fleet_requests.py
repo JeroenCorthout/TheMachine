@@ -367,10 +367,8 @@ class Requests:
             first = sender.split()[0] if sender else 'A teammate'
             carried = question.get('sources') or []
             return self.make_card(kind='handoff', ask_id=row['id'], name=sender, title=f'Take over from {first}: {question["title"]}'[:90],
-                                  body=(f'{sender} asks you to take this on: “{summary}”'
-                                        + (f' Contact: {question["contact"]}.' if question.get('contact') else '')
-                                        + (f" {'Their sources are' if len(carried) > 1 else 'The source is'} below, as {first} had "
-                                           f"{'them' if len(carried) > 1 else 'it'}." if carried else '')),
+                                  body=(f'{first} asks you to take this on: “{summary}”'
+                                        + (f' Contact: {question["contact"]}.' if question.get('contact') else '')),
                                   evidence=evidence, due=question.get('when'), **({'carried': carried} if carried else {}))
         mine = '; '.join(text and [text] or [p['what'] for p in question['parts'] if p['mine']])
         others = '; '.join(f"{p['name']}: {p['what']}" for p in question['parts'] if not p['mine'])
@@ -420,11 +418,11 @@ class Requests:
         # the owner's own note. The card's sources go along, so the context is what it was built from.
         ready = self.handoff_text(card)
         if ready:  # a Fleet handoff is plain text on their side: a Markdown link goes as its words and the URL
-            summary = next_actions.body_text(ready['body'])
+            task, mine_note = next_actions.body_text(ready['body']), ''
         else:
             task = (self.card_task or (lambda row: row.get('title') or ''))({**dict(card), **(dict(prep) if prep else {})})
             mine_note = ' '.join(str(note['feedback']).split()) if note else ''
-            summary = ' '.join(x for x in (task, mine_note and f'My note: {mine_note}') if x)
+        summary = ' '.join(x for x in (task, mine_note and f'My note: {mine_note}') if x)
         first = lambda m: not (ready and self.is_person(m, ready))  # the teammate that text is for comes first, so it's the default
         fleets = [f for f in [{'id': ref, 'name': self.fleets()[ref].get('name'),
                    'members': sorted(({'member_id': m['member_id'], 'name': fleet.label(m), '_first': first(m)} for m in self.teammates(ref)
@@ -436,13 +434,14 @@ class Requests:
             for m in f['members']:
                 m.pop('_first')
         return {'suggestion_id': card['id'], 'title': fleet.clean(card['title'], 120), 'summary': fleet.clean(summary, 1000),
+                'task': fleet.clean(task, 1000), 'note': fleet.clean(mine_note, 600),
                 'contact': contact, 'due': card['due'] if 'due' in card.keys() else None, 'fleets': fleets,
-                'sources': [{'label': s['label']} for s in self.handoff_sources(card['id'])]}
+                'sources': [{'label': s['label'], 'kind': s['kind']} for s in self.handoff_sources(card['id'])]}
 
     def handoff_sources(self, card_id):
         """The card's own emails and messages, as a handoff carries them: who wrote, when, the subject and the text
         (cut to SOURCE_CHARS, SOURCES_CHARS in all). Only this card's evidence, never anything else of the mailbox.
-        Each has a label for the form ("email from Stripe Alerts, Fri 23 Oct")."""
+        Each has a label for the form ("Email from Stripe Alerts · Fri 23 Oct")."""
         with self.connect() as db:
             card = db.execute('SELECT event_ids FROM suggestions WHERE id=?', (str(card_id),)).fetchone()
             ids = json.loads(card['event_ids'] or '[]') if card else []
@@ -464,7 +463,7 @@ class Requests:
             out.append({'kind': CARRIED[r['kind']], 'from': who or 'Unknown sender', 'when': when.isoformat(),
                         'subject': fleet.clean(r['title'], 200), 'body': body,
                         **({'clipped': True} if len(text) > len(body) or meta.get('truncated') else {}),
-                        'label': f"{CARRIED[r['kind']]} from {name or who or 'someone'}, {when.astimezone(self.local_now().tzinfo).strftime('%a %-d %b')}"})
+                        'label': f"{CARRIED[r['kind']].capitalize()} from {name or who or 'someone'} · {when.astimezone(self.local_now().tzinfo).strftime('%a %-d %b')}"})
         return out
 
     @staticmethod
@@ -523,8 +522,9 @@ class Requests:
                 "through The Machine. Anyone else gets a Slack message or email as usual.")
 
     def hand_off(self, card_id, fleet_ref, member_id, title, summary, contact=None, sources=True):
-        """Hand a card to a teammate, with the summary exactly as the owner read and edited it and, unless the owner left
-        them out, the card's sources (handoff_sources). Their card says how it went."""
+        """Hand a card to a teammate, with the summary exactly as the owner read and edited it and the card's sources
+        (handoff_sources): all of them (True), none (False) or those the owner kept, by their place in the draft's list.
+        Their card says how it went."""
         with self.connect() as db:
             latest = db.execute('SELECT id FROM decisions WHERE suggestion_id=? ORDER BY rowid DESC LIMIT 1', (str(card_id),)).fetchone()
             expected = latest['id'] if latest else None
@@ -549,7 +549,11 @@ class Requests:
         keys = self.message_keys(card_id, fleet_ref)
         if keys:
             question['messages'] = keys
-        carried = parse_sources(self.handoff_sources(card_id)) if sources else []
+        found = self.handoff_sources(card_id) if sources else []
+        if isinstance(sources, list):
+            keep = {n for n in sources if isinstance(n, int) and not isinstance(n, bool)}
+            found = [x for n, x in enumerate(found) if n in keep]
+        carried = parse_sources(found)
         if carried:
             question['sources'] = carried
         sent = self.ask('handoff', question, context='handoff:' + str(card_id), fleet=fleet_ref, to=[member_id])

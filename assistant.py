@@ -7424,7 +7424,8 @@ def source_line(rows):
     who = re.sub(r'\s*<[^>]+>', '', str(who)).strip().strip('"') or None
     when = dt.datetime.fromisoformat(first['occurred_at']).astimezone(local_tz()).strftime('%a %-d %b')
     line = 'Source: ' + source_kind(first['kind']) + (f' from {who}' if who else '') + f' · {when}'
-    return line + (f' (+{len(rows) - 1} more)' if len(rows) > 1 else '')
+    more = [r for r in rows[1:] if r['kind'] != 'fleet.request']  # a Fleet request's own event is the card's text, not another source
+    return line + (f' (+{len(more)} more)' if more else '')
 
 
 def delivery_time(when, digest_at='08:30', current=None, work=False, urgent=False):
@@ -10285,7 +10286,7 @@ class App:
         if name == 'fleet_handoff':
             return self.fleet.hand_off(str(args.get('suggestion_id') or ''), str(args.get('fleet') or ''), str(args.get('member_id') or ''),
                                        str(args.get('title') or ''), str(args.get('summary') or ''), str(args.get('contact') or '') or None,
-                                       sources=args.get('sources') is not False)  # the card's sources go along unless left out
+                                       sources=args['sources'] if isinstance(args.get('sources'), list) else args.get('sources') is not False)  # all, none or those kept
         if name == 'fleet_handoff_mine':  # Do it myself, on a card a teammate handed back
             return self.fleet.handoff_mine(str(args.get('suggestion_id') or ''))
         if name == 'fleet_split':  # send a follow-up split as the owner filled it in

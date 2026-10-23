@@ -27,8 +27,8 @@ class HandoffSources(unittest.TestCase):
         source = mail('work', 1, 'Sam Lee <sam@client.example>', 'owner@acme.example')
         card = self.card(source)
         draft = self.fleet.handoff_draft(card)
-        self.assertEqual([s['label'] for s in draft['sources']], [f"email from Sam Lee, {draft['sources'][0]['label'].split(', ', 1)[1]}"])
-        self.assertRegex(draft['sources'][0]['label'], r'^email from Sam Lee, \w{3} \d{1,2} \w{3}$')
+        self.assertEqual(len(draft['sources']), 1)
+        self.assertRegex(draft['sources'][0]['label'], r'^Email from Sam Lee · \w{3} \d{1,2} \w{3}$')
         self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Send Sam the pricing for 40 seats.', 'sam@client.example')
         question = self.sent()
         self.assertEqual([(s['kind'], s['from'], s['subject'], s['body']) for s in question['sources']],
@@ -41,8 +41,11 @@ class HandoffSources(unittest.TestCase):
         made = self.fleet.decide('q1', 'once')['card_id']
         row = self.card_row(made)
         self.assertEqual(row['title'], 'Take over from Pat: Send Sam the pricing')
-        self.assertTrue(row['body'].startswith('Pat asks you to take this on: “Send Sam the pricing for 40 seats.”'))
-        self.assertIn('The source is below, as Pat had it.', row['body'])
+        self.assertEqual(row['body'], 'Pat asks you to take this on: “Send Sam the pricing for 40 seats.” Contact: sam@client.example.')
+        self.assertTrue(row['source_line'].startswith('Source: email from Sam Lee, via Pat · '))
+        # (+1 is Sam's own email on this Machine, the contact's latest.) The handoff's own event is the card's text, not a source:
+        rows = [{'kind': k, 'metadata': {'sender_display': 'Sam, via Pat'}, 'occurred_at': '2026-10-22T09:00:00+00:00'} for k in ('fleet.email', 'fleet.request')]
+        self.assertEqual(tr.a.source_line(rows), 'Source: email from Sam, via Pat · Thu 22 Oct')
         with self.store.connect() as db:
             first = db.execute('SELECT kind,title,body,metadata,analyzed_version FROM events WHERE id=?', (json.loads(row['event_ids'])[0],)).fetchone()
         meta = json.loads(first['metadata'])
@@ -71,6 +74,16 @@ class HandoffSources(unittest.TestCase):
         self.assertNotIn('sources', self.sent())
         self.assertNotIn('40k', json.dumps(self.relay.sent('/ask')[-1]))
 
+    def test_the_owner_can_leave_out_one_source_and_keep_the_other(self):
+        first, second = (mail('work', d, 'Sam Lee <sam@client.example>', 'owner@acme.example') for d in (1, 2))
+        second['body'] = 'The second email.'
+        card = self.card(first, second)
+        self.assertEqual(len(self.fleet.handoff_draft(card)['sources']), 2)
+        self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Send Sam the pricing.', sources=[1])
+        self.assertEqual([x['body'] for x in self.sent()['sources']], ['The second email.'])
+        self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Send Sam the pricing.', sources=[])
+        self.assertNotIn('sources', self.sent())
+
     def test_only_the_cards_own_sources_go_never_the_rest_of_the_mailbox(self):
         other = mail('work', 2, 'Lee <lee@other.example>', 'owner@acme.example')
         other['body'] = 'Unrelated board minutes.'
@@ -87,7 +100,7 @@ class HandoffSources(unittest.TestCase):
         card = self.card(alert)
         draft = self.fleet.handoff_draft(card)
         self.assertEqual(draft['contact'], '')  # not the group's own inbox
-        self.assertTrue(draft['sources'][0]['label'].startswith('email from Stripe Alerts, '))
+        self.assertTrue(draft['sources'][0]['label'].startswith('Email from Stripe Alerts · '))
         alert = mail('work', 1, "'Stripe Alerts' via Team Inbox <inbox@acme.example>", 'inbox@acme.example')
         alert['metadata']['reply-to'] = 'Stripe <support@stripe.example>'
         self.assertEqual(self.fleet.handoff_draft(self.card(alert))['contact'], 'support@stripe.example')  # who wrote, by Reply-To
@@ -99,7 +112,9 @@ class HandoffSources(unittest.TestCase):
         with self.store.connect() as db:
             db.execute("INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES('d1',?,'other','Sam is a big account','dashboard','2026-10-22T09:00:00+00:00')", (card,))
         self.fleet.card_task = lambda row: 'Send Sam the pricing for 40 seats'
-        summary = self.fleet.handoff_draft(card)['summary']
+        draft = self.fleet.handoff_draft(card)
+        self.assertEqual((draft['task'], draft['note']), ('Send Sam the pricing for 40 seats', 'Sam is a big account'))  # the form's lead and note
+        summary = draft['summary']
         self.assertEqual(summary, 'Send Sam the pricing for 40 seats My note: Sam is a big account')
         self.assertNotIn('The Machine', summary)
 
