@@ -33,7 +33,7 @@ function failure(result,status){
 try {
   let result;
   if (request.action==='start') {
-    if (typeof request.message!=='string' || request.message.length>20000) throw new Error('Invalid prompt');
+    if (typeof request.message!=='string' || request.message.length>60000) throw new Error('Invalid prompt');  // PROMPT_LIMIT in assistant.py
     result=await callGatewayFromCli('agent',{timeout:'20000'}, {
       agentId:'main', sessionKey:session+sessionId,
       message:request.message, idempotencyKey:request.job_id, timeout:runSeconds,

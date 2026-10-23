@@ -676,6 +676,8 @@ def metadata_page(row, offset):
 
 REVIEW_SESSION_PREFIX = 'agent:main:assistant-review-signals-'
 REVIEW_TERMINAL = ('ok', 'error', 'aborted', 'lost', 'timed_out')
+# The longest turn message the runner (preparation-run.mjs) starts; it refuses longer ones before the Gateway sees them.
+PROMPT_LIMIT = 60000
 PREVIEW_DAYS = 7  # what `assistant preview` reviews on a new install
 GRAPH_CHECK_SECONDS = 60  # how often the graph worker looks for new organisation profiles
 # The first look (App.first_look): starts once no new signal came in for this long, tried at most this often, this far apart
@@ -8288,7 +8290,7 @@ def owner_reports_handled(text):
 
 
 REVIEW_FAILURES = {'runtime_error','runtime_timeout','runtime_aborted','runtime_lost',
-                   'model_idle_timeout','bridge_error','rate_limited','connection_error'}
+                   'model_idle_timeout','bridge_error','rate_limited','connection_error','prompt_too_long'}
 REVIEW_FAILURE_PHASES = {'runtime','model','bridge','connection','queue','provider','tool','gateway_draining'}
 
 
@@ -9905,7 +9907,7 @@ def skills_find_prompt(run_id, evidence, config=None, accounts=None):
     lines = [f"- {i['key']}: {i['name']} ({i['group']}{', licence does not allow import' if i.get('blocked') else ''}"
              f"{', already here' if i.get('here') else ''}): {i['description'][:140]}" for i in evidence.get('items') or []]
     listed = ''
-    for line in lines:  # the whole turn's message stays under the Gateway's 20,000 characters
+    for line in lines:  # the whole turn's message stays well under PROMPT_LIMIT
         if len(listed) + len(line) > 9000:
             listed += f'\n- … and {len(lines) - listed.count(chr(10)) - 1} more'
             break
@@ -12265,26 +12267,26 @@ class App:
                                                       self.store.facts_for(job['suggestion_id'],'draft',known),style)
                 try:
                     lines=self.graph_lines(job['suggestion_id'])
-                    if len(request['message'])+len(lines)<19000:request['message']+=lines  # the runner refuses over 20,000
+                    if len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
                 except Exception as error:LOG.error('graph lines error=%s',type(error).__name__)
                 if getattr(self, 'fleet', None):
                     try:
                         lines=self.fleet.lines(job['suggestion_id'])
-                        if len(request['message'])+len(lines)<19000:request['message']+=lines
+                        if len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
                     except Exception as error:LOG.error('fleet lines error=%s',type(error).__name__)
                 if embeddings.settings(self.config):
                     try:
                         lines=self.related_lines(job['suggestion_id'])
-                        if len(request['message'])+len(lines)<19500:request['message']+=lines  # the runner refuses over 20,000
+                        if len(request['message'])+len(lines)<PROMPT_LIMIT-500:request['message']+=lines
                     except Exception as error:LOG.error('related error=%s',type(error).__name__)
                 if getattr(self,'skills',None) and not job.get('finish'):
                     try:  # "There's a skill for this": an installed one that isn't ready, or one on ClawHub (the agent can search it)
                         lines=self.skills.hint_prompt(clawhub=True)
-                        if lines and len(request['message'])+len(lines)<18500:request['message']+='\n\n'+lines
+                        if lines and len(request['message'])+len(lines)<PROMPT_LIMIT-1500:request['message']+='\n\n'+lines
                     except Exception as error:LOG.error('skill hint error=%s',type(error).__name__)
             try:
                 lines=self.agent_work(job['suggestion_id'])
-                if len(request['message'])+len(lines)<19000:request['message']+=lines  # the runner refuses over 20,000
+                if len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
             except Exception as error:LOG.error('agent work error=%s',type(error).__name__)
             if request['session_job_id'] != job['job_id']:
                 request['message']+='\nThis continues the SAME session, with earlier work in context. Before changing anything in an app, read assistant_signals preparation_history (offset 0, then any next_offset): a compact list of earlier calls. Summaries are shortened: when reconciling a call, request preparation_history with its call_ref, offset 0 and any next_offset for exact saved parameters and receipts. If detail_complete=false, check the retained transcript or original app for the missing suffix. Do not repeat an external step that already happened; check uncertain ones against the app first. If the owner\'s latest note asks for something different (a rewrite, another approach), do that. Saving your result or a blocker is always allowed.'
@@ -13091,7 +13093,7 @@ class App:
                              "capitals, punctuation, emoji, formality), update that channel's voice: remember_fact kind=voice, channel, " + VOICE_TEXT + ", "
                              "edit_id. Skip differences in content or facts.\n"
                              + (f"Current voices:\n{voices}\n" if voices else '') + lines)
-                    if len(request['message']) + len(block) < 18000:  # the runner refuses over 20,000
+                    if len(request['message']) + len(block) < PROMPT_LIMIT - 2000:
                         request['message'] += block
                         offered_edits += re.findall(r'\(edit_id ([^)]+)\)', lines)
             except Exception as error:
@@ -13104,7 +13106,7 @@ class App:
                              "its card, work it into that channel's voice: remember_fact kind=voice, channel, " + VOICE_TEXT + ", "
                              "decision_id; how a kind of task is done is kind=draft. Skip notes that only fit that one message.\n"
                              + (f"Current voices:\n{voices}\n" if voices else '') + lines)
-                    if len(request['message']) + len(block) < 18000:
+                    if len(request['message']) + len(block) < PROMPT_LIMIT - 2000:
                         request['message'] += block
                         offered_edits += ['note:' + value for value in re.findall(r'\(decision_id ([^)]+)\)', lines)]
             except Exception as error:
@@ -13131,14 +13133,14 @@ class App:
                               "text=<SKILL.md instructions that keep everything those notes say>, replaces=[their ids], and skill=<the name of one of "
                               "the owner's own skills it belongs in, when one clearly fits; else leave it out for a new skill>. The owner decides on a card. "
                               + (f"Their own skills: {own}." if own else "They have no skills of their own yet."))
-                    if len(request['message']) + len(block) < 18000:
+                    if len(request['message']) + len(block) < PROMPT_LIMIT - 2000:
                         request['message'] += block
                         offered_edits.append('condense:' + now()[:10])
             except Exception as error:
                 LOG.error('condense error=%s', type(error).__name__)
             try:  # "There's a skill for this": installed skills that aren't ready here, while there is room this week
                 hint = self.skills.hint_prompt() if getattr(self, 'skills', None) else ''
-                if hint and len(request['message']) + len(hint) < 18500:  # the runner refuses over 20,000
+                if hint and len(request['message']) + len(hint) < PROMPT_LIMIT - 1500:
                     request['message'] += '\n\n' + hint
             except Exception as error:
                 LOG.error('skill hint error=%s', type(error).__name__)
@@ -13151,7 +13153,11 @@ class App:
                 except Exception as error:
                     LOG.error('fleet teammates error=%s', type(error).__name__)
         # Offering learning context is not delivery: a Gateway outage must leave it eligible on retry.
-        receipt = runner(request)
+        if len(request.get('message') or '') > PROMPT_LIMIT:  # the runner would refuse it on every retry: say so and end the run
+            LOG.error('review prompt too long chars=%s limit=%s', len(request['message']), PROMPT_LIMIT)
+            receipt = {'status': 'error', 'error': 'prompt_too_long', 'error_phase': 'runtime'}
+        else:
+            receipt = runner(request)
         result = receipt.get('status', 'unavailable')
         with self.store.connect() as db:
             if result == 'admitted':
