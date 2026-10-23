@@ -51,10 +51,10 @@ try{
  await fits('list');
  await row.locator('button.node').click();
  await page.locator('.fleet-mark').waitFor();
- assert.equal(await page.locator('.fleet-mark').textContent(),'Has a Machine · Work Fleet (Acme) · Friend');
- assert.match(await page.locator('#people-view').textContent(),/Name from your Fleet\. Your messages say “kim”\./);
+ assert.equal(await page.locator('.fleet-mark').textContent(),'Work Fleet (Acme) · Friend · Has a Machine');
+ assert.match(await page.locator('#people-view').textContent(),/NameFrom your Fleet\. Your messages say “kim”\./);
  assert.equal(await page.locator('[data-fleet-ask]').count(),0);
- await page.setViewportSize({width:320,height:844});for(const sel of ['.fleet-mark','.fleet-named span'])assert.ok(await page.locator(sel).evaluate(e=>e.scrollWidth<=e.clientWidth),sel+' wraps');await page.setViewportSize({width:390,height:844});  // no "who knows" for a teammate
+ await page.setViewportSize({width:320,height:844});for(const sel of ['.fleet-mark','.fleet-named'])assert.ok(await page.locator(sel).evaluate(e=>e.scrollWidth<=e.clientWidth),sel+' wraps');await page.setViewportSize({width:390,height:844});  // no "who knows" for a teammate
  await fits('detail');
  await page.locator('[data-fleet-keep]').click();
  for(let i=0;i<100&&!calls.length;i++)await page.waitForTimeout(20);

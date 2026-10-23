@@ -442,7 +442,7 @@ class SourceError(Exception):
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
                    'connect_signin', 'connect_signin_state')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -11025,6 +11025,23 @@ class App:
                         graph.rename(db, args.get('node_id'), args.get('name'), now())
             self.graph_build()
             return done
+        if name == 'graph_person_edit':
+            # One Save for a person's page: their name, what they are to the owner and where they work go where those
+            # live (graph_names, person_roles, person_orgs, as the owner's word); the rest is person_edits.
+            if not owner_dashboard:
+                raise ValueError("Only the owner edits a person's details, on the dashboard")
+            node_id, fields = str(args.get('node_id') or ''), args.get('fields') if isinstance(args.get('fields'), dict) else {}
+            with self.store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                done = graph.person_edit(db, node_id, {k: v for k, v in fields.items() if k not in ('name', 'role', 'org')}, now())
+                if 'role' in fields:
+                    graph.set_role(db, node_id, str(fields['role'] or ''), 'owner', now())
+                if 'org' in fields:
+                    graph.set_org(db, node_id, str(fields['org'] or ''), 'owner', now())
+                if 'name' in fields:
+                    graph.rename(db, node_id, fields['name'], now())
+            self.graph_build()
+            return done
         if name == 'graph_role':
             if not owner_dashboard:
                 raise ValueError('Only the owner sets a role here, on the dashboard; reviews use graph with node_id and role')
@@ -14507,7 +14524,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

@@ -5,7 +5,8 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// The inline edit fields on person and organisation pages (To you, Add organisation, Rename) share one compact style:
+// The inline edit field on an organisation's page (To you) has the compact style (a person's page has one Edit form, see
+// test_person_page_dashboard.mjs):
 // a single-line field as tall as its Save button (about 40 to 44px), normal padding, one thin focus ring, a Save
 // button that never wraps, and normal room before the next section. Checked at 360 and 390. SHOT_DIR=… saves shots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
@@ -41,19 +42,12 @@ try{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port);
   await navClick(page.locator('nav [data-tab="people"]'));
-  await page.locator('#people-view [data-node="email:kai@umbrella.example"] button.node').first().click();
-  await page.locator('#people-view .person-page').waitFor();
   const check=async(open,form,label)=>{await open();await page.locator('#people-view '+form).waitFor();
    await page.locator('#people-view '+form+' input').focus();await page.waitForTimeout(400);
    const m=await measure(page,form);report[`${label}-${width}`]=m;
    if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/${label}-${width}.png`});
    return m};
   const forms=[];
-  forms.push(await check(()=>page.locator('#people-view [data-person-org-edit]').click(),'.person-org-form','person-add-org'));
-  await page.locator('#people-view [data-person-org-edit]').click();
-  forms.push(await check(()=>page.locator('#people-view [data-role-edit]').first().click(),'.role-form','person-to-you'));
-  await page.locator('#people-view [data-role-edit]').first().click();
-  forms.push(await check(async()=>{await page.locator('#people-view .person-menu summary').click();await page.locator('#people-view [data-name-edit]').click()},'.name-form','person-rename'));
   await page.goto('http://127.0.0.1:'+server.address().port+'/#graph=orgs');
   await navClick(page.locator('nav [data-tab="people"]'));
   await page.locator('#people-view [data-node="org:acme.example"] button.node').first().click();

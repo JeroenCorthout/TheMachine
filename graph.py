@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS forgotten_salt(id INTEGER PRIMARY KEY CHECK(id=1),sal
 CREATE TABLE IF NOT EXISTS graph_relations(a TEXT NOT NULL,b TEXT NOT NULL,relation TEXT NOT NULL,source TEXT NOT NULL,event_id INTEGER,
   created_at TEXT NOT NULL,PRIMARY KEY(a,b));
 CREATE TABLE IF NOT EXISTS org_edits(domain TEXT PRIMARY KEY,fields TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS person_edits(identifier TEXT PRIMARY KEY,fields TEXT NOT NULL,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS hidden_domains(domain TEXT PRIMARY KEY,hidden INTEGER NOT NULL,source TEXT NOT NULL,event_id INTEGER,
   name TEXT,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS person_orgs(identifier TEXT PRIMARY KEY,org TEXT NOT NULL,org_id TEXT,source TEXT NOT NULL,via TEXT,event_id INTEGER,
@@ -903,6 +904,7 @@ def _build(db, config, now):
     photos = {r['identifier']: r['key'] for r in db.execute('SELECT identifier,key FROM person_photos')}
     facts = enrichment.people_facts(db)  # what connectors read about them (job title, place, links, time zone)
     edits = {r['domain']: json.loads(r['fields']) for r in db.execute('SELECT domain,fields FROM org_edits')}
+    person_edits = {r['identifier']: json.loads(r['fields']) for r in db.execute('SELECT identifier,fields FROM person_edits ORDER BY updated_at,identifier')}
     stated_rows = {r['identifier']: dict(r) for r in db.execute('SELECT * FROM person_orgs')}
     stated = {}  # person node -> the statement of where they work, when no work address says it
     surnames = {n.split()[-1] for n in owner.names if len(n.split()) >= 2}
@@ -948,13 +950,27 @@ def _build(db, config, now):
         photo_key = next((photos[i] for i in group if i in photos), None)
         if photo_key:
             person_profile['photo'] = 'api/person-photo?p=' + photo_key
+        edited = {}
+        for identifier in sorted((i for i in group if i in person_edits), key=list(person_edits).index):
+            edited.update(person_edits[identifier])  # the owner's word wins over the look-up, a later save over an older one
+        mine = {k: edited[k] for k in ('title', 'location', 'linkedin_url') if edited.get(k)}
+        if mine:
+            person_profile.update(mine)
+            person_profile['sources'] = {**(person_profile.get('sources') or {}), **{k: {'from': 'you', 'own': True} for k in mine}}
+        contacts = shown_contacts(group, edited)
+        stated_phone = ' '.join(str(person_profile.get('phone') or '').split())  # a number a connector read (their Slack profile)
+        gone = {contact_key('phones', v) for v in (edited.get('phones') or {}).get('removed', ())}
+        if PHONE.fullmatch(stated_phone) and contact_key('phones', stated_phone) not in gone | {contact_key('phones', r['value']) for r in contacts['phones']}:
+            contacts['phones'].append({'value': stated_phone, 'by': ((person_profile.get('sources') or {}).get('phone') or {}).get('from') or 'messages'})
         person_profile = person_profile or None
+        side = edited.get('side') or ('work' if colleague or domains or (said_org and said_org['org']) else 'personal')
         info = {'ids': sorted({shown_id(i, x_names) for i in group}), 'org': ('org:' + domains[0]) if domains and not said_org else None,
                 'org_by': 'email' if domains and not said_org else None, 'has_headline': any(i in headlines for i in group),
                 'wrote': len(roles[node]['owner']), 'heard': len(roles[node]['them']), 'met': len(roles[node]['met']),
                 'accounts': sorted(accounts[node]), 'next_meeting': next_meeting[node].isoformat() if node in next_meeting else None,
                 'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk,
-                'profile': person_profile}
+                'profile': person_profile, 'edited': sorted(edited), 'side': side, 'side_by': 'owner' if edited.get('side') else None,
+                **contacts}
         if len(group) > 1:
             info['joined'] = [{'a': x, 'b': y, 'a_shown': shown_id(x, x_names), 'b_shown': shown_id(y, x_names), 'why': JOINED_WHY.get(why, 'joined'),
                                'by': why} for x, y, why in joined.get(node, ()) if why]
@@ -1128,7 +1144,8 @@ def node_view(row, links=None):
                     role_by=info.get('role_by'), role_id=info.get('role_id'), hints=info.get('hints', []),
                     seen_only=bool(info.get('seen_only')), relations=info.get('relations', []), org_by=info.get('org_by'),
                     org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'),
-                    profile=info.get('profile'), joined=info.get('joined', []), same=info.get('same', []))
+                    profile=info.get('profile'), joined=info.get('joined', []), same=info.get('same', []), edited=info.get('edited', []),
+                    side=info.get('side'), side_by=info.get('side_by'), phones=info.get('phones', []), emails=info.get('emails', []))
     elif row['kind'] == 'org':
         view.update(role=info.get('role'), role_by=info.get('role_by'), domain=info.get('domain'), profile=info.get('profile'),
                     about=enrichment.summary(info.get('profile')), edited=info.get('edited', []), wrong=bool(info.get('wrong')))
@@ -1495,6 +1512,8 @@ def with_fleet(db, result, marks):
         if not found:
             return
         item['fleet'] = {'machine': found['machine'], 'in': found['in'], 'name': found['name'] or None}
+        if item.get('side_by') != 'owner' and found['in'] and all(x['kind'] in ('family', 'friends') for x in found['in']):
+            item['side'] = 'personal'  # Family and Friends are personal, whatever address they write from
         row = db.execute('SELECT info FROM graph_nodes WHERE id=?', (item['id'],)).fetchone()
         group = set(json.loads(row['info']).get('identifiers') or ()) | {item['id']} if row else {item['id']}
         if found['name'] and not (group & kept) and incomplete_name(item.get('name')) and found['name'] != item.get('name'):
@@ -1899,6 +1918,122 @@ def org_wrong(db, node_id, wrong, now):
     else:
         db.execute("DELETE FROM org_profiles WHERE domain=? AND status='wrong'", (domain,))
     return {'node_id': 'org:' + domain, 'wrong': bool(wrong)}
+
+
+# The owner's own details for a person (title, location, LinkedIn, phones, emails, Work or Personal). They win over what
+# an enrichment service or the messages say and stay through every rebuild. Each field is kept on the identity whose page
+# it was saved on, so it stays through a merge (the joined person carries it) and an Undo (it stays with that identity).
+# Phones and emails are kept as what the owner added and took off, so an address that turns up later still shows.
+PERSON_FIELDS = {'title': 120, 'location': 120, 'linkedin_url': 200, 'side': 8}
+PERSON_LISTS = {'phones': 40, 'emails': 200}
+PHONE = re.compile(r'\+?[\d\s().-]{6,40}')
+EMAIL = re.compile(r'[^@\s]+@[^@\s]+\.[^@\s]+')
+
+
+def contact_key(kind, value):
+    return re.sub(r'\D', '', value) if kind == 'phones' else value.casefold()
+
+
+def found_contacts(identifiers):
+    """Phones and emails as the messages show them: their addresses and WhatsApp numbers."""
+    ids = sorted(identifiers or ())
+    return {'emails': [i.split(':', 1)[1] for i in ids if i.startswith('email:')],
+            'phones': ['+' + i.split(':', 1)[1] for i in ids if i.startswith('wa:') and i.split(':', 1)[1].isdigit()]}
+
+
+def shown_contacts(identifiers, edits):
+    """[{'value', 'by'}] per kind: what the messages show, less what the owner took off, then what they added."""
+    found, out = found_contacts(identifiers), {}
+    for kind in PERSON_LISTS:
+        kept = (edits or {}).get(kind) or {}
+        gone = {contact_key(kind, v) for v in kept.get('removed', ())}
+        rows = [{'value': v, 'by': 'messages'} for v in found[kind] if contact_key(kind, v) not in gone]
+        seen = {contact_key(kind, r['value']) for r in rows}
+        for v in kept.get('added', ()):
+            if contact_key(kind, v) not in seen:
+                rows.append({'value': v, 'by': 'owner'})
+                seen.add(contact_key(kind, v))
+        out[kind] = rows
+    return out
+
+
+def person_edits_for(db, group):
+    """The owner's edits for a person whose identities are group, oldest first so a later save wins."""
+    group = sorted(group or ())
+    if not group:
+        return {}
+    kept = {}
+    for r in db.execute(f"SELECT fields FROM person_edits WHERE identifier IN ({','.join('?' for _ in group)}) ORDER BY updated_at,identifier", group):
+        kept.update(json.loads(r['fields']))
+    return kept
+
+
+def person_edit(db, node_id, fields, now):
+    """Save the owner's details for a person: only the fields given change; an empty field gives that one back to the
+    looked-up value (or, for phones and emails, the list back to what the messages show)."""
+    if not db.in_transaction:
+        db.execute('BEGIN IMMEDIATE')
+    node_id, fields = str(node_id or ''), fields if isinstance(fields, dict) else {}
+    row = db.execute("SELECT info FROM graph_nodes WHERE id=? AND kind='person'", (node_id,)).fetchone()
+    if not row:
+        raise ValueError('Edit a person from graph results')
+    group = set(json.loads(row['info']).get('identifiers') or ()) | {node_id}
+    rows = {r['identifier']: json.loads(r['fields']) for r in db.execute(
+        f"SELECT identifier,fields FROM person_edits WHERE identifier IN ({','.join('?' for _ in group)})", sorted(group))}
+    mine = rows.get(node_id, {})
+    found = found_contacts(group)
+    stated_phone = ' '.join(str((json.loads(row['info']).get('profile') or {}).get('phone') or '').split())
+    if PHONE.fullmatch(stated_phone):
+        found['phones'].append(stated_phone)  # a number a connector read can be taken off too
+    for field, limit in {**PERSON_FIELDS, **PERSON_LISTS}.items():
+        if field not in fields:
+            continue
+        if field in PERSON_LISTS:
+            given = fields[field] if isinstance(fields[field], list) else str(fields[field] or '').splitlines()
+            values, keys = [], set()
+            for v in given:
+                text = ' '.join(str(v or '').split())
+                if not text:
+                    continue
+                if len(text) > limit or not (PHONE if field == 'phones' else EMAIL).fullmatch(text):
+                    raise ValueError(f'{text[:60]} is not {"a phone number" if field == "phones" else "an email address"}')
+                if contact_key(field, text) not in keys:
+                    keys.add(contact_key(field, text))
+                    values.append(text)
+            if len(values) > 10:
+                raise ValueError(f'Up to 10 {field}')
+            known = {contact_key(field, v) for v in found[field]}
+            value = {'added': [v for v in values if contact_key(field, v) not in known],
+                     'removed': [v for v in found[field] if contact_key(field, v) not in keys]}
+            value = value if value['added'] or value['removed'] else None
+        else:
+            value = ' '.join(str(fields[field] or '').split())
+            if field == 'side':
+                if value not in ('', 'work', 'personal'):
+                    raise ValueError('Work or Personal')
+            elif len(value) > limit:
+                raise ValueError(f"{'LinkedIn' if field == 'linkedin_url' else field.capitalize()} is up to {limit} characters")
+            elif field == 'linkedin_url' and value:
+                value = value if re.match(r'https?://', value) else 'https://' + value
+                if not re.match(r'https://([a-z]{2,3}\.)?linkedin\.com/', value):
+                    raise ValueError('LinkedIn is a linkedin.com address, like linkedin.com/in/their-name')
+            value = value or None
+        for other, kept in rows.items():  # one place per field: the page it was last saved on
+            if other != node_id:
+                kept.pop(field, None)
+        if value is None:
+            mine.pop(field, None)
+        else:
+            mine[field] = value
+    rows[node_id] = mine
+    for identifier, kept in rows.items():
+        if kept:
+            db.execute('INSERT INTO person_edits(identifier,fields,updated_at) VALUES(?,?,?) ON CONFLICT(identifier) DO UPDATE SET '
+                       'fields=excluded.fields,updated_at=CASE WHEN identifier=? THEN excluded.updated_at ELSE person_edits.updated_at END',
+                       (identifier, json.dumps(kept), now, node_id))
+        else:
+            db.execute('DELETE FROM person_edits WHERE identifier=?', (identifier,))
+    return {'node_id': node_id, 'edited': sorted(mine)}
 
 
 # Writing labels and merges.
@@ -2455,7 +2590,7 @@ def delete_person(db, node_id, config, now):
     db.execute(f'DELETE FROM graph_relations WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
     for table in ('graph_names',):
         db.execute(f'DELETE FROM {table} WHERE node_id IN ({marks})', ids)
-    for table in ('identity_names', 'person_roles', 'person_orgs', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'person_photos', 'person_photo_tries', 'contact_photo_links', 'person_facts', 'role_corrections'):
+    for table in ('identity_names', 'person_roles', 'person_orgs', 'person_edits', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'person_photos', 'person_photo_tries', 'contact_photo_links', 'person_facts', 'role_corrections'):
         if _table(db, table):
             db.execute(f'DELETE FROM {table} WHERE identifier IN ({marks})', ids)
     if emails:

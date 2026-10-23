@@ -66,17 +66,18 @@ try{
   await page.locator('.graph-detail .person-pic.big img').waitFor();
   assert.equal(await page.locator('.graph-detail .person-pic.big img').evaluate(i=>i.width),44);
   const text=await page.locator('.graph-detail').textContent();
-  assert.equal((await page.locator('.graph-detail .person-job').textContent()).trim(),'Head of Sales');
+  assert.equal((await page.locator('.graph-detail .person-job').textContent()).trim(),'Head of Sales · Globex');
   assert.equal(await page.locator('.graph-detail .name-row .person-head h3 + .person-job').count(),1);  // title under the name, beside the photo
   assert.equal(await page.locator('[data-person-lookup]').count(),0);
   assert.ok(await page.locator('.graph-detail [data-person-delete]').isHidden());  // in the ⋯ menu, not on the page
-  assert.equal(await page.locator('.graph-detail .name-row>button').count(),0);  // Rename is in the menu too
+  assert.deepEqual(await page.locator('.graph-detail .name-row .org-actions>button:visible').allTextContents(),['Edit']);  // Edit in the header, as on an organisation
   assert.ok(await page.locator('.person-delete-confirm').isHidden());
-  if(width>=700){const [head,sub]=await page.evaluate(()=>[document.querySelector('.graph-detail .person-head').getBoundingClientRect().left,document.querySelector('.graph-detail .org-row').getBoundingClientRect().left]);
+  if(width>=700){const [head,sub]=await page.evaluate(()=>[document.querySelector('.graph-detail .person-head').getBoundingClientRect().left,document.querySelector('.graph-detail .person-rel').getBoundingClientRect().left]);
    assert.ok(Math.abs(head-sub)<=2,`details line up with the name: ${head} ${sub}`)}
-  assert.ok(text.includes('Globex · from their work email')&&!text.includes('At Globex'),text);
-  assert.equal(await page.locator('.graph-detail .org-row button.node[data-node="org:globex.example"]').count(),1);
-  assert.ok(text.includes('Springfield, United States')&&text.includes('LinkedIn ↗'),text);
+  assert.ok(!text.includes('At Globex'),text);
+  assert.equal(await page.locator('.graph-detail .person-job button.node[data-node="org:globex.example"]').count(),1);
+  assert.equal(await page.locator('.graph-detail .person-place').textContent(),'Springfield, United States');
+  assert.ok(text.includes('linkedin.com/in/lee-parker-example ↗'),text);
   assert.equal(await page.locator('.graph-detail a[href="https://www.linkedin.com/in/lee-parker-example"][rel="noreferrer"]').count(),1);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.ok(await page.locator('.graph-detail .detail-sub').evaluate(e=>e.scrollWidth<=e.clientWidth),'the contact line wraps, never cut off');
@@ -94,12 +95,8 @@ try{
  await page.locator('#people-view article[data-node="email:lee@globex.example"] button.node').click();
  const menu=page.locator('.graph-detail .person-menu');
  await menu.locator('summary').click();
- assert.deepEqual(await menu.locator('[role=menuitem]').allTextContents(),['Rename','Delete permanently…']);
+ assert.deepEqual(await menu.locator('[role=menuitem]').allTextContents(),['Delete permanently…']);
  if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/menu-390-light.png`});
- await menu.locator('[data-name-edit]').click();
- await page.locator('.graph-detail .name-form:not([hidden])').waitFor();
- assert.equal(await menu.evaluate(d=>d.open),false);
- await menu.locator('summary').click();
  await menu.locator('[data-person-delete]').click();
  const ask=page.locator('.person-delete-confirm');
  await ask.waitFor();
