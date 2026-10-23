@@ -35,6 +35,22 @@ class HelpArticles(unittest.TestCase):
                 self.write(d, name, body)
             return [p for p in help_check.check(Path(d)) if p.startswith('docs/help/gmail.md')]
 
+    def test_links_go_to_help_articles_never_to_docs_on_github(self):
+        html = (HERE / 'dashboard.html').read_text(encoding='utf-8')
+        self.assertNotRegex(html, r'github\.com/Salesflare/TheMachine/(blob|tree)/[^/]+/docs/')
+        self.assertIn('href="https://themachine.computer/help/work-hours"', html)
+        found = help_check.articles()
+        with tempfile.TemporaryDirectory() as d:
+            page = Path(d) / 'page.html'
+            page.write_text('<a href="https://github.com/Salesflare/TheMachine/blob/main/docs/usage.md#work-hours">Learn more</a>'
+                            '<a href="https://themachine.computer/help/no-such-article">x</a>'
+                            '<a href="https://themachine.computer/help/work-hours#no-such-heading">x</a>'
+                            '<a href="${HELP}friends#find-people-you-know">x</a>', encoding='utf-8')
+            problems = help_check.check_links(found, [page])
+        self.assertEqual(len(problems), 3, problems)
+        self.assertIn('on GitHub', problems[0])
+        self.assertTrue(any('no-such-article' in p for p in problems) and any('no-such-heading' in p for p in problems))
+
     def test_a_good_article_passes(self):
         self.assertEqual(self.problems(GOOD), [])
 

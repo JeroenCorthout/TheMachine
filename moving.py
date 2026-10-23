@@ -393,7 +393,7 @@ def readme(manifest):
     lines = ['The Machine: your export', '', f'Made {manifest["created_at"]}.',
              'This holds what The Machine knows and how it was set up. It is yours: keep it somewhere safe.', '',
              'To run it on your own computer:',
-             '  1. Install The Machine: https://github.com/Salesflare/TheMachine/blob/main/docs/getting-started.md',
+             '  1. Install The Machine: https://themachine.computer/help/self-hosted-setup',
              '     Stop its service before importing: assistant service stop',
              '  2. Put it back:  assistant import <this file>',
              '  3. Connect what the import lists, then check with:  assistant doctor', '']

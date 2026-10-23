@@ -10,7 +10,7 @@ order: 5
 
 Press `⌘K` on a Mac or `Ctrl K` on Windows and Linux, or `/`, to open **Search and commands**. Type part of a name: an action, a page, a card, a person, an organisation or a project. Use the arrow keys and Enter, or Esc to close. Recent commands come first.
 
-On a phone, open the menu and tap **Search and commands**.
+On a phone, tap the search icon in the top bar.
 
 ## Shortcuts
 

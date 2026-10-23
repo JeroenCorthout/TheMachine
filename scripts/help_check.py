@@ -153,6 +153,36 @@ def check_copy(name, fields, body, known):
     return problems
 
 
+DOCS_LINK = re.compile(r'github\.com/Salesflare/TheMachine/(?:blob|tree)/[^/\s\'"]+/docs/[^\s\'"<>)]*')
+HELP_LINK = re.compile(r"(?:themachine\.computer/help/|\$\{HELP\})([a-z0-9-]+)(?:#([a-z0-9-]+))?")
+
+
+def heading_id(text):
+    """The id the site gives a heading (cloud/help.py's anchor())."""
+    return re.sub(r'[^a-z0-9]+', '-', re.sub(r'[`*]', '', text).lower()).strip('-')
+
+
+def app_files():
+    """The app's own code, where people read links: the dashboard, task pages, setup and CLI copy."""
+    return sorted(p for p in [*ROOT.glob('*.py'), *ROOT.glob('*.mjs'), *ROOT.glob('*.html'), *ROOT.glob('connectors/*.py')]
+                  if not p.name.startswith('test') and p.parent.name != 'scripts')
+
+
+def check_links(found, files=None):
+    """Links people follow point at a help article (and a heading it has), never at docs/ on GitHub."""
+    problems = []
+    for path in app_files() if files is None else files:
+        text, name = path.read_text(encoding='utf-8'), path.name if files else path.relative_to(ROOT)
+        problems += [f'{name}: links to {m[0]} on GitHub: point it at its help article (themachine.computer/help/<article>)'
+                     for m in DOCS_LINK.finditer(text)]
+        for slug, part in set(HELP_LINK.findall(text)):
+            if slug not in found:
+                problems.append(f'{name}: links to the help article {slug}, which docs/help/ does not have')
+            elif part and part not in {heading_id(h) for h in re.findall(r'^#{2,3} (.+)$', found[slug][1] or '', re.M)}:
+                problems.append(f'{name}: links to {slug}#{part}, a heading {slug} does not have')
+    return problems
+
+
 def check(folder=HELP):
     """The problems found, as 'article: what' lines."""
     found = articles(folder)
@@ -188,6 +218,7 @@ def check(folder=HELP):
     for tab, slug in re.findall(r"(\w+):'([a-z0-9-]+)'", (re.search(r'HELP_FOR=\{(.*?)\}', html) or [None, ''])[1]):
         if slug not in found:
             problems.append(f'dashboard.html: HELP_FOR sends {tab} to the help article {slug}, which docs/help/ does not have')
+    problems += check_links(found)
     for f in sorted(exist - set(covered) - set(PENDING)):
         problems.append(f'{f} has no help article: add one in docs/help/ with "covers: {f}" (or a reason in PENDING)')
     problems += [f'PENDING: {f} has an article now, so take it out of PENDING' for f in PENDING if f in covered]
