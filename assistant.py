@@ -353,6 +353,12 @@ def queue_thread_snooze(db, action, job):
                    (job['id'],action['account_id'],action['thread_id'],thread_return_time(action['snooze_days']),now(),now()))
 
 
+def current_title(card, title):
+    """The title a refresh gives a card: the new one for a title The Machine wrote, so it keeps describing where things
+    stand now; the owner's own title (title_source 'user', set when they rename a card or make their own) is never replaced."""
+    return card['title'] if 'title_source' in card.keys() and card['title_source'] == 'user' else title
+
+
 NOTHING_SENT = re.compile(r'\s*Nothing (?:was |has been )?(?:sent|submitted|posted)(?: or (?:changed|submitted|posted|sent))?(?: yet)?\.?\s*$', re.I)
 
 
@@ -2242,6 +2248,8 @@ class Store:
                 db.execute('ALTER TABLE suggestions ADD COLUMN awaiting TEXT')
             if 'outcome' not in columns:
                 db.execute('ALTER TABLE suggestions ADD COLUMN outcome TEXT')
+            if 'title_source' not in columns:  # 'auto': written by The Machine and kept current; 'user': the owner named it
+                db.execute("ALTER TABLE suggestions ADD COLUMN title_source TEXT NOT NULL DEFAULT 'auto'")
             if 'kind' not in {r['name'] for r in db.execute('PRAGMA table_info(facts)')}:
                 db.execute("ALTER TABLE facts ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'")
             if 'merged_into' not in {r[1] for r in db.execute('PRAGMA table_info(facts)')}:  # condensed: 'fact:<id>' or 'voice:<channel>'
@@ -3374,6 +3382,7 @@ class Store:
         and one that was snoozed or waiting for a reply comes back. A done or dismissed card only reopens when the
         reviewer says the matter needs the owner again (reopen); otherwise the signal is kept on it as evidence."""
         stamp, sid = now(), card['id']
+        title = current_title(card, title)
         old_ids = json.loads(card['event_ids'] or '[]')
         ids = [*event_ids, *[i for i in old_ids if i not in event_ids]]  # the newest evidence leads the source line
         evidence = {r['id']: dict(r) for r in db.execute('SELECT id,account_id,kind,occurred_at,metadata FROM events WHERE id IN (' + ','.join('?' * len(ids)) + ')', ids)}
@@ -3402,7 +3411,8 @@ class Store:
                    'feedback_until=NULL WHERE id=?',
                    (title[:300], body[:5000], encoded(ids), encoded(accounts), source_line([evidence[i] for i in ids if i in evidence]),
                     deliver_after, int(urgent or bool(card['urgent'])), due, status, int(bool(ahead)), status, sid))
-        was = f"Updated with a new signal{' and brought back' if waiting else ' and reopened' if closed else ''}. Before: {card['title'][:150]}"
+        was = (f"Updated with a new signal{' and brought back' if waiting else ' and reopened' if closed else ''}."
+               + (f" Before: {card['title'][:150]}" if title[:300] != card['title'] else ''))
         db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
                    ('update:' + uuid.uuid4().hex, sid, 'update', was, 'assistant', stamp))
         db.execute("UPDATE action_jobs SET status='cancelled',updated_at=? WHERE suggestion_id=? AND status IN ('queued','blocked')", (stamp, sid))
@@ -3434,7 +3444,8 @@ class Store:
         for row in db.execute("SELECT s.id FROM suggestions s JOIN preparations p ON p.suggestion_id=s.id WHERE s.early=1 AND s.status='accepted' AND p.status='blocked'").fetchall():
             db.execute("UPDATE suggestions SET status='pending',early=0 WHERE id=?", (row['id'],))
             db.execute("UPDATE preparations SET status='cancelled',updated_at=? WHERE suggestion_id=?", (now(), row['id']))
-            db.execute("UPDATE deliveries SET reminder=0 WHERE suggestion_id=? AND message_id IS NULL", (row['id'],))
+            # It goes out as the card itself, not as a reminder: also when an earlier notification exists (a card reopened by a new signal).
+            db.execute("UPDATE deliveries SET reminder=0 WHERE suggestion_id=?", (row['id'],))
 
     def settle_awaiting(self, db):
         """A follow-up on someone else's promise closes itself when they wrote again before it was due.
@@ -5060,15 +5071,19 @@ class Store:
             db.execute('UPDATE suggestions SET feedback_prompt_message_id=? WHERE id=? AND feedback_request_id=? AND feedback_until>?',
                        (str(message_id),suggestion_id,request_id,now()))
 
-    def prepare(self, suggestion_id, body, job_id=None, next_action=None, outcome=None, note_kind=None, require_note=False, finish_state=None):
+    def prepare(self, suggestion_id, body, job_id=None, next_action=None, outcome=None, note_kind=None, require_note=False, finish_state=None, title=None):
         if not body.strip():
             raise ValueError('A concrete local preparation is required')
+        if title is not None:
+            title = ' '.join(str(title).split())
+            if not title or len(title) > 90:
+                raise ValueError('title is the card\'s new short title, under 90 characters, or left out to keep the current one')
         if len(body) > 1000:
             raise ValueError('Keep the preparation short: at most 1000 characters. Put longer drafts in a local document, not a wall of Telegram text.')
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             job=db.execute('SELECT * FROM preparations WHERE suggestion_id=?',(suggestion_id,)).fetchone()
-            row = db.execute('SELECT status,body,next_action FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+            row = db.execute('SELECT status,body,next_action,title,title_source FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
             action_json=encoded(next_action) if next_action else None
             if job_id and job and job['job_id']==job_id and job['status']=='done' and row and row['status']=='prepared' and row['body']==body and row['next_action']==action_json:
                 return {'status':'prepared','replayed':True}
@@ -5096,6 +5111,8 @@ class Store:
                            ({'completed':'done','not_performed':'needs_input','uncertain':'finish_uncertain'}[state],encoded(payload),now(),chosen['id']))
             db.execute("UPDATE action_jobs SET status='done',updated_at=? WHERE suggestion_id=? AND status='local_preparation' AND json_extract(payload,'$.kind')='prepare'",(now(),suggestion_id))
             db.execute("UPDATE suggestions SET body=?,status='prepared',next_action=?,outcome=? WHERE id=?", (body[:5000],action_json,encoded(outcome) if outcome else None,suggestion_id))
+            if title and current_title(row, title) != row['title']:
+                db.execute('UPDATE suggestions SET title=? WHERE id=?', (title, suggestion_id))  # the new notification and the edited message carry it
             draft_saved(db,suggestion_id,next_action)
             db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id=? AND message_id IS NOT NULL', (suggestion_id,))
             db.execute("UPDATE preparations SET status='done',updated_at=?,error=NULL,reason=NULL WHERE suggestion_id=?",(now(),suggestion_id))
@@ -8612,6 +8629,7 @@ For this job:
 - Attachments folder: {WORKSPACE}/data/assistant-attachments/{j}/
 - Save the result with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<short result>, next_actions=[...], outcome, and send_now:true only when the owner's latest message approves sending a draft they already saw on the card, unchanged (the service refuses any other). A draft you write or change in this turn is saved without send_now and shown to them: they read it and tap Send (outcome:'needs_you', needs:'check the draft and send it'), also when their note only says what to do ("email Sam now").
 - outcome:'done' only when the task itself is complete and nothing is left for the owner but to check it; outcome:'answered' when you only answered their question, explained or planned, and the task itself is still to do (the card then offers Do it again); outcome:'already_done' with no next_actions when it turns out to be done already or no longer needed; outcome:'your_step' with step:'submit' (or pay, book, sign, confirm, order, apply) when everything is ready but that final click is left for them, e.g. a form you filled in and didn't submit (the card says so and links to the page in this Machine's browser by itself; no link of your own needed); outcome:'needs_you' with needs:<the one thing they have to do, in a few words> otherwise (approve the send, sign in, choose); when that is a question for them, write needs as the question itself, ending in "?" (the card then leads with Answer). The card shows that status line itself, so the body doesn't repeat it. Finish what you can first: don't stop to ask about steps the rules already let you do.
+- When the card's title no longer says where things stand after this result (the situation changed, not just the wording), add title=<a new short title for now, under 90 characters>; otherwise leave title out.
 - When latest_feedback is a Change note, also give note_kind: style (how it was written), fact (something you didn't know), continue (keep going or finish the job) or new_ask (something else to do). A style note that holds beyond this card (how they write on a channel or with this kind of person: length, tone, greeting, sign-off, language, capitals, punctuation, links, formatting; "always…", "next time…", or what they asked on an earlier card) updates that channel's voice: assistant_signals remember_fact args kind=voice, channel=<the channel it is about: Email, Slack, WhatsApp, LinkedIn, X DM, another channel's name, or All when it holds everywhere>, text=<that channel's whole voice block (up to {VOICE_LINES} short lines, at most {VOICE_CHARS} characters): the current block with the note worked in, everything else kept, only what it contradicts dropped>, decision_id=<that note's decision>. How a kind of task is done (what to include, where things go) is a draft rule instead: remember_fact kind=draft, text=<the rule, general>. A fact note that holds beyond this card goes in remember_fact as a fact.
 - When the owner's note means they want this task itself back later (remind me about it next week, later, on Tuesday), that is this card's snooze, not a reminder: save with outcome:'snoozed' and snooze_until:<their local date and time, e.g. 2026-10-27T09:00, or a date alone for their morning>, and a one-line body. The card leaves their list and comes back then. Do not also add an automation, cron job or reminder for it. A separate reminder about something else, or a recurring one, stays an automation. Their time zone is {getattr(local_tz(),'key','UTC')}; it is now {dt.datetime.fromisoformat(now()).astimezone(local_tz()).strftime('%a %Y-%m-%d %H:%M')} there.
 - Or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason=<one plain sentence>, details=<technical specifics>. Block only on what you truly can't know (their first-hand notes, a fact only they have, a call with no sensible default); a minor judgment call with an obvious sensible default you make yourself and name in one line of the result. When only the owner can unblock it, also give questions=[{{question:<one short plain question>, options:[<2-4 short choices, only when it is a clear choice>]}}] (at most 3). Each question must make sense on its own to someone who hasn't seen your work: plain words, what it is about and why it matters, no jargon or internal terms, e.g. {{question:'What did you notice when you tried OnePageCRM? A few lines on what you tried and what stood out are enough.'}}. The card shows them with quick picks and an Answer box. No paths, IDs or tool names in reason or questions.''' + owner_details(config) + (f'''
@@ -9776,7 +9794,7 @@ class App:
                     raise ValueError('Not sent: '+why+'. The owner sends only a draft they have seen. Save it again without send_now, '
                                      "with outcome:'needs_you' and needs:'check the draft and send it', and a body that says it is ready for them "
                                      '(not that it went out). Do not send it any other way.')
-            saved=self.store.prepare(args['suggestion_id'], args['body'],args.get('job_id'),action,outcome,args.get('note_kind'),require_note=True,finish_state=args.get('finish_state'))
+            saved=self.store.prepare(args['suggestion_id'], args['body'],args.get('job_id'),action,outcome,args.get('note_kind'),require_note=True,finish_state=args.get('finish_state'),title=args.get('title'))
 
             if args.get('send_now') is True and not saved.get('replayed'):
                 with self.store.connect() as db:
