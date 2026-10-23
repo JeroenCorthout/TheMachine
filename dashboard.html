@@ -1163,6 +1163,8 @@ main{padding-top:calc(28px + env(safe-area-inset-top));padding-left:max(24px,env
 .agents-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:end}.agents-grid>label{display:flex;flex-direction:column;gap:6px;min-width:0}.agents-grid>label.wide{grid-column:1/-1}.agents-grid input{width:100%;min-width:0;box-sizing:border-box}
 @media(max-width:420px){.agents-grid{grid-template-columns:1fr}}
 @media(min-width:1024px){#settings-browser{display:none!important}}  /* Browser is in the sidebar */
+/* The folded sidebar's tooltip: a small pill to the right of the row, the theme's text colour as its ground */
+#side-tip{position:fixed;z-index:1000;transform:translateY(-50%);padding:5px 9px;border-radius:7px;background:var(--text);color:var(--bg);font:500 var(--fs-xs)/1.25 var(--sans);white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px -6px #0006}#side-tip[hidden]{display:none}
 /* App sidebar. On a phone and a tablet it is the old top: the brand, the status pills and the tab row, in the page's
    column. From 1024px it is a fixed column on the left, like a chat app: the brand, a card filter, the tabs as quiet
    rows with icons, the cards as a list, and Browser, Settings and the status at the bottom. It folds to icons. */
@@ -1195,8 +1197,8 @@ body main{padding-top:0}
   .app-side nav,[data-theme="light"] .app-side nav{order:2;flex:none;flex-direction:column;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:none;overflow:visible}
   .app-side nav button,.app-side .head-side>.settings-link{position:relative;flex:none;display:flex;justify-content:flex-start;align-items:center;gap:10px;width:100%;min-height:34px;margin:0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
   .app-side nav button[hidden]{display:none}
-  .app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:var(--c-hover);color:var(--text)}
-  .app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text);box-shadow:none}
+  .app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
+  .app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);box-shadow:none;font-weight:600}
   .app-side nav .ni,.app-side .head-side>.settings-link svg{display:block;flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   .app-side nav .badge,.app-side nav button.active .badge,[data-theme="light"] .app-side nav button.active .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans)}
   .app-side nav .badge.warn,.app-side nav button.active .badge.warn{color:var(--c-orange)}
@@ -2740,7 +2742,31 @@ $('#side-cards').addEventListener('click',e=>{const f=e.target.closest('[data-si
 // Suggestions in the sidebar while a chat is open goes back to the overview
 $('nav').addEventListener('click',e=>{if(!e.isTrusted||!chatId||$('#inbox').hidden||!e.target.closest('[data-tab="inbox"]'))return;history.replaceState(null,'',location.pathname+location.search);chatPushed=false;openChatLink();scrollTo(0,0)});
 function sideSet(folded,save=true){document.documentElement.dataset.side=folded?'collapsed':'open';if(save)sideStore.set('side',folded?'collapsed':'open');
- const b=$('#side-toggle'),label=folded?'Expand the sidebar':'Collapse the sidebar';b.setAttribute('aria-expanded',String(!folded));b.setAttribute('aria-label',label);b.title=label;requestAnimationFrame(chatFades)}
+ const b=$('#side-toggle'),label=folded?'Expand sidebar':'Collapse sidebar';b.setAttribute('aria-expanded',String(!folded));b.setAttribute('aria-label',label);b.setAttribute('aria-keyshortcuts',SIDE_KEY_ARIA);b.title=label+' ('+SIDE_KEY+')';sideTipHide();requestAnimationFrame(chatFades)}
+// Folded to icons, every row says what it is: a tooltip to its right (after a moment on hover, at once on keyboard focus),
+// with its count in words, and the same words as its accessible name. Ctrl/⌘+B folds and unfolds.
+const SIDE_MAC=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent),SIDE_KEY=SIDE_MAC?'⌘B':'Ctrl+B',SIDE_KEY_ARIA=SIDE_MAC?'Meta+B':'Control+B';
+const sideTip=document.createElement('div');sideTip.id='side-tip';sideTip.setAttribute('role','tooltip');sideTip.hidden=true;document.body.append(sideTip);
+let sideTipTimer=0,sideTipFor=null;
+function sideTipText(el){if(el.id==='side-toggle')return el.getAttribute('aria-label')+' · '+SIDE_KEY;if(el.id==='side-search')return 'Find a card';if(el.id==='live')return $('#updated').textContent.trim()||'Refresh';
+ if(el.matches('.app-side .head-side>.settings-link'))return el.querySelector('.lbl')?.textContent.trim()||el.getAttribute('aria-label')||'';
+ return el.getAttribute('aria-label')||''}
+function sideLabels(){for(const b of document.querySelectorAll('.app-side nav [data-tab]')){const name=b.querySelector('.nl')?.textContent.trim()||'',n=+(b.querySelector('.badge')?.textContent||0),t=b.dataset.tab,c=sideCounts||{};
+  const more=t==='inbox'?[[c.ready,'ready'],[c.needs,'to decide']].filter(([k])=>k).map(([k,w])=>k+' '+w).join(' · ')||(n?n+' waiting':''):!n?'':t==='health'?n+(n===1?' needs':' need')+' a look':t==='people'?n+' waiting':String(n);
+  const label=more?name+' · '+more:name;if(b.getAttribute('aria-label')!==label)b.setAttribute('aria-label',label)}
+ const live=$('#live'),u=$('#updated').textContent.trim();if(u&&live.getAttribute('aria-label')!==u)live.setAttribute('aria-label',u)}
+function sideTipHide(){clearTimeout(sideTipTimer);if(sideTipFor){if(sideTipFor.dataset.tipTitle!==undefined){sideTipFor.title=sideTipFor.dataset.tipTitle;delete sideTipFor.dataset.tipTitle}sideTipFor=null}sideTip.hidden=true}
+function sideTipShow(el){if(document.documentElement.dataset.side!=='collapsed'||!matchMedia('(min-width:1024px)').matches)return;sideLabels();const text=sideTipText(el);if(!text)return;
+ if(el.title){el.dataset.tipTitle=el.title;el.title=''}  /* no second, native tooltip */
+ sideTipFor=el;sideTip.textContent=text;const r=el.getBoundingClientRect(),side=$('#app-side').getBoundingClientRect();sideTip.style.left=Math.round(side.right+8)+'px';sideTip.style.top=Math.round(r.top+r.height/2)+'px';sideTip.hidden=false}
+const SIDE_TIP_ON='.app-side nav [data-tab],#side-toggle,#side-search,.app-side .head-side>.settings-link,#live';
+$('#app-side').addEventListener('pointerover',e=>{const el=e.target.closest(SIDE_TIP_ON);if(!el||el===sideTipFor||e.pointerType==='touch')return;sideTipHide();sideTipTimer=setTimeout(()=>sideTipShow(el),300)});
+$('#app-side').addEventListener('pointerout',e=>{const el=e.target.closest(SIDE_TIP_ON);if(el&&!el.contains(e.relatedTarget))sideTipHide()});
+$('#app-side').addEventListener('focusin',e=>{const el=e.target.closest(SIDE_TIP_ON);sideTipHide();if(el&&el.matches(':focus-visible'))sideTipShow(el)});
+$('#app-side').addEventListener('focusout',sideTipHide);$('#app-side').addEventListener('click',sideTipHide);addEventListener('scroll',sideTipHide,{passive:true});
+addEventListener('keydown',e=>{if(e.key==='Escape')sideTipHide();if(!(e.ctrlKey||e.metaKey)||e.altKey||e.shiftKey||e.key.toLowerCase()!=='b'||!matchMedia('(min-width:1024px)').matches||e.target.closest?.('textarea,input,select,[contenteditable]'))return;
+ e.preventDefault();sideSet(document.documentElement.dataset.side!=='collapsed')});
+{const o=new MutationObserver(()=>sideLabels());o.observe($('.app-side nav'),{subtree:true,childList:true,characterData:true});o.observe($('#updated'),{subtree:true,childList:true,characterData:true})}
 sideSet(document.documentElement.dataset.side==='collapsed',false);
 $('#side-toggle').onclick=()=>sideSet(document.documentElement.dataset.side!=='collapsed');
 $('#side-search').addEventListener('click',()=>{if(document.documentElement.dataset.side==='collapsed'&&matchMedia('(min-width:1024px)').matches){sideSet(false);$('#side-find').focus()}});

@@ -88,6 +88,25 @@ try{
   if(empty)assert.equal(await page.locator('#page-head .page-sub').innerText(),'All clear · 3 promises kept track of');
   await context.close()}
  emptyOn=false;
+ // Folded, every row has a name and a tooltip to its right: after a moment on hover, at once on keyboard focus, with its count in words; Ctrl+B folds and unfolds
+ {const {context,page}=await open(1440,900);await page.keyboard.press('Control+b');await page.waitForFunction(()=>document.documentElement.dataset.side==='collapsed');
+  assert.equal(await page.locator('#side-toggle').getAttribute('aria-label'),'Expand sidebar');
+  const names=await page.evaluate(()=>[...document.querySelectorAll('.app-side nav [data-tab]')].filter(b=>b.offsetParent).map(b=>b.getAttribute('aria-label')));
+  assert.equal(names[0],'Suggestions · 4 ready · 8 to decide');assert.deepEqual(names.slice(1),['Events','Graph','Feedback','Connections']);
+  for(const q of ['#open-settings','#side-toggle','#live'])assert.ok(await page.locator(q).getAttribute('aria-label'),q+' has a name');
+  const row=page.locator('.app-side nav [data-tab="inbox"]');await row.hover();await page.waitForTimeout(120);assert.equal(await page.locator('#side-tip').isVisible(),false,'not at once on hover');
+  await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide');
+  const pos=await page.evaluate(()=>{const t=document.querySelector('#side-tip').getBoundingClientRect(),s=document.querySelector('#app-side').getBoundingClientRect(),r=document.querySelector('.app-side nav [data-tab="inbox"]').getBoundingClientRect();return {gap:t.left-s.right,mid:Math.abs((t.top+t.bottom)/2-(r.top+r.bottom)/2)}});
+  assert.ok(pos.gap>=4&&pos.gap<=16&&pos.mid<2,JSON.stringify(pos));
+  await page.screenshot({path:process.env.SHOT_DIR?process.env.SHOT_DIR+'/tip.png':'/dev/null'}).catch(()=>{});
+  await page.mouse.move(900,500);await page.locator('#side-tip').waitFor({state:'hidden'});
+  await page.locator('#open-settings').focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');
+  assert.equal(await page.locator('#side-tip').isVisible(),true,'at once on keyboard focus');assert.equal(await page.locator('#side-tip').textContent(),'Settings');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#side-tip').isVisible(),false);
+  await page.locator('body').click({position:{x:900,y:300}});await page.keyboard.press('Control+b');await page.waitForFunction(()=>document.documentElement.dataset.side==='open');
+  assert.equal(await page.locator('#side-toggle').getAttribute('aria-label'),'Collapse sidebar');
+  await row.hover();await page.waitForTimeout(500);assert.equal(await page.locator('#side-tip').isVisible(),false,'no tooltip with the labels showing');
+  await context.close()}
  // Settings in the same column: the lists as wide as the forms, the agent fields in clean rows, no browser button (Browser is in the sidebar)
  {const {context,page}=await open(1440,900);await tab(page,'settings');await page.locator('#agents-settings').waitFor();
   const st=await page.evaluate(()=>{const w=q=>Math.round(document.querySelector(q).getBoundingClientRect().width),r=q=>document.querySelector(q).getBoundingClientRect();
