@@ -50,8 +50,12 @@ class PhoneNotifications(unittest.TestCase):
         a.push_notify(self.store, self.config, dict(row, status='prepared', _result_notice=True, body='Draft ready.'), sender)
         self.assertEqual(sent[-1]['payload']['title'], 'Ready: Top up Wise')
         self.assertTrue(sent[-1]['payload']['url'].endswith('#result=0123456789abcdef'))
-        a.push_notify(self.store, self.config, dict(row, status='accepted', _result_notice=True, preparation_reason='Exact needs a login.'), sender)
+        a.push_notify(self.store, self.config, dict(row, status='accepted', _result_notice=True, preparation_status='blocked', preparation_reason='Exact needs a login.'), sender)
         self.assertEqual((sent[-1]['payload']['title'], sent[-1]['payload']['body']), ('Needs your help: Top up Wise', 'Exact needs a login.'))
+        # A run the service stopped (it timed out) asks nothing: Stuck, also after browser steps
+        a.push_notify(self.store, self.config, dict(row, status='accepted', _result_notice=True, preparation_status='blocked', preparation_error='completion_unconfirmed',
+                                                    preparation_browser={'since': 'x'}, preparation_reason='This didn’t finish.'), sender)
+        self.assertEqual(sent[-1]['payload']['title'], 'Stuck: Top up Wise')
         self.assertEqual(self.subscriptions()[0]['last_status'], 201)
 
     def test_subscription_refresh_keeps_success_and_failure_history_and_updates_keys(self):

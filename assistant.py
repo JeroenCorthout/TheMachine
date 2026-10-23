@@ -9023,8 +9023,8 @@ def push_notify(store, config, row, sender=None):
     if row.get('_result_notice'):
         ready = row['status'] == 'prepared'
         signin = not ready and (row.get('preparation_browser') or {}).get('signin_url')
-        asks = ask_blocked(row) or (row.get('preparation_browser') and not row.get('preparation_error'))
-        payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if asks else 'Stuck: ') + row['title'],
+        # A run the service stopped (a timeout, two failures) asks nothing: Stuck, as on the card
+        payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Stuck: ' if row.get('preparation_error') else 'Needs your help: ') + row['title'],
                    'body': plain(strip_result_links(row['body']) if ready else row.get('preparation_reason') or ''),
                    'url': signin or root + '#result=' + row['id']}
     else:
