@@ -9223,15 +9223,22 @@ def recap_day(value, with_time=False):
 
 def recap_noise(db, since):
     """Automated sources that were busy this week and led to no card, each with the `exclude` rule that would filter it:
-    {(account, where): {'n', 'rule'}}. Only automated sources are candidates, never people's own conversations."""
+    {(account, where): {'n', 'rule'}}. Only automated sources are candidates, never people's own conversations: a group chat
+    the owner writes in this week, or a small circle of people, is someone's own chat (friends, family), not noise."""
     used = set()
     for (ids,) in db.execute('SELECT event_ids FROM suggestions'):
         used |= set(json.loads(ids))
-    noise = {}
+    noise, circle = {}, collections.defaultdict(lambda: {'mine': 0, 'people': set()})
     for i, account, kind, m in db.execute('SELECT id,account_id,kind,metadata FROM events WHERE ingested_at>=?', (since,)):
+        m = json.loads(m)
+        if kind == 'whatsapp.message' and str(m.get('chat_id', '')).endswith('@g.us'):
+            chat = circle[(account, m['chat_id'])]  # who takes part, from every message in it (cards or not)
+            if m.get('from_me'):
+                chat['mine'] += 1
+            elif m.get('sender_id') or m.get('from'):
+                chat['people'].add(m.get('sender_id') or m.get('from'))
         if i in used:
             continue
-        m = json.loads(m)
         sender = re.sub(r'.*<|>.*', '', str(m.get('from') or '')).strip()
         if kind == 'slack.message' and m.get('channel_name') and not str(m['channel_name']).startswith('DM '):
             where, rule = '#' + m['channel_name'], {'channels': [m['channel_name']]}
@@ -9246,7 +9253,8 @@ def recap_noise(db, since):
         else:
             continue
         noise.setdefault((account, where), {'n': 0, 'rule': rule})['n'] += 1
-    return noise
+    own = lambda account, rule: any(c['mine'] or len(c['people']) <= RECAP_CIRCLE for c in [circle[(account, rule['chats'][0])]]) if 'chats' in rule else False
+    return {k: v for k, v in noise.items() if not own(k[0], v['rule'])}
 
 
 def recap_named(node):
@@ -9299,6 +9307,7 @@ def recap_graph_lines(store, since=None):
     return out
 
 
+RECAP_CIRCLE = 8  # a group chat with this many others or fewer is a circle of people, not a broadcast
 RECAP_CHOICES = {'noise': ('filter', 'keep', 'undo'), 'snoozed': ('drop', 'now', 'keep')}
 RECAP_DONE = {'filtered': 'Filtered', 'kept': 'Kept', 'dropped': 'Dropped', 'started': 'Started'}
 
@@ -9362,7 +9371,11 @@ def weekly_recap_message(store, config, current=None, usage=None):
     tz = local_tz()
     since = (current - dt.timedelta(days=7)).isoformat()
     today = current.astimezone(tz).date()
-    ahead = (current + dt.timedelta(days=7)).isoformat()
+    # The week ahead: tomorrow through the same weekday next week (a Friday recap: Saturday to Friday).
+    tomorrow = today + dt.timedelta(days=1)
+    start_ahead = dt.datetime.combine(tomorrow, dt.time(), tz).astimezone(dt.timezone.utc).isoformat()
+    ahead = dt.datetime.combine(tomorrow + dt.timedelta(days=7), dt.time(), tz).astimezone(dt.timezone.utc).isoformat()
+    in_week = lambda day: tomorrow.isoformat() <= str(day)[:10] < (tomorrow + dt.timedelta(days=7)).isoformat()
     root = 'https://' + config['dashboard_host'] + config.get('dashboard_path', '/') if config.get('dashboard_host') else ''
     link = lambda text, card: f'[{recap_escape(text)}]({root}#card={card})' if root and card else recap_escape(text)
     names = {x['id']: x.get('display_name') or x.get('email') or x['id'] for x in config.get('accounts', [])}
@@ -9378,7 +9391,7 @@ def weekly_recap_message(store, config, current=None, usage=None):
         for card in open_cards.values():
             for e in json.loads(card['event_ids']):
                 on_event.setdefault(e, card)
-        meetings = recap_meetings(db, current.isoformat(), ahead, on_event)
+        meetings = recap_meetings(db, start_ahead, ahead, on_event)
         snoozed = [dict(r) for r in db.execute(
             "SELECT d.suggestion_id id,count(*) n,max(d.created_at) last FROM decisions d JOIN suggestions s ON s.id=d.suggestion_id WHERE d.choice='snooze' "
             "AND d.source IN ('telegram','dashboard') AND d.created_at>=? AND s.status IN ('snoozed','pending') GROUP BY d.suggestion_id HAVING n>=2 ORDER BY n DESC,last DESC",
@@ -9398,7 +9411,7 @@ def weekly_recap_message(store, config, current=None, usage=None):
     late_to = [p for p in promised if p['direction'] == 'theirs' and ((p['due'] and p['due'] < today.isoformat()) or (not p['due'] and p['check_at'] <= current.isoformat()))]
     soon = (today + dt.timedelta(days=14)).isoformat()  # their own: late ones and those due in the next two weeks
     mine = sorted((p for p in promised if p['direction'] == 'mine' and p['due'] and p['due'] <= soon), key=lambda p: p['due'])
-    needs = [f"• {recap_escape(p['who'])} owes you: {link(recap_clip(p['what']), card_of(p))}, "
+    needs = [f"• Waiting on {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
              + (f"due {recap_day(p['due'])}" if p['due'] else f"since {recap_day(p['made_at'])}") for p in late_to[:4]]
     needs += [f"• Promised {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
               + (f"was due {recap_day(p['due'])}" if p['due'] < today.isoformat() else f"due {recap_day(p['due'])}") for p in mine[:4]]
@@ -9414,10 +9427,11 @@ def weekly_recap_message(store, config, current=None, usage=None):
         week.append((m['at'], f"• {recap_day(m['at'], True)} {recap_escape(recap_clip(m['title'], 60))}, {m['guests']} {'person' if m['guests'] == 1 else 'people'}{prep}"))
     listed = {m['card']['id'] for m in meetings[:5] if m['card']}
     for card in open_cards.values():
-        if card['due'] and today.isoformat() <= card['due'][:10] < (today + dt.timedelta(days=7)).isoformat() and card['id'] not in listed:
+        if card['due'] and in_week(card['due']) and card['id'] not in listed:
             week.append((card['due'], f"• {recap_day(card['due'][:10])}: {link(recap_clip(card['title']), card['id'])} is due"))
     for p in promised:
-        if p['direction'] == 'theirs' and p['due'] and today.isoformat() <= p['due'] < (today + dt.timedelta(days=7)).isoformat():
+        same = lambda q: q['direction'] == 'mine' and q['who'] == p['who'] and q['what'].lower() == p['what'].lower()
+        if p['direction'] == 'theirs' and p['due'] and in_week(p['due']) and not any(map(same, mine)):  # today's are on time, late ones are under Needs you, a shared plan shows once
             week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {link(recap_clip(p['what']), card_of(p))}"))
     if week:
         when = lambda v: str(v) if len(str(v)) <= 10 else dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')).astimezone(tz).strftime('%Y-%m-%dT%H:%M')

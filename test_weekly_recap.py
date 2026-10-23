@@ -38,7 +38,8 @@ class WeeklyRecap(unittest.TestCase):
         self.store.exclusions = {}
         # A busy WhatsApp group that never led to a card, and a person's own chat that is never a filter candidate.
         self.store.commit_page('wa', {}, [{'account_id': 'wa', 'source_id': f'g{i}', 'kind': 'whatsapp.message', 'occurred_at': ago(5), 'title': 'x', 'body': 'y',
-                                           'metadata': {'chat_id': '123@g.us', 'chat_name': 'School parents'}, 'deleted': False} for i in range(30)]
+                                           'metadata': {'chat_id': '123@g.us', 'chat_name': 'School parents', 'sender_id': f'3247{i % 15}@s.whatsapp.net'},
+                                           'deleted': False} for i in range(30)]
                                + [{'account_id': 'wa', 'source_id': f'p{i}', 'kind': 'whatsapp.message', 'occurred_at': ago(5), 'title': 'x', 'body': 'y',
                                    'metadata': {'chat_id': '32470@s.whatsapp.net', 'chat_name': 'Ann'}, 'deleted': False} for i in range(30)])
         self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm1', 'kind': 'gmail.message', 'occurred_at': ago(30), 'title': 'Contract',
@@ -85,14 +86,20 @@ class WeeklyRecap(unittest.TestCase):
         self.promise('theirs', 'Kim', 'review the deck', made=ago(24 * 9), check_at=ago(24))  # undated, past its check: late too
         self.promise('mine', 'Alex', 'send the Q3 deck', due='2026-10-26')
         self.promise('theirs', 'Bo', 'call back', due='2026-10-27')  # not late: in the week ahead instead
+        self.promise('theirs', 'Alex', 'send the Q3 deck', due='2026-10-26')  # the same plan from both sides shows once, as the owner's
+        self.promise('theirs', 'Dee', 'sign the form', due='2026-10-23')  # due today: still on time, in neither
+        self.promise('theirs', 'Eli', 'pay the invoice', due='2026-10-31')  # Saturday after next: past the week ahead
         text = a.weekly_recap(self.store, self.config, dt.datetime.fromisoformat(FRIDAY))
         lines = text.split('\n')
         self.assertEqual(lines[0], '**Your week with The Machine** · 16–23 Oct')
         self.assertEqual(lines[2], '**Needs you**')
-        self.assertEqual(lines[3], f'• Sam Lee owes you: [send the signed contract](https://m.example/assistant/#card={card}), due Tue 20 Oct')
-        self.assertEqual(lines[4], '• Kim owes you: review the deck, since Wed 14 Oct')
+        self.assertEqual(lines[3], f'• Waiting on Sam Lee: [send the signed contract](https://m.example/assistant/#card={card}), due Tue 20 Oct')
+        self.assertEqual(lines[4], '• Waiting on Kim: review the deck, since Wed 14 Oct')
         self.assertEqual(lines[5], '• Promised Alex: send the Q3 deck, due Mon 26 Oct')
         self.assertIn("**Next week**\n• Tue 27 Oct: Bo said they'd call back", text)
+        self.assertNotIn('Dee', text)
+        self.assertNotIn('Eli', text)
+        self.assertEqual(text.count('send the Q3 deck'), 1)
         self.assertFalse([l for l in lines if l.lstrip('•0123456789. ').startswith('You ')])  # event lines never open with "You"
 
     def test_week_ahead_has_meetings_with_people_and_their_prep(self):
@@ -169,6 +176,18 @@ class WeeklyRecap(unittest.TestCase):
                              ['Filter: School parents (Phone WhatsApp)', 'Removed filter: School parents (Phone WhatsApp)'])
             db.execute('DELETE FROM recaps')
         self.assertNotIn('School parents', a.weekly_recap(self.store, self.config, dt.datetime.fromisoformat(FRIDAY)))  # kept: not asked again
+
+    def test_group_chats_of_friends_and_family_are_never_offered_as_noise(self):
+        def chat(chat_id, name, n, senders, mine=0):
+            return [{'account_id': 'wa', 'source_id': f'{chat_id}-{i}', 'kind': 'whatsapp.message', 'occurred_at': ago(5), 'title': 'x', 'body': 'y',
+                     'metadata': {'chat_id': chat_id, 'chat_name': name, **({'from_me': True} if i < mine else {'sender_id': f'{chat_id}-s{i % senders}'})},
+                     'deleted': False} for i in range(n)]
+        self.store.commit_page('wa', {}, chat('9@g.us', 'Weekend crew', 40, 12, mine=3)  # the owner writes in it: their own chat
+                               + chat('8@g.us', 'Cousins', 40, 5)  # a handful of people: a circle, even when the owner only reads
+                               + chat('7@g.us', 'Street announcements', 25, 20))  # many people, the owner never writes: a feed
+        text = a.weekly_recap(self.store, self.config, dt.datetime.fromisoformat(FRIDAY))
+        busy = text.split('**Busy without results**\n')[1].split('\nNothing changes')[0]
+        self.assertEqual(busy, '1. School parents (Phone WhatsApp): 30 this week, no cards\n2. Street announcements (Phone WhatsApp): 25 this week, no cards')
 
     def test_cards_snoozed_again_and_again_drop_do_it_now_or_keep(self):
         self.edits = []
