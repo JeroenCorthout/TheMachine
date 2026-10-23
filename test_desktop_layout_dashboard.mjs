@@ -139,8 +139,8 @@ try{
   const pane=()=>page.evaluate(()=>[...document.querySelectorAll('[data-graph-panel]')].find(p=>!p.hidden)?.dataset.graphPanel);
   await page.locator('.side-sub a[data-graph-sub="orgs"]').click();await page.locator('[data-graph-panel="orgs"]').waitFor();
   assert.equal(await pane(),'orgs');assert.equal(new URL(page.url()).hash,'#graph=orgs');assert.equal(await lit(),'orgs');assert.ok(await page.locator('#page-head').isVisible());
-  await page.locator('.side-sub a[data-graph-sub="projects"]').click();await page.waitForFunction(()=>location.hash==='#graph=projects');assert.equal(await pane(),'projects');assert.equal(await lit(),'projects');
-  await page.goBack();await page.waitForFunction(()=>location.hash==='#graph=orgs');await page.waitForTimeout(200);assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
+  await page.locator('.side-sub a[data-graph-sub="projects"]').click();await page.waitForFunction(()=>location.hash==='#graph=projects');await page.locator('[data-graph-panel="projects"]').waitFor();assert.equal(await pane(),'projects');assert.equal(await lit(),'projects');
+  await page.goBack();await page.waitForFunction(()=>location.hash==='#graph=orgs');await page.locator('[data-graph-panel="orgs"]').waitFor();assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
   await page.reload();await page.locator('[data-graph-panel="orgs"]').waitFor();await page.waitForTimeout(300);assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
   assert.equal(await page.locator('#people-view .sub-tabs').count(),0,'no pills: the rows are the panes');
   assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations');assert.equal(await page.locator('#page-head .page-sub').textContent(),'38 organisations');
