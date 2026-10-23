@@ -4091,7 +4091,8 @@ $('#board-form').addEventListener('input',e=>{const t=e.target;if(!ed)return;if(
  else if(t.name==='add'){const p=graphProjNames.find(x=>x.name.toLowerCase()===t.value.trim().toLowerCase());if(p&&!ed.projects.some(x=>x.id===p.id)){ed.projects.push({id:p.id,name:p.name});edDraw();edFocus('[name="add"]')}}});
 $('#board-form').addEventListener('change',e=>{if(e.target.name==='side'&&ed){ed.side=e.target.checked;edDraw();edFocus('[name="side"]')}});
 $('#board-form').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.name==='add'){e.preventDefault()}});
-$('#board-form').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||!ed)return;const st=ed.stages;
+const edSync=()=>{const f=$('#board-form');if(!ed)return;ed.name=f.elements.name?.value??ed.name;ed.about=f.elements.about?.value??ed.about;for(const i of f.querySelectorAll('[data-ed-stage]'))if(ed.stages[+i.dataset.edStage])ed.stages[+i.dataset.edStage].name=i.value};  /* what is typed counts, also when no input event came */
+$('#board-form').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||!ed)return;edSync();const st=ed.stages;
  if(b.hasAttribute('data-ed-close')){$('#board-dialog').close();return}
  if(b.dataset.edUp){const i=+b.dataset.edUp;[st[i-1],st[i]]=[st[i],st[i-1]];edDraw();edFocus(`[data-ed-up="${i-1}"]:not(:disabled),[data-ed-down="${i-1}"]`);return}
  if(b.dataset.edDown){const i=+b.dataset.edDown;[st[i+1],st[i]]=[st[i],st[i+1]];edDraw();edFocus(`[data-ed-down="${i+1}"]:not(:disabled),[data-ed-up="${i+1}"]`);return}
@@ -4100,7 +4101,7 @@ $('#board-form').addEventListener('click',async e=>{const b=e.target.closest('bu
  if(b.dataset.edDrop){ed.projects=ed.projects.filter(p=>p.id!==b.dataset.edDrop);edDraw();edFocus('[name="add"]');return}
  if(b.hasAttribute('data-ed-delete')){if(!ed.sure){ed.sure=true;edDraw();edFocus('[data-ed-delete]');return}
   try{const r=await graphPost('board_delete',{board_id:ed.id});$('#board-dialog').close();boardShown='';sideStore.set('board-shown','');toast(`Deleted ${r.deleted}. Its ${r.projects===1?'project stays':r.projects+' projects stay'}.`);await people('',true)}catch(err){toast(err.message,true)}}});
-$('#board-form').addEventListener('submit',async e=>{e.preventDefault();if(!ed)return;const err=$('#board-form [data-ed-error]'),say=t=>{err.textContent=t;err.hidden=false};
+$('#board-form').addEventListener('submit',async e=>{e.preventDefault();if(!ed)return;edSync();const err=$('#board-form [data-ed-error]'),say=t=>{err.textContent=t;err.hidden=false};
  const stages=ed.stages.map(x=>({...x,name:x.name.trim()})).filter(x=>x.name);if(!ed.name.trim())return say('Give the board a name.');if(!stages.length)return say('Add a stage.');
  if(new Set(stages.map(x=>x.name.toLowerCase())).size<stages.length)return say('Each stage needs its own name.');
  const btn=e.submitter||$('#board-form button.primary');btn.disabled=true;
