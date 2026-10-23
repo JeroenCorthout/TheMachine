@@ -62,6 +62,8 @@ try{
   }else{
    assert.ok(await page.locator('#send-files').isHidden());assert.match(head,/FilesNone/);assert.match(fine,/attaches no file, submits it/);
   }
+  // Confirm, Edit and Cancel read at the same size and weight.
+  assert.equal(new Set(await page.$$eval('#send-dialog .send-act button',bs=>bs.map(b=>getComputedStyle(b).fontSize+' '+getComputedStyle(b).fontWeight))).size,1);
   if(process.env.SHOTS)await page.screenshot({path:`${process.env.SHOTS}/finish-reply-${reply}.png`});
   await page.locator('#send-cancel').click();
  }
