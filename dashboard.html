@@ -537,6 +537,52 @@ span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:col
   .lane{display:none;padding:0;background:none}.lane.on{display:block}
   .lane-h{display:none}.lane-hint,.lane-sum{padding-left:0}
 }
+/* Boards the owner makes: a review's suggestion ("Start a board for Hiring?"), the board's ⋯ menu and the editor */
+.board-suggest{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin:0 0 18px;padding:14px 16px;border:1px solid var(--c-line);border-radius:var(--r-lg);background:var(--c-surface);box-shadow:var(--shadow-sm)}
+.board-suggest-text{flex:1 1 320px;min-width:0}
+.board-suggest-title{margin:0;font:var(--fw-heading) var(--fs-md)/1.3 var(--serif);color:var(--text)}
+.board-suggest-sub{margin:2px 0 0;color:var(--c-text-3);font-size:var(--fs-sm)}
+.stage-flow{display:flex;flex-wrap:wrap;gap:4px 0;margin:8px 0 0;padding:0;list-style:none;color:var(--c-text-2);font-size:var(--fs-sm)}
+.stage-flow li+li::before{content:"→";margin:0 6px;color:var(--c-text-3)}
+.board-suggest-actions{display:flex;gap:8px;flex-wrap:wrap}.board-suggest-actions button{margin:0;min-height:34px}
+.board-start{margin:0 0 14px}
+.board-name-row{display:flex;align-items:center;gap:4px;min-width:0}
+.board-menu{position:relative;flex:none}
+.board-menu>summary{list-style:none;display:grid;place-items:center;width:30px;height:28px;border-radius:var(--r-sm);color:var(--c-text-3);font-size:1rem;line-height:1;cursor:pointer;user-select:none}
+.board-menu>summary::-webkit-details-marker{display:none}
+.tile-menu>summary::before,.board-menu>summary::before{content:none}
+.board-menu>summary:hover,.board-menu[open]>summary{background:var(--c-hover);color:var(--text)}
+.board-menu .fact-menu-list{left:0;right:auto;min-width:170px}
+.tile-why.sorting{font-style:italic}
+#board-dialog{width:min(520px,calc(100vw - 24px));padding:18px 18px 16px}
+#board-dialog h2{margin:0;color:var(--text);font-size:1.2rem}
+#board-form{display:flex;flex-direction:column;gap:14px}
+#board-form .snooze-heading{margin:0}
+.ed-field{display:block;color:var(--c-text-2);font-size:var(--fs-sm)}#board-form textarea{min-height:4.8em;field-sizing:content;resize:vertical}
+.ed-field input,.ed-field textarea{display:block;width:100%;margin-top:6px}
+#board-form fieldset{margin:0;padding:0;border:0;min-width:0}
+#board-form legend{padding:0;margin-bottom:6px;color:var(--c-text-2);font-size:var(--fs-sm)}
+#board-form legend .count{margin-left:4px;color:var(--c-text-3)}
+.ed-stages ol,.ed-projects ul{margin:0 0 8px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.ed-stages li{display:flex;align-items:center;gap:4px}
+.ed-stages li input{flex:1;min-width:0;margin:0}
+#board-form button.icon{flex:none;width:34px;min-height:34px;margin:0;padding:0;border:0;background:none;box-shadow:none;color:var(--c-text-3);font-size:1rem;border-radius:var(--r-sm)}
+#board-form button.icon:hover:not(:disabled){background:var(--c-hover);color:var(--text)}
+#board-form button.icon:disabled{opacity:.3}
+.ed-check{display:flex;align-items:center;gap:8px;margin-top:4px;color:var(--c-text-2);font-size:var(--fs-sm)}.ed-check input{margin:0;width:auto}
+.ed-projects ul{max-height:200px;overflow:auto}
+.ed-projects li{display:flex;align-items:center;gap:6px;min-height:34px;padding:0 0 0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);font-size:var(--fs-sm)}
+.ed-projects li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed-projects li.muted{padding:6px 10px;border-style:dashed;color:var(--c-text-3)}
+.ed-projects input{display:block;width:100%;margin:0}
+.ed-note{margin:0;color:var(--c-text-3);font-size:var(--fs-xs)}.ed-note.warn{color:var(--c-orange)}
+.ed-actions{position:sticky;bottom:-16px;z-index:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 -18px -16px;padding:12px 18px 16px;border-top:1px solid var(--c-line);background:var(--surface)}.ed-actions .grow{flex:1}.ed-actions button{margin:0}
+.ed-actions button.danger{color:var(--orange)}
+@media(max-width:560px){
+  #board-dialog{width:100%;max-width:100%;max-height:92dvh;margin:auto 0 0;border-radius:16px 16px 0 0;padding:16px}
+  .board-suggest{padding:12px 14px}.board-suggest-actions{width:100%}.board-suggest-actions button{flex:1}
+  .ed-actions{margin:0 -16px -16px;padding:12px 16px 16px}.ed-actions .grow{display:none}.ed-actions button.primary{flex:1 1 100%;order:-1}
+}
 .graph-stage{margin:var(--sp-3) 0 0;padding:12px 14px;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--c-sunken)}
 .graph-stage p{margin:0}.graph-stage p+p{margin-top:4px}
 .graph-stage ol{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:4px}
@@ -966,6 +1012,7 @@ nav button.active .badge,[data-theme="light"] nav button.active .badge{backgroun
 .notice-card{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);color:var(--text);font-size:var(--fs-sm);line-height:1.45}
 .notice-card>span{flex:1 1 16em;min-width:0;overflow-wrap:anywhere}
 .notice-card .head-link{flex:0 0 auto;margin:0 0 0 auto;min-height:30px;padding:0 12px;font:inherit;font-size:.85rem;cursor:pointer}
+@media(max-width:560px){#needs-you li:has(>code){flex-direction:column;align-items:flex-start;gap:6px}#needs-you li>code{max-width:100%;overflow-x:auto}}  /* a command to run goes under its line on a phone */
 
 /* Counts: plain figures on one hairline row. */
 .stats,#suggestion-stats .stats,[data-theme="light"] #suggestion-stats .stats{box-shadow:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);backdrop-filter:none;-webkit-backdrop-filter:none}
@@ -1680,6 +1727,24 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 .row-menu button:hover{background:var(--c-hover)}
 @media(hover:hover) and (pointer:fine){.card h3 .title-link{cursor:text}}
 .chat-title{cursor:text}
+/* This device: the shared quiet notice card (.notice-card) at the top of Suggestions, to install the app or turn on notifications. */
+.device-nudge{gap:10px 14px;color:var(--muted)}
+.device-nudge[hidden],body.chat-open .device-nudge{display:none}
+.nudge-icon{flex:none;width:36px;height:36px;border-radius:9px}
+.nudge-text{flex:1 1 240px;min-width:0}.nudge-text>span{display:block}
+.nudge-text strong{display:block;margin-bottom:1px;color:var(--cream);font-size:var(--fs-md);font-weight:var(--fw-strong)}
+.nudge-steps{margin:2px 0 3px;padding-left:18px}.nudge-steps li{padding-left:2px}
+.ios-share{width:17px;height:17px;margin-left:2px;vertical-align:-3px;fill:none;stroke:var(--c-accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nudge-act{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto}
+.nudge-act button{min-height:0;margin:0;padding:6px 14px}
+/* Under the phone top bar: the same room above it as the first section heading gets (its margin collapses there). */
+@media(max-width:1023px){.device-nudge{margin-top:var(--sp-6)}}
+@media(max-width:560px){.device-nudge{align-items:flex-start;padding:12px}.nudge-text{flex-basis:calc(100% - 50px)}.nudge-act{width:100%;justify-content:flex-end}}
+.device-act{display:flex;align-items:center;gap:6px;flex:none}.device-act button,#device-push #push-test{min-height:0;margin:0;padding:6px 12px}
+#device-push #push-test{flex:none}
+.device-done{color:var(--c-accent);font-size:var(--fs-sm);font-weight:var(--fw-medium)}
+.settings-list small.device-blocked{color:var(--c-text-2)}
+.settings-list small .ios-share{width:15px;height:15px}
 </style>
 <div class="topbar" id="topbar"><button type="button" class="topbar-menu" id="drawer-open" aria-label="Open the menu" aria-controls="app-side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><span class="dot" id="drawer-dot" hidden></span></button><a class="topbar-title" href="#" id="topbar-title" aria-label="The Machine, to the top"><img src="brand/avatar.png" data-blink="brand/avatar-blink.png" alt="" width="22" height="22"><span>The Machine</span></a><button type="button" class="topbar-menu" id="find-open" aria-label="Find a card" title="Find a card" aria-controls="find-results" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg></button><form class="topbar-find" id="topbar-find" role="search" hidden><label class="find-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="find-q" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off" enterkeyhint="go"></label><button type="button" class="find-cancel" id="find-cancel">Cancel</button></form></div><div class="find-results" id="find-results" role="region" aria-label="Cards found" hidden></div><div class="drawer-scrim" id="drawer-scrim"></div>
 <aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" data-blink="brand/avatar-blink.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg class="ic-panel" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><svg class="ic-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="calendar"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></svg><span class="nl">Calendar</span> <span class="badge" id="badge-calendar"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><div class="side-row"><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button type="button" class="side-fold" id="graph-fold" aria-expanded="true" aria-controls="graph-sub" aria-label="Hide People, Organisations and Projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div><div class="side-sub" id="graph-sub" role="group" aria-label="Graph"><a href="#graph=people" data-graph-sub="people"><span class="sq sq-people"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.2"/><path d="M5.5 19.5c.8-3.4 3.4-5.2 6.5-5.2s5.7 1.8 6.5 5.2"/></svg></span><span class="nl">People</span><span class="badge" id="count-people"></span></a><a href="#graph=orgs" data-graph-sub="orgs"><span class="sq sq-orgs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V5.5h8V20M14 9.5h4V20M4 20h16M9 9h2M9 12.5h2M9 16h2"/></svg></span><span class="nl">Organisations</span><span class="badge" id="count-orgs"></span></a><a href="#graph=projects" data-graph-sub="projects"><span class="sq sq-projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5V18a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 18V9.5A1.5 1.5 0 0 0 18.5 8H12l-2-2.5H5.5A1.5 1.5 0 0 0 4 7z"/></svg></span><span class="nl">Projects</span><span class="badge" id="count-projects"></span></a><a href="#graph=roles" data-graph-sub="roles" hidden><span class="sq sq-roles"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="6" width="15" height="12" rx="2"/><circle cx="9.5" cy="11" r="1.8"/><path d="M7 15.2c.6-1.2 1.5-1.8 2.5-1.8s1.9.6 2.5 1.8M14.5 10h2.5M14.5 13h2.5"/></svg></span><span class="nl">Who’s who</span><span class="badge" id="count-roles"></span></a></div><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20.5V16.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M12 13.2l-2.4-2.3a1.5 1.5 0 0 1 2.1-2.1l.3.3.3-.3a1.5 1.5 0 0 1 2.1 2.1z"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -1694,6 +1759,7 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 <dialog id="snooze-dialog" aria-labelledby="snooze-title"><form method="dialog"><div class="snooze-heading"><h2 id="snooze-title">Remind me later</h2><button aria-label="Close picker">×</button></div><div id="snooze-quick"><div class="snooze-presets"><button type="button" data-snooze="2h">2 hours</button><button type="button" data-snooze="tomorrow">Tomorrow · 9:00</button><button type="button" data-snooze="3d">3 days · 9:00</button><button type="button" data-snooze="1w">1 week · 9:00</button></div><button type="button" id="snooze-custom">Choose date</button></div><div id="snooze-calendar" hidden><div class="month-nav"><button type="button" id="month-prev" aria-label="Previous month">‹</button><strong id="snooze-month" aria-live="polite"></strong><button type="button" id="month-next" aria-label="Next month">›</button></div><div class="month-grid" id="snooze-days" aria-label="Choose a day"></div><div class="snooze-time-row"><label for="snooze-time">Time</label><input id="snooze-time" type="time" required></div><small id="snooze-zone"></small><div class="snooze-footer"><button id="snooze-back" type="button">Back</button><button id="snooze-save" type="button" class="primary">Save time</button></div></div><p id="snooze-error" class="error" role="alert"></p></form></dialog>
 <dialog id="skill-look" aria-labelledby="skill-look-title"><form method="dialog"><div class="snooze-heading"><h2 id="skill-look-title"></h2><button aria-label="Close">×</button></div></form><p id="skill-look-from" class="fine"></p><ul id="skill-look-notes" class="skill-notes"></ul><pre id="skill-look-body" class="skill-body"></pre><p id="skill-look-error" role="status"></p><div class="actions" id="skill-look-actions"></div></dialog>
  <dialog id="peek-dialog" aria-labelledby="peek-title"><form method="dialog"><div class="snooze-heading"><h2 id="peek-title">The browser, live</h2><button aria-label="Close">×</button></div></form><img id="peek-image" alt="What The Machine’s browser shows now"></dialog>
+<dialog id="board-dialog" aria-labelledby="board-dialog-title"><form id="board-form" novalidate></form></dialog>
 <dialog id="game-dialog" aria-labelledby="game-title"><form method="dialog"><div class="snooze-heading"><h2 id="game-title">Catch the Zzz</h2><button aria-label="Close game">×</button></div></form><p class="game-score"><b id="game-score">0</b> caught · <b id="game-time">20</b>s left · best <b id="game-best">0</b></p><div id="game-field" class="game-field"><img id="game-bot" src="brand/sleepy.webp" alt=""></div><div class="game-foot"><p id="game-msg"></p><button id="game-start" type="button">Start</button></div></dialog><dialog id="email-dialog" aria-labelledby="email-title"><form method="dialog"><div class="snooze-heading"><h2 id="email-title">Email</h2><button aria-label="Close email">×</button></div></form><div id="email-content"></div></dialog><dialog id="result-dialog" aria-labelledby="result-title"><form method="dialog"><div class="snooze-heading"><h2 id="result-title">Result</h2><button aria-label="Close result">×</button></div></form><div id="result-files"></div><div id="result-content"></div><div class="actions"><button id="result-copy" class="primary">Copy draft</button></div></dialog><dialog id="signin-dialog" aria-labelledby="signin-title"><form method="dialog"><div class="snooze-heading"><h2 id="signin-title">Sign in</h2><button aria-label="Close sign-in">×</button></div></form><form id="signin-form" autocomplete="off"><label id="signin-pick" hidden>Page<select id="signin-page"></select></label><p id="signin-saved" hidden><button type="button" id="signin-use-saved" class="primary"></button></p><label id="signin-user-row">Username or email<input id="signin-user" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1000"></label><label id="signin-pass-row">Password<input id="signin-pass" type="password" autocomplete="new-password" maxlength="1000"></label><div id="signin-code-row"><p id="signin-code-help" class="signin-help" hidden></p><p id="signin-code-ask" class="signin-ask" hidden></p><label><span id="signin-code-label">One-time code</span><input id="signin-code" inputmode="numeric" autocomplete="one-time-code" maxlength="100"></label><div id="signin-others" class="signin-others" hidden></div></div><label id="signin-save-row" class="signin-check"><input type="checkbox" id="signin-save"> Save for next time</label><p id="signin-status" class="signin-status" role="status" hidden><span class="spin" aria-hidden="true"></span><span id="signin-status-text"></span></p><div id="signin-view" class="signin-view" hidden><iframe id="signin-frame" title="The browser"></iframe></div><p id="signin-error" role="alert"></p><div class="actions"><button id="signin-go" class="primary">Sign in</button><button type="button" id="signin-browser" class="ghost">Open the browser</button><button type="button" id="signin-retry" class="ghost" hidden>Try again</button><button type="button" id="signin-continue" class="ghost" hidden>Continue</button></div><p class="fine" id="signin-fine">This goes straight into the page in your server’s browser. The assistant never sees it. For anything else, open the browser.</p></form></dialog>
 <script>
 let snoozeId=null,snoozeDay=null,snoozeMonth=null,lastOk=0,refreshFailed=false;
@@ -2809,21 +2875,110 @@ await request('api/action',{method:'POST',headers:{'Content-Type':'application/j
 $('#send-dialog').close();toast(sendDraft.kind==='merge'?'Testing and merging the fix…':sendDraft.kind==='finish'?'On it. I’ll report back.':'Sending your approved draft…');await refresh();
 }catch(e){$('#send-error').textContent=e.message;b.disabled=false}};
 function openSnoozeLink(){const link=/^#snooze(-custom)?=([a-f0-9]{16})$/.exec(location.hash);if(link&&state.suggestions){if(state.suggestions.some(s=>s.id===link[2]&&!closed(s))){if($('#snooze-dialog').open)$('#snooze-dialog').close();openSnooze(link[2],!!link[1])}history.replaceState(null,'',location.pathname)}}
-// Phone notifications (installed app). The service sends a push for each card, also when Telegram is off.
+// This device: the app installed and notifications on. A quiet nudge at the top of Suggestions (one at a time, install
+// first) and the controls in Settings, General, This device. Every browser prompt comes from the owner's own tap, and a
+// page in a frame (the site's demo) or without a service worker never shows a nudge.
 const pushOK='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
 // iPhone/iPad: Web Push exists only in the Home Screen app (iOS 16.4+), never in a Safari tab.
 const iosTab=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-const iosHint='On iPhone (iOS 16.4 or newer): tap Share, then Add to Home Screen. Open The Machine from there and tap the bell in Settings.';
+const iosHint='On iPhone and iPad: tap Share, then Add to Home Screen. Open The Machine from there to turn on notifications.';
 const keyBytes=k=>Uint8Array.from(atob(k.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-k.length%4)%4)),c=>c.charCodeAt(0));
 const pushPost=(action,sub)=>{const j=sub.toJSON();return request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args:{endpoint:j.endpoint,keys:j.keys}})})};
-async function showPush(sync=false){const b=$('#push-toggle');if(!pushOK){b.hidden=!(iosTab&&!navigator.standalone);b.title=iosHint;return}b.hidden=false;try{const reg=await navigator.serviceWorker.register('sw.js');const sub=await reg.pushManager.getSubscription();const on=!!sub&&Notification.permission==='granted';
-if(on&&sync)await pushPost('push_subscribe',sub);b.setAttribute('aria-pressed',String(on));b.title=on?'Phone notifications on':'Turn on phone notifications'}catch{}}
-$('#push-toggle').onclick=async()=>{const b=$('#push-toggle');if(!pushOK){toast(iosHint);return}b.disabled=true;try{const reg=await navigator.serviceWorker.register('sw.js');let sub=await reg.pushManager.getSubscription();
-if(sub&&b.getAttribute('aria-pressed')==='true'){await pushPost('push_unsubscribe',sub);await sub.unsubscribe();toast('Notifications off')}
-else{if(await Notification.requestPermission()!=='granted')throw Error('Notifications are blocked: allow them for The Machine in your phone\'s settings (Notifications), then tap the bell again');
-const {key}=await request('api/push-key');sub=sub||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(key)});await pushPost('push_subscribe',sub);toast('Notifications on')}}
-catch(e){toast(e.message,true)}finally{b.disabled=false;showPush()}};
-showPush(true);
+const devStore={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch{}}};
+const DEV=(()=>{const ua=navigator.userAgent;let framed=true;try{framed=window.top!==window}catch{}
+ return {ios:iosTab,android:/Android/.test(ua),mobile:iosTab||/Android|Mobi/.test(ua),framed,chromium:'onbeforeinstallprompt' in window,
+  macSafari:!iosTab&&/Macintosh/.test(ua)&&/Version\/(1[7-9]|[2-9]\d)\b.*Safari/.test(ua)&&!/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS|OPR/.test(ua)}})();
+const nudgeable=!DEV.framed&&'serviceWorker' in navigator;
+const inApp=()=>['standalone','fullscreen','window-controls-overlay'].some(m=>matchMedia(`(display-mode: ${m})`).matches)||navigator.standalone===true;
+let installEvt=null,relatedInstalled=false,justInstalled=false;
+const appInstalled=()=>inApp()||relatedInstalled||devStore.get('app-installed')==='1';
+// What installing looks like here: the browser's own prompt (Chromium), steps (iPhone, Safari on a Mac), or nothing (Firefox).
+function installKind(){if(!nudgeable)return null;if(installEvt)return DEV.mobile?'android':'desktop';if(appInstalled())return null;return DEV.ios?'ios':DEV.macSafari?'mac':null}
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;deviceRender()});
+// Installed (from the nudge, Settings or the browser's own menu): a small Installed in the card's place, or a toast.
+let installedNoted=false;
+function noteInstalled(){installEvt=null;devStore.set('app-installed','1');if(installedNoted)return deviceRender();installedNoted=true;
+ if(['desktop','android'].includes(nudgeBox.dataset.kind)){justInstalled=true;setTimeout(()=>{justInstalled=false;deviceRender()},8000)}else toast('Installed. The Machine is in your apps now.');deviceRender()}
+addEventListener('appinstalled',noteInstalled);
+if(nudgeable&&navigator.getInstalledRelatedApps)navigator.getInstalledRelatedApps().then(a=>{relatedInstalled=a.length>0;deviceRender()}).catch(()=>{});
+async function appInstall(){const e=installEvt;if(!e){toast(DEV.ios?iosHint:'Find Install in the browser’s menu.');return}
+ e.prompt();let outcome='dismissed';try{({outcome}=await e.userChoice)}catch{}if(outcome==='accepted')noteInstalled();else{installEvt=null;deviceRender()}return outcome==='accepted'}
+// Notifications: the browser's permission and this device's subscription. Off in Settings stays off: no nudge after it.
+const devicePush={perm:pushOK?Notification.permission:'unsupported',sub:null,checked:false};
+const pushOn=()=>devicePush.perm==='granted'&&!!devicePush.sub;
+const pushWanted=()=>pushOK&&devicePush.checked&&devStore.get('push-off')!=='1'&&(devicePush.perm==='default'||(devicePush.perm==='granted'&&!devicePush.sub));
+async function pushCheck(sync=false){if(!pushOK)return deviceRender();try{const reg=await navigator.serviceWorker.register('sw.js');devicePush.sub=await reg.pushManager.getSubscription();devicePush.perm=Notification.permission;
+ if(pushOn()&&sync)await pushPost('push_subscribe',devicePush.sub)}catch{}devicePush.checked=true;deviceRender()}
+const blockedHint=()=>DEV.ios?'In the Settings app: Notifications, The Machine.':DEV.macSafari?'In Safari: Settings, Websites, Notifications.':DEV.mobile?'Tap the icon left of the address, then Permissions, Notifications.':'Click the icon left of the address, then allow Notifications.';
+async function pushEnable(){if(!pushOK){toast(DEV.ios?iosHint:'This browser can’t show notifications.',true);return false}
+ // The permission prompt first, while the tap still counts (Safari asks for that).
+ const perm=await Notification.requestPermission();devicePush.perm=perm;
+ if(perm!=='granted'){deviceRender();toast(perm==='denied'?'Notifications are blocked. '+blockedHint():'Notifications stay off for now.',perm==='denied');return false}
+ try{const reg=await navigator.serviceWorker.register('sw.js');let sub=await reg.pushManager.getSubscription();
+  if(!sub){const {key}=await request('api/push-key');sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(key)})}
+  await pushPost('push_subscribe',sub);devicePush.sub=sub;devStore.set('push-off',null)}catch(e){toast(e.message,true);return false}finally{deviceRender()}
+ await pushTest('Notifications on. A test is on its way.');return true}
+async function pushDisable(){try{const reg=await navigator.serviceWorker.register('sw.js'),sub=await reg.pushManager.getSubscription();if(sub){await pushPost('push_unsubscribe',sub);await sub.unsubscribe()}
+ devicePush.sub=null;devStore.set('push-off','1');toast('Notifications off')}catch(e){toast(e.message,true)}finally{deviceRender()}}
+async function pushTest(done='Test sent. It shows up in a moment.'){if(!pushOn()){toast('Turn on notifications first.',true);return false}
+ try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'push_test',args:{endpoint:devicePush.sub.toJSON().endpoint}})});toast(done);return true}
+ catch(e){toast(e.message,true);return false}}
+// The device actions in one place, for a command palette or anything else that lists actions.
+const DEVICE_ACTIONS=window.deviceActions=[
+ {id:'install-app',label:'Install app',available:()=>!!installEvt||(!appInstalled()&&(DEV.ios||DEV.macSafari)),run:appInstall},
+ {id:'push-on',label:'Turn on notifications',available:()=>pushOK&&!pushOn()&&devicePush.perm!=='denied',run:pushEnable},
+ {id:'push-test',label:'Send test notification',available:pushOn,run:()=>pushTest()}];
+const deviceRun=id=>DEVICE_ACTIONS.find(a=>a.id===id)?.run();
+// Calm: nothing in the first minute of a session or while setting up; Not now waits 14 days, a second Not now stops it on
+// this device, and after any Not now the next nudge waits a day.
+const NUDGE_WAIT=14*864e5,NUDGE_REST=864e5;
+const sessionStart=(()=>{const now=Date.now();try{const s=+sessionStorage.getItem('device-session');if(s&&s<=now)return s;sessionStorage.setItem('device-session',String(now))}catch{}return now})();
+const nudgeState=k=>{try{return JSON.parse(devStore.get('nudge-'+k))||{}}catch{return {}}};
+const nudgeQuiet=k=>{const v=nudgeState(k);return !!v.stop||(v.until||0)>Date.now()};
+function nudgeLater(k){const v=nudgeState(k),n=(v.n||0)+1;devStore.set('nudge-'+k,JSON.stringify(n>=2?{n,stop:true}:{n,until:Date.now()+NUDGE_WAIT}));devStore.set('nudge-rest',String(Date.now()+NUDGE_REST));deviceRender()}
+const settingUp=()=>!state?.suggestions||!(state.connectors||[]).length||!!firstLookInfo(state.review_live||{});
+function nudgeKind(){if(!nudgeable)return null;if(justInstalled)return 'installed';
+ if(Date.now()-sessionStart<6e4||settingUp()||+devStore.get('nudge-rest')>Date.now())return null;
+ const k=installKind();if(k&&!nudgeQuiet('install'))return k;
+ return pushWanted()&&!nudgeQuiet('push')?'push':null}
+const NUDGE_ICON='<img class="nudge-icon" src="brand/app-icon-192.png" alt="" width="36" height="36">';
+const SHARE_ICON='<svg class="ios-share" viewBox="0 0 24 24" role="img" aria-label="Share"><path d="M12 14V3.5M8.2 7.2 12 3.4l3.8 3.8"/><path d="M8.5 10H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1.5"/></svg>';
+function nudgeHTML(k){const later='<button type="button" class="ghost" data-nudge-later>Not now</button>',text=(t,s)=>`${NUDGE_ICON}<div class="nudge-text"><strong>${t}</strong>${s}</div>`;
+ if(k==='installed')return text('Installed','<span>The Machine is in your apps now.</span>');
+ if(k==='desktop'||k==='android')return text('Install The Machine',k==='desktop'?'<span>Install it and pin it to your taskbar or dock.</span>':'<span>Add it to your home screen. It opens like an app.</span>')+`<div class="nudge-act"><button type="button" class="primary" data-device="install-app">Install</button>${later}</div>`;
+ if(k==='ios')return text('Add The Machine to your Home Screen',`<ol class="nudge-steps"><li>Tap Share ${SHARE_ICON}</li><li>Tap Add to Home Screen</li></ol><span>Notifications on iPhone and iPad work only from there.</span>`)+`<div class="nudge-act">${later}</div>`;
+ if(k==='mac')return text('Add The Machine to your Dock','<span>In Safari’s menu bar: File, then Add to Dock.</span>')+`<div class="nudge-act">${later}</div>`;
+ return text('Turn on notifications','<span>A ping when a card needs you, on this device only.</span>')+`<div class="nudge-act"><button type="button" class="primary" data-device="push-on">Turn on</button>${later}</div>`}
+const nudgeBox=(()=>{const el=document.createElement('div');el.id='device-nudge';el.className='notice-card device-nudge';el.setAttribute('role','region');el.setAttribute('aria-label','This device');el.hidden=true;el.dataset.kind='';
+ $('#inbox').prepend(el);el.onclick=async e=>{const b=e.target.closest('button');if(!b)return;const k=el.dataset.kind;
+  if(b.matches('[data-nudge-later]')){nudgeLater(k==='push'?'push':'install');return}
+  // A closed prompt counts as Not now, so it doesn't come straight back.
+  b.disabled=true;try{const ok=await deviceRun(b.dataset.device);if(!ok&&(k==='push'?devicePush.perm==='default':true))nudgeLater(k==='push'?'push':'install')}finally{b.disabled=false;deviceRender()}};return el})();
+// Settings, General, This device: App, Notifications (with Send a test), Light mode.
+const deviceRows=(()=>{const theme=$('#theme-toggle').closest('.settings-list>div'),list=theme.parentElement,pushRow=$('#push-toggle').closest('.settings-list>div');
+ const app=document.createElement('div');app.id='device-app';app.innerHTML='<span class="grow"><strong>App</strong><small></small></span><span class="device-act"></span>';
+ pushRow.id='device-push';pushRow.querySelector('strong').textContent='Notifications';
+ const test=document.createElement('button');test.type='button';test.className='ghost';test.id='push-test';test.textContent='Send a test';test.hidden=true;$('#push-toggle').before(test);
+ test.onclick=async()=>{test.disabled=true;try{await pushTest()}finally{test.disabled=false}};
+ list.prepend(app);list.insertBefore(pushRow,theme);return {app,push:pushRow}})();
+// The help article for both rows (docs/help/phone-app.md on themachine.computer/help).
+const DEVICE_HELP=' <a class="learn" href="https://themachine.computer/help/phone-app" target="_blank" rel="noopener">Learn more</a>';
+function deviceSettings(){const {app}=deviceRows,small=app.querySelector('small'),act=app.querySelector('.device-act'),set=(el,html)=>{if(el.dataset.html!==html){el.innerHTML=html;el.dataset.html=html}};
+ app.hidden=!nudgeable;
+ if(installEvt){set(small,(DEV.mobile?'Opens like an app, from your home screen.':'Pin it to your taskbar or dock.')+DEVICE_HELP);set(act,'<button type="button" data-device="install-app">Install app</button>')}
+ else if(appInstalled()){set(small,'Installed on this device.'+DEVICE_HELP);set(act,'<span class="device-done">Installed</span>')}
+ else{set(small,(DEV.ios?`Tap Share ${SHARE_ICON}, then Add to Home Screen.`:DEV.macSafari?'In Safari’s menu bar: File, then Add to Dock.':DEV.chromium?'Find Install in the browser’s menu, or the icon in the address bar.':'This browser can’t install apps. Chrome, Edge and Safari can.')+DEVICE_HELP);set(act,'')}
+ const b=$('#push-toggle'),note=deviceRows.push.querySelector('small'),on=pushOn(),blocked=pushOK&&devicePush.perm==='denied';
+ b.hidden=!(pushOK?!blocked:iosTab&&!navigator.standalone);b.title=!pushOK?iosHint:on?'Notifications on':'Turn on notifications';b.setAttribute('aria-pressed',String(on));
+ $('#push-test').hidden=!on;
+ const text=!pushOK?(iosTab?'On iPhone and iPad, add it to your Home Screen first: Share, then Add to Home Screen.':'This browser can’t show notifications.'):blocked?'Blocked in this browser. '+blockedHint():on?'On for this device. One per card, even without Telegram.':'One per card, even without Telegram.';
+ set(note,esc(text)+DEVICE_HELP);note.classList.toggle('device-blocked',blocked)}
+function deviceRender(){const k=nudgeKind()||'',el=nudgeBox;if(el.dataset.kind!==k){el.dataset.kind=k;el.innerHTML=k?nudgeHTML(k):'';el.hidden=!k}deviceSettings()}
+deviceRows.app.onclick=e=>{const b=e.target.closest('[data-device]');if(b)deviceRun(b.dataset.device)};
+$('#push-toggle').onclick=async()=>{const b=$('#push-toggle');if(!pushOK){toast(iosHint);return}b.disabled=true;try{if(pushOn())await pushDisable();else await pushEnable()}finally{b.disabled=false}};
+setTimeout(deviceRender,Math.max(0,sessionStart+6e4-Date.now())+50);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pushCheck()});
+pushCheck(true);
 if(pushOK)navigator.serviceWorker.addEventListener('message',e=>{if(e.data?.open)location.href=e.data.open});
 function openCardLink(){
 const m=/^#card=([a-f0-9]{16})$/.exec(location.hash);if(!m||!state.suggestions)return;
@@ -3178,7 +3333,7 @@ function wakeSnoozed(st){const now=Date.now();let next=Infinity;for(const s of s
   if(at<=now)Object.assign(s,{status:['pending','accepted','prepared','instructions'].includes(s.resume_status)?s.resume_status:'pending',snoozed_until:null,resume_status:null});else next=Math.min(next,at)}
  clearTimeout(wakeTimer);if(next<Infinity&&next-now<864e5)wakeTimer=setTimeout(()=>refresh(),next-now+3000);return st}
 let sendTimer=null;const sendWatch=()=>{clearTimeout(sendTimer);if((state.suggestions||[]).some(s=>chatSends(s).some(x=>['queued','sending'].includes(x.st.status))))sendTimer=setTimeout(()=>{refreshWhenReady();if(chatId)chatPoll()},2000)};
-async function refresh(){refreshes++;try{state=wakeSnoozed(await request('api/status'));browserPill(state);if(state.source_url)$('#source-code').href=state.source_url;if(uiVersionCheck())return;render();sendWatch();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);try{if(!$('#calendar').hidden)calendarView();else calBadge()}catch(e){console.error(e)}if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=e.retryAfter||Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=e.restarting?'Restarting · retrying':lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
+async function refresh(){refreshes++;try{state=wakeSnoozed(await request('api/status'));browserPill(state);if(state.source_url)$('#source-code').href=state.source_url;if(uiVersionCheck())return;render();deviceRender();sendWatch();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);try{if(!$('#calendar').hidden)calendarView();else calBadge()}catch(e){console.error(e)}if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=e.retryAfter||Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=e.restarting?'Restarting · retrying':lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
 $('nav').onclick=e=>{const t=e.target.closest('button');if(!t?.dataset.tab)return;for(const b of document.querySelectorAll('nav button[data-tab]')){b.classList.toggle('active',b===t);b.setAttribute('aria-current',b===t?'page':'false')}for(const s of document.querySelectorAll('main>section'))s.hidden=s.id!==t.dataset.tab;if(t.dataset.tab==='people')people(graphNode,!!$('#people-view').innerHTML);if(t.dataset.tab==='health')savedLogins();if(t.dataset.tab==='fleet')fleetShown=fleetView(true);requestAnimationFrame(()=>document.querySelectorAll('.fleet-tabs,.sub-tabs').forEach(tabsShow))};
 // The desktop sidebar (from 1024px): the cards as a quiet list under the tabs, by section, each section folds (Done
 // starts folded) and the fold is remembered; a filter on the titles; the whole sidebar folds to icons.
@@ -4020,7 +4175,7 @@ let graphBoards=[],boardShown=sideStore.get('board-shown')||'',boardStage={},boa
 const projView=()=>graphBoards.length?(sideStore.get('projects-view')==='list'?'list':'board'):'list';
 const shortDay=v=>{if(!v)return '';const d=new Date(String(v).length<=10?v+'T12:00':v),p=k=>d.toLocaleDateString('en-US',{[k]:k==='day'?'numeric':'short'});return `${p('weekday')} ${p('day')} ${p('month')}`};  /* Fri 23 Oct */
 const boardNow=()=>graphBoards.find(b=>b.name===boardShown)||graphBoards[0];
-const tileWhy=(p,side)=>{const when=p.at?(p.event_id?`<button type="button" class="link" data-quote-event="${p.event_id}" title="Read the message">${esc(shortDay(p.at))}</button>`:esc(shortDay(p.at))):'';
+const tileWhy=(p,side)=>{if(p.sorting)return '<p class="tile-why sorting">Sorting from your messages</p>';const when=p.at?(p.event_id?`<button type="button" class="link" data-quote-event="${p.event_id}" title="Read the message">${esc(shortDay(p.at))}</button>`:esc(shortDay(p.at))):'';
  const what=p.by==='owner'?`Moved to ${esc(p.stage)} by hand`:p.reason?`${p.first?'Added':'Moved to '+esc(p.stage)}: ${esc(p.reason)}`:'';
  return what||when?`<p class="tile-why">${what}${what&&when?' · ':''}${when}</p>`:''};
 const stuckDays=p=>p.stage!==boardSide()&&(p.no_reply_days||0)>=10?p.no_reply_days:0;
@@ -4038,12 +4193,13 @@ const lane=(b,s,items,on)=>{const key=b.name+'|'+s.name,all=boardOpen.has(key)||
 function boardView(){const b=boardNow();if(!b)return '<div class="empty all-clear"><div><strong>No boards yet.</strong>Projects of one kind show here in stages, as your messages move them.</div></div>';
  const by=s=>b.projects.filter(p=>p.stage===s.name),main=b.stages.filter(s=>!s.side),firstFull=b.stages.find(s=>by(s).length)?.name||b.stages[0].name;
  const on=b.stages.some(s=>s.name===boardStage[b.name])?boardStage[b.name]:firstFull;
- return `<div class="board-head"><div>${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title">${esc(b.name)}</h3><p class="board-sub">${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''} · moves come from ${b.team?'the team\'s':'your'} messages</p></div>`
+ return `<div class="board-head"><div><div class="board-name-row">${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title">${esc(b.name)}</h3>${b.team?'':`<details class="board-menu"><summary aria-label="Board options" title="Board options">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-board-edit="${b.id}">Edit board</button><button type="button" role="menuitem" data-board-new>New board</button></div></details>`}</div><p class="board-sub">${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''} · moves come from ${b.team?'the team\'s':'your'} messages</p></div>`
   +(graphBoards.length>1?`<div class="board-chips" role="group" aria-label="Boards">${graphBoards.map(x=>`<button type="button" data-board="${esc(x.name)}" aria-pressed="${x.name===b.name}">${esc(x.name)}</button>`).join('')}</div>`:'')+'</div>'
   +`<div class="sub-tabs stage-tabs" role="tablist" aria-label="Stages">${b.stages.map(s=>`<button type="button" role="tab" data-stage-tab="${esc(s.name)}" aria-selected="${s.name===on}"><span class="ell">${esc(s.side?'Stalled':s.name)}</span> <span class="badge">${by(s).length}</span></button>`).join('')}</div>`
   +`<div class="pboard-wrap"><div class="pboard" style="--lanes:${main.length}">${b.stages.map(s=>lane(b,s,by(s),s.name===on)).join('')}</div></div>`}
-const projectsPane=g=>{graphBoards=g.boards||[];const v=projView();if(!graphBoards.length)return graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects);
- return `<div class="proj-list"${v==='list'?'':' hidden'}>${graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)}</div><div class="proj-board"${v==='board'?'':' hidden'}>${boardView()}</div>`};
+const projectsPane=g=>{graphBoards=g.boards||[];graphSuggest=g.board_suggestions||[];graphProjNames=g.project_names||[];const v=projView();
+ if(!graphBoards.length){const list=graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects);return list||graphSuggest.length?suggestBox()+(graphSuggest.length?'':'<p class="board-start"><button type="button" class="ghost" data-board-new>Start a board</button></p>')+list:''}  /* no projects yet: no Projects pane */
+ return suggestBox()+`<div class="proj-list"${v==='list'?'':' hidden'}>${graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)}</div><div class="proj-board"${v==='board'?'':' hidden'}>${boardView()}</div>`};
 function boardRedraw(){const el=$('#people-view .proj-board');if(el){const x=el.querySelector('.pboard')?.scrollLeft||0;el.innerHTML=boardView();const nb=el.querySelector('.pboard');if(nb)nb.scrollLeft=x}}
 function projectsViewSet(v){sideStore.set('projects-view',v);const view=$('#people-view');view.querySelector('.proj-list')?.toggleAttribute('hidden',v!=='list');view.querySelector('.proj-board')?.toggleAttribute('hidden',v!=='board');pageHead()}
 async function boardMove(node,stage){const b=boardNow(),p=b?.projects.find(x=>x.id===node);if(!p||p.stage===stage)return;const was=p.stage;
@@ -4058,7 +4214,64 @@ $('#people-view').addEventListener('click',e=>{if(!e.target.closest('.proj-board
  if(e.target.closest('.tile-menu,.tile a[href]'))e.stopPropagation()},true);
 $('#people-view').addEventListener('change',e=>{if(!e.target.matches?.('.board-pick'))return;boardShown=e.target.value;sideStore.set('board-shown',boardShown);boardRedraw()});
 $('#people-view').addEventListener('keydown',e=>{const t=e.target.closest?.('.tile');if(t&&e.target===t&&(e.key==='Enter'||e.key===' ')){e.preventDefault();graphOpen(t.dataset.node)}});
-document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.tile-menu[open]'))if(!m.contains(e.target))m.open=false});
+// Boards the owner makes. A review suggests one for a group of projects of one kind ("Start a board for Hiring?"): Save,
+// Edit or Not now; nothing is a board until it's saved. The same editor makes a new board and edits one from its ⋯
+// menu: the name, the stages (rename, reorder, add, remove), the Stalled row, which projects belong and the projects
+// on it. After a save, reviews place its projects by their messages. Deleting a board keeps its projects.
+let graphSuggest=[],graphProjNames=[],ed=null;
+const suggestBox=()=>{const s=graphSuggest[0];if(!s)return '';
+ return `<article class="board-suggest" data-suggest="${s.id}"><div class="board-suggest-text"><p class="board-suggest-title">Start a board for ${esc(s.name)}?</p><p class="board-suggest-sub">${s.projects.length} projects${s.reason?' · '+esc(s.reason):''}</p><ol class="stage-flow" aria-label="Stages">${s.stages.map(x=>`<li>${esc(x.name)}</li>`).join('')}</ol></div>`
+  +`<div class="board-suggest-actions"><button type="button" class="primary" data-suggest-save>Save</button><button type="button" class="ghost" data-suggest-edit>Edit</button><button type="button" class="ghost" data-suggest-dismiss>Not now</button></div></article>`};
+const boardSavedToast=(r,name)=>{const moved=(r.moved||[]).map(m=>m.to?`${m.count} from ${m.from} moved to ${m.to}.`:`${m.count} stalled left the board.`).join(' ');
+ toast(`Saved ${name}.${r.added?' Sorting its projects from your messages.':''}${moved?' '+moved:''}`)};
+async function boardSave(args){const r=await graphPost('board_save',args);boardShown=r.name;sideStore.set('board-shown',boardShown);sideStore.set('projects-view','board');boardSavedToast(r,r.name);await people('',true);return r}
+function edOpen(from){const b=from?.board,s=from?.suggestion;
+ ed=b?{id:b.id,name:b.name,stages:b.stages.filter(x=>!x.side).map(x=>({name:x.name,was:x.name,...(x.hint?{hint:x.hint}:{})})),side:b.side!==false,about:b.about||'',projects:b.projects.map(p=>({id:p.id,name:p.name})),counts:Object.fromEntries(b.stages.map(x=>[x.name,b.projects.filter(p=>p.stage===x.name).length]))}
+  :s?{suggestion:s.id,name:s.name,stages:s.stages.map(x=>({...x})),side:true,about:s.about||'',projects:s.projects.map(p=>({...p})),counts:{}}
+  :{name:'',stages:[{name:'Started'},{name:'In progress'},{name:'Done'}],side:true,about:'',projects:[],counts:{}};
+ edDraw();const d=$('#board-dialog');if(!d.open)d.showModal();d.querySelector('[name="name"]')?.focus()}
+function edGone(){if(!ed?.id)return '';const names=ed.stages.map(x=>x.was).filter(Boolean),old=Object.keys(ed.counts).filter(n=>n!==STALLED_ROW);
+ const notes=old.filter(n=>!names.includes(n)&&ed.counts[n]).map(n=>{const i=old.indexOf(n),earlier=old.slice(0,i).filter(x=>names.includes(x)),to=earlier.length?ed.stages.find(x=>x.was===earlier.at(-1)).name:ed.stages[0]?.name;return `${ed.counts[n]} in ${n} go to ${to||'the first stage'}.`});
+ if(!ed.side&&ed.counts[STALLED_ROW])notes.push(`${ed.counts[STALLED_ROW]} stalled leave the board.`);return notes.length?`<p class="ed-note warn" role="status">${esc(notes.join(' '))}</p>`:''}
+const STALLED_ROW='Stalled or declined';
+function edDraw(){const e=ed,f=$('#board-form'),last=e.stages.length-1,pick=graphProjNames.filter(p=>!e.projects.some(x=>x.id===p.id));
+ f.innerHTML=`<div class="snooze-heading"><h2 id="board-dialog-title">${e.id?'Edit board':e.suggestion?'Start a board':'New board'}</h2><button type="button" data-ed-close aria-label="Close">×</button></div>`
+  +`<label class="ed-field">Name<input name="name" maxlength="60" value="${esc(e.name)}" placeholder="e.g. Partner listings" autocomplete="off"></label>`
+  +`<fieldset class="ed-stages"><legend>Stages, in order</legend><ol>${e.stages.map((x,i)=>`<li><input data-ed-stage="${i}" maxlength="30" value="${esc(x.name)}" aria-label="Stage ${i+1}" autocomplete="off"><button type="button" class="icon" data-ed-up="${i}" aria-label="Move ${esc(x.name||'this stage')} up"${i?'':' disabled'}>↑</button><button type="button" class="icon" data-ed-down="${i}" aria-label="Move ${esc(x.name||'this stage')} down"${i<last?'':' disabled'}>↓</button><button type="button" class="icon" data-ed-del="${i}" aria-label="Remove ${esc(x.name||'this stage')}"${last?'':' disabled'}>×</button></li>`).join('')}</ol>`
+  +`${e.stages.length<8?'<button type="button" class="ghost" data-ed-add>Add stage</button>':''}<label class="ed-check"><input type="checkbox" name="side"${e.side?' checked':''}> A “Stalled or declined” row</label></fieldset>`
+  +`<label class="ed-field">Which projects belong<textarea name="about" rows="2" maxlength="200" placeholder="e.g. Partners we list our app with, one per partner">${esc(e.about)}</textarea></label>`
+  +`<fieldset class="ed-projects"><legend>Projects<span class="count">${e.projects.length}</span></legend><ul>${e.projects.map(p=>`<li><span title="${esc(p.name)}">${esc(p.name)}</span><button type="button" class="icon" data-ed-drop="${esc(p.id)}" aria-label="Take ${esc(p.name)} off">×</button></li>`).join('')||'<li class="muted">None yet. Reviews add the ones that fit.</li>'}</ul>`
+  +`<input name="add" list="board-dialog-names" placeholder="Add a project" aria-label="Add a project" autocomplete="off"><datalist id="board-dialog-names">${pick.slice(0,500).map(p=>`<option value="${esc(p.name)}"></option>`).join('')}</datalist></fieldset>`
+  +edGone()+'<p class="ed-note">After you save, The Machine sorts its projects into stages from your messages.</p>'
+  +`<p class="ed-note warn" data-ed-error role="alert" hidden></p><div class="ed-actions">${e.id?`<button type="button" class="ghost danger" data-ed-delete>${e.sure?'Delete? Its projects stay':'Delete board'}</button>`:''}<span class="grow"></span><button type="button" class="ghost" data-ed-close>Cancel</button><button class="primary">Save</button></div>`}
+const edFocus=sel=>requestAnimationFrame(()=>$('#board-form').querySelector(sel)?.focus());
+$('#board-form').addEventListener('input',e=>{const t=e.target;if(!ed)return;if(t.name==='name')ed.name=t.value;else if(t.name==='about')ed.about=t.value;else if(t.dataset.edStage)ed.stages[+t.dataset.edStage].name=t.value;
+ else if(t.name==='add'){const p=graphProjNames.find(x=>x.name.toLowerCase()===t.value.trim().toLowerCase());if(p&&!ed.projects.some(x=>x.id===p.id)){ed.projects.push({id:p.id,name:p.name});edDraw();edFocus('[name="add"]')}}});
+$('#board-form').addEventListener('change',e=>{if(e.target.name==='side'&&ed){ed.side=e.target.checked;edDraw();edFocus('[name="side"]')}});
+$('#board-form').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.name==='add'){e.preventDefault()}});
+const edSync=()=>{const f=$('#board-form');if(!ed)return;ed.name=f.elements.name?.value??ed.name;ed.about=f.elements.about?.value??ed.about;for(const i of f.querySelectorAll('[data-ed-stage]'))if(ed.stages[+i.dataset.edStage])ed.stages[+i.dataset.edStage].name=i.value};  /* what is typed counts, also when no input event came */
+$('#board-form').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||!ed)return;edSync();const st=ed.stages;
+ if(b.hasAttribute('data-ed-close')){$('#board-dialog').close();return}
+ if(b.dataset.edUp){const i=+b.dataset.edUp;[st[i-1],st[i]]=[st[i],st[i-1]];edDraw();edFocus(`[data-ed-up="${i-1}"]:not(:disabled),[data-ed-down="${i-1}"]`);return}
+ if(b.dataset.edDown){const i=+b.dataset.edDown;[st[i+1],st[i]]=[st[i],st[i+1]];edDraw();edFocus(`[data-ed-down="${i+1}"]:not(:disabled),[data-ed-up="${i+1}"]`);return}
+ if(b.dataset.edDel){st.splice(+b.dataset.edDel,1);edDraw();edFocus('[data-ed-add],[data-ed-stage]');return}
+ if(b.hasAttribute('data-ed-add')){st.push({name:''});edDraw();edFocus(`[data-ed-stage="${st.length-1}"]`);return}
+ if(b.dataset.edDrop){ed.projects=ed.projects.filter(p=>p.id!==b.dataset.edDrop);edDraw();edFocus('[name="add"]');return}
+ if(b.hasAttribute('data-ed-delete')){if(!ed.sure){ed.sure=true;edDraw();edFocus('[data-ed-delete]');return}
+  try{const r=await graphPost('board_delete',{board_id:ed.id});$('#board-dialog').close();boardShown='';sideStore.set('board-shown','');toast(`Deleted ${r.deleted}. Its ${r.projects===1?'project stays':r.projects+' projects stay'}.`);await people('',true)}catch(err){toast(err.message,true)}}});
+$('#board-form').addEventListener('submit',async e=>{e.preventDefault();if(!ed)return;edSync();const err=$('#board-form [data-ed-error]'),say=t=>{err.textContent=t;err.hidden=false};
+ const stages=ed.stages.map(x=>({...x,name:x.name.trim()})).filter(x=>x.name);if(!ed.name.trim())return say('Give the board a name.');if(!stages.length)return say('Add a stage.');
+ if(new Set(stages.map(x=>x.name.toLowerCase())).size<stages.length)return say('Each stage needs its own name.');
+ const btn=e.submitter||$('#board-form button.primary');btn.disabled=true;
+ try{await boardSave({...(ed.id?{board_id:ed.id}:{}),...(ed.suggestion?{suggestion_id:ed.suggestion}:{}),name:ed.name.trim(),stages,side:ed.side,about:ed.about.trim(),projects:ed.projects.map(p=>p.id)});$('#board-dialog').close()}catch(x){say(x.message)}finally{btn.disabled=false}});
+$('#board-dialog').addEventListener('close',()=>{ed=null});
+$('#people-view').addEventListener('click',async e=>{const t=e.target.closest('[data-suggest-save],[data-suggest-edit],[data-suggest-dismiss],[data-board-new],[data-board-edit]');if(!t)return;e.stopPropagation();
+ t.closest('details')?.removeAttribute('open');const s=graphSuggest.find(x=>String(x.id)===t.closest('[data-suggest]')?.dataset.suggest);
+ try{if(t.hasAttribute('data-board-new'))edOpen();else if(t.dataset.boardEdit)edOpen({board:graphBoards.find(b=>String(b.id)===t.dataset.boardEdit)});
+  else if(t.hasAttribute('data-suggest-edit'))edOpen({suggestion:s});
+  else if(t.hasAttribute('data-suggest-save')){t.disabled=true;await boardSave({suggestion_id:s.id,name:s.name,stages:s.stages,side:true,about:s.about||'',projects:s.projects.map(p=>p.id)})}
+  else if(t.hasAttribute('data-suggest-dismiss')){await graphPost('board_dismiss',{suggestion_id:s.id});toast('Not now. It won’t be suggested again.');await people('',true)}}catch(err){t.disabled=false;toast(err.message,true)}},true);
+document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.tile-menu[open],.board-menu[open]'))if(!m.contains(e.target))m.open=false});
 {let dragged='';const view=$('#people-view'),laneOf=e=>e.target.closest?.('.proj-board .lane');
  view.addEventListener('dragstart',e=>{const t=e.target.closest?.('.tile');if(!t)return;dragged=t.dataset.node;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragged);t.classList.add('dragging')});
  view.addEventListener('dragend',()=>{dragged='';view.querySelectorAll('.tile.dragging,.lane.drop').forEach(x=>x.classList.remove('dragging','drop'))});

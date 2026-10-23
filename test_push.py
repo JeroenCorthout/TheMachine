@@ -187,6 +187,26 @@ class PhoneNotifications(unittest.TestCase):
     def test_no_subscription_means_no_push_call(self):
         a.push_notify(self.store, self.config, {'id': 'x', 'title': 'T', 'body': 'B', 'status': 'pending'}, lambda r: self.fail('no phone subscribed'))
 
+    def test_send_a_test_reaches_only_this_device_and_says_when_it_fails(self):
+        other = {**SUB, 'endpoint': SUB['endpoint'] + '-other'}
+        self.app.action('push_subscribe', SUB, owner_dashboard=True)
+        self.app.action('push_subscribe', other, owner_dashboard=True)
+        with self.assertRaises(ValueError):
+            self.app.action('push_test', {'endpoint': SUB['endpoint']})  # only the owner's dashboard
+        with self.assertRaises(ValueError):
+            self.app.action('push_test', {'endpoint': 'https://push.example/unknown'}, owner_dashboard=True)
+        sent = []
+        ok = lambda config, request: sent.append(request) or {'results': [{'endpoint': s['endpoint'], 'status': 201} for s in request['subscriptions']]}
+        with patch.object(a, 'push_node', ok):
+            self.assertEqual(self.app.action('push_test', {'endpoint': SUB['endpoint']}, owner_dashboard=True), {'sent': True})
+        self.assertEqual([s['endpoint'] for s in sent[0]['subscriptions']], [SUB['endpoint']])
+        self.assertEqual(sent[0]['payload']['tag'], 'push-test')
+        self.assertEqual(sent[0]['payload']['title'], 'Notifications are on')
+        gone = lambda config, request: {'results': [{'endpoint': SUB['endpoint'], 'status': 410}]}
+        with patch.object(a, 'push_node', gone), self.assertRaises(ValueError):
+            self.app.action('push_test', {'endpoint': SUB['endpoint']}, owner_dashboard=True)
+        self.assertEqual([s['endpoint'] for s in self.subscriptions()], [other['endpoint']])  # a gone subscription is removed
+
 
 if __name__ == '__main__':
     unittest.main()
