@@ -524,12 +524,19 @@ def cmd_enrich(config, args):
     state = call(config, 'enrich', {})
     if args.json:
         return out_json(state)
+    people = state.get('people') or {}
+    people_line = (f"Work contacts: {people.get('found', 0)} found, {people.get('unknown', 0)} unknown"
+                   + ('. Look up work contacts is off in Settings.' if people.get('on') is False else '.'))
     if not state['service']:
         print('Enrichment is off. Add "enrichment" to the config to look up the organisations you deal with (see README, Enrichment).')
+        if people.get('found') or people.get('unknown'):
+            print(people_line)
         return
     print(f"Organisation data from {state['service']}: {state['found']} found, {state['unknown']} unknown"
           + (f", {state['errors']} errors (last {state['last_error_at'][:16].replace('T', ' ')})" if state['errors'] else '')
           + f". Each is looked up again after {state['refresh_days']} days.")
+    if people:
+        print(people_line)
 
 
 def cmd_connect(config, args):
@@ -837,7 +844,7 @@ def parser():
     source.add_argument('--body')
     source.add_argument('--file', help='file with the text, or - for stdin')
     add('preview', f'First run: one review of the last {assistant.PREVIEW_DAYS} days, shown here and on the dashboard; nothing is sent', cmd_preview)
-    c = add('enrich', 'Organisation data from your enrichment service: status, or look up one domain now', cmd_enrich)
+    c = add('enrich', 'Organisation and work contact data from your enrichment service: status, or look up one domain now', cmd_enrich)
     c.add_argument('domain', nargs='?', help='a domain to look up now, like globex.com')
     c = add('roles', 'Note what your closest people and organisations are to you, from your messages with them (also part of profile)', cmd_roles)
     c.add_argument('--again', action='store_true', help='run again even if it just ran')

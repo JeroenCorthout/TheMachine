@@ -138,7 +138,7 @@ Do it authorizes the offered task end to end; verified written instructions auth
 
 ## Organisation data (optional, enrichment)
 
-[Company enrichment](docs/intelligence.md#organisation-data-optional-enrichment).
+[Company enrichment](docs/intelligence.md#organisation-data-optional-enrichment), and [work contacts](docs/intelligence.md#people-data).
 
 ## Security model
 
