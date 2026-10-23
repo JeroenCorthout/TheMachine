@@ -5947,6 +5947,852 @@
     "location": "https://meet.example/brightpath-demo",
     "source_url": "https://calendar.example/event/brightpath-demo"
    }
+  },
+  {
+   "key": "board:paperkite:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 1530,
+   "title": "Paperkite and Lumen Labs",
+   "body": "Hi Alex,\n\nThey want to join our integrations page and offer a link back.\n\nOttilie",
+   "metadata": {
+    "from": "Ottilie Brandt <ottilie@paperkite.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbpaperkite",
+    "message-id": "<tbpaperkite.0@paperkite.example>",
+    "source_url": "https://mail.example/#inbox/tbpaperkite"
+   }
+  },
+  {
+   "key": "board:bramblebox:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 74970,
+   "title": "Bramblebox and Lumen Labs",
+   "body": "Hi Hugo,\n\nAsked for a listing on their marketplace.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "hugo@bramblebox.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbbramblebox",
+    "message-id": "<tbbramblebox.0@bramblebox.example>",
+    "source_url": "https://mail.example/#inbox/tbbramblebox"
+   }
+  },
+  {
+   "key": "board:bramblebox:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 54817,
+   "title": "Bramblebox and Lumen Labs",
+   "body": "Hi Hugo,\n\nNudged about the listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "hugo@bramblebox.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbbramblebox",
+    "message-id": "<tbbramblebox.1@bramblebox.example>",
+    "source_url": "https://mail.example/#inbox/tbbramblebox"
+   }
+  },
+  {
+   "key": "board:bramblebox:2",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 30344,
+   "title": "Bramblebox and Lumen Labs",
+   "body": "Hi Hugo,\n\nNudged again.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "hugo@bramblebox.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbbramblebox",
+    "message-id": "<tbbramblebox.2@bramblebox.example>",
+    "source_url": "https://mail.example/#inbox/tbbramblebox"
+   }
+  },
+  {
+   "key": "board:quillfeather:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 43290,
+   "title": "Quillfeather and Lumen Labs",
+   "body": "Hi Esme,\n\nAsked for an exchange of reviews.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "esme@quillfeather.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbquillfeather",
+    "message-id": "<tbquillfeather.0@quillfeather.example>",
+    "source_url": "https://mail.example/#inbox/tbquillfeather"
+   }
+  },
+  {
+   "key": "board:quillfeather:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 4417,
+   "title": "Quillfeather and Lumen Labs",
+   "body": "Hi Alex,\n\nStill interested, will apply through the partner form this week.\n\nEsme",
+   "metadata": {
+    "from": "Esme Varley <esme@quillfeather.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbquillfeather",
+    "message-id": "<tbquillfeather.1@quillfeather.example>",
+    "source_url": "https://mail.example/#inbox/tbquillfeather"
+   }
+  },
+  {
+   "key": "board:otterlymail:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 66330,
+   "title": "Otterly and Lumen Labs",
+   "body": "Hi Rowan,\n\nProposed a listing swap.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "rowan@otterlymail.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbotterlymail",
+    "message-id": "<tbotterlymail.0@otterlymail.example>",
+    "source_url": "https://mail.example/#inbox/tbotterlymail"
+   }
+  },
+  {
+   "key": "board:otterlymail:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 44737,
+   "title": "Otterly and Lumen Labs",
+   "body": "Hi Rowan,\n\nFollowed up on the swap.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "rowan@otterlymail.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbotterlymail",
+    "message-id": "<tbotterlymail.1@otterlymail.example>",
+    "source_url": "https://mail.example/#inbox/tbotterlymail"
+   }
+  },
+  {
+   "key": "board:fernwave:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 63450,
+   "title": "Fernwave and Lumen Labs",
+   "body": "Hi Ilse,\n\nAsked to be listed in their app directory.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "ilse@fernwave.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbfernwave",
+    "message-id": "<tbfernwave.0@fernwave.example>",
+    "source_url": "https://mail.example/#inbox/tbfernwave"
+   }
+  },
+  {
+   "key": "board:fernwave:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 41857,
+   "title": "Fernwave and Lumen Labs",
+   "body": "Hi Ilse,\n\nNudged twice.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "ilse@fernwave.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbfernwave",
+    "message-id": "<tbfernwave.1@fernwave.example>",
+    "source_url": "https://mail.example/#inbox/tbfernwave"
+   }
+  },
+  {
+   "key": "board:copperleafapps:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 8730,
+   "title": "Copperleaf and Lumen Labs",
+   "body": "Hi Teo,\n\nSent our listing request.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "teo@copperleafapps.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbcopperleafapps",
+    "message-id": "<tbcopperleafapps.0@copperleafapps.example>",
+    "source_url": "https://mail.example/#inbox/tbcopperleafapps"
+   }
+  },
+  {
+   "key": "board:puffinmetrics:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 17370,
+   "title": "Puffin and Lumen Labs",
+   "body": "Hi Nadia,\n\nAsked for a co-marketing listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "nadia@puffinmetrics.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbpuffinmetrics",
+    "message-id": "<tbpuffinmetrics.0@puffinmetrics.example>",
+    "source_url": "https://mail.example/#inbox/tbpuffinmetrics"
+   }
+  },
+  {
+   "key": "board:puffinmetrics:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 15937,
+   "title": "Puffin and Lumen Labs",
+   "body": "Hi Alex,\n\nThanks, passing this to our partner lead.\n\nNadia",
+   "metadata": {
+    "from": "Nadia Ferro <nadia@puffinmetrics.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbpuffinmetrics",
+    "message-id": "<tbpuffinmetrics.1@puffinmetrics.example>",
+    "source_url": "https://mail.example/#inbox/tbpuffinmetrics"
+   }
+  },
+  {
+   "key": "board:tinkerlane:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 23130,
+   "title": "Tinker and Lumen Labs",
+   "body": "Hi Pia,\n\nAsked about a directory entry.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "pia@tinkerlane.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbtinkerlane",
+    "message-id": "<tbtinkerlane.0@tinkerlane.example>",
+    "source_url": "https://mail.example/#inbox/tbtinkerlane"
+   }
+  },
+  {
+   "key": "board:hazelbrooksoftware:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 13050,
+   "title": "Hazelbrook and Lumen Labs",
+   "body": "Hi Felix,\n\nProposed an editorial exchange.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "felix@hazelbrook.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbhazelbrooksoftware",
+    "message-id": "<tbhazelbrooksoftware.0@hazelbrook.example>",
+    "source_url": "https://mail.example/#inbox/tbhazelbrooksoftware"
+   }
+  },
+  {
+   "key": "board:hazelbrooksoftware:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 1537,
+   "title": "Hazelbrook and Lumen Labs",
+   "body": "Hi Alex,\n\nYes, let us do both entries.\n\nFelix",
+   "metadata": {
+    "from": "Felix Amari <felix@hazelbrook.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbhazelbrooksoftware",
+    "message-id": "<tbhazelbrooksoftware.1@hazelbrook.example>",
+    "source_url": "https://mail.example/#inbox/tbhazelbrooksoftware"
+   }
+  },
+  {
+   "key": "board:driftwooddocs:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 20250,
+   "title": "Driftwood and Lumen Labs",
+   "body": "Hi Saskia,\n\nAsked for a listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "saskia@driftwooddocs.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbdriftwooddocs",
+    "message-id": "<tbdriftwooddocs.0@driftwooddocs.example>",
+    "source_url": "https://mail.example/#inbox/tbdriftwooddocs"
+   }
+  },
+  {
+   "key": "board:driftwooddocs:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 5857,
+   "title": "Driftwood and Lumen Labs",
+   "body": "Hi Alex,\n\nHappy to list you, send your copy.\n\nSaskia",
+   "metadata": {
+    "from": "Saskia Holm <saskia@driftwooddocs.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbdriftwooddocs",
+    "message-id": "<tbdriftwooddocs.1@driftwooddocs.example>",
+    "source_url": "https://mail.example/#inbox/tbdriftwooddocs"
+   }
+  },
+  {
+   "key": "board:pebblepath:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 28890,
+   "title": "Pebblepath and Lumen Labs",
+   "body": "Hi Arlo,\n\nSent the exchange proposal.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "arlo@pebblepath.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbpebblepath",
+    "message-id": "<tbpebblepath.0@pebblepath.example>",
+    "source_url": "https://mail.example/#inbox/tbpebblepath"
+   }
+  },
+  {
+   "key": "board:pebblepath:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 11617,
+   "title": "Pebblepath and Lumen Labs",
+   "body": "Hi Alex,\n\nAgreed, here is our draft.\n\nArlo",
+   "metadata": {
+    "from": "Arlo Svensson <arlo@pebblepath.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbpebblepath",
+    "message-id": "<tbpebblepath.1@pebblepath.example>",
+    "source_url": "https://mail.example/#inbox/tbpebblepath"
+   }
+  },
+  {
+   "key": "board:pebblepath:2",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 104,
+   "title": "Pebblepath and Lumen Labs",
+   "body": "Hi Alex,\n\nLeft comments on your draft too.\n\nArlo",
+   "metadata": {
+    "from": "Arlo Svensson <arlo@pebblepath.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbpebblepath",
+    "message-id": "<tbpebblepath.2@pebblepath.example>",
+    "source_url": "https://mail.example/#inbox/tbpebblepath"
+   }
+  },
+  {
+   "key": "board:larkfieldlabs:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 26010,
+   "title": "Larkfield and Lumen Labs",
+   "body": "Hi Mina,\n\nAsked for a listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "mina@larkfieldlabs.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tblarkfieldlabs",
+    "message-id": "<tblarkfieldlabs.0@larkfieldlabs.example>",
+    "source_url": "https://mail.example/#inbox/tblarkfieldlabs"
+   }
+  },
+  {
+   "key": "board:larkfieldlabs:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 10177,
+   "title": "Larkfield and Lumen Labs",
+   "body": "Hi Alex,\n\nYes, send copy.\n\nMina",
+   "metadata": {
+    "from": "Mina Castell <mina@larkfieldlabs.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tblarkfieldlabs",
+    "message-id": "<tblarkfieldlabs.1@larkfieldlabs.example>",
+    "source_url": "https://mail.example/#inbox/tblarkfieldlabs"
+   }
+  },
+  {
+   "key": "board:larkfieldlabs:2",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2984,
+   "title": "Larkfield and Lumen Labs",
+   "body": "Hi Mina,\n\nSent copy for both sides.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "mina@larkfieldlabs.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tblarkfieldlabs",
+    "message-id": "<tblarkfieldlabs.2@larkfieldlabs.example>",
+    "source_url": "https://mail.example/#inbox/tblarkfieldlabs"
+   }
+  },
+  {
+   "key": "board:willowtick:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 36090,
+   "title": "Willowtick and Lumen Labs",
+   "body": "Hi Jasper,\n\nAsked for a listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "jasper@willowtick.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbwillowtick",
+    "message-id": "<tbwillowtick.0@willowtick.example>",
+    "source_url": "https://mail.example/#inbox/tbwillowtick"
+   }
+  },
+  {
+   "key": "board:willowtick:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 17377,
+   "title": "Willowtick and Lumen Labs",
+   "body": "Hi Alex,\n\nOur page is live, yours next.\n\nJasper",
+   "metadata": {
+    "from": "Jasper Nkemelu <jasper@willowtick.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbwillowtick",
+    "message-id": "<tbwillowtick.1@willowtick.example>",
+    "source_url": "https://mail.example/#inbox/tbwillowtick"
+   }
+  },
+  {
+   "key": "board:willowtick:2",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 13064,
+   "title": "Willowtick and Lumen Labs",
+   "body": "Hi Jasper,\n\nThanks, ours follows.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "jasper@willowtick.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbwillowtick",
+    "message-id": "<tbwillowtick.2@willowtick.example>",
+    "source_url": "https://mail.example/#inbox/tbwillowtick"
+   }
+  },
+  {
+   "key": "board:saffronsync:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 47610,
+   "title": "Saffron and Lumen Labs",
+   "body": "Hi Lotte,\n\nProposed a swap.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "lotte@saffronsync.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbsaffronsync",
+    "message-id": "<tbsaffronsync.0@saffronsync.example>",
+    "source_url": "https://mail.example/#inbox/tbsaffronsync"
+   }
+  },
+  {
+   "key": "board:saffronsync:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 21697,
+   "title": "Saffron and Lumen Labs",
+   "body": "Hi Alex,\n\nPrices fixed, the FAQ still has the old plan.\n\nLotte",
+   "metadata": {
+    "from": "Lotte Ahrens <lotte@saffronsync.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbsaffronsync",
+    "message-id": "<tbsaffronsync.1@saffronsync.example>",
+    "source_url": "https://mail.example/#inbox/tbsaffronsync"
+   }
+  },
+  {
+   "key": "board:moorhendata:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 57690,
+   "title": "Moorhen and Lumen Labs",
+   "body": "Hi Cyrus,\n\nAsked for a listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "cyrus@moorhendata.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbmoorhendata",
+    "message-id": "<tbmoorhendata.0@moorhendata.example>",
+    "source_url": "https://mail.example/#inbox/tbmoorhendata"
+   }
+  },
+  {
+   "key": "board:moorhendata:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 11617,
+   "title": "Moorhen and Lumen Labs",
+   "body": "Hi Alex,\n\nAll three fixed, have a look.\n\nCyrus",
+   "metadata": {
+    "from": "Cyrus Bell <cyrus@moorhendata.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbmoorhendata",
+    "message-id": "<tbmoorhendata.1@moorhendata.example>",
+    "source_url": "https://mail.example/#inbox/tbmoorhendata"
+   }
+  },
+  {
+   "key": "board:juniperledger:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 86490,
+   "title": "Juniper and Lumen Labs",
+   "body": "Hi Freya,\n\nAsked for a listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "freya@juniperledger.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbjuniperledger",
+    "message-id": "<tbjuniperledger.0@juniperledger.example>",
+    "source_url": "https://mail.example/#inbox/tbjuniperledger"
+   }
+  },
+  {
+   "key": "board:juniperledger:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 26017,
+   "title": "Juniper and Lumen Labs",
+   "body": "Hi Alex,\n\nListing approved and updated.\n\nFreya",
+   "metadata": {
+    "from": "Freya Lund <freya@juniperledger.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbjuniperledger",
+    "message-id": "<tbjuniperledger.1@juniperledger.example>",
+    "source_url": "https://mail.example/#inbox/tbjuniperledger"
+   }
+  },
+  {
+   "key": "board:nimbusnook:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 31770,
+   "title": "Nimbus and Lumen Labs",
+   "body": "Hi Eliot,\n\nAsked for a listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "eliot@nimbusandnook.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbnimbusnook",
+    "message-id": "<tbnimbusnook.0@nimbusandnook.example>",
+    "source_url": "https://mail.example/#inbox/tbnimbusnook"
+   }
+  },
+  {
+   "key": "board:nimbusnook:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2977,
+   "title": "Nimbus and Lumen Labs",
+   "body": "Hi Alex,\n\nSorry, we only list paying partners.\n\nEliot",
+   "metadata": {
+    "from": "Eliot Grange <eliot@nimbusandnook.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbnimbusnook",
+    "message-id": "<tbnimbusnook.1@nimbusandnook.example>",
+    "source_url": "https://mail.example/#inbox/tbnimbusnook"
+   }
+  },
+  {
+   "key": "board:lanternfish:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 14490,
+   "title": "Lanternfish and Lumen Labs",
+   "body": "Hi Beatrix,\n\nAsked for a listing.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "beatrix@lanternfish.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tblanternfish",
+    "message-id": "<tblanternfish.0@lanternfish.example>",
+    "source_url": "https://mail.example/#inbox/tblanternfish"
+   }
+  },
+  {
+   "key": "board:lanternfish:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 13057,
+   "title": "Lanternfish and Lumen Labs",
+   "body": "Hi Alex,\n\nAddress not found.\n\nBeatrix",
+   "metadata": {
+    "from": "Beatrix Oyelaran <beatrix@lanternfish.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tblanternfish",
+    "message-id": "<tblanternfish.1@lanternfish.example>",
+    "source_url": "https://mail.example/#inbox/tblanternfish"
+   }
+  },
+  {
+   "key": "board:thornburyfreightonboarding:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 4410,
+   "title": "Thornbury and Lumen Labs",
+   "body": "Hi Alex,\n\nSigned, can we plan the kickoff?.\n\nMaeve",
+   "metadata": {
+    "from": "Maeve Dalton <maeve@thornburyfreight.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbthornburyfreightonboarding",
+    "message-id": "<tbthornburyfreightonboarding.0@thornburyfreight.example>",
+    "source_url": "https://mail.example/#inbox/tbthornburyfreightonboarding"
+   }
+  },
+  {
+   "key": "board:gullwingclinicsonboarding:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 13050,
+   "title": "Gullwing and Lumen Labs",
+   "body": "Hi Alex,\n\nKickoff done, import file attached.\n\nRavi",
+   "metadata": {
+    "from": "Ravi Castellan <ravi@gullwingclinics.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbgullwingclinicsonboarding",
+    "message-id": "<tbgullwingclinicsonboarding.0@gullwingclinics.example>",
+    "source_url": "https://mail.example/#inbox/tbgullwingclinicsonboarding"
+   }
+  },
+  {
+   "key": "board:gullwingclinicsonboarding:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2977,
+   "title": "Gullwing and Lumen Labs",
+   "body": "Hi Ravi,\n\nImport is running.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "ravi@gullwingclinics.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbgullwingclinicsonboarding",
+    "message-id": "<tbgullwingclinicsonboarding.1@gullwingclinics.example>",
+    "source_url": "https://mail.example/#inbox/tbgullwingclinicsonboarding"
+   }
+  },
+  {
+   "key": "board:stoneflystudiotrial:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 20250,
+   "title": "Stonefly and Lumen Labs",
+   "body": "Hi Alex,\n\nStarted the trial.\n\nNoemi",
+   "metadata": {
+    "from": "Noemi Hart <noemi@stoneflystudio.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbstoneflystudiotrial",
+    "message-id": "<tbstoneflystudiotrial.0@stoneflystudio.example>",
+    "source_url": "https://mail.example/#inbox/tbstoneflystudiotrial"
+   }
+  },
+  {
+   "key": "board:stoneflystudiotrial:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 7297,
+   "title": "Stonefly and Lumen Labs",
+   "body": "Hi Alex,\n\nBooked training for the team.\n\nNoemi",
+   "metadata": {
+    "from": "Noemi Hart <noemi@stoneflystudio.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbstoneflystudiotrial",
+    "message-id": "<tbstoneflystudiotrial.1@stoneflystudio.example>",
+    "source_url": "https://mail.example/#inbox/tbstoneflystudiotrial"
+   }
+  },
+  {
+   "key": "board:brackenridgehomesrollout:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 57690,
+   "title": "Brackenridge and Lumen Labs",
+   "body": "Hi Alex,\n\nSigned.\n\nOwen",
+   "metadata": {
+    "from": "Owen Mbeki <owen@brackenridge.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbbrackenridgehomesrollout",
+    "message-id": "<tbbrackenridgehomesrollout.0@brackenridge.example>",
+    "source_url": "https://mail.example/#inbox/tbbrackenridgehomesrollout"
+   }
+  },
+  {
+   "key": "board:brackenridgehomesrollout:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 8737,
+   "title": "Brackenridge and Lumen Labs",
+   "body": "Hi Alex,\n\nEveryone is on it now.\n\nOwen",
+   "metadata": {
+    "from": "Owen Mbeki <owen@brackenridge.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbbrackenridgehomesrollout",
+    "message-id": "<tbbrackenridgehomesrollout.1@brackenridge.example>",
+    "source_url": "https://mail.example/#inbox/tbbrackenridgehomesrollout"
+   }
+  },
+  {
+   "key": "board:kittiwakeexportbug:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 2970,
+   "title": "Kittiwake and Lumen Labs",
+   "body": "Hi Alex,\n\nThe export drops custom fields.\n\nSigne",
+   "metadata": {
+    "from": "Signe Paulsen <signe@kittiwake.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbkittiwakeexportbug",
+    "message-id": "<tbkittiwakeexportbug.0@kittiwake.example>",
+    "source_url": "https://mail.example/#inbox/tbkittiwakeexportbug"
+   }
+  },
+  {
+   "key": "board:halyardsyncdelay:0",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 7290,
+   "title": "Halyard and Lumen Labs",
+   "body": "Hi Alex,\n\nSync takes hours.\n\nDesmond",
+   "metadata": {
+    "from": "Desmond Oduya <desmond@halyard.example>",
+    "to": "alex@lumenlabs.example",
+    "labels": [
+     "INBOX"
+    ],
+    "thread_id": "tbhalyardsyncdelay",
+    "message-id": "<tbhalyardsyncdelay.0@halyard.example>",
+    "source_url": "https://mail.example/#inbox/tbhalyardsyncdelay"
+   }
+  },
+  {
+   "key": "board:halyardsyncdelay:1",
+   "account_id": "work-gmail",
+   "kind": "gmail.message",
+   "minutes_ago": 5857,
+   "title": "Halyard and Lumen Labs",
+   "body": "Hi Desmond,\n\nAsked for their logs.\n\nBest,\nAlex",
+   "metadata": {
+    "from": "Alex Morgan <alex@lumenlabs.example>",
+    "to": "desmond@halyard.example",
+    "labels": [
+     "SENT"
+    ],
+    "thread_id": "tbhalyardsyncdelay",
+    "message-id": "<tbhalyardsyncdelay.1@halyard.example>",
+    "source_url": "https://mail.example/#inbox/tbhalyardsyncdelay"
+   }
   }
  ],
  "cards": [
@@ -6879,6 +7725,23 @@
    "minutes_ago": 2659,
    "source": "email from Leontine Merrow",
    "choice": "reject"
+  },
+  {
+   "key": "board-bramblebox",
+   "title": "Follow up with Hugo at Bramblebox: no reply in 52 days",
+   "body": "You asked for a listing and nudged twice; nothing back.",
+   "status": "pending",
+   "events": [
+    "board:bramblebox:2"
+   ],
+   "accounts": [
+    "work-gmail"
+   ],
+   "minutes_ago": 300,
+   "source": "email to Hugo Penrose",
+   "project": "Bramblebox",
+   "urgent": false,
+   "snooze_hours": null
   }
  ],
  "promises": [
@@ -7145,6 +8008,568 @@
   {
    "site": "portal.vantagerail.example",
    "username": "alex.morgan"
+  }
+ ],
+ "boards": [
+  {
+   "name": "Partner listings",
+   "stages": [
+    {
+     "name": "Contacted",
+     "hint": "Asked or applied, no yes yet"
+    },
+    {
+     "name": "Agreed",
+     "hint": "They said yes"
+    },
+    {
+     "name": "In review",
+     "hint": "Copy or listing with one side"
+    },
+    {
+     "name": "Partly live",
+     "hint": "Some of it is up"
+    },
+    {
+     "name": "Live",
+     "hint": "Everything agreed is up"
+    }
+   ],
+   "projects": [
+    {
+     "name": "Paperkite",
+     "org": "paperkite.example",
+     "org_name": "Paperkite",
+     "events": [
+      "board:paperkite:0"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "Ottilie asked to join our integrations page",
+       "event": "board:paperkite:0"
+      }
+     ],
+     "next": "Decide if they fit the page"
+    },
+    {
+     "name": "Bramblebox",
+     "org": "bramblebox.example",
+     "org_name": "Bramblebox",
+     "events": [
+      "board:bramblebox:0",
+      "board:bramblebox:1",
+      "board:bramblebox:2"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing on their marketplace",
+       "event": "board:bramblebox:0"
+      }
+     ],
+     "next": "Find another contact or drop it"
+    },
+    {
+     "name": "Quillfeather",
+     "org": "quillfeather.example",
+     "org_name": "Quillfeather",
+     "events": [
+      "board:quillfeather:0",
+      "board:quillfeather:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for an exchange of reviews",
+       "event": "board:quillfeather:0"
+      }
+     ],
+     "next": "Approve their partner application when it comes"
+    },
+    {
+     "name": "Otterly Mail",
+     "org": "otterlymail.example",
+     "org_name": "Otterly Mail",
+     "events": [
+      "board:otterlymail:0",
+      "board:otterlymail:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "proposed a listing swap",
+       "event": "board:otterlymail:0"
+      }
+     ],
+     "next": "Follow up after Fri, or drop it"
+    },
+    {
+     "name": "Fernwave",
+     "org": "fernwave.example",
+     "org_name": "Fernwave",
+     "events": [
+      "board:fernwave:0",
+      "board:fernwave:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked to be listed in their app directory",
+       "event": "board:fernwave:0"
+      }
+     ],
+     "next": "Find another contact or drop it"
+    },
+    {
+     "name": "Copperleaf Apps",
+     "org": "copperleafapps.example",
+     "org_name": "Copperleaf Apps",
+     "events": [
+      "board:copperleafapps:0"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "sent our listing request",
+       "event": "board:copperleafapps:0"
+      }
+     ],
+     "next": "Wait for their answer"
+    },
+    {
+     "name": "Puffin Metrics",
+     "org": "puffinmetrics.example",
+     "org_name": "Puffin Metrics",
+     "events": [
+      "board:puffinmetrics:0",
+      "board:puffinmetrics:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a co-marketing listing",
+       "event": "board:puffinmetrics:0"
+      }
+     ],
+     "next": "Wait for their partner lead"
+    },
+    {
+     "name": "Tinker Lane",
+     "org": "tinkerlane.example",
+     "org_name": "Tinker Lane",
+     "events": [
+      "board:tinkerlane:0"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked about a directory entry",
+       "event": "board:tinkerlane:0"
+      }
+     ],
+     "next": "Nudge Pia once"
+    },
+    {
+     "name": "Hazelbrook Software",
+     "org": "hazelbrook.example",
+     "org_name": "Hazelbrook Software",
+     "events": [
+      "board:hazelbrooksoftware:0",
+      "board:hazelbrooksoftware:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "proposed an editorial exchange",
+       "event": "board:hazelbrooksoftware:0"
+      },
+      {
+       "stage": "Agreed",
+       "reason": "Felix said yes to both entries",
+       "event": "board:hazelbrooksoftware:1"
+      }
+     ],
+     "next": "Write both entries"
+    },
+    {
+     "name": "Driftwood Docs",
+     "org": "driftwooddocs.example",
+     "org_name": "Driftwood Docs",
+     "events": [
+      "board:driftwooddocs:0",
+      "board:driftwooddocs:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing",
+       "event": "board:driftwooddocs:0"
+      },
+      {
+       "stage": "Agreed",
+       "reason": "Saskia asked for our copy",
+       "event": "board:driftwooddocs:1"
+      }
+     ],
+     "next": "Send them our copy"
+    },
+    {
+     "name": "Pebblepath",
+     "org": "pebblepath.example",
+     "org_name": "Pebblepath",
+     "events": [
+      "board:pebblepath:0",
+      "board:pebblepath:1",
+      "board:pebblepath:2"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "sent the exchange proposal",
+       "event": "board:pebblepath:0"
+      },
+      {
+       "stage": "Agreed",
+       "reason": "Arlo agreed and sent their draft",
+       "event": "board:pebblepath:1"
+      },
+      {
+       "stage": "In review",
+       "reason": "Arlo commented on our draft",
+       "event": "board:pebblepath:2"
+      }
+     ],
+     "next": "Wait for their edits, then publish"
+    },
+    {
+     "name": "Larkfield Labs",
+     "org": "larkfieldlabs.example",
+     "org_name": "Larkfield Labs",
+     "events": [
+      "board:larkfieldlabs:0",
+      "board:larkfieldlabs:1",
+      "board:larkfieldlabs:2"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing",
+       "event": "board:larkfieldlabs:0"
+      },
+      {
+       "stage": "Agreed",
+       "reason": "Mina said yes",
+       "event": "board:larkfieldlabs:1"
+      },
+      {
+       "stage": "In review",
+       "reason": "sent copy for both, no comments yet",
+       "event": "board:larkfieldlabs:2"
+      }
+     ],
+     "next": "Get their comments, then publish both"
+    },
+    {
+     "name": "Willowtick",
+     "org": "willowtick.example",
+     "org_name": "Willowtick",
+     "events": [
+      "board:willowtick:0",
+      "board:willowtick:1",
+      "board:willowtick:2"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing",
+       "event": "board:willowtick:0"
+      },
+      {
+       "stage": "Partly live",
+       "reason": "their entry for us is live, ours not yet",
+       "event": "board:willowtick:1"
+      }
+     ],
+     "next": "Publish our entry for them"
+    },
+    {
+     "name": "Saffron Sync",
+     "org": "saffronsync.example",
+     "org_name": "Saffron Sync",
+     "events": [
+      "board:saffronsync:0",
+      "board:saffronsync:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "proposed a swap",
+       "event": "board:saffronsync:0"
+      },
+      {
+       "stage": "Partly live",
+       "reason": "prices fixed, the FAQ still wrong",
+       "event": "board:saffronsync:1"
+      }
+     ],
+     "next": "Nudge Lotte about the FAQ"
+    },
+    {
+     "name": "Moorhen Data",
+     "org": "moorhendata.example",
+     "org_name": "Moorhen Data",
+     "events": [
+      "board:moorhendata:0",
+      "board:moorhendata:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing",
+       "event": "board:moorhendata:0"
+      },
+      {
+       "stage": "Partly live",
+       "reason": "Cyrus fixed two of the three",
+       "event": "board:moorhendata:1"
+      }
+     ],
+     "next": "Nothing",
+     "by_hand": {
+      "stage": "Live",
+      "days_ago": 1
+     }
+    },
+    {
+     "name": "Juniper Ledger",
+     "org": "juniperledger.example",
+     "org_name": "Juniper Ledger",
+     "events": [
+      "board:juniperledger:0",
+      "board:juniperledger:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing",
+       "event": "board:juniperledger:0"
+      },
+      {
+       "stage": "Live",
+       "reason": "listing updated and approved",
+       "event": "board:juniperledger:1"
+      }
+     ],
+     "next": "Suggest another swap"
+    },
+    {
+     "name": "Nimbus & Nook",
+     "org": "nimbusandnook.example",
+     "org_name": "Nimbus & Nook",
+     "events": [
+      "board:nimbusnook:0",
+      "board:nimbusnook:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing",
+       "event": "board:nimbusnook:0"
+      },
+      {
+       "stage": "Stalled or declined",
+       "reason": "they only list paying partners",
+       "event": "board:nimbusnook:1"
+      }
+     ],
+     "next": "Nothing unless they come back"
+    },
+    {
+     "name": "Lanternfish",
+     "org": "lanternfish.example",
+     "org_name": "Lanternfish",
+     "events": [
+      "board:lanternfish:0",
+      "board:lanternfish:1"
+     ],
+     "moves": [
+      {
+       "stage": "Contacted",
+       "reason": "asked for a listing",
+       "event": "board:lanternfish:0"
+      },
+      {
+       "stage": "Stalled or declined",
+       "reason": "the only address bounced",
+       "event": "board:lanternfish:1"
+      }
+     ],
+     "next": "Find a working contact or drop it"
+    }
+   ]
+  },
+  {
+   "name": "Customer onboarding",
+   "stages": [
+    {
+     "name": "Kickoff",
+     "hint": "Signed, first call planned"
+    },
+    {
+     "name": "Setting up",
+     "hint": "Import and settings"
+    },
+    {
+     "name": "Training",
+     "hint": "Teams learning it"
+    },
+    {
+     "name": "Live",
+     "hint": "Using it every day"
+    }
+   ],
+   "projects": [
+    {
+     "name": "Thornbury Freight onboarding",
+     "org": "thornburyfreight.example",
+     "org_name": "Thornbury Freight",
+     "events": [
+      "board:thornburyfreightonboarding:0"
+     ],
+     "moves": [
+      {
+       "stage": "Kickoff",
+       "reason": "Maeve signed and asked for a kickoff",
+       "event": "board:thornburyfreightonboarding:0"
+      }
+     ],
+     "next": "Plan the kickoff call"
+    },
+    {
+     "name": "Gullwing Clinics onboarding",
+     "org": "gullwingclinics.example",
+     "org_name": "Gullwing Clinics",
+     "events": [
+      "board:gullwingclinicsonboarding:0",
+      "board:gullwingclinicsonboarding:1"
+     ],
+     "moves": [
+      {
+       "stage": "Kickoff",
+       "reason": "signed",
+       "event": "board:gullwingclinicsonboarding:0"
+      },
+      {
+       "stage": "Setting up",
+       "reason": "Ravi sent the import file",
+       "event": "board:gullwingclinicsonboarding:0"
+      }
+     ],
+     "next": "Check the import tomorrow"
+    },
+    {
+     "name": "Stonefly Studio trial",
+     "org": "stoneflystudio.example",
+     "org_name": "Stonefly Studio",
+     "events": [
+      "board:stoneflystudiotrial:0",
+      "board:stoneflystudiotrial:1"
+     ],
+     "moves": [
+      {
+       "stage": "Kickoff",
+       "reason": "started the trial",
+       "event": "board:stoneflystudiotrial:0"
+      },
+      {
+       "stage": "Training",
+       "reason": "Noemi booked training for the team",
+       "event": "board:stoneflystudiotrial:1"
+      }
+     ],
+     "next": "Run the training on Tue"
+    },
+    {
+     "name": "Brackenridge Homes rollout",
+     "org": "brackenridge.example",
+     "org_name": "Brackenridge Homes",
+     "events": [
+      "board:brackenridgehomesrollout:0",
+      "board:brackenridgehomesrollout:1"
+     ],
+     "moves": [
+      {
+       "stage": "Kickoff",
+       "reason": "signed",
+       "event": "board:brackenridgehomesrollout:0"
+      },
+      {
+       "stage": "Live",
+       "reason": "Owen says everyone uses it",
+       "event": "board:brackenridgehomesrollout:1"
+      }
+     ],
+     "next": "Ask for a review"
+    }
+   ]
+  },
+  {
+   "name": "Support escalations",
+   "stages": [
+    {
+     "name": "Open"
+    },
+    {
+     "name": "Waiting on us"
+    },
+    {
+     "name": "Waiting on them"
+    },
+    {
+     "name": "Solved"
+    }
+   ],
+   "projects": [
+    {
+     "name": "Kittiwake export bug",
+     "org": "kittiwake.example",
+     "org_name": "Kittiwake",
+     "events": [
+      "board:kittiwakeexportbug:0"
+     ],
+     "moves": [
+      {
+       "stage": "Open",
+       "reason": "Signe reported missing custom fields",
+       "event": "board:kittiwakeexportbug:0"
+      }
+     ],
+     "next": "Reproduce it"
+    },
+    {
+     "name": "Halyard sync delay",
+     "org": "halyard.example",
+     "org_name": "Halyard",
+     "events": [
+      "board:halyardsyncdelay:0",
+      "board:halyardsyncdelay:1"
+     ],
+     "moves": [
+      {
+       "stage": "Open",
+       "reason": "Desmond reported slow sync",
+       "event": "board:halyardsyncdelay:0"
+      },
+      {
+       "stage": "Waiting on them",
+       "reason": "asked for their logs",
+       "event": "board:halyardsyncdelay:1"
+      }
+     ],
+     "next": "Wait for the logs"
+    }
+   ]
   }
  ]
 }

@@ -451,6 +451,81 @@ button.node:hover{text-decoration:underline;background:none}
 .fact-menu-list button{display:grid;gap:2px;margin:0;padding:8px 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--text);font:var(--fw-medium) var(--fs-sm)/1.3 var(--sans);text-align:left;min-height:0}
 .fact-menu-list button small{color:var(--faint);font-weight:400;font-size:var(--fs-xs)}
 .fact-menu-list button.danger{background:none;border:0;color:var(--orange)}.fact-menu-list button:hover,.fact-menu-list button.danger:hover{background:var(--tile)}
+/* Projects as a board (Graph › Projects, Board): projects of one kind in stages, moved by what their messages mean or by a drag */
+.view-mode{display:inline-flex;align-self:center;margin-left:auto;padding:3px;gap:2px;border-radius:var(--r-sm);background:var(--c-sunken)}
+.view-mode button{min-height:30px;margin:0;padding:0 12px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--c-text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer}
+.view-mode button:hover{color:var(--text)}
+.view-mode button[aria-pressed="true"]{background:var(--c-raised);color:var(--text);box-shadow:var(--shadow-sm),0 0 0 1px var(--c-line)}
+.board-head{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px 16px;margin:0 0 18px}
+.board-head>div{min-width:0}
+.board-title{margin:0;font:var(--fw-heading) var(--fs-xl)/1.25 var(--serif);letter-spacing:-.01em;color:var(--text)}
+.board-sub{margin:2px 0 0;color:var(--c-text-3);font-size:var(--fs-sm)}
+.board-chips{display:flex;gap:6px;margin-left:auto;overflow-x:auto;scrollbar-width:none;max-width:100%}.board-chips::-webkit-scrollbar{display:none}
+.board-chips button{flex:none;min-height:30px;margin:0;padding:0 12px;border:1px solid var(--c-line);border-radius:var(--r-pill);background:none;box-shadow:none;color:var(--c-text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);white-space:nowrap;cursor:pointer}
+.board-chips button:hover{color:var(--text);border-color:var(--c-line-strong)}
+.board-chips button[aria-pressed="true"]{background:color-mix(in srgb,var(--c-text) 8%,transparent);border-color:transparent;color:var(--text)}
+.proj-board{container-type:inline-size}
+.pboard{display:grid;grid-template-columns:repeat(var(--lanes),minmax(0,1fr));gap:12px;align-items:start}
+.lane{min-width:0;padding:10px;border-radius:var(--r-lg);background:color-mix(in srgb,var(--c-sunken) 60%,transparent);transition:box-shadow var(--dur) var(--ease)}
+.lane.drop{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--c-accent) 60%,transparent)}
+.lane-h{display:flex;align-items:baseline;gap:8px;padding:4px 4px 0}
+.lane-h h4{margin:0;font:var(--fw-heading) var(--fs-md)/1.3 var(--serif);letter-spacing:-.005em;color:var(--text)}
+.lane-h span{color:var(--c-text-3);font-size:var(--fs-sm);font-variant-numeric:tabular-nums}
+.lane-hint{margin:0;padding:0 4px 10px;color:var(--c-text-3);font-size:var(--fs-xs);line-height:1.4}
+.lane-hint:has(+.lane-sum){padding-bottom:2px}
+.lane-sum{margin:0;padding:0 4px 10px;color:var(--c-orange);font-size:var(--fs-xs)}
+.tiles{display:flex;flex-direction:column;gap:8px}
+.lane.side{grid-column:1/-1;margin-top:12px}
+.lane.side .tiles{display:grid;grid-template-columns:repeat(var(--lanes),minmax(0,1fr));gap:8px}
+.tile{position:relative;min-width:0;margin:0;padding:11px 12px 11px;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--c-surface);box-shadow:var(--shadow-sm);cursor:pointer;transition:border-color var(--dur) var(--ease)}
+.tile:hover{border-color:var(--c-line-strong)}.tile:focus-visible{outline:0;box-shadow:var(--ring)}
+.tile.dragging{opacity:.45}
+.tile-row{display:flex;align-items:center;gap:8px;min-width:0}
+.tile .org-pic{width:24px;height:24px}
+.tile-name{flex:1;min-width:0;font:600 var(--fs-sm)/1.3 var(--sans);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile-age{flex:none;color:var(--c-text-3);font-size:var(--fs-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile-next{margin:8px 0 0;color:var(--text);font-size:var(--fs-sm);line-height:1.45;overflow-wrap:anywhere}
+.tile-why{margin:5px 0 0;color:var(--c-text-3);font-size:var(--fs-xs);line-height:1.45;overflow-wrap:anywhere}
+.tile-why button.link{padding:0;min-height:0;border:0;background:none;box-shadow:none;color:inherit;font:inherit;text-decoration:none;cursor:pointer;white-space:nowrap}
+.tile-why button.link:hover{color:var(--text);text-decoration:underline;text-underline-offset:2px}
+.tile-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:8px}
+.tile-chips .chip{--c:var(--orange);font-size:.72rem;padding:1px 8px 1px 7px}
+.tile-card{color:var(--c-text-2);font-size:var(--fs-xs);text-decoration:none;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tile-card:hover{color:var(--text);text-decoration:underline}
+.tile-menu{flex:none;position:relative;margin:-4px -6px -4px 0}
+.tile-menu>summary{list-style:none;display:grid;place-items:center;width:28px;height:26px;border-radius:var(--r-sm);color:var(--c-text-3);font-size:1rem;line-height:1;cursor:pointer;user-select:none}
+.tile-menu>summary::-webkit-details-marker{display:none}
+.tile-menu>summary:hover,.tile-menu[open]>summary{background:var(--c-hover);color:var(--text)}
+.tile-menu .fact-menu-list{min-width:190px}
+.tile-menu .fact-menu-list p{margin:2px 10px 4px;color:var(--c-text-3);font-size:var(--fs-xs)}
+.tile-menu .fact-menu-list button[aria-current="true"]{color:var(--c-text-3)}
+@media(hover:hover) and (pointer:fine){.tile-menu{position:absolute;top:9px;right:8px;margin:0;opacity:0;transition:opacity var(--dur) var(--ease)}.tile-menu>summary{background:var(--c-surface)}
+  .tile:hover .tile-menu,.tile:focus-within .tile-menu,.tile-menu[open]{opacity:1}.tile:is(:hover,:focus-within) .tile-age{visibility:hidden}}
+.lane-more{display:block;width:100%;min-height:32px;margin:8px 0 0;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--c-text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer}
+.lane-more:hover{background:var(--c-hover);color:var(--text)}
+.lane-empty{margin:0;padding:14px 8px;border:1px dashed var(--c-line);border-radius:var(--r-md);color:var(--c-text-3);font-size:var(--fs-sm);text-align:center}
+.sub-tabs.stage-tabs,.board-pick{display:none}
+/* Narrower than five columns: the stages side by side, scrolling sideways and snapping to a column */
+@container (max-width:900px){
+  .board-chips{margin-left:0}
+  .pboard{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(250px,42%);overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 2px;padding-bottom:6px;overscroll-behavior-x:contain}
+  .lane{scroll-snap-align:start}.lane.side{grid-column:auto;margin-top:0}.lane.side .tiles{display:flex;flex-direction:column}
+}
+/* A phone: one stage at a time, picked from tabs with their counts */
+@media(max-width:560px){
+  .board-chips{margin-left:0}
+  .board-head{margin-bottom:10px}
+  .sub-tabs.stage-tabs{display:flex;margin:0 0 12px}
+  .board-head:has(.board-pick) :is(.board-title,.board-chips){display:none}
+  .board-pick{display:block;max-width:100%;margin:0;padding:2px 26px 2px 0;border:0;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394918a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 2px center/16px;color:var(--text);font:var(--fw-heading) var(--fs-xl)/1.25 var(--serif);letter-spacing:-.01em;-webkit-appearance:none;appearance:none;field-sizing:content;cursor:pointer}
+  .pboard{display:block;overflow:visible}
+  .lane{display:none;padding:0;background:none}.lane.on{display:block}
+  .lane-h{display:none}.lane-hint,.lane-sum{padding-left:0}
+}
+.graph-stage{margin:var(--sp-3) 0 0;padding:12px 14px;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--c-sunken)}
+.graph-stage p{margin:0}.graph-stage p+p{margin-top:4px}
+.graph-stage ol{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.graph-stage li{color:var(--c-text-3);font-size:var(--fs-xs);line-height:1.45}
+.graph-stage button.link{padding:0;min-height:0;border:0;background:none;box-shadow:none;color:var(--c-text-2);font:inherit;text-decoration:underline;cursor:pointer}
 /* Events: by day, rows on hairlines, no boxes; each its source, who wrote it, when, and the start of the text. */
 .ge-day{font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans);color:var(--faint);letter-spacing:.02em;margin:var(--sp-5) 0 var(--sp-1)}
 .graph-events>.ge-day:first-child{margin-top:0}
@@ -1436,6 +1511,7 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
   .cal-mode button:hover{color:var(--text)}
   .cal-mode button[aria-pressed="true"]{background:var(--c-raised);color:var(--text);box-shadow:var(--shadow-sm),0 0 0 1px var(--c-line)}
   body:has(#calendar.week:not([hidden])) :is(main,.site-footer){max-width:calc(1080px + 112px)}
+  body:has(#people:not([hidden]) .sub-pane:not([hidden]) .proj-board:not([hidden])) :is(main,.site-footer){max-width:calc(1320px + 112px)}
   .cal-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--c-line);border-radius:var(--r-lg);background:var(--c-surface);overflow:hidden}
   .cal-col{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:360px;padding:10px 8px 14px;border-left:1px solid var(--c-line)}
   .cal-col:first-child{border-left:0}
@@ -3297,7 +3373,8 @@ const PAGE_TITLES={calendar:'Calendar',events:'Events',people:'Graph',fleet:'Fle
 // The Graph's title is the pane on screen, with Graph as a quiet crumb and the same count as its row in the sidebar
 function graphHead(){if(/^promise:/.test(graphNode||''))return '<div><p class="page-crumb">Graph</p><h2 class="page-title">Promise</h2></div>';const name=GRAPH_SUBS[graphShown];if(!name)return '<h2 class="page-title">Graph</h2>';const c=graphCounts||{},n={people:c.person,orgs:c.org,projects:c.project,roles:rolesWaiting}[graphShown];
  const words={people:['person','people'],orgs:['organisation','organisations'],projects:['open project','open projects'],roles:['role to confirm','roles to confirm']}[graphShown];
- return `<div><p class="page-crumb">Graph</p><h2 class="page-title">${esc(name)}</h2>${n&&!graphNode?`<p class="page-sub">${n} ${n===1?words[0]:words[1]}</p>`:''}</div>`}
+ const mode=graphShown==='projects'&&!graphNode&&graphBoards.length?`<div class="view-mode" role="group" aria-label="View">${[['list','List'],['board','Board']].map(([v,t])=>`<button type="button" data-proj-view="${v}" aria-pressed="${projView()===v}">${t}</button>`).join('')}</div>`:'';
+ return `<div><p class="page-crumb">Graph</p><h2 class="page-title">${esc(name)}</h2>${n&&!graphNode?`<p class="page-sub">${n} ${n===1?words[0]:words[1]}</p>`:''}</div>${mode}`}
 function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';
  if(tab==='inbox'&&chatId){h.hidden=true;return}
  const c=sideCounts,busy=[[c.ready,'ready for you'],[c.needs,'to decide'],[c.preparing,'preparing']].filter(([k])=>k).map(([k,t])=>k+' '+t),sub=(busy.length?busy:['All clear',c.later&&c.later+' coming back later',c.promises&&c.promises+(c.promises===1?' promise':' promises')+' kept track of'].filter(Boolean)).join(' · ');
@@ -3883,6 +3960,60 @@ const graphItem=n=>n.kind==='project'?`<article class="tap" data-node="${esc(n.i
  :n.kind==='org'?`<article class="tap" data-node="${esc(n.id)}"><div class="graph-row">${orgPic(n)}${nodeButton(n)}<small>${n.role?esc(cap(n.role))+' · ':''}${n.profile?.industry?esc(n.profile.industry)+' · ':''}${n.signals} ${n.signals===1?'person':'people'} · last contact ${esc(day(n.last_at))}</small></div></article>`
  :`<article class="tap person-item" data-node="${esc(n.id)}"><div class="graph-row one">${personPic(n)}${nodeButton(n)}${fleetChip(n)}${n.quiet?'<span class="chip" style="--c:var(--orange)">gone quiet</span>':''}${bar(n)}</div><p class="graph-sub" title="${esc(personSub(n)+(n.ids?.length?' · '+n.ids.slice(0,2).join(', '):''))}">${n.fleet?.machine?'Has a Machine · ':''}${esc(personSub(n))}${n.ids?.length?' · <span class="mono">'+esc(n.ids.slice(0,2).join(', '))+'</span>':''}</p></article>`;
 const graphSection=(title,note,items)=>items?.length?`<div class="section-head"><h2>${title}</h2><span class="count">${items.length}</span>${note?`<p>${note}</p>`:''}</div><div class="graph-list">${items.map(graphItem).join('')}</div>`:'';
+// Projects as a board: projects of one kind in stages (graph.boards), a view of Graph › Projects next to the list. Board by
+// default when there is a board; the choice is remembered on this device. Moves come from what the messages mean; the owner
+// drags a tile (or picks a stage from its menu) and that stands until a newer message moves it. Nothing here sends anything.
+let graphBoards=[],boardShown=sideStore.get('board-shown')||'',boardStage={},boardOpen=new Set();
+const projView=()=>graphBoards.length?(sideStore.get('projects-view')==='list'?'list':'board'):'list';
+const shortDay=v=>{if(!v)return '';const d=new Date(String(v).length<=10?v+'T12:00':v),p=k=>d.toLocaleDateString('en-US',{[k]:k==='day'?'numeric':'short'});return `${p('weekday')} ${p('day')} ${p('month')}`};  /* Fri 23 Oct */
+const boardNow=()=>graphBoards.find(b=>b.name===boardShown)||graphBoards[0];
+const tileWhy=(p,side)=>{const when=p.at?(p.event_id?`<button type="button" class="link" data-quote-event="${p.event_id}" title="Read the message">${esc(shortDay(p.at))}</button>`:esc(shortDay(p.at))):'';
+ const what=p.by==='owner'?`Moved to ${esc(p.stage)} by hand`:p.reason?`${p.first?'Added':'Moved to '+esc(p.stage)}: ${esc(p.reason)}`:'';
+ return what||when?`<p class="tile-why">${what}${what&&when?' · ':''}${when}</p>`:''};
+const stuckDays=p=>p.stage!==boardSide()&&(p.no_reply_days||0)>=10?p.no_reply_days:0;
+const boardSide=()=>(boardNow()?.stages||[]).find(s=>s.side)?.name;
+const tile=(p,b)=>{const stuck=stuckDays(p),age=p.days===0?'Today':p.days+'d';
+ const menu=`<details class="tile-menu"><summary aria-label="Move ${esc(p.name)} to another stage" title="Move">⋯</summary><div class="fact-menu-list" role="menu"><p>Move to</p>${b.stages.map(s=>`<button type="button" role="menuitem" data-stage-to="${esc(s.name)}" data-stage-node="${esc(p.id)}"${s.name===p.stage?' aria-current="true" disabled':''}>${esc(s.name)}</button>`).join('')}</div></details>`;
+ return `<article class="tile" data-node="${esc(p.id)}" data-stage="${esc(p.stage)}" draggable="true" tabindex="0" aria-label="${esc(p.name)}, ${esc(p.stage)}"><div class="tile-row">${orgPic({name:p.org?.name||p.name,profile:{logo:p.org?.logo}})}<span class="tile-name" title="${esc(p.name)}">${esc(p.name)}</span>${stuck?'':`<span class="tile-age" title="In this stage for ${p.days===0?'less than a day':p.days+(p.days===1?' day':' days')}">${age}</span>`}${menu}</div>`
+  +(p.next?`<p class="tile-next">${esc(p.next)}</p>`:'')+tileWhy(p)
+  +(stuck?`<div class="tile-chips"><span class="chip">No reply in ${stuck} days</span>${p.card?`<a class="tile-card" href="#card=${esc(p.card.id)}" title="${esc(p.card.title)}">Card: ${esc(p.card.title)}</a>`:''}</div>`:'')+'</article>'};
+const LANE_ROWS=()=>matchMedia('(max-width:560px)').matches?6:8;
+const lane=(b,s,items,on)=>{const key=b.name+'|'+s.name,all=boardOpen.has(key)||s.side&&!matchMedia('(max-width:560px)').matches,shown=all?items:items.slice(0,LANE_ROWS()),stuck=items.filter(stuckDays).length;
+ return `<section class="lane${s.side?' side':''}${on?' on':''}" data-lane="${esc(s.name)}" aria-label="${esc(s.name)}"><div class="lane-h"><h4>${esc(s.name)}</h4><span>${items.length}</span></div>${s.hint?`<p class="lane-hint">${esc(s.hint)}</p>`:''}${stuck?`<p class="lane-sum">${stuck} with no reply in 10+ days</p>`:''}`
+  +`<div class="tiles">${items.length?shown.map(p=>tile(p,b)).join(''):'<p class="lane-empty">Nothing here yet</p>'}</div>${items.length>shown.length?`<button type="button" class="lane-more" data-lane-more="${esc(key)}">Show ${items.length-shown.length} more</button>`:''}</section>`};
+function boardView(){const b=boardNow();if(!b)return '<div class="empty all-clear"><div><strong>No boards yet.</strong>Projects of one kind show here in stages, as your messages move them.</div></div>';
+ const by=s=>b.projects.filter(p=>p.stage===s.name),main=b.stages.filter(s=>!s.side),firstFull=b.stages.find(s=>by(s).length)?.name||b.stages[0].name;
+ const on=b.stages.some(s=>s.name===boardStage[b.name])?boardStage[b.name]:firstFull;
+ return `<div class="board-head"><div>${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title">${esc(b.name)}</h3><p class="board-sub">${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''} · moves come from your messages</p></div>`
+  +(graphBoards.length>1?`<div class="board-chips" role="group" aria-label="Boards">${graphBoards.map(x=>`<button type="button" data-board="${esc(x.name)}" aria-pressed="${x.name===b.name}">${esc(x.name)}</button>`).join('')}</div>`:'')+'</div>'
+  +`<div class="sub-tabs stage-tabs" role="tablist" aria-label="Stages">${b.stages.map(s=>`<button type="button" role="tab" data-stage-tab="${esc(s.name)}" aria-selected="${s.name===on}"><span class="ell">${esc(s.side?'Stalled':s.name)}</span> <span class="badge">${by(s).length}</span></button>`).join('')}</div>`
+  +`<div class="pboard-wrap"><div class="pboard" style="--lanes:${main.length}">${b.stages.map(s=>lane(b,s,by(s),s.name===on)).join('')}</div></div>`}
+const projectsPane=g=>{graphBoards=g.boards||[];const v=projView();if(!graphBoards.length)return graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects);
+ return `<div class="proj-list"${v==='list'?'':' hidden'}>${graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)}</div><div class="proj-board"${v==='board'?'':' hidden'}>${boardView()}</div>`};
+function boardRedraw(){const el=$('#people-view .proj-board');if(el){const x=el.querySelector('.pboard')?.scrollLeft||0;el.innerHTML=boardView();const nb=el.querySelector('.pboard');if(nb)nb.scrollLeft=x}}
+function projectsViewSet(v){sideStore.set('projects-view',v);const view=$('#people-view');view.querySelector('.proj-list')?.toggleAttribute('hidden',v!=='list');view.querySelector('.proj-board')?.toggleAttribute('hidden',v!=='board');pageHead()}
+async function boardMove(node,stage){const b=boardNow(),p=b?.projects.find(x=>x.id===node);if(!p||p.stage===stage)return;const was=p.stage;
+ Object.assign(p,{stage,by:'owner',at:new Date().toISOString(),event_id:null,days:0});boardRedraw();
+ try{await graphPost('graph_stage',{node_id:node,stage});toast('Moved to '+stage+'.');await people('',true)}catch(err){Object.assign(p,{stage:was});boardRedraw();toast(err.message,true)}}
+$('#page-head').addEventListener('click',e=>{const b=e.target.closest('[data-proj-view]');if(b)projectsViewSet(b.dataset.projView)});
+$('#people-view').addEventListener('click',e=>{if(!e.target.closest('.proj-board'))return;
+ const chip=e.target.closest('[data-board]');if(chip){e.stopPropagation();boardShown=chip.dataset.board;sideStore.set('board-shown',boardShown);boardRedraw();return}
+ const st=e.target.closest('[data-stage-tab]');if(st){e.stopPropagation();boardStage[boardNow().name]=st.dataset.stageTab;boardRedraw();return}
+ const more=e.target.closest('[data-lane-more]');if(more){e.stopPropagation();boardOpen.add(more.dataset.laneMore);boardRedraw();return}
+ const to=e.target.closest('[data-stage-to]');if(to){e.stopPropagation();to.closest('details').open=false;boardMove(to.dataset.stageNode,to.dataset.stageTo);return}
+ if(e.target.closest('.tile-menu,.tile a[href]'))e.stopPropagation()},true);
+$('#people-view').addEventListener('change',e=>{if(!e.target.matches?.('.board-pick'))return;boardShown=e.target.value;sideStore.set('board-shown',boardShown);boardRedraw()});
+$('#people-view').addEventListener('keydown',e=>{const t=e.target.closest?.('.tile');if(t&&e.target===t&&(e.key==='Enter'||e.key===' ')){e.preventDefault();graphOpen(t.dataset.node)}});
+document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.tile-menu[open]'))if(!m.contains(e.target))m.open=false});
+{let dragged='';const view=$('#people-view'),laneOf=e=>e.target.closest?.('.proj-board .lane');
+ view.addEventListener('dragstart',e=>{const t=e.target.closest?.('.tile');if(!t)return;dragged=t.dataset.node;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragged);t.classList.add('dragging')});
+ view.addEventListener('dragend',()=>{dragged='';view.querySelectorAll('.tile.dragging,.lane.drop').forEach(x=>x.classList.remove('dragging','drop'))});
+ view.addEventListener('dragover',e=>{const l=laneOf(e);if(!l||!dragged)return;e.preventDefault();e.dataTransfer.dropEffect='move';view.querySelectorAll('.lane.drop').forEach(x=>x!==l&&x.classList.remove('drop'));l.classList.add('drop')});
+ view.addEventListener('dragleave',e=>{const l=laneOf(e);if(l&&!l.contains(e.relatedTarget))l.classList.remove('drop')});
+ view.addEventListener('drop',e=>{const l=laneOf(e);if(!l||!dragged)return;e.preventDefault();const node=dragged;dragged='';l.classList.remove('drop');boardMove(node,l.dataset.lane)})}
+// A project's page: its board and stage, its next step, and the latest moves with the message each came from.
+const stageBox=n=>{const b=n.board;if(!b)return '';const moves=(b.moves||[]).map(m=>`<li>${esc(shortDay(m.at))} · ${m.source==='owner'?`Moved to ${esc(m.stage)} by hand`:`${esc(m.stage)}: ${esc(m.reason||'')}`}${m.event_id?` <button type="button" class="link" data-quote-event="${m.event_id}">Read</button>`:''}</li>`).join('');
+ return `<div class="graph-stage"><p><b>${esc(b.stage||'')}</b> <span class="muted">on ${esc(b.board)}</span></p>${b.next?`<p>Next: ${esc(b.next)}</p>`:''}${moves?`<ol aria-label="Moves">${moves}</ol>`:''}</div>`};
 // What someone (or an organisation) is to you: said by you, or read by a review in a message, shown with the line it came from.
 // ✓ makes a review's role yours; Edit sets it in your words.
 const quoteLine=(id,quote,event)=>quote?`<span class="role-why">“${esc(quote)}”${event?` <button class="link" data-quote-event="${event}">Read</button>`:''}</span>`:'';
@@ -4021,7 +4152,7 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
   const sub=n.kind==='person'?personSub({...n,role:null,profile:null})+(n.quiet?' · gone quiet':''):n.kind==='project'?(n.state+' · last signal '+day(n.last_at)+(n.probable_signals?' · '+n.probable_signals+' probably part of it':'')):(n.signals+' people · last contact '+day(n.last_at));
   const [paneId,paneName]=GRAPH_KIND_PANE[n.kind]||GRAPH_KIND_PANE.person;
-  draw(`<div class="graph-crumbs" role="navigation" aria-label="Breadcrumb"><a href="#graph" data-crumb="">Graph</a><span aria-hidden="true">›</span><a href="#graph=${paneId}" data-crumb="${paneId}">${paneName}</a><span aria-hidden="true">›</span><span aria-current="page">${esc(n.name)}</span></div><article class="graph-detail${n.kind==='person'?' person-page':''}"><div class="name-row">${n.kind==='org'?orgPic(n,true):n.kind==='person'?personPic(n,true):''}${n.kind==='person'?`<div class="person-head"><h3>${esc(n.name)}</h3>${personJob(n)}</div>`:`<h3>${esc(n.name)}</h3>`}${n.kind==='org'?orgActions:n.kind==='person'?personMenu:'<button class="ghost" data-name-edit>Rename</button>'}</div>${n.kind==='org'?orgForm(n):`<form class="name-form inline-edit" data-node-id="${esc(n.id)}" hidden><input name="newname" maxlength="${n.kind==='project'?60:100}" value="${esc(n.name)}" placeholder="${n.kind==='project'?'Project name':'Leave empty to use the name from their messages'}" aria-label="Name"><button>Save</button></form>`}${deleteRow(n)}${personProfile(n)}<p class="graph-sub detail-sub">${esc(sub)}</p>${fleetMember(n)}${orgProfile(n)}${n.kind==='org'?orgWrongRow(n):''}${n.ids?.length?`<p class="graph-sub mono">${esc(n.ids.join(' · '))}</p>`:''}${n.kind!=='project'?roleRow(n):''}${personOrgRow(n,n.org&&n.org_name?{id:n.org,name:n.org_name}:null)}${relationsRow(n)}${[['person','People'],['project','Projects'],['org','Organisations']].map(([k,t])=>group(k).length?`<p class="graph-sub">${t}</p><div class="graph-links">${group(k).map(nodeButton).join('')}</div>`:'').join('')}</article>`+fleetAskRow(n)+openBetween(n)+knownAbout(n)+graphEvents(n));
+  draw(`<div class="graph-crumbs" role="navigation" aria-label="Breadcrumb"><a href="#graph" data-crumb="">Graph</a><span aria-hidden="true">›</span><a href="#graph=${paneId}" data-crumb="${paneId}">${paneName}</a><span aria-hidden="true">›</span><span aria-current="page">${esc(n.name)}</span></div><article class="graph-detail${n.kind==='person'?' person-page':''}"><div class="name-row">${n.kind==='org'?orgPic(n,true):n.kind==='person'?personPic(n,true):''}${n.kind==='person'?`<div class="person-head"><h3>${esc(n.name)}</h3>${personJob(n)}</div>`:`<h3>${esc(n.name)}</h3>`}${n.kind==='org'?orgActions:n.kind==='person'?personMenu:'<button class="ghost" data-name-edit>Rename</button>'}</div>${n.kind==='org'?orgForm(n):`<form class="name-form inline-edit" data-node-id="${esc(n.id)}" hidden><input name="newname" maxlength="${n.kind==='project'?60:100}" value="${esc(n.name)}" placeholder="${n.kind==='project'?'Project name':'Leave empty to use the name from their messages'}" aria-label="Name"><button>Save</button></form>`}${deleteRow(n)}${personProfile(n)}<p class="graph-sub detail-sub">${esc(sub)}</p>${n.kind==='project'?stageBox(n):''}${fleetMember(n)}${orgProfile(n)}${n.kind==='org'?orgWrongRow(n):''}${n.ids?.length?`<p class="graph-sub mono">${esc(n.ids.join(' · '))}</p>`:''}${n.kind!=='project'?roleRow(n):''}${personOrgRow(n,n.org&&n.org_name?{id:n.org,name:n.org_name}:null)}${relationsRow(n)}${[['person','People'],['project','Projects'],['org','Organisations']].map(([k,t])=>group(k).length?`<p class="graph-sub">${t}</p><div class="graph-links">${group(k).map(nodeButton).join('')}</div>`:'').join('')}</article>`+fleetAskRow(n)+openBetween(n)+knownAbout(n)+graphEvents(n));
   if(version!==graphRequest)return;
   $('#people').classList.add('graph-on-node');if(location.hash!==graphHash(n.id)&&!$('#people').hidden)history.replaceState(null,'',graphHash(n.id));
   for(const p of view.querySelectorAll('.ge-preview'))p.classList.toggle('fade',p.scrollHeight>p.clientHeight+1);
@@ -4032,7 +4163,7 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
  if(q){const r=await request('api/graph?q='+encodeURIComponent(q));draw(graphSection('Found','',r.found)||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nobody by that name.</strong>Try part of a name, an address or a company.</div></div>');return}
  const g=await request('api/graph'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';
  const panes=[{id:'people',label:'People',html:graphSection('Gone quiet','People you talk with regularly, silent for much longer than usual.',g.quiet)+graphSection('Closest','From your messages, meetings and cards. Fades over about two months.',g.people)+graphSection('New this week','',g.new)},
-  {id:'projects',label:'Projects',html:graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)},
+  {id:'projects',label:'Projects',html:projectsPane(g)},
   {id:'orgs',label:'Organisations',html:graphSection('Closest','The ones you are most in touch with.',g.orgs)+warmupList(g.warmup)},
   {id:'roles',label:'Who’s who',badge:waiting,html:whosWho(g.whos_who,waiting)}].filter(p=>p.html);
  const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;graphCountsSet(g.counts);if(version===graphRequest){graphShown=current||'';graphHashSync();graphSubSync()}

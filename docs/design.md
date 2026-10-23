@@ -74,6 +74,11 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   and the matching cards under it. Each page has a serif title in the column, except Suggestions: there the tagline is
   a quiet serif line at body size, muted, with the counts under it, so the cards lead; a phone starts at the first
   section head, which carries the counts, and keeps only the all-clear line.
+- **Boards** (Graph › Projects): Board is the default, List / Board in the header, remembered per device. Columns are
+  the stages, with "Stalled or declined" as a row underneath; chips switch boards. A tile: logo, name, next step, why
+  it last moved with the date (opens the message), and a no-reply chip from 10 days. Eight tiles a column, then
+  "Show N more". Drag a tile, or use its ⋯ menu. Under 900px the columns scroll sideways and snap; on a phone one
+  stage at a time with stage tabs, and the board is picked from a menu.
 - **Calendar**: the next seven days, read-only. An agenda by day (Overdue, Today, Tomorrow, then each weekday), one
   row per item: the time (or Due, All day), a tone dot (a ring for a meeting, amber due, orange overdue, lavender coming
   back or a check-in, mint a promise), the title and one quiet line. A meeting's card shows as a chip (in the line on a

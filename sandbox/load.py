@@ -153,6 +153,7 @@ def load(directory, states, port=8870, network_port=8871, fixture_path=HERE / 'f
         if not fresh:
             load_cards(db, fixture, ids, base)
             load_reviews(db, ids, base, assistant)
+            load_boards(db, fixture, ids, base)
     if not fresh:
         with store.connect() as db:
             load_job(db, fixture, base)
@@ -255,6 +256,23 @@ def load_cards(db, fixture, ids, base):
         db.execute('INSERT OR IGNORE INTO promises(direction,who,what,due,check_at,event_id,account_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
                    (p['direction'], p['who'], p['what'], due, (base + dt.timedelta(days=p['due_days'] or 1)).isoformat(), ids[p['event']], account,
                     p['status'], stamp(2 * 24 * 60, base), stamp(60, base)))
+
+
+def load_boards(db, fixture, ids, base):
+    """Graph > Projects > Board: each project labelled with its messages and moved through its stages by them, as a review
+    would (graph.set_stage), one dragged by hand; their organisations' names as an enrichment service would give them."""
+    import graph
+    for board in fixture.get('boards') or ():
+        for p in board['projects']:
+            graph.label(db, [ids[k] for k in p['events'] if k in ids], p['name'], 'review', base.isoformat())
+            for i, m in enumerate(p['moves']):
+                graph.set_stage(db, p['name'], m['stage'], 'review', base.isoformat(), board=board['name'], stages=board['stages'], reason=m['reason'],
+                                event_id=ids[m['event']], next_step=p['next'] if i == len(p['moves']) - 1 else None, org=p['org'])
+            if p.get('by_hand'):
+                node = 'project:' + str(db.execute('SELECT id FROM projects WHERE name=?', (p['name'],)).fetchone()[0])
+                graph.set_stage(db, node, p['by_hand']['stage'], 'owner', stamp(p['by_hand']['days_ago'] * 24 * 60, base))
+            db.execute("INSERT OR IGNORE INTO org_profiles(domain,status,profile,fetched_at) VALUES(?,'found',?,?)",
+                       (p['org'], json.dumps({'name': p['org_name'], 'industry': 'Software'}), base.isoformat()))
 
 
 def load_reviews(db, ids, base, assistant):

@@ -177,6 +177,106 @@ JOB = {'story': 'api', 'tool': 'claude', 'files': ['rate-limits.md'],
 SAVED_LOGINS = [('billing.cobaltandfinch.example', 'alex@lumenlabs.example'), ('portal.vantagerail.example', 'alex.morgan')]
 
 
+# Boards (Graph › Projects, Board): projects of one kind in stages, each moved by a message. Made up like the rest.
+# Per project: name, domain, contact, the messages (days ago, from the owner?, what it says) and its moves
+# (stage, why, the message that shows it). The last move is where it stands; next is the owner's next step.
+D = 24 * 60
+BOARDS = [
+    {'name': 'Partner listings', 'stages': [{'name': 'Contacted', 'hint': 'Asked or applied, no yes yet'}, {'name': 'Agreed', 'hint': 'They said yes'},
+                                            {'name': 'In review', 'hint': 'Copy or listing with one side'}, {'name': 'Partly live', 'hint': 'Some of it is up'},
+                                            {'name': 'Live', 'hint': 'Everything agreed is up'}],
+     'projects': [
+         ('Paperkite', 'paperkite.example', 'Ottilie Brandt', [(1, False, 'They want to join our integrations page and offer a link back')],
+          [('Contacted', 'Ottilie asked to join our integrations page', 0)], 'Decide if they fit the page'),
+         ('Bramblebox', 'bramblebox.example', 'Hugo Penrose', [(52, True, 'Asked for a listing on their marketplace'), (38, True, 'Nudged about the listing'), (21, True, 'Nudged again')],
+          [('Contacted', 'asked for a listing on their marketplace', 0)], 'Find another contact or drop it'),
+         ('Quillfeather', 'quillfeather.example', 'Esme Varley', [(30, True, 'Asked for an exchange of reviews'), (3, False, 'Still interested, will apply through the partner form this week')],
+          [('Contacted', 'asked for an exchange of reviews', 0)], 'Approve their partner application when it comes'),
+         ('Otterly Mail', 'otterlymail.example', 'Rowan Achebe', [(46, True, 'Proposed a listing swap'), (31, True, 'Followed up on the swap')],
+          [('Contacted', 'proposed a listing swap', 0)], 'Follow up after Fri, or drop it'),
+         ('Fernwave', 'fernwave.example', 'Ilse Moreau', [(44, True, 'Asked to be listed in their app directory'), (29, True, 'Nudged twice')],
+          [('Contacted', 'asked to be listed in their app directory', 0)], 'Find another contact or drop it'),
+         ('Copperleaf Apps', 'copperleafapps.example', 'Teo Lindqvist', [(6, True, 'Sent our listing request')],
+          [('Contacted', 'sent our listing request', 0)], 'Wait for their answer'),
+         ('Puffin Metrics', 'puffinmetrics.example', 'Nadia Ferro', [(12, True, 'Asked for a co-marketing listing'), (11, False, 'Thanks, passing this to our partner lead')],
+          [('Contacted', 'asked for a co-marketing listing', 0)], 'Wait for their partner lead'),
+         ('Tinker Lane', 'tinkerlane.example', 'Pia Okafor', [(16, True, 'Asked about a directory entry')],
+          [('Contacted', 'asked about a directory entry', 0)], 'Nudge Pia once'),
+         ('Hazelbrook Software', 'hazelbrook.example', 'Felix Amari', [(9, True, 'Proposed an editorial exchange'), (1, False, 'Yes, let us do both entries')],
+          [('Contacted', 'proposed an editorial exchange', 0), ('Agreed', 'Felix said yes to both entries', 1)], 'Write both entries'),
+         ('Driftwood Docs', 'driftwooddocs.example', 'Saskia Holm', [(14, True, 'Asked for a listing'), (4, False, 'Happy to list you, send your copy')],
+          [('Contacted', 'asked for a listing', 0), ('Agreed', 'Saskia asked for our copy', 1)], 'Send them our copy'),
+         ('Pebblepath', 'pebblepath.example', 'Arlo Svensson', [(20, True, 'Sent the exchange proposal'), (8, False, 'Agreed, here is our draft'), (0, False, 'Left comments on your draft too')],
+          [('Contacted', 'sent the exchange proposal', 0), ('Agreed', 'Arlo agreed and sent their draft', 1), ('In review', 'Arlo commented on our draft', 2)], 'Wait for their edits, then publish'),
+         ('Larkfield Labs', 'larkfieldlabs.example', 'Mina Castell', [(18, True, 'Asked for a listing'), (7, False, 'Yes, send copy'), (2, True, 'Sent copy for both sides')],
+          [('Contacted', 'asked for a listing', 0), ('Agreed', 'Mina said yes', 1), ('In review', 'sent copy for both, no comments yet', 2)], 'Get their comments, then publish both'),
+         ('Willowtick', 'willowtick.example', 'Jasper Nkemelu', [(25, True, 'Asked for a listing'), (12, False, 'Our page is live, yours next'), (9, True, 'Thanks, ours follows')],
+          [('Contacted', 'asked for a listing', 0), ('Partly live', 'their entry for us is live, ours not yet', 1)], 'Publish our entry for them'),
+         ('Saffron Sync', 'saffronsync.example', 'Lotte Ahrens', [(33, True, 'Proposed a swap'), (15, False, 'Prices fixed, the FAQ still has the old plan')],
+          [('Contacted', 'proposed a swap', 0), ('Partly live', 'prices fixed, the FAQ still wrong', 1)], 'Nudge Lotte about the FAQ'),
+         ('Moorhen Data', 'moorhendata.example', 'Cyrus Bell', [(40, True, 'Asked for a listing'), (8, False, 'All three fixed, have a look')],
+          [('Contacted', 'asked for a listing', 0), ('Partly live', 'Cyrus fixed two of the three', 1)], 'Nothing'),
+         ('Juniper Ledger', 'juniperledger.example', 'Freya Lund', [(60, True, 'Asked for a listing'), (18, False, 'Listing approved and updated')],
+          [('Contacted', 'asked for a listing', 0), ('Live', 'listing updated and approved', 1)], 'Suggest another swap'),
+         ('Nimbus & Nook', 'nimbusandnook.example', 'Eliot Grange', [(22, True, 'Asked for a listing'), (2, False, 'Sorry, we only list paying partners')],
+          [('Contacted', 'asked for a listing', 0), ('Stalled or declined', 'they only list paying partners', 1)], 'Nothing unless they come back'),
+         ('Lanternfish', 'lanternfish.example', 'Beatrix Oyelaran', [(10, True, 'Asked for a listing'), (9, False, 'Address not found')],
+          [('Contacted', 'asked for a listing', 0), ('Stalled or declined', 'the only address bounced', 1)], 'Find a working contact or drop it'),
+     ]},
+    {'name': 'Customer onboarding', 'stages': [{'name': 'Kickoff', 'hint': 'Signed, first call planned'}, {'name': 'Setting up', 'hint': 'Import and settings'},
+                                               {'name': 'Training', 'hint': 'Teams learning it'}, {'name': 'Live', 'hint': 'Using it every day'}],
+     'projects': [
+         ('Thornbury Freight onboarding', 'thornburyfreight.example', 'Maeve Dalton', [(3, False, 'Signed, can we plan the kickoff?')],
+          [('Kickoff', 'Maeve signed and asked for a kickoff', 0)], 'Plan the kickoff call'),
+         ('Gullwing Clinics onboarding', 'gullwingclinics.example', 'Ravi Castellan', [(9, False, 'Kickoff done, import file attached'), (2, True, 'Import is running')],
+          [('Kickoff', 'signed', 0), ('Setting up', 'Ravi sent the import file', 0)], 'Check the import tomorrow'),
+         ('Stonefly Studio trial', 'stoneflystudio.example', 'Noemi Hart', [(14, False, 'Started the trial'), (5, False, 'Booked training for the team')],
+          [('Kickoff', 'started the trial', 0), ('Training', 'Noemi booked training for the team', 1)], 'Run the training on Tue'),
+         ('Brackenridge Homes rollout', 'brackenridge.example', 'Owen Mbeki', [(40, False, 'Signed'), (6, False, 'Everyone is on it now')],
+          [('Kickoff', 'signed', 0), ('Live', 'Owen says everyone uses it', 1)], 'Ask for a review'),
+     ]},
+    {'name': 'Support escalations', 'stages': [{'name': 'Open'}, {'name': 'Waiting on us'}, {'name': 'Waiting on them'}, {'name': 'Solved'}],
+     'projects': [
+         ('Kittiwake export bug', 'kittiwake.example', 'Signe Paulsen', [(2, False, 'The export drops custom fields')],
+          [('Open', 'Signe reported missing custom fields', 0)], 'Reproduce it'),
+         ('Halyard sync delay', 'halyard.example', 'Desmond Oduya', [(5, False, 'Sync takes hours'), (4, True, 'Asked for their logs')],
+          [('Open', 'Desmond reported slow sync', 0), ('Waiting on them', 'asked for their logs', 1)], 'Wait for the logs'),
+     ]},
+]
+
+
+BY_HAND = {'Moorhen Data': ('Live', 1)}  # the owner dragged it there, a day ago
+
+
+def board_data():
+    """Boards, their projects, the messages behind each move and one open card on a project waiting for a reply."""
+    events, boards, cards = [], [], []
+    for b in BOARDS:
+        board = {'name': b['name'], 'stages': b['stages'], 'projects': []}
+        for name, domain, contact, msgs, moves, step in b['projects']:
+            first, key = contact.split()[0], slug(name)
+            address = f'{first.lower()}@{domain}'
+            keys = []
+            for i, (days_ago, mine, text) in enumerate(msgs):
+                k, thread = f'board:{key}:{i}', f'tb{key}'
+                minutes = days_ago * D + 90 + i * 7
+                body = (f'Hi {first},\n\n{text}.\n\nBest,\nAlex' if mine else f'Hi Alex,\n\n{text}.\n\n{first}')
+                events.append({'key': k, 'account_id': 'work-gmail', 'kind': 'gmail.message', 'minutes_ago': minutes, 'title': name.split(' ')[0] + ' and Lumen Labs',
+                               'body': body, 'metadata': {'from': f"{OWNER['name']} <{OWNER['email']}>" if mine else f'{contact} <{address}>',
+                                                          'to': address if mine else OWNER['email'], 'labels': ['SENT'] if mine else ['INBOX'],
+                                                          'thread_id': thread, 'message-id': f'<{thread}.{i}@{domain}>',
+                                                          'source_url': f'https://mail.example/#inbox/{thread}'}})
+                keys.append(k)
+            board['projects'].append({'name': name, 'org': domain, 'org_name': name.split(' onboarding')[0].split(' trial')[0].split(' rollout')[0].split(' export')[0].split(' sync')[0],
+                                      'events': keys, 'moves': [{'stage': st, 'reason': why, 'event': keys[i]} for st, why, i in moves], 'next': step,
+                                      **({'by_hand': {'stage': BY_HAND[name][0], 'days_ago': BY_HAND[name][1]}} if name in BY_HAND else {})})
+        boards.append(board)
+    cards.append({'key': 'board-bramblebox', 'title': 'Follow up with Hugo at Bramblebox: no reply in 52 days', 'body': 'You asked for a listing and nudged twice; nothing back.',
+                  'status': 'pending', 'events': ['board:bramblebox:2'], 'accounts': ['work-gmail'], 'minutes_ago': 300, 'source': 'email to Hugo Penrose',
+                  'project': 'Bramblebox', 'urgent': False, 'snooze_hours': None})
+    return events, boards, cards
+
+
 def person(rng, used, avoid=()):
     while True:  # avoid: the stories' first and last names, so a name in a card is never someone else
         name = rng.choice([f for f in FIRST if f not in avoid]) + ' ' + rng.choice([n for n in LAST if n not in avoid])
@@ -398,10 +498,11 @@ def build(profile):
                                                                                                          'm_team_tomasz': {'knows': False}}},
         ],
     }
+    board_events, boards, board_cards = board_data()
     return {'note': 'Synthetic. Every name, company and address is invented; see sandbox/fixture.py.', 'seed': SEED,
             'owner': OWNER, 'accounts': ACCOUNTS, 'companies': companies, 'people': people, 'projects': PROJECTS,
-            'events': events, 'cards': cards, 'promises': promises, 'network': network, 'agent_job': job,
-            'saved_logins': [{'site': site, 'username': user} for site, user in SAVED_LOGINS]}
+            'events': events + board_events, 'cards': cards + board_cards, 'promises': promises, 'network': network, 'agent_job': job,
+            'saved_logins': [{'site': site, 'username': user} for site, user in SAVED_LOGINS], 'boards': boards}
 
 
 if __name__ == '__main__':
