@@ -629,13 +629,16 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 }
 /* While sending, the site's sliding bar; once sent, the note in mint. */
 .card .note.sent-ok{color:var(--mint);font-weight:600}
-.card .agent-job .note{margin-top:10px}.card .agent-job .note.failed{color:var(--orange);font-weight:600}.card .agent-progress{margin:2px 0 0;font-size:.86rem;overflow-wrap:anywhere}
-.card .agent-result .agent-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:2px 12px}.card .agent-result .agent-line{margin:6px 0 0;overflow-wrap:anywhere}
-.card .agent-result .agent-text p{margin:6px 0 0;overflow-wrap:anywhere}.card .agent-more{margin:8px 0 0;font-size:.9rem}.card .agent-more>summary{cursor:pointer;color:var(--muted);font-weight:600}
-.card .agent-files{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}.card .agent-files a,.card a.agent-file{display:inline-block;padding:1px 10px;border:1px solid var(--border);border-radius:999px;font-size:.84rem;text-decoration:none;color:var(--text);overflow-wrap:anywhere}
-.card .agent-tools{display:flex;flex-wrap:wrap;gap:4px 16px;margin:10px 0 0}.card .agent-tools button{margin:0;padding:0;border:0;background:none;min-height:0;font-size:.88rem;font-weight:600;color:var(--muted)}.card .agent-tools button:hover{color:var(--text)}
-.card .agent-job a.agent-app{font-size:.88rem;font-weight:600;white-space:nowrap}
-.card .agent-diff{margin:8px 0 0;font-size:.86rem}.card .agent-diff pre{max-height:360px;overflow:auto;margin:6px 0 0;padding:8px;background:var(--surface);border-radius:8px;font:12px/1.45 var(--mono);white-space:pre}
+:is(.card,.chat-agent) .agent-job .note{margin-top:10px}:is(.card,.chat-agent) .agent-job .note.failed{color:var(--orange);font-weight:600}:is(.card,.chat-agent) .agent-progress{margin:2px 0 0;font-size:.86rem;overflow-wrap:anywhere}
+:is(.card,.chat-agent) .agent-result .agent-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:2px 12px}:is(.card,.chat-agent) .agent-result .agent-line{margin:6px 0 0;overflow-wrap:anywhere}
+:is(.card,.chat-agent) .agent-result .agent-text p{margin:6px 0 0;overflow-wrap:anywhere}:is(.card,.chat-agent) .agent-more{margin:8px 0 0;font-size:.9rem}:is(.card,.chat-agent) .agent-more>summary{cursor:pointer;color:var(--muted);font-weight:600}
+:is(.card,.chat-agent) .agent-files{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}:is(.card,.chat-agent) .agent-files a,:is(.card,.chat-agent) a.agent-file{display:inline-block;padding:1px 10px;border:1px solid var(--border);border-radius:999px;font-size:.84rem;text-decoration:none;color:var(--text);overflow-wrap:anywhere}
+:is(.card,.chat-agent) .agent-tools{display:flex;flex-wrap:wrap;gap:4px 16px;margin:10px 0 0}:is(.card,.chat-agent) .agent-tools button{margin:0;padding:0;border:0;background:none;min-height:0;font-size:.88rem;font-weight:600;color:var(--muted)}:is(.card,.chat-agent) .agent-tools button:hover{color:var(--text)}
+:is(.card,.chat-agent) button.agent-morefiles{display:inline-block;margin:0;padding:1px 10px;min-height:0;border:1px solid var(--border);border-radius:999px;background:none;box-shadow:none;font-size:.84rem;font-weight:400;color:var(--muted);cursor:pointer}:is(.card,.chat-agent) button.agent-morefiles:hover{color:var(--text)}
+.agent-allfiles{margin:8px 0 0}.agent-allfiles>p{margin:0;font-size:.86rem}.agent-allfiles .agent-files{margin-top:4px}
+.chat-allfiles{margin:8px 0 0;font-size:var(--chat-meta)}.chat-allfiles>summary{cursor:pointer;color:var(--chat-quiet);font-weight:600}.chat-allfiles .agent-files{display:flex;flex-wrap:wrap;gap:6px}.chat-allfiles .agent-file{display:inline-block;padding:1px 10px;border:1px solid var(--c-line-strong);border-radius:999px;font-size:.82rem;text-decoration:none;color:var(--text);overflow-wrap:anywhere}
+:is(.card,.chat-agent) .agent-job a.agent-app{font-size:.88rem;font-weight:600;white-space:nowrap}
+:is(.card,.chat-agent) .agent-diff{margin:8px 0 0;font-size:.86rem}:is(.card,.chat-agent) .agent-diff pre{max-height:360px;overflow:auto;margin:6px 0 0;padding:8px;background:var(--surface);border-radius:8px;font:12px/1.45 var(--mono);white-space:pre}
 .card .agent-form:not(.agent-sheet){display:flex;flex-direction:column;gap:10px;padding-top:14px}.card .agent-form:not(.agent-sheet) label{display:flex;flex-direction:column;gap:6px;margin:0;color:var(--muted);font-size:.9rem}
 .card .agent-form:not(.agent-sheet) :is(select,textarea){width:100%;max-width:none;box-sizing:border-box;margin:0;font-size:1rem;color:var(--text)}
 /* The hand-off sheet, on the card and in the chat's message box place */
@@ -2390,13 +2393,14 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
    push(i,`<div class="chat-msg machine chat-card"><div class="bubble">${intro||`<p>${esc(s.title)}</p>`}</div>${res?'':options(n,hasDraft)+(hasDraft?`<div class="chat-card-send">${p.lead}</div>`:'')+tm(i.at)}</div>`);
    if(res)push(i,result(n,i,`${p.ask?`<div class="chat-ask">${p.ask}</div>`:q.ask?`<p class="chat-q chat-result-title">${esc(q.ask)}</p>`:`<p class="chat-result-title">${esc(s.title)}</p>`}${options(n,hasDraft)}${hasDraft?`<div class="chat-card-send">${p.lead}</div>`:''}`))}
   else if(i.kind==='agentlive')push(i,`<div class="chat-msg machine chat-agent">${p.agent}</div>`);
-  else if(i.kind==='agent'){const files=(i.files||[]).map(f=>agentFile({id:i.id},{path:f})).join('');
+  else if(i.kind==='agent'){const all=i.files||[],pick=agentPick(all,i.full||i.text),files=pick.shown.map(f=>agentFile({id:i.id},{path:f})).join('')+agentMoreFiles(pick.hidden),
+    allFiles=pick.hidden?`<details class="agent-more chat-allfiles"><summary>All files</summary>${agentAllFiles({id:i.id},all,false)}</details>`:'';
    // A shortened answer (its housekeeping left out) has More too, which shows the whole answer
    const whole=i.full&&chatOpenSet.has(k)?i.full:i.text,text=clamp(k,chatMarkdown(whole),chatLong(i.text)||!!i.full);
    // Plain text like any reply: whose answer it is, small above; its files and "<agent> sent nothing" on one line under it
    // (left out once the owner sent the card's message after it)
    const nothing=i.nothing_sent&&!rows.slice(n+1).some(j=>j.kind==='event'&&j.sent)?`<small class="chat-noted">${esc(i.name)} sent nothing</small>`:'';
-   push(i,`<div class="chat-msg machine chat-agent-msg"><div class="chat-agent-name">${esc(i.name)}</div><div class="bubble">${text}</div>${files||nothing?`<div class="chat-files">${files}${nothing}</div>`:''}${tm(i.at)}</div>`)}
+   push(i,`<div class="chat-msg machine chat-agent-msg"><div class="chat-agent-name">${esc(i.name)}</div><div class="bubble">${text}</div>${files||nothing?`<div class="chat-files">${files}${nothing}</div>`:''}${allFiles}${tm(i.at)}</div>`)}
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
   else if(i.kind==='event'){const c=i.times.length,t=chatEventText(i),line=c>1?`${esc(t)} ${c} times<span class="chev" aria-hidden="true">›</span>`:esc(t);
    push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+tm(i.at)}</div>`)}
@@ -2778,6 +2782,13 @@ function agentText(j,text){const chips=[],files=j.files||[];
   .replace(/`([^`\n]+)`/g,'$1').replace(/^#{1,6}\s+/gm,'').replace(/^\s*[*-]\s+/gm,'• ')
   .replace(/(^|[\s(])(?:~|\/(?:home|Users|tmp|var|root|data|mnt|opt|srv))(?:\/[^\s/)]+)*\/([^\s/)]+)/g,'$1$2');
  return t.trim().split(/\n\s*\n/).filter(Boolean).map(p=>`<p>${format(p).replace(/\n/g,'<br>')}</p>`).join('').replace(/\u0002(\d+)\u0003/g,(m,i)=>chips[i])}
+// Which of a job's files to show as chips: the ones its answer names, else what it made for the owner. Housekeeping
+// (.pid, .log, lock and scratch files, dot folders) only shows under Details. At most AGENT_CHIPS, then "+N more".
+const AGENT_CHIPS=3,AGENT_NOISE=/(^|\/)(\.[^/]*|node_modules|__pycache__|tmp|temp|scratch|cache|logs?)(\/|$)|\.(pid|log|lock|tmp|temp|swp|swo|bak|orig|out|err)$|~$/i;
+function agentPick(paths,text){const said=String(text||''),named=paths.filter(f=>said.includes(f)||said.includes(f.split('/').pop()));
+ const shown=(named.length?named:paths.filter(f=>!AGENT_NOISE.test(f))).slice(0,AGENT_CHIPS);return {shown,hidden:paths.length-shown.length}}
+const agentMoreFiles=n=>n?`<button type="button" class="agent-file agent-morefiles" data-agent-files>+${n} more</button>`:'';
+const agentAllFiles=(j,paths,label=true)=>`<div class="agent-allfiles">${label?'<p class="muted">All files</p>':''}<div class="agent-files">${paths.map(f=>agentFile(j,{path:f})).join('')}</div></div>`;
 // The result in one line: its first paragraph, cut at a sentence when long. The rest folds behind Details.
 function agentLine(text){const first=String(text||'').trim().split(/\n\s*\n/)[0]||'';if(first.length<=240)return first;const cut=first.slice(0,240),end=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf('! '),cut.lastIndexOf('? '));return end>80?cut.slice(0,end+1):cut.replace(/\s+\S*$/,'')+'…'}
 const agentTools2=(s,j,retry)=>`<div class="agent-tools">${retry?`<button data-agent-retry="${esc(j.id)}">Try again</button>`:''}<button data-agent-again="${esc(s.id)}">Hand off again</button><button data-agent-aside="${esc(j.id)}">Hide</button></div>`;
@@ -2791,10 +2802,11 @@ function agentBlock(s){const j=s.agent_job;if(!j||['set_aside','again'].includes
  if(j.status==='cancelled')return closed(s)?'':`<div class="agent-job"><p class="note">${who}: cancelled.</p></div>`;
  const line=agentLine(j.summary),rest=String(j.summary||'').trim().length>line.length+2;
  const files=(j.files||[]).filter(f=>!(j.draft_updated&&f.path==='draft.md'));
- const lineHtml=agentText(j,line),own=files.filter(f=>!lineHtml.includes(agentFile(j,f)));  // a file already in the line is not repeated
- const chips=own.length?`<div class="agent-files">${own.map(f=>agentFile(j,f)).join('')}</div>`:'';
+ const lineHtml=agentText(j,line),own=files.filter(f=>!lineHtml.includes(agentFile(j,f))).map(f=>f.path);  // a file already in the line is not repeated
+ const pick=agentPick(own,j.summary);
+ const chips=pick.shown.length||pick.hidden?`<div class="agent-files">${pick.shown.map(f=>agentFile(j,{path:f})).join('')}${agentMoreFiles(pick.hidden)}</div>`:'';
  const diff=j.has_diff?`<details class="agent-diff" data-agent-diff="${esc(j.id)}"><summary>Show changes</summary><pre></pre></details>`:'';
- const more=rest||diff?`<details class="agent-more"><summary>Details</summary>${rest?`<div class="agent-text">${agentText(j,j.summary)}</div>`:''}${diff}</details>`:'';
+ const more=rest||diff||pick.hidden?`<details class="agent-more"><summary>Details</summary>${rest?`<div class="agent-text">${agentText(j,j.summary)}</div>`:''}${pick.hidden?agentAllFiles(j,own):''}${diff}</details>`:'';
  return`<div class="agent-job draft agent-result" role="group" aria-label="${who} result"><div class="agent-head"><span class="dm">${who}${j.place==='cloud'?' (Codex cloud)':''}${j.turns>1?' · after your changes':''}</span>${agentLink(j)}</div><div class="agent-line agent-text">${lineHtml}</div>${j.draft_updated?`<p class="muted agent-progress">Updated the draft below. Send it when it reads right.</p>`:''}${chips}${more}${closed(s)?'':agentTools2(s,j,false)}</div>`}
 // Hand to Codex / Claude Code: a compact sheet (in the chat it takes the message box's place). One plain line of what it
 // will do, small chips for what it gets (never links), an optional note; the whole job only behind "See the full job".
@@ -2816,6 +2828,7 @@ const agentPost=(action,args)=>request('api/action',{method:'POST',headers:{'Con
 async function agentHand(id,tool,b){if(b)b.disabled=true;try{const d=await agentPost('agent_draft',{suggestion_id:id});agentEditing.set(id,{tool,brief:d.brief,line:d.line,gets:d.gets,note:''});render();if(chatId)paintChat();document.getElementById('agent-note-'+id)?.focus()}catch(err){toast(err.message,true)}finally{if(b)b.disabled=false}}
 $('#suggestions').addEventListener('click',async e=>{const t=e.target;let b;
  if(b=t.closest('[data-agent-hand]'))return agentHand(b.dataset.card,b.dataset.agentHand,b);
+ if(b=t.closest('[data-agent-files]')){const d=b.closest('.agent-job,.chat-msg')?.querySelector('details.agent-more');if(d){d.open=true;d.querySelector('.agent-allfiles')?.scrollIntoView({block:'nearest'})}return}
  if(b=t.closest('[data-agent-again]')){const s=state.suggestions.find(x=>x.id===b.dataset.agentAgain);return agentHand(b.dataset.agentAgain,s?.agent_job?.tool,b)}
  if(b=t.closest('[data-agent-edit-cancel]')){agentEditing.delete(b.dataset.agentEditCancel);render();if(chatId)$('#chat-input')?.focus();return}
  if(b=t.closest('[data-agent-ask]')){agentAsking.add(b.dataset.agentAsk);render();document.getElementById('agent-ask-'+b.dataset.agentAsk)?.focus();return}
