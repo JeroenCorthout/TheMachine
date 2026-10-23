@@ -464,9 +464,9 @@ button.node:hover{text-decoration:underline;background:none}
 .tile{position:relative;min-width:0;margin:0;padding:11px 12px 11px;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--c-surface);box-shadow:var(--shadow-sm);cursor:pointer;transition:border-color var(--dur) var(--ease)}
 .tile:hover{border-color:var(--c-line-strong)}.tile:focus-visible{outline:0;box-shadow:var(--ring)}
 .tile.dragging{opacity:.45}
-.tile-row{display:flex;align-items:center;gap:8px;min-width:0}
+.tile-row{display:flex;align-items:flex-start;gap:8px;min-width:0}.tile-row>.org-pic,.tile-age{margin-top:1px}
 .tile .org-pic{width:24px;height:24px}
-.tile-name{flex:1;min-width:0;font:600 var(--fs-sm)/1.3 var(--sans);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile-name{flex:1;min-width:0;font:600 var(--fs-sm)/1.3 var(--sans);color:var(--text);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 .tile-age{flex:none;color:var(--c-text-3);font-size:var(--fs-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
 .tile-next{margin:8px 0 0;color:var(--text);font-size:var(--fs-sm);line-height:1.45;overflow-wrap:anywhere}
 .tile-why{margin:5px 0 0;color:var(--c-text-3);font-size:var(--fs-xs);line-height:1.45;overflow-wrap:anywhere}
@@ -498,7 +498,7 @@ button.node:hover{text-decoration:underline;background:none}
 @media(max-width:560px){
   .board-chips{margin-left:0}
   .board-head{margin-bottom:10px}
-  .sub-tabs.stage-tabs{display:flex;margin:0 0 12px}
+  .sub-tabs.stage-tabs{display:flex;margin:0 0 12px;padding-right:28px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent)}  /* the fade says it scrolls */
   .board-head:has(.board-pick) :is(.board-title,.board-chips){display:none}
   .board-pick{display:block;max-width:100%;margin:0;padding:2px 26px 2px 0;border:0;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394918a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 2px center/16px;color:var(--text);font:var(--fw-heading) var(--fs-xl)/1.25 var(--serif);letter-spacing:-.01em;-webkit-appearance:none;appearance:none;field-sizing:content;cursor:pointer}
   .pboard{display:block;overflow:visible}
@@ -923,6 +923,7 @@ nav button.active .badge,[data-theme="light"] nav button.active .badge{backgroun
 #needs-you>strong::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
 #needs-you li{padding:var(--sp-1) 0}
 #needs-you .head-link{min-height:30px;padding:0 12px}
+@media(max-width:560px){#needs-you li:has(>code){flex-direction:column;align-items:flex-start;gap:6px}#needs-you li>code{max-width:100%;overflow-x:auto}}  /* a command to run goes under its line on a phone */
 
 /* Counts: plain figures on one hairline row. */
 .stats,#suggestion-stats .stats,[data-theme="light"] #suggestion-stats .stats{box-shadow:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);backdrop-filter:none;-webkit-backdrop-filter:none}
@@ -3822,9 +3823,9 @@ const tileWhy=(p,side)=>{const when=p.at?(p.event_id?`<button type="button" clas
  return what||when?`<p class="tile-why">${what}${what&&when?' · ':''}${when}</p>`:''};
 const stuckDays=p=>p.stage!==boardSide()&&(p.no_reply_days||0)>=10?p.no_reply_days:0;
 const boardSide=()=>(boardNow()?.stages||[]).find(s=>s.side)?.name;
-const tile=(p,b)=>{const stuck=stuckDays(p),age=p.days===0?'Today':p.days+'d';
+const tile=(p,b)=>{const stuck=stuckDays(p),age=p.days+'d';  /* under a day the move's date below says it */
  const menu=`<details class="tile-menu"><summary aria-label="Move ${esc(p.name)} to another stage" title="Move">⋯</summary><div class="fact-menu-list" role="menu"><p>Move to</p>${b.stages.map(s=>`<button type="button" role="menuitem" data-stage-to="${esc(s.name)}" data-stage-node="${esc(p.id)}"${s.name===p.stage?' aria-current="true" disabled':''}>${esc(s.name)}</button>`).join('')}</div></details>`;
- return `<article class="tile" data-node="${esc(p.id)}" data-stage="${esc(p.stage)}" draggable="true" tabindex="0" aria-label="${esc(p.name)}, ${esc(p.stage)}"><div class="tile-row">${orgPic({name:p.org?.name||p.name,profile:{logo:p.org?.logo}})}<span class="tile-name" title="${esc(p.name)}">${esc(p.name)}</span>${stuck?'':`<span class="tile-age" title="In this stage for ${p.days===0?'less than a day':p.days+(p.days===1?' day':' days')}">${age}</span>`}${menu}</div>`
+ return `<article class="tile" data-node="${esc(p.id)}" data-stage="${esc(p.stage)}" draggable="true" tabindex="0" aria-label="${esc(p.name)}, ${esc(p.stage)}"><div class="tile-row">${orgPic({name:p.org?.name||p.name,profile:{logo:p.org?.logo}})}<span class="tile-name" title="${esc(p.name)}">${esc(p.name).replace(/([a-z])([A-Z])/g,'$1<wbr>$2')}</span>${stuck||!p.days?'':`<span class="tile-age" title="In this stage for ${p.days===0?'less than a day':p.days+(p.days===1?' day':' days')}">${age}</span>`}${menu}</div>`
   +(p.next?`<p class="tile-next">${esc(p.next)}</p>`:'')+tileWhy(p)
   +(stuck?`<div class="tile-chips"><span class="chip">No reply in ${stuck} days</span>${p.card?`<a class="tile-card" href="#card=${esc(p.card.id)}" title="${esc(p.card.title)}">Card: ${esc(p.card.title)}</a>`:''}</div>`:'')+'</article>'};
 const LANE_ROWS=()=>matchMedia('(max-width:560px)').matches?6:8;
