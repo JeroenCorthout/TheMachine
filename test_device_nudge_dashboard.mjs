@@ -76,6 +76,10 @@ try{
  // The command palette's actions, in one place.
  {const {context,page}=await open();
   assert.deepEqual(await page.evaluate(()=>window.deviceActions.map(a=>[a.id,a.label])),[['install-app','Install app'],['push-on','Turn on notifications'],['push-test','Send test notification']]);
+  // In the command palette: what this device can do right now (no install offer yet, notifications not on).
+  const pal=()=>page.evaluate(()=>actsFor(kbCtx()).filter(a=>a.group==='Actions').map(a=>a.id).filter(id=>window.deviceActions.some(d=>d.id===id)));
+  assert.deepEqual(await pal(),['push-on']);
+  await page.evaluate(()=>__installPrompt());assert.deepEqual(await pal(),['install-app','push-on']);
   await context.close()}
 
  // Chromium on a computer, not installed: the browser's own prompt from the owner's tap, then Installed, for good.
