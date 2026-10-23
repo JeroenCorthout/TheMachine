@@ -4824,7 +4824,8 @@ class Store:
                 after = dt.datetime.fromisoformat(latest['created_at']) >= dt.datetime.fromisoformat(str(handed_at))
             except (TypeError, ValueError):
                 after = False
-            if card['status'] == 'completed' and latest['choice'] == 'complete' and latest['source'] in ('dashboard', 'telegram') and after:
+            taken = db.execute('SELECT 1 FROM decisions WHERE id=?', ('fleet-handoff-' + request_id,)).fetchone()  # they took it on, it closed
+            if card['status'] == 'completed' and latest['choice'] == 'complete' and latest['source'] in ('dashboard', 'telegram') and after and not taken:
                 return self._decide(db, suggestion_id, 'reopen', '', decision_id, 'fleet')
             # they had taken it on (it closed with their answer), then said Not mine: back to the owner, while nothing newer came
             if card['status'] == 'completed' and latest['source'] == 'fleet' and latest['id'] == 'fleet-handoff-' + request_id:

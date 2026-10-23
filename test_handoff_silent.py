@@ -140,6 +140,13 @@ class Silent(unittest.TestCase):
         self.assertEqual(fleet_requests.how_text('a call', ''), 'had a call')
         self.assertEqual(fleet_requests.Requests.marked_line('had a call'), 'Marked as yours, since you had a call about it')
 
+    def test_a_marked_card_the_owner_dismisses_tells_the_teammate(self):
+        ask = self.waiting()
+        card = self.fleet.handoff_on_it(ask, self.sent_email())['card_id']
+        self.store.decide(card, 'reject', 'Not relevant', 'd-dismiss', 'dashboard')
+        self.fleet.requests_round()
+        self.assertEqual(self.answered()['answer'], {'stage': 'declined'})
+
     def test_an_event_id_given_as_text_counts_the_same(self):
         ask = self.waiting()
         self.assertEqual(self.fleet.handoff_on_it(ask, str(self.sent_email()))['status'], 'answered')
@@ -191,7 +198,7 @@ class Silent(unittest.TestCase):
         slack = {'account_id': 'work', 'source_id': 's-own', 'kind': 'slack.message', 'occurred_at': later(), 'title': '', 'body': 'On it',
                  'deleted': False, 'metadata': {'user_id': 'UOWNER', 'chat_name': 'Pat Example'}}
         self.fleet.handoff_on_it(ask, self.event(slack))
-        self.assertEqual({k: self.answered()['answer'].get(k) for k in ('where', 'with')}, {'where': 'Slack', 'with': 'Pat'})  # Pat is in the Fleet
+        self.assertEqual({k: self.answered()['answer'].get(k) for k in ('where', 'with')}, {'where': 'Slack', 'with': None})  # a chat name alone: someone else can share it, so no name goes
         call = lambda status, sid: {'account_id': 'work', 'source_id': sid, 'kind': 'calendar.event', 'occurred_at': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
                                     'title': 'Pricing call', 'body': '', 'deleted': False,
                                     'metadata': {'attendees': [{'email': 'owner@acme.example', 'self': True, 'responseStatus': status},
@@ -236,6 +243,15 @@ class Sender(unittest.TestCase):
         self.fleet.take_answer({'id': ask, 'status': 'answered', 'answer': {'stage': 'declined', 'note': 'Not mine'}})
         self.assertEqual(self.card_row(card)['status'], 'pending')  # back to the owner
         self.assertEqual(self.told[-1], 'Pat declined your handoff: Send Sam the pricing. Their note: “Not mine”')
+
+    def test_not_mine_never_reopens_a_card_the_owner_took_back_and_finished(self):
+        card, ask = self.hand_off()
+        self.fleet.take_answer({'id': ask, 'status': 'answered', 'answer': {'stage': 'accepted', 'silent': True, 'where': 'email', 'at': '2026-10-23T08:12:00+00:00'}})
+        self.store.decide(card, 'undo', '', 'd-undo', 'dashboard')
+        self.store.decide(card, 'complete', '', 'd-done', 'dashboard')
+        self.assertEqual(self.card_row(card)['status'], 'completed')
+        self.fleet.take_answer({'id': ask, 'status': 'answered', 'answer': {'stage': 'declined', 'note': 'Not mine'}})
+        self.assertEqual(self.card_row(card)['status'], 'completed')  # their own finish stands
 
     def test_a_silent_mark_is_kept_to_its_fixed_form_and_an_older_machine_reads_an_accept(self):
         clean = fleet_requests.clean_answer

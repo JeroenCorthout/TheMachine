@@ -804,12 +804,14 @@ class Requests:
         return (name.split()[0] if name else ''), address
 
     def known_to(self, row, question, who, address):
-        """Whether the teammate already knows who the owner talked to: the handoff's own contact, or someone in the Fleet."""
-        if address and address == str(question.get('contact') or '').lower():
+        """Whether the teammate already knows who the owner talked to: the handoff's own contact, or someone in the Fleet,
+        by their address. A name alone never counts (another person can share it): when in doubt, no name goes."""
+        if not address:
+            return False
+        if address == str(question.get('contact') or '').lower():
             return True
         members = (self.fleets().get(row['fleet']) or {}).get('members', [])
-        return any((address and address in {str(e).lower() for e in m.get('emails') or []}) or
-                   (not address and who.lower() == str(fleet.label(m)).split()[0].lower()) for m in members)
+        return any(address in {str(e).lower() for e in m.get('emails') or []} for m in members)
 
     @staticmethod
     def marked_line(how):
@@ -999,7 +1001,8 @@ class Requests:
                               "FROM fleet_requests r JOIN suggestions s ON s.id=r.card_id WHERE r.stage IN ('accepted','adjusted','on_it') AND r.kind IN ('intro','handoff','todo')").fetchall()
         for row in rows:
             stage = ('sent' if row['sent'] else 'declined' if row['card_status'] == 'rejected' else None) if row['kind'] == 'intro' else \
-                    ('done' if row['card_status'] == 'completed' else None)
+                    ('done' if row['card_status'] == 'completed' else
+                     'declined' if row['card_status'] == 'rejected' and row['stage'] == 'on_it' else None)  # marked for them, then dismissed
             if not stage:
                 continue
             try:
