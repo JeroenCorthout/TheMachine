@@ -43,7 +43,7 @@ scripts/sandbox.sh shots fleet /tmp/shots 8880 --pages fleet,settings --widths 3
 node sandbox/shots.mjs --url http://127.0.0.1:8870   # against a sandbox that is already running
 ```
 
-`sandbox/shots.mjs` opens Suggestions, Events, Graph, Fleet, Feedback, Connections and Settings at 390px and 1280px, in light and dark. It saves a full-page PNG of each (`<page>-<width>-<theme>.png`) and `report.json`, and prints three checks:
+`sandbox/shots.mjs` opens Suggestions, Calendar, Events, Graph, Fleet, Feedback, Connections and Settings at 390px and 1280px, in light and dark. It saves a full-page PNG of each (`<page>-<width>-<theme>.png`) and `report.json`, and prints three checks:
 
 - **overflow:** the page, or an element on it, is wider than the screen (content inside a scrolling or clipping box is fine);
 - **overlap:** two visible buttons, links or inputs cover each other by more than 2px;
