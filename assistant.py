@@ -601,6 +601,8 @@ def review_view(row, preview=REVIEW_PREVIEW_CHARS, offset=0, earlier=None):
         view['earlier_in_conversation'] = earlier
     if row['kind'] == 'owner.card':
         view['owner_card'] = {'card_id': metadata.get('card_id'), 'rule': OWNER_CARD_RULE}
+    if row['kind'] == 'calendar.event' and not calendar_owned(metadata):
+        view['not_owners'] = f"On {calendar_owner_name(metadata)}'s calendar, shared with the owner, who isn't on it: context only, no card, prep or promise for them"
     return view
 
 
@@ -1861,13 +1863,50 @@ def calendar_event(account, raw, timezone):
                 'organizer': raw.get('organizer'), 'attendees': attendees,
                 'recurring_event_id': raw.get('recurringEventId'),
                 'original_start': raw.get('originalStartTime'), 'source_url': source_url,
-                'truncated': len(body) > 40000}
+                'ical_uid': raw.get('iCalUID'), 'truncated': len(body) > 40000}
     if account.get('calendar_id', 'primary') != 'primary':
         metadata.update(calendar_id=account['calendar_id'], credential_account=account['email'],
                         access='shared_read_only')
     return {'account_id': account['id'], 'source_id': raw['id'], 'kind': 'calendar.event',
             'occurred_at': calendar_time(start, timezone), 'title': raw.get('summary', '(untitled event)')[:1000],
             'body': body[:40000], 'metadata': metadata, 'deleted': raw.get('status') == 'cancelled'}
+
+
+def calendar_owned(metadata, owner=()):
+    """Whether a meeting is the owner's: on their own calendar, or on one shared with them (someone else's) that
+    they organise or are invited to and didn't decline. 'self' on a shared calendar means its owner, not them."""
+    if metadata.get('access') != 'shared_read_only':
+        return True
+    me = {str(e).lower() for e in (*owner, metadata.get('credential_account')) if e}
+    if str((metadata.get('organizer') or {}).get('email') or '').lower() in me:
+        return True
+    return any(isinstance(a, dict) and str(a.get('email') or '').lower() in me and a.get('responseStatus') != 'declined'
+               for a in metadata.get('attendees') or [])
+
+
+def calendar_owner_name(metadata):
+    """The first name of whoever a shared calendar belongs to, for a quiet "Juliana's" label."""
+    organizer = metadata.get('organizer') or {}
+    name = str(organizer.get('displayName') or '').split() if organizer.get('self') else []
+    if name:
+        return name[0][:40]
+    local = re.split(r'[._+\-]', str(metadata.get('calendar_id') or '').split('@')[0])[0]
+    return local[:40].capitalize() if local.isalpha() else 'Shared'
+
+
+def calendar_keys(metadata, title, start, end):
+    """What makes two copies of one meeting (on the owner's calendar and a shared one, or two invites) the same."""
+    keys = {('when', start, metadata.get('end_at') or end, ' '.join(str(title).split()).casefold())}
+    if metadata.get('ical_uid'):
+        keys.add(('uid', metadata['ical_uid'], start))
+    eid = urllib.parse.parse_qs(urllib.parse.urlsplit(str(metadata.get('source_url') or '')).query).get('eid', [''])[0]
+    try:
+        event = base64.urlsafe_b64decode(eid + '=' * (-len(eid) % 4)).decode().split(' ')[0] if eid else ''
+    except (ValueError, UnicodeDecodeError):
+        event = ''
+    if event:
+        keys.add(('event', event))
+    return keys
 
 
 # Where an email reply's quoted history starts: a top-level reply header such as
@@ -2346,6 +2385,8 @@ class Store:
                 db.execute('DROP TABLE promises')
                 db.execute('ALTER TABLE promises_next RENAME TO promises')
             db.execute("CREATE INDEX IF NOT EXISTS promises_open ON promises(status,check_at)")
+            if 'together' not in {r['name'] for r in db.execute('PRAGMA table_info(promises)')}:
+                db.execute('ALTER TABLE promises ADD COLUMN together INTEGER NOT NULL DEFAULT 0')  # a plan made with them: theirs and the owner's
             preparation_columns = {r['name'] for r in db.execute('PRAGMA table_info(preparations)')}
             if 'action_id' not in preparation_columns:
                 db.execute('ALTER TABLE preparations ADD COLUMN action_id TEXT')
@@ -2927,8 +2968,10 @@ class Store:
                 row['metadata']['app_name'] = android_app_name(row['metadata'].get('package_name', 'Unknown app'))
         return rows
 
-    def calendar(self, account_ids, start, end):
-        """Meetings that overlap [start, end), for the dashboard's Calendar: read-only, slim rows, soonest first."""
+    def calendar(self, account_ids, start, end, owner=()):
+        """Meetings that overlap [start, end), for the dashboard's Calendar: read-only, slim rows, soonest first.
+        One that is on someone else's calendar shared with the owner, and that they aren't on, carries that
+        person's first name (shared); one on both calendars shows once, as the owner's."""
         start, end = (dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')) for v in (start, end))
         if start.tzinfo is None or end.tzinfo is None or not dt.timedelta(0) < end - start <= dt.timedelta(days=15):
             raise ValueError('Use a window of at most 15 days, with time zones')
@@ -2940,19 +2983,36 @@ class Store:
                               'AND account_id IN (' + ','.join('?' for _ in account_ids) + ') AND occurred_at<? '
                               "AND coalesce(json_extract(metadata,'$.end_at'),occurred_at)>? ORDER BY occurred_at,id LIMIT 300",
                               (*account_ids, end, start)).fetchall()
-        result = []
+        owner = {str(e).lower() for e in owner if e}
+        found = []
         for r in rows:
             m = json.loads(r['metadata'])
             attendees = [a for a in m.get('attendees') or [] if isinstance(a, dict)]
-            me = next((a for a in attendees if a.get('self')), {})
+            shared = m.get('access') == 'shared_read_only'
+            mine = owner | {str(m.get('credential_account') or '').lower()}
+            me = next((a for a in attendees if (str(a.get('email') or '').lower() in mine if shared else a.get('self'))), {})
             if me.get('responseStatus') == 'declined':
                 continue  # a meeting the owner said no to isn't on their day
+            theirs = not calendar_owned(m, owner)
             url = m.get('source_url')
-            result.append({'id': r['id'], 'account_id': r['account_id'], 'title': str(r['title'])[:300], 'start': r['occurred_at'],
-                           'end': m.get('end_at') or r['occurred_at'], 'all_day': bool(m.get('all_day')),
-                           'location': str(m.get('location') or '')[:200], 'guests': sum(1 for a in attendees if not a.get('self')),
-                           'url': url if isinstance(url, str) and urllib.parse.urlsplit(url).scheme == 'https' else None})
-        return result
+            people = [str(a.get('displayName') or a.get('email') or '')[:80] for a in attendees if a is not me and (a.get('displayName') or a.get('email'))]
+            organizer = m.get('organizer') or {}
+            if organizer.get('displayName') and str(organizer.get('email') or '').lower() not in mine and not (organizer.get('self') and not shared):
+                people.append(str(organizer['displayName'])[:80])
+            found.append((theirs, shared, calendar_keys(m, r['title'], r['occurred_at'], m.get('end_at')), {
+                'id': r['id'], 'account_id': r['account_id'], 'title': str(r['title'])[:300], 'start': r['occurred_at'],
+                'end': m.get('end_at') or r['occurred_at'], 'all_day': bool(m.get('all_day')),
+                'location': str(m.get('location') or '')[:200], 'guests': sum(1 for a in attendees if a is not me),
+                'people': list(dict.fromkeys(people))[:20], 'shared': calendar_owner_name(m) if theirs else None,
+                'url': url if isinstance(url, str) and urllib.parse.urlsplit(url).scheme == 'https' else None}))
+        # The owner's own copy first, so a meeting on their calendar and a shared one shows once, as theirs
+        seen, result = set(), []
+        for theirs, shared, keys, row in sorted(found, key=lambda f: (f[0], f[1])):
+            if keys & seen:
+                continue
+            seen |= keys
+            result.append(row)
+        return sorted(result, key=lambda x: (x['start'], x['id']))
 
     def review_context(self, owner_session, owner_run=None):
         # No source content here: this is a small durable recovery hint, not recall.
@@ -3432,6 +3492,9 @@ class Store:
             rows = db.execute('SELECT id,account_id,kind,occurred_at,metadata FROM events WHERE deleted=0 AND id IN (' + ','.join('?' for _ in event_ids) + ')', event_ids).fetchall()
             if {r['id'] for r in rows} != set(event_ids):
                 raise ValueError('Every evidence event must exist and be live')
+            if all(r['kind'] == 'calendar.event' and not calendar_owned(json.loads(r['metadata'])) for r in rows):
+                raise ValueError("That meeting is on someone else's calendar that the owner can see, and they aren't on it: "
+                                 'not theirs, so no card for it')
             own = owner_card_of(db, rows) if match else None
             if own is not None and card_id is not None and card_id != own['id']:
                 # The owner's card is theirs to merge: the review only asks.
@@ -3830,6 +3893,16 @@ class Store:
                                               (event['id'], direction, who)) if r['what'] == what), None)
             if row:
                 return {'id': row['id'], 'status': row['status'], 'duplicate': True}
+            # A plan made together ("let's do it Sunday" and the yes to it) reads as a promise from both
+            # sides, in two messages: one open promise with that person for the same thing is enough
+            same = lambda r: ' '.join(r['what'].split()).casefold() == what.casefold()
+            row = next((r for r in db.execute("SELECT p.id,p.status,p.what,p.direction,p.due,e.occurred_at made_at FROM promises p JOIN events e ON e.id=p.event_id "
+                                              "WHERE p.status='open' AND p.who=? COLLATE NOCASE", (who,)) if same(r)), None)
+            if row:
+                if row['direction'] != direction:  # both sides said it: a plan made together, kept as the owner's
+                    db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
+                               (promise_check_at('mine', row['due'], row['made_at'], digest_at), stamp, row['id']))
+                return {'id': row['id'], 'status': row['status'], 'duplicate': True}
             cursor = db.execute('INSERT INTO promises(direction,who,what,due,check_at,event_id,account_id,watch,status,created_at,updated_at) '
                                 "VALUES(?,?,?,?,?,?,?,?,'open',?,?) ON CONFLICT(event_id,direction,who,what) DO NOTHING",
                                 (direction, who, what, due, check_at, event['id'], event['account_id'], encoded({**watch, 'promise': True}) if watch else None, stamp, stamp))
@@ -3893,6 +3966,21 @@ class Store:
         when the original has no thread): their new message is reviewed as usual. A promise whose message was deleted is dropped."""
         db.execute("UPDATE promises SET status='dropped',note='The message was deleted',updated_at=? WHERE status='open' "
                    "AND event_id IN (SELECT id FROM events WHERE deleted=1)", (now(),))
+        # The same open promise twice (stored before promise() caught it): keep one, the owner's when both sides said it
+        groups = {}
+        for row in db.execute("SELECT p.id,p.who,p.what,p.direction,p.due,p.together,e.occurred_at made_at FROM promises p "
+                              "JOIN events e ON e.id=p.event_id WHERE p.status='open' ORDER BY p.id").fetchall():
+            groups.setdefault((row['who'].casefold(), ' '.join(row['what'].split()).casefold()), []).append(row)
+        for rows in groups.values():
+            if len(rows) < 2:
+                continue
+            keep = next((r for r in rows if r['direction'] == 'mine'), rows[0])
+            if len({r['direction'] for r in rows}) > 1 and not (keep['together'] and keep['direction'] == 'mine'):
+                db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
+                           (promise_check_at('mine', keep['due'], keep['made_at']), now(), keep['id']))
+            for r in rows:
+                if r['id'] != keep['id']:
+                    db.execute("UPDATE promises SET status='dropped',note=?,updated_at=? WHERE id=?", (f"The same as promise {keep['id']}", now(), r['id']))
         for row in db.execute("SELECT id,watch FROM promises WHERE status='open' AND watch IS NOT NULL").fetchall():
             watch = {**json.loads(row['watch']), 'promise': True}
             answer = next((e for e in db.execute('SELECT id,account_id,kind,occurred_at,title,metadata FROM events WHERE account_id=? AND kind=? AND occurred_at>? AND deleted=0 ORDER BY occurred_at',
@@ -3906,7 +3994,7 @@ class Store:
         since = (dt.datetime.fromisoformat(now()) - dt.timedelta(days=days)).isoformat()
         with self.connect() as db:
             rows = [dict(r) for r in db.execute(
-                'SELECT p.id,p.direction,p.who,p.what,p.due,p.check_at,p.status,p.note,p.suggestion_id,p.account_id,p.event_id,p.created_at,p.updated_at,'
+                'SELECT p.id,p.direction,p.who,p.what,p.due,p.check_at,p.status,p.note,p.suggestion_id,p.account_id,p.event_id,p.created_at,p.updated_at,p.together,'
                 'e.occurred_at made_at,s.status card_status FROM promises p JOIN events e ON e.id=p.event_id LEFT JOIN suggestions s ON s.id=p.suggestion_id '
                 "WHERE p.status IN ('open','carded') OR p.updated_at>=? ORDER BY coalesce(p.due,substr(p.check_at,1,10)),p.id", (since,))]
         for row in rows:
@@ -3919,7 +4007,7 @@ class Store:
         for p in [p for p in self.promises() if p['state'] == 'open'][:limit]:
             made = dt.datetime.fromisoformat(p['made_at']).astimezone(local_tz())
             due = 'due ' + dt.date.fromisoformat(p['due']).strftime('%a %d %b') if p['due'] else 'no date'
-            who = f"you → {p['who']}" if p['direction'] == 'mine' else f"{p['who']} → you"
+            who = f"you with {p['who']}" if p.get('together') else f"you → {p['who']}" if p['direction'] == 'mine' else f"{p['who']} → you"
             lines.append(f"- #{p['id']} {who}: {p['what']} ({due}; said {made:%a %d %b}, event {p['event_id']})")
         return '\n'.join(lines)
 
@@ -13230,8 +13318,9 @@ class App:
                 elif path.path == '/api/calendar':  # the Calendar tab: meetings in a window, read-only
                     args = urllib.parse.parse_qs(path.query)
                     try:
+                        owner = {e for a in app.config['accounts'] for e in a.get('owner_emails', [a.get('email')]) if e}
                         self.output(200, {'meetings': app.store.calendar([a['id'] for a in app.config['accounts']],
-                                                                         args.get('from', [''])[0], args.get('to', [''])[0])})
+                                                                         args.get('from', [''])[0], args.get('to', [''])[0], owner)})
                     except (ValueError, sqlite3.OperationalError):
                         self.output(400, {'error': 'Ask for a window of at most 15 days'})
                 elif path.path == '/api/fleet':
