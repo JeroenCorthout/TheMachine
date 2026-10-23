@@ -126,7 +126,7 @@ await page.locator('.rename-reset').click();
   assert.ok(await page.locator('#new-card-top').isVisible());assert.ok(!(await page.locator('#side-new').isVisible()));
   const plus=await page.locator('#new-card-top').boundingBox();assert.ok(plus.x+plus.width<=390&&plus.width>=32,'the + fits');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'nothing wider than the screen');
-  await page.locator('#new-card-top').tap();await page.locator('#new-card').waitFor();await page.waitForTimeout(250);
+  await page.locator('#new-card-top').tap();await page.locator('#new-card').waitFor();await page.waitForFunction(()=>!document.querySelector('#new-card').getAnimations().length);  // slid up, also on a busy machine
   {const b=await page.locator('#new-card').boundingBox();assert.ok(Math.abs(b.y+b.height-844)<=1&&b.x<=1&&b.width>=389,'on a phone the composer is a bottom sheet');}
   await page.locator('#nc-text').fill('Call Sam back');
   await page.locator('#nc-add').tap();await page.locator('#new-card').waitFor({state:'hidden'});assert.equal(sent('card_new')[0].args.text,'Call Sam back');
