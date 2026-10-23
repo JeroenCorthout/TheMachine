@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS graph_role_asks(identifier TEXT PRIMARY KEY,run_id TE
 CREATE TABLE IF NOT EXISTS role_corrections(id INTEGER PRIMARY KEY,identifier TEXT NOT NULL,name TEXT NOT NULL,old_role TEXT NOT NULL,
   new_role TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS org_profiles(domain TEXT PRIMARY KEY,status TEXT NOT NULL,profile TEXT,fetched_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS person_profiles(identifier TEXT PRIMARY KEY,status TEXT NOT NULL,profile TEXT,fetched_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS enrich_prefs(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_relations(a TEXT NOT NULL,b TEXT NOT NULL,relation TEXT NOT NULL,source TEXT NOT NULL,event_id INTEGER,
   created_at TEXT NOT NULL,PRIMARY KEY(a,b));
 CREATE TABLE IF NOT EXISTS org_edits(domain TEXT PRIMARY KEY,fields TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -680,6 +682,7 @@ def _build(db, config, now):
     related = db.execute("SELECT a,b,relation,source FROM graph_relations ORDER BY source='owner',created_at").fetchall()
     profiles = {r['domain']: json.loads(r['profile']) for r in db.execute("SELECT domain,profile FROM org_profiles WHERE profile IS NOT NULL AND status!='wrong'")}
     wrong = {r[0] for r in db.execute("SELECT domain FROM org_profiles WHERE status='wrong'")}
+    looked_up = {r['identifier']: (r['status'], r['profile']) for r in db.execute("SELECT identifier,status,profile FROM person_profiles WHERE status IN ('found','private')")}
     edits = {r['domain']: json.loads(r['fields']) for r in db.execute('SELECT domain,fields FROM org_edits')}
     stated_rows = {r['identifier']: dict(r) for r in db.execute('SELECT * FROM person_orgs')}
     stated = {}  # person node -> the statement of where they work, when no work address says it
@@ -715,14 +718,19 @@ def _build(db, config, now):
         role_id = max((i for i in group if i in role_rows), key=lambda i: (role_rows[i]['source'] == 'owner', role_rows[i].get('checked_at') or role_rows[i]['created_at'], i == node), default=None)
         role, role_by = said.get(role_id, (None, None))  # only what the owner or a review said
         full = plain_name(name)
+        kin = bool(full and surnames & set(full.split()[1:]))
         hints = sorted(set().union(*(appears.get(i, ()) for i in group))) + (["an address at the owner's own domain"] if colleague else []) \
             + (["in the owner's Slack"] if any(i.startswith('slack:') for i in group) else []) \
-            + (["shares the owner's surname"] if full and surnames & set(full.split()[1:]) else [])
+            + (["shares the owner's surname"] if kin else [])
+        person_looks = [looked_up[i] for i in group if i in looked_up]
+        lookup_off = any(status == 'private' for status, _ in person_looks)
+        person_profile = None if lookup_off else next((json.loads(p) for status, p in person_looks if status == 'found' and p), None)
         info = {'ids': sorted({shown_id(i, x_names) for i in group}), 'org': ('org:' + domains[0]) if domains and not said_org else None,
                 'org_by': 'email' if domains and not said_org else None, 'has_headline': any(i in headlines for i in group),
                 'wrote': len(roles[node]['owner']), 'heard': len(roles[node]['them']), 'met': len(roles[node]['met']),
                 'accounts': sorted(accounts[node]), 'next_meeting': next_meeting[node].isoformat() if node in next_meeting else None,
-                'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk}
+                'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk,
+                'owner_surname': kin, 'profile': person_profile, 'lookup_off': lookup_off}
         nodes.append((node, 'person', name[:200], round(value, 4), last_day[node].isoformat() if node in last_day else None,
                       len(node_events[node]), usual, int(quiet), None, info))
     # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
@@ -862,7 +870,8 @@ def node_view(row, links=None):
                     next_meeting=info.get('next_meeting'), colleague=info.get('colleague'), role=info.get('role'),
                     role_by=info.get('role_by'), role_id=info.get('role_id'), hints=info.get('hints', []),
                     seen_only=bool(info.get('seen_only')), relations=info.get('relations', []), org_by=info.get('org_by'),
-                    org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'))
+                    org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'),
+                    profile=info.get('profile'), lookup_off=bool(info.get('lookup_off')))
     elif row['kind'] == 'org':
         view.update(role=info.get('role'), role_by=info.get('role_by'), domain=info.get('domain'), profile=info.get('profile'),
                     about=enrichment.summary(info.get('profile')), edited=info.get('edited', []), wrong=bool(info.get('wrong')))
@@ -984,7 +993,9 @@ def context_lines(db, event_ids, limit_chars=1500, skip_card=None):
             org = db.execute('SELECT name,info FROM graph_nodes WHERE id=?', (view['org'],)).fetchone() if view['org'] else None
             org_info = json.loads(org['info']) if org else {}
             org_bits = [b for b in (org_info.get('role'), enrichment.summary(org_info.get('profile'))) if b]
-            bits = ([view['role']] if view['role'] else ['no role yet']) + ([f"at {org['name']}" + (f" ({'; '.join(org_bits)})" if org_bits else '')] if org else []) \
+            title = (view.get('profile') or {}).get('title')
+            bits = ([view['role']] if view['role'] else ['no role yet']) + ([f'job title {title}'] if title else []) \
+                + ([f"at {org['name']}" + (f" ({'; '.join(org_bits)})" if org_bits else '')] if org else []) \
                 + [relation_text(r) for r in view['relations'][:2]] \
                 + [f"{view['closeness']} contact", f"last {'seen' if view['seen_only'] else 'contact'} {short_date(view['last_at'])}"]
             if view['usual_gap_days']:

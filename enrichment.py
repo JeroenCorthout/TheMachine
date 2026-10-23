@@ -8,7 +8,8 @@ at a time, each looked up again after REFRESH_DAYS: first those of people the ow
 meets, never those only cold outreach, newsletters or no-reply senders come from (see due). What comes back is
 normalised to a small profile (industry, size, location, founded, about, links, logo) that the graph, reviews and
 preparations show next to the organisation; it describes the company, never what it is to the owner. An answer about
-another company (the service matched a page that merely sits on the domain) is dropped, as if nothing was found."""
+another company (the service matched a page that merely sits on the domain) is dropped, as if nothing was found.
+Work contacts are looked up too, on their own budget, with `people_url` (see people_due)."""
 from __future__ import annotations
 
 import datetime as dt
@@ -26,8 +27,10 @@ PER_PASS = 5
 PER_DAY = 50
 PRESETS = {
     'apollo': {'url': 'https://api.apollo.io/api/v1/organizations/enrich?domain={domain}', 'headers': {'X-Api-Key': '{key}'}},
-    'peopledatalabs': {'url': 'https://api.peopledatalabs.com/v5/company/enrich?website={domain}', 'headers': {'X-Api-Key': '{key}'}},
-    'hunter': {'url': 'https://api.hunter.io/v2/companies/find?domain={domain}&api_key={key}'},
+    'peopledatalabs': {'url': 'https://api.peopledatalabs.com/v5/company/enrich?website={domain}', 'headers': {'X-Api-Key': '{key}'},
+                       'people_url': 'https://api.peopledatalabs.com/v5/person/enrich?email={email}'},
+    'hunter': {'url': 'https://api.hunter.io/v2/companies/find?domain={domain}&api_key={key}',
+               'people_url': 'https://api.hunter.io/v2/people/find?email={email}&api_key={key}'},
 }
 # Where common services keep each field; the first one present wins. A config "fields" map adds its own paths first.
 FIELDS = {
@@ -44,6 +47,7 @@ FIELDS = {
     'type': ['type', 'company_type', 'ownership'],
     'logo': ['logo', 'logo_url', 'logoUrl', 'image_url', 'logo.url', 'image'],
 }
+LEADAPI = 'https://leadapi.salesflare.com'
 LOGO = re.compile(r'https://[A-Za-z0-9.-]{1,200}\.[A-Za-z]{2,}(?::\d{2,5})?/[^\s"\'<>\\]{0,500}')
 WRAPPERS = ('organization', 'company', 'data', 'result')
 
@@ -58,6 +62,8 @@ def settings(config):
     if not isinstance(raw, dict) or raw.get('enabled') is False:
         return None
     merged = {**PRESETS.get(str(raw.get('provider') or '').lower(), {}), **{k: v for k, v in raw.items() if v not in (None, '')}}
+    if not merged.get('people_url') and str(merged.get('url') or '').startswith(LEADAPI + '/enrich/companies?'):
+        merged['people_url'] = LEADAPI + '/enrich/people?name={name}&domain={domain}'  # Salesflare's lead API knows people too
     return merged if merged.get('url') and '{domain}' in merged['url'] else None
 
 
@@ -121,17 +127,13 @@ def normalise(data, fields=None):
     return profile if profile.get('name') or profile.get('industry') or profile.get('about') else None
 
 
-def fetch(cfg, domain, timeout=15):
-    """The profile for one domain, None when the service doesn't know it. Errors never carry the key or url."""
-    secret = key(cfg)
-    if not secret and ('{key}' in cfg['url'] or '{key}' in json.dumps(cfg.get('headers') or {})):
-        raise EnrichmentError('no key: set key_file or key_env in enrichment')
-    url = cfg['url'].replace('{domain}', urllib.parse.quote(domain)).replace('{key}', urllib.parse.quote(secret))
+def answer(cfg, url, secret, timeout):
+    """The raw answer from the owner's own configured service, None for not found. Errors never carry the key or url."""
     headers = {'Accept': 'application/json', 'User-Agent': 'the-machine/1 (+https://themachine.computer)'}
     headers.update({k: str(v).replace('{key}', secret) for k, v in (cfg.get('headers') or {}).items()})
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout) as response:
-            body = response.read(2_000_000)
+            return response.read(2_000_000)
     except urllib.error.HTTPError as error:
         error.close()
         if error.code in (404, 422):
@@ -140,6 +142,17 @@ def fetch(cfg, domain, timeout=15):
                                429: 'rate limited'}.get(error.code, f'HTTP {error.code}')) from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise EnrichmentError('unreachable: ' + type(getattr(error, 'reason', error)).__name__) from None
+
+
+def fetch(cfg, domain, timeout=15):
+    """The profile for one domain, None when the service doesn't know it. Errors never carry the key or url."""
+    secret = key(cfg)
+    if not secret and ('{key}' in cfg['url'] or '{key}' in json.dumps(cfg.get('headers') or {})):
+        raise EnrichmentError('no key: set key_file or key_env in enrichment')
+    url = cfg['url'].replace('{domain}', urllib.parse.quote(domain)).replace('{key}', urllib.parse.quote(secret))
+    body = answer(cfg, url, secret, timeout)
+    if body is None:
+        return None
     try:
         profile = normalise(json.loads(body or b'null'), cfg.get('fields'))
     except ValueError:
@@ -288,3 +301,255 @@ def lookup(connect, config, domain, now):
         db.execute("DELETE FROM org_profiles WHERE domain=? AND status='wrong'", (domain,))  # asked for by name: the owner wants it again
         save(db, domain, 'found' if profile else 'none', profile, now)
     return {'domain': domain, 'profile': profile}
+
+
+# People: the work contacts the owner deals with, looked up the same way, on their own budget. Only someone whose
+# organisation comes from their company email address (never free mail, the owner's own domains, a shared inbox or a
+# no-reply sender), whom the owner writes with or meets, and who shows up in a work account. Never Family or Friends,
+# never someone who shares the owner's surname or is a close contact on a personal account, never anyone the owner
+# said not to look up. What comes back is cut down to what the dashboard shows: job title, company, a photo (https
+# only), a LinkedIn address and city and country. Kept on this Machine only (person_profiles).
+PEOPLE_PER_PASS = 5
+PEOPLE_PER_DAY = 50
+PERSON_FIELDS = {
+    'title': ['position', 'job_title', 'title', 'employment.title', 'experience.0.position', 'experience.0.title'],
+    'company': ['company.name', 'job_company_name', 'employment.name', 'organization.name', 'experience.0.company.name'],
+    'company_domain': ['company.domain', 'job_company_website', 'employment.domain', 'organization.primary_domain', 'company.website'],
+    'photo': ['image_url', 'photo_url', 'avatar', 'picture', 'profile_pic_url', 'photo'],
+    'linkedin_url': ['linkedin_url', 'linkedin.url', 'linkedin.handle', 'linkedin_username', 'linkedin'],
+    'city': ['location.city', 'location_locality', 'geo.city', 'city'],
+    'country': ['location.country_code', 'location_country', 'geo.countryCode', 'geo.country', 'country'],
+}
+PERSON_NAME = ['name', 'full_name', 'name.fullName', 'fullName']  # only to check it is the same person; never kept
+PERSON_WRAPPERS = ('person', 'data', 'result')
+LINKEDIN = re.compile(r'https://(?:[a-z]{2,3}\.)?linkedin\.com/in/[A-Za-z0-9_%-]{2,100}/?')
+CLOSE = 3  # graph strength from which someone is a close contact (graph.closeness)
+
+
+def people_on(db):
+    """The owner's Settings switch, Look up work contacts: on unless turned off."""
+    try:
+        row = db.execute("SELECT value FROM enrich_prefs WHERE key='people'").fetchone()
+    except Exception:
+        return True
+    return not row or row[0] != 'off'
+
+
+def set_people(db, on):
+    db.execute('INSERT INTO enrich_prefs(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+               ('people', 'on' if on else 'off'))
+    return {'people': bool(on)}
+
+
+def folded(text):
+    import unicodedata
+    return re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD', str(text or '')).encode('ascii', 'ignore').decode().casefold())
+
+
+def same_domain(a, b):
+    a, b = (re.sub(r'^(?:https?://)?(?:www\.)?', '', str(x or '').strip().lower()).split('/')[0] for x in (a, b))
+    return bool(a and b) and (a == b or a.endswith('.' + b) or b.endswith('.' + a))
+
+
+def normalise_person(data, asked_name, domain, fields=None):
+    """The small person profile the dashboard shows, from whatever shape the service returns; None when it found
+    nothing, or when the answer is about someone else: a name with no word in common, or a company at another domain."""
+    if isinstance(data, list):
+        data = data[0] if data else None
+    for wrapper in PERSON_WRAPPERS:
+        if isinstance(data, dict) and isinstance(data.get(wrapper), dict):
+            data = data[wrapper]
+            break
+    if not isinstance(data, dict) or data.get('success') is False:
+        return None
+    name = next((v for v in (value(data, p) for p in PERSON_NAME) if isinstance(v, str) and v.strip()), '')
+    if name and asked_name and not {w for w in folded(name) if len(w) > 1} & {w for w in folded(asked_name) if len(w) > 1}:
+        return None
+    profile = {}
+    for field, paths in PERSON_FIELDS.items():
+        for path in list((fields or {}).get(field) or []) + paths:
+            found = value(data, path)
+            if found in (None, '', [], {}) or isinstance(found, (dict, list, bool)):
+                continue
+            found = ' '.join(str(found).split())
+            if field == 'photo':
+                if not LOGO.fullmatch(found):
+                    continue  # only a plain https address; the dashboard loads it as an image, nothing else
+            elif field == 'linkedin_url':
+                if not found.startswith('http'):
+                    found = 'https://www.linkedin.com/in/' + found.strip('/').rsplit('/', 1)[-1]
+                found = found.replace('http://', 'https://', 1).split('?')[0]
+                if not LINKEDIN.fullmatch(found):
+                    continue
+            elif field == 'country':
+                found = found.upper() if len(found) == 2 else found[:60]
+            elif len(found) > 120:
+                found = found[:119].rsplit(' ', 1)[0].rstrip(',.;:|') + '…'
+            profile[field] = found
+            break
+    if profile.get('company_domain'):
+        if not same_domain(profile['company_domain'], domain):
+            return None  # someone of the same name at another company
+        profile['company_domain'] = domain
+    return profile if profile.get('title') or profile.get('company') or profile.get('photo') else None
+
+
+def fetch_person(cfg, person, timeout=15):
+    """The profile for one person ({email, name, domain}), None when the service doesn't know them."""
+    template = cfg['people_url']
+    secret = key(cfg)
+    if not secret and ('{key}' in template or '{key}' in json.dumps(cfg.get('headers') or {})):
+        raise EnrichmentError('no key: set key_file or key_env in enrichment')
+    words = str(person['name']).split()
+    url = template
+    for k, v in (('email', person['email']), ('name', person['name']), ('domain', person['domain']),
+                 ('first_name', words[0] if words else ''), ('last_name', ' '.join(words[1:])), ('key', secret)):
+        url = url.replace('{' + k + '}', urllib.parse.quote(str(v)))
+    body = answer(cfg, url, secret, timeout)
+    if body is None:
+        return None
+    try:
+        return normalise_person(json.loads(body or b'null'), person['name'], person['domain'], cfg.get('people_fields'))
+    except ValueError:
+        raise EnrichmentError('the answer was not JSON') from None
+
+
+def fleet_personal(db):
+    """Graph people who are in the owner's Family or among their Friends, from the Network directory kept here."""
+    import graph
+    try:
+        row = db.execute("SELECT value FROM fleet_meta WHERE key='directory'").fetchone()
+    except Exception:
+        return set()
+    if not row:
+        return set()
+    try:
+        fleets = {f.get('id') or f.get('kind'): f for f in (json.loads(row[0]) or {}).get('fleets', []) if isinstance(f, dict)}
+        return {node for node, mark in graph.fleet_marks(db, fleets).items() if any(x['kind'] in ('family', 'friends') for x in mark['in'])}
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return set()
+
+
+def work_contact(info, name, strength, accounts):
+    """(email, domain) to look this person up by, or None when they are not a work contact to look up."""
+    import graph
+    org = str(info.get('org') or '')
+    if info.get('org_by') != 'email' or not org.startswith('org:') or org.startswith('org:named:'):
+        return None  # only an organisation from their own company address
+    domain = org[4:]
+    if domain in graph.FREEMAIL or FREEMAIL.match(domain) or MARKETING.match(domain):
+        return None
+    if info.get('colleague') or info.get('seen_only') or info.get('owner_surname'):
+        return None
+    if not (info.get('met') or info.get('wrote')):
+        return None  # the owner never wrote to them or met them: cold outreach, or only copied
+    if not graph.plain_name(name) or graph.incomplete_name(name):
+        return None  # a lookup needs their full name
+    theirs = set(info.get('accounts') or ())
+    work = {a for a, boundary in accounts.items() if str(boundary or '').startswith('work:')}
+    if not theirs & work:
+        return None  # only seen on personal accounts
+    if theirs - work and strength >= CLOSE:
+        return None  # a close contact who is also on a personal account
+    addresses = [i.split(':', 1)[1] for i in info.get('identifiers') or () if str(i).startswith('email:') and str(i).endswith('@' + domain)]
+    addresses = [a for a in addresses if not graph.bulk(a) and not graph.ROLE.match(a)]
+    return (addresses[0], domain) if addresses else None
+
+
+def people_due(db, now, limit, accounts):
+    """Work contacts that were never looked up or are due again, the ones the owner deals with most first:
+    [{'identifier', 'email', 'name', 'domain'}]. accounts: {account id: boundary} from the config. Nothing while the
+    owner turned Look up work contacts off."""
+    if limit <= 0 or not people_on(db):
+        return []
+    current = dt.datetime.fromisoformat(now)
+    fresh = (current - dt.timedelta(days=REFRESH_DAYS)).isoformat()
+    retry = (current - dt.timedelta(hours=RETRY_HOURS)).isoformat()
+    looked = {r[0]: (r[1], r[2]) for r in db.execute('SELECT identifier,status,fetched_at FROM person_profiles')}
+    skip = fleet_personal(db)
+    ranked = []
+    for node, name, strength, raw in db.execute("SELECT id,name,strength,info FROM graph_nodes WHERE kind='person' AND json_extract(info,'$.org_by')='email'"):
+        if node in skip:
+            continue
+        try:
+            info = json.loads(raw or '{}')
+        except ValueError:
+            continue
+        emails = ['email:' + i.split(':', 1)[1] for i in info.get('identifiers') or () if str(i).startswith('email:')]
+        if any(looked.get(e, ('',))[0] == 'private' for e in emails):
+            continue  # the owner said not to look them up
+        found = work_contact(info, name, strength or 0, accounts)
+        if not found:
+            continue
+        identifier = 'email:' + found[0]
+        status, at = looked.get(identifier, (None, None))
+        if status and not ((status != 'error' and at < fresh) or (status == 'error' and at < retry)):
+            continue
+        both = info.get('met') or (info.get('wrote') and info.get('heard'))
+        ranked.append((-(3 if both else 1), -(strength or 0), identifier, {'identifier': identifier, 'email': found[0], 'name': ' '.join(str(name).split()), 'domain': found[1]}))
+    return [item for *_, item in sorted(ranked, key=lambda r: r[:3])[:limit]]
+
+
+def save_person(db, identifier, status, profile, now):
+    """Stores a person look-up. Someone the owner said not to look up keeps that mark, and no profile."""
+    db.execute('INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,?,?,?) '
+               "ON CONFLICT(identifier) DO UPDATE SET status=excluded.status,profile=CASE WHEN excluded.status='error' THEN person_profiles.profile ELSE excluded.profile END,fetched_at=excluded.fetched_at "
+               "WHERE person_profiles.status!='private'",
+               (identifier, status, json.dumps(profile) if profile else None, now))
+
+
+def person_private(db, identifiers, private, now):
+    """Don't look up (private) clears what was looked up about someone and stops looking them up; Look up again undoes it."""
+    emails = sorted({'email:' + str(i).split(':', 1)[1].lower() for i in identifiers if str(i).startswith('email:')})
+    if not emails:
+        raise ValueError('Only someone with an email address is looked up')
+    for e in emails:
+        if private:
+            db.execute("INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,'private',NULL,?) "
+                       "ON CONFLICT(identifier) DO UPDATE SET status='private',profile=NULL,fetched_at=excluded.fetched_at", (e, now))
+        else:
+            db.execute("DELETE FROM person_profiles WHERE identifier=? AND status='private'", (e,))
+    return {'looked_up': not private}
+
+
+def people_available(config):
+    """Whether this Machine can look people up: hosted (the hosting agent does it through the control plane), or
+    self-hosted with a people address on its own enrichment service."""
+    raw = (config or {}).get('enrichment')
+    if isinstance(raw, dict) and raw.get('by') == 'hosting':
+        return True
+    cfg = settings(config or {})
+    return bool(cfg and cfg.get('people_url') and cfg.get('people') is not False)
+
+
+def accounts_of(config):
+    return {str(a.get('id')): str(a.get('boundary') or '') for a in (config or {}).get('accounts') or () if isinstance(a, dict) and a.get('id')}
+
+
+def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
+    """Look up a few work contacts with the Machine's own service. Returns how many got a profile; stops at the first
+    service error."""
+    cfg = settings(config)
+    if not cfg or not cfg.get('people_url') or cfg.get('people') is False:
+        return 0
+    with connect() as db:
+        used = db.execute("SELECT count(*) FROM person_profiles WHERE substr(fetched_at,1,10)=? AND status!='private'", (now[:10],)).fetchone()[0]
+        due = people_due(db, now, max(0, min(per_pass, int(cfg.get('people_per_day') or PEOPLE_PER_DAY) - used)), accounts_of(config))
+    found = 0
+    for person in due:
+        try:
+            profile = fetch_person(cfg, person)
+        except EnrichmentError:
+            with connect() as db:
+                save_person(db, person['identifier'], 'error', None, now)
+            raise
+        with connect() as db:
+            save_person(db, person['identifier'], 'found' if profile else 'none', profile, now)
+        found += bool(profile)
+    return found
+
+
+def people_status(db):
+    counts = dict(db.execute('SELECT status,count(*) FROM person_profiles GROUP BY status').fetchall())
+    return {'on': people_on(db), 'found': counts.get('found', 0), 'unknown': counts.get('none', 0), 'errors': counts.get('error', 0),
+            'not_looked_up': counts.get('private', 0)}
