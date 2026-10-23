@@ -16,7 +16,7 @@ The **Suggestions** tab groups them:
 - **Needs your decision**: something only you can decide.
 - **Preparing**: your Machine is working on it.
 - **Coming back later**: snoozed.
-- **Done / dismissed this week**.
+- **Done / dismissed**: every finished card, newest first, 30 at a time as you scroll.
 
 **All clear.** means nothing needs you now.
 
