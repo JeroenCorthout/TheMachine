@@ -501,6 +501,9 @@ def send_lock(db, suggestion_id, revision, kind):
 # A signal deferred this many times at the same version is set aside: still pending
 # and searchable, but no longer offered in review batches until new content arrives.
 SET_ASIDE_AFTER = 2
+# Mail that comes from a system, not a person: by address (slipped, first-look order) and by Gmail's category labels
+ROBOT_SENDER = re.compile(r'(?i)^(?:no-?reply|do-?not-?reply|notifications?|mailer-daemon|bounce|support|billing|info|hello|team)@')
+AUTOMATED_LABELS = frozenset({'CATEGORY_UPDATES', 'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS'})
 # OpenClaw cuts a live tool result at 64,000 characters, so review replies are paged
 # well below that, with bookkeeping metadata left out.
 REVIEW_PAGE_CHARS = 30000
@@ -731,6 +734,11 @@ def first_cards_report(db, accounts=(), current=None):
     acted = rows("SELECT choice,created_at FROM decisions WHERE source IN ('dashboard','telegram') AND created_at>=? AND choice IN ("
                  + ','.join('?' for _ in FIRST_ACTIONS) + ') ORDER BY created_at LIMIT 1', (since, *FIRST_ACTIONS))
     out['first_action_at'], out['first_action'] = (acted[0][1], FIRST_ACTIONS[acted[0][0]]) if acted else (None, None)
+    # The first approved one (Do it, Send, Mark done): a Not needed before it doesn't count as getting something done
+    approved = [c for c, a in FIRST_ACTIONS.items() if a != 'dismiss']
+    acted = rows("SELECT choice,created_at FROM decisions WHERE source IN ('dashboard','telegram') AND created_at>=? AND choice IN ("
+                 + ','.join('?' for _ in approved) + ') ORDER BY created_at LIMIT 1', (since, *approved))
+    out['first_approved_at'], out['first_approved'] = (acted[0][1], FIRST_ACTIONS[acted[0][0]]) if acted else (None, None)
     # Where the first look is now, and about when the first cards come
     try:
         state = json.loads((marks.get('first_look_state') or (None, 'null'))[1] or 'null')
@@ -794,6 +802,11 @@ def has_model(config=None):
     """Whether OpenClaw has a main model to review with that can run (model_ready). When that can't be read,
     a main model set in its config is taken as one."""
     return bool(main_model()) and model_ready(config) is not False
+
+
+def first_look_running(db):
+    """A first look (a preview The Machine started by itself) is running."""
+    return bool(db.execute("SELECT 1 FROM review_runs WHERE preview=1 AND auto=1 AND status IN ('starting','running','recovering')").fetchone())
 
 
 def active_preview(db):
@@ -2237,6 +2250,8 @@ class Store:
             # When setup steps first happened (first import per source, first card shown): timestamps and counts only.
             # `tracking_since` tells a new install from one that had cards before this was recorded.
             db.execute('CREATE TABLE IF NOT EXISTS milestones(name TEXT PRIMARY KEY,at TEXT NOT NULL,detail TEXT)')
+            # First-look cards its reviewer wanted prepared ahead, prepared once reviews are on (Store.prepare_first_look)
+            db.execute('CREATE TABLE IF NOT EXISTS first_look_ahead(suggestion_id TEXT PRIMARY KEY,created_at TEXT NOT NULL)')
             db.execute("INSERT OR IGNORE INTO milestones(name,at) VALUES('tracking_since',?)", (now(),))
             if 'due' not in columns:
                 db.execute('ALTER TABLE suggestions ADD COLUMN due TEXT')
@@ -2973,55 +2988,60 @@ class Store:
             # hours; older backlog waits for the regular reviews.
             since = ((dt.datetime.fromisoformat(now()) - dt.timedelta(hours=scope['window_hours'] or PREVIEW_DAYS * 24)).isoformat()
                      if scope and (scope['preview'] or scope['window_hours']) else '')
-            counts = {a: db.execute('SELECT count(*) FROM events WHERE account_id=? AND analyzed_version<version AND deferrals<? AND occurred_at>=?', (a, SET_ASIDE_AFTER, since)).fetchone()[0] for a in accounts}
-            quotas = {a: 0 for a in accounts}
-            # One slot per nonempty account, then weighted by remaining backlog.
-            for account in accounts:
-                if counts[account] and sum(quotas.values()) < limit:
-                    quotas[account] += 1
-            while sum(quotas.values()) < limit:
-                eligible = [a for a in accounts if quotas[a] < counts[a]]
-                if not eligible:
-                    break
-                chosen = max(eligible, key=lambda a: counts[a] / (quotas[a] + 1))
-                quotas[chosen] += 1
-            rows, selected, account_rows = [], set(), []
-            recovered_from = None
-            # Give unfinished historical claims first chance, rather than replacing
-            # their least recent items with a new batch and forgetting them again.
-            # One query over recent abandoned claims (older pending items are still
-            # reached through the normal backlog), instead of one SELECT per item per
-            # account over every claim ever abandoned while holding the write lock.
-            interrupted = db.execute('''SELECT a.id review_id,e.* FROM analyses a, json_each(a.items) j
-                JOIN events e ON e.id=json_extract(j.value,'$.id')
-                WHERE a.status='abandoned' AND coalesce(a.finished_at,a.started_at)>=? AND coalesce(json_extract(j.value,'$.excluded'),0)=0
-                  AND e.analyzed_version<e.version AND e.deferrals<? AND e.occurred_at>=? ORDER BY a.started_at,j.key''',
-                ((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).isoformat(), SET_ASIDE_AFTER, since)).fetchall()
-            for account in accounts:
-                quota = quotas[account]
-                picked = []
-                for row in interrupted:
-                    if row['account_id'] != account or row['id'] in selected or len(picked) >= quota:
-                        continue
-                    event = dict(row); event.pop('review_id')
-                    picked.append(event); selected.add(row['id'])
-                    recovered_from = recovered_from or row['review_id']
-                remaining = quota - len(picked)
-                # Alternate oldest backlog and newest/upcoming signals. New arrivals
-                # cannot indefinitely starve old imports, or vice versa. Signals deferred
-                # once wait behind fresh ones; set-aside signals are not offered again.
-                oldest = [dict(r) for r in db.execute('SELECT * FROM events WHERE account_id=? AND analyzed_version<version AND deferrals<? AND occurred_at>=? ORDER BY deferrals,ingested_at,id LIMIT ?', (account, SET_ASIDE_AFTER, since, limit))]
-                newest = self.events([account], limit=limit, pending=True, reviewable=True, since=since)
-                for i in range(remaining):
-                    queue = oldest if i % 2 == 0 else newest
-                    candidate = next((r for r in queue if r['id'] not in selected), None)
-                    if candidate:
-                        picked.append(candidate); selected.add(candidate['id'])
-                account_rows.append(picked)
-            while any(account_rows):
-                for queue in account_rows:
-                    if queue:
-                        rows.append(queue.pop(0))
+            # A quick first look takes what most likely needs the owner first (most_promising); other reviews share the
+            # budget out over the sources
+            quick = bool(scope and scope['window_hours'])
+            rows, recovered_from = (self.most_promising(db, accounts, since, limit), None) if quick else (None, None)
+            if not quick:
+                counts = {a: db.execute('SELECT count(*) FROM events WHERE account_id=? AND analyzed_version<version AND deferrals<? AND occurred_at>=?', (a, SET_ASIDE_AFTER, since)).fetchone()[0] for a in accounts}
+                quotas = {a: 0 for a in accounts}
+                # One slot per nonempty account, then weighted by remaining backlog.
+                for account in accounts:
+                    if counts[account] and sum(quotas.values()) < limit:
+                        quotas[account] += 1
+                while sum(quotas.values()) < limit:
+                    eligible = [a for a in accounts if quotas[a] < counts[a]]
+                    if not eligible:
+                        break
+                    chosen = max(eligible, key=lambda a: counts[a] / (quotas[a] + 1))
+                    quotas[chosen] += 1
+                rows, selected, account_rows = [], set(), []
+                recovered_from = None
+                # Give unfinished historical claims first chance, rather than replacing
+                # their least recent items with a new batch and forgetting them again.
+                # One query over recent abandoned claims (older pending items are still
+                # reached through the normal backlog), instead of one SELECT per item per
+                # account over every claim ever abandoned while holding the write lock.
+                interrupted = db.execute('''SELECT a.id review_id,e.* FROM analyses a, json_each(a.items) j
+                    JOIN events e ON e.id=json_extract(j.value,'$.id')
+                    WHERE a.status='abandoned' AND coalesce(a.finished_at,a.started_at)>=? AND coalesce(json_extract(j.value,'$.excluded'),0)=0
+                      AND e.analyzed_version<e.version AND e.deferrals<? AND e.occurred_at>=? ORDER BY a.started_at,j.key''',
+                    ((dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)).isoformat(), SET_ASIDE_AFTER, since)).fetchall()
+                for account in accounts:
+                    quota = quotas[account]
+                    picked = []
+                    for row in interrupted:
+                        if row['account_id'] != account or row['id'] in selected or len(picked) >= quota:
+                            continue
+                        event = dict(row); event.pop('review_id')
+                        picked.append(event); selected.add(row['id'])
+                        recovered_from = recovered_from or row['review_id']
+                    remaining = quota - len(picked)
+                    # Alternate oldest backlog and newest/upcoming signals. New arrivals
+                    # cannot indefinitely starve old imports, or vice versa. Signals deferred
+                    # once wait behind fresh ones; set-aside signals are not offered again.
+                    oldest = [dict(r) for r in db.execute('SELECT * FROM events WHERE account_id=? AND analyzed_version<version AND deferrals<? AND occurred_at>=? ORDER BY deferrals,ingested_at,id LIMIT ?', (account, SET_ASIDE_AFTER, since, limit))]
+                    newest = self.events([account], limit=limit, pending=True, reviewable=True, since=since)
+                    for i in range(remaining):
+                        queue = oldest if i % 2 == 0 else newest
+                        candidate = next((r for r in queue if r['id'] not in selected), None)
+                        if candidate:
+                            picked.append(candidate); selected.add(candidate['id'])
+                    account_rows.append(picked)
+                while any(account_rows):
+                    for queue in account_rows:
+                        if queue:
+                            rows.append(queue.pop(0))
             if not rows:
                 return {'events': [], 'analysis_id': None}
             analysis_id = uuid.uuid4().hex
@@ -3029,6 +3049,41 @@ class Store:
             db.execute('INSERT INTO analyses(id,started_at,items,status,owner_session,owner_run,resumed_from) VALUES(?,?,?,?,?,?,?)',
                        (analysis_id, now(), encoded(items), 'running', owner_session, owner_run, recovered_from))
             return self.review_result(analysis_id, pages, resumed_from=recovered_from)
+
+    def most_promising(self, db, accounts, since, limit):
+        """The quick first look's signals, so its first cards are the useful ones: what most likely needs the owner, read
+        from who wrote to whom and what came after (never from the words). First a person writing to the owner directly
+        whom the owner hasn't answered in that thread since (a reply may be owed), and direct chat messages; then the
+        owner's own mail (what they asked or promised) and their appointments; then mail they were one of many on, or
+        already answered; automated mail last. Newest first within each. The full first look reviews the rest."""
+        own = {str(a.get('email', '')).lower() for a in self.accounts if '@' in str(a.get('email', ''))}
+        marks = ','.join('?' for _ in accounts)
+        found = [dict(r) for r in db.execute(f'SELECT * FROM events WHERE account_id IN ({marks}) AND analyzed_version<version AND deferrals<? '
+                                             'AND occurred_at>=? ORDER BY occurred_at DESC,id DESC LIMIT 500', (*accounts, SET_ASIDE_AFTER, since))]
+
+        def rank(row):
+            m = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'] or '{}')
+            if row['kind'] in ('linkedin.message', 'x.dm', 'whatsapp.message'):
+                return 3 if m.get('from_me') else 0
+            if row['kind'] != 'gmail.message':
+                return 1 if row['kind'] == 'calendar.event' else 2
+            labels = set(m.get('labels') or [])
+            if 'SENT' in labels:
+                return 1
+            sender = _address(m.get('from'))
+            to = {x.lower() for x in re.findall(r'[^\s<>"\',;]+@[^\s<>"\',;]+', str(m.get('to') or ''))}
+            if not sender or sender in own or ROBOT_SENDER.match(sender) or labels & AUTOMATED_LABELS:
+                return 3
+            if own and (not own & to or len(to) > 2):
+                return 2
+            answered = m.get('thread_id') and db.execute(
+                "SELECT 1 FROM events WHERE account_id=? AND kind='gmail.message' AND deleted=0 AND occurred_at>? "
+                "AND json_extract(metadata,'$.thread_id')=? AND instr(metadata,'\"SENT\"')>0 LIMIT 1",
+                (row['account_id'], row['occurred_at'], m['thread_id'])).fetchone()
+            return 2 if answered else 0
+
+        ranked = sorted(enumerate(found), key=lambda item: (rank(item[1]), item[0]))  # stable: newest first within a rank
+        return [row for _, row in ranked[:limit]]
 
     def conversation_context(self, rows, limit=4, hours=48):
         """Up to four earlier messages from the same chat for each Slack/WhatsApp signal, so a
@@ -3349,9 +3404,11 @@ class Store:
                 urgent = True
                 deliver_after = delivery_time(when, digest_at, work=work, urgent=True)
             # Saved by a preview review: shown on the dashboard only. Never sent (not now and not
-            # as a backlog after --activate) and never prepared ahead.
+            # as a backlog after --activate) and not prepared ahead while reviews are off; a first-look card
+            # its reviewer wanted prepared is, once reviews are on (prepare_first_look).
             preview = bool(active_preview(db))
             if preview:
+                wanted = ahead and first_look_running(db)
                 ahead, deliver_after = False, None
             suggestion_id = uuid.uuid4().hex[:16]
             db.execute('INSERT INTO suggestions(id,dedupe_key,title,body,event_ids,account_ids,created_at,deliver_after,source_line,urgent,due) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -3359,6 +3416,8 @@ class Store:
                         encoded(sorted({r['account_id'] for r in rows})), now(), deliver_after, source_line(sorted([dict(r) for r in rows],key=lambda r:event_ids.index(r['id']))), int(urgent), due))
             db.execute('INSERT INTO deliveries(suggestion_id,status,updated_at) VALUES(?,?,?)',
                        (suggestion_id, 'previewed' if preview else 'queued', now()))
+            if preview and wanted:
+                db.execute('INSERT OR IGNORE INTO first_look_ahead(suggestion_id,created_at) VALUES(?,?)', (suggestion_id, now()))
             if watch:
                 db.execute('UPDATE suggestions SET awaiting=? WHERE id=?', (encoded(watch), suggestion_id))
             if project:
@@ -3402,6 +3461,8 @@ class Store:
             when = 'now'
         deliver_after = delivery_time(when, digest_at, work=work, urgent=urgent)
         if active_preview(db):
+            if ahead and first_look_running(db):
+                db.execute('INSERT OR IGNORE INTO first_look_ahead(suggestion_id,created_at) VALUES(?,?)', (card['id'], stamp))
             ahead, deliver_after = False, None
         waiting = card['status'] == 'snoozed'
         # New work on the matter: back to Outstanding as a fresh suggestion, or prepared ahead again.
@@ -3433,6 +3494,34 @@ class Store:
         return {'id': sid, 'status': status, 'duplicate': False, 'updated': True, 'deliver_after': deliver_after,
                 **({'brought_back': True} if waiting else {}), **({'reopened': True} if closed else {}), **({'prepared_ahead': True} if ahead else {}),
                 'note': 'The existing card was updated with this signal instead of a new card.'}
+
+    def prepare_first_look(self, per_day, hours=24):
+        """Reviews are on now: the first look's cards that its reviewer would have prepared ahead had reviews been on get
+        prepared now (research and a draft, nothing sent), so the first card has its draft ready. Only while still
+        untouched (pending, nothing decided by the owner), from the last `hours`, within the daily limit for preparing
+        ahead (`per_day`, 0 drops them all). Returns how many."""
+        since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=hours)).isoformat()
+        with self.connect() as db:
+            if not db.execute('SELECT 1 FROM first_look_ahead LIMIT 1').fetchone():
+                return 0
+            db.execute('BEGIN IMMEDIATE')
+            started = 0
+            day = (dt.datetime.fromisoformat(now()) - dt.timedelta(days=1)).isoformat()
+            for row in db.execute('SELECT f.suggestion_id,s.status,s.created_at FROM first_look_ahead f LEFT JOIN suggestions s ON s.id=f.suggestion_id '
+                                  'ORDER BY f.created_at').fetchall():
+                sid = row['suggestion_id']
+                db.execute('DELETE FROM first_look_ahead WHERE suggestion_id=?', (sid,))
+                touched = db.execute("SELECT 1 FROM decisions WHERE suggestion_id=? AND source!='assistant' LIMIT 1", (sid,)).fetchone()
+                room = db.execute("SELECT count(*) FROM decisions WHERE choice='prepare_ahead' AND created_at>=?", (day,)).fetchone()[0] < per_day
+                if row['status'] != 'pending' or touched or not room or (row['created_at'] or '') < since:
+                    continue
+                decision_id = 'ahead:' + uuid.uuid4().hex
+                db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
+                           (decision_id, sid, 'prepare_ahead', '', 'assistant', now()))
+                db.execute("UPDATE suggestions SET status='accepted',early=1 WHERE id=?", (sid,))
+                self.queue_preparation(db, sid, decision_id)
+                started += 1
+        return started
 
     def ahead_room(self, per_day):
         since = (dt.datetime.fromisoformat(now()) - dt.timedelta(days=1)).isoformat()
@@ -3614,7 +3703,7 @@ class Store:
         current = dt.datetime.fromisoformat(now())
         ago = lambda days: (current - dt.timedelta(days=days)).isoformat()
         own = {a['email'].lower() for a in self.accounts if a.get('email') and '@' in a['email']}
-        robot = re.compile(r'(?i)^(?:no-?reply|do-?not-?reply|notifications?|mailer-daemon|bounce|support|billing|info|hello|team)@')
+        robot = ROBOT_SENDER
         def new_text(body):
             text = (body or '').split('[Quoted earlier messages', 1)[0]
             text = re.split(r'\n(?:On .{5,200} wrote:|Op .{5,200} schreef .{0,40}:|-----Original Message-----)', text, maxsplit=1)[0]
@@ -3638,7 +3727,7 @@ class Store:
                 if 'SENT' not in m.get('labels', []) and not row['mine']:
                     sender = _address(m.get('from'))
                     to = [x.lower() for x in re.findall(r'[^\s<>"\',;]+@[^\s<>"\',;]+', m.get('to') or '')]
-                    automated = {'CATEGORY_UPDATES', 'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS'} & set(m.get('labels', []))
+                    automated = AUTOMATED_LABELS & set(m.get('labels', []))
                     if not sender or sender in own or robot.match(sender) or automated or not own & set(to) or len(to) > 2:
                         continue
                     # Only people the owner writes with: no cold pitches or newsletters.
@@ -11851,6 +11940,8 @@ class App:
         heartbeat and the main chat session. One run at a time, with a gap between runs."""
         settings = self.config.get('review_worker') or {}
         enabled = settings.get('enabled')
+        if enabled:  # reviews just turned on: the first look's cards that want a draft get one
+            self.store.prepare_first_look(int(self.config.get('prepare_ahead_per_day', 10)) if self.config.get('prepare_ahead', True) is not False else 0)
         if not enabled:
             # Reviews off: only a preview runs (and is monitored) here: the owner's, or the first look
             # The Machine starts by itself once a model and a source are there.
@@ -12070,8 +12161,8 @@ class App:
         are connected. First a quick one: the newest signals (QUICK_LOOK_HOURS back, at most QUICK_LOOK_SIGNALS) as soon
         as the first page of mail is in, so the first cards come within minutes. Then the full one over the last week,
         once the first import has settled; what the quick one reviewed is not reviewed again, so no card comes twice.
-        Read-only like any preview: its cards show on the dashboard, nothing is sent, nothing is prepared, nothing is
-        done in any account; turning reviews on stays the owner's choice. None when it is not (or no longer) for this
+        Read-only like any preview: its cards show on the dashboard, nothing is sent, nothing is prepared while reviews
+        are off (Store.prepare_first_look, after), nothing is done in any account; turning reviews on stays the owner's choice. None when it is not (or no longer) for this
         install, else its state: 'due' (with `quick` for the quick one), or 'waiting' with why (model, sources,
         settling, mail, retry)."""
         settings = self.config.get('review_worker') or {}
@@ -12165,7 +12256,10 @@ class App:
                     db.execute("SELECT * FROM review_runs WHERE status IN ('starting','running','recovering') ORDER BY started_at DESC")]
             for run in runs:
                 run['steps'] = review_steps(db, run, self.config.get('agent_db'))
-            return {'runs': runs, 'queue': self.review_queue(db), 'first_look': self.first_look(db)}
+            # The newest card: the dashboard shows a card as soon as a running review saves it, not after the review
+            newest = db.execute('SELECT count(*),max(created_at) FROM suggestions').fetchone()
+            return {'runs': runs, 'queue': self.review_queue(db), 'first_look': self.first_look(db),
+                    'cards': {'count': newest[0], 'newest': newest[1]}}
 
     def start_preview(self, auto=False, quick=False):
         """`assistant preview`: one regular review run (same session, prompt and tool) over the last

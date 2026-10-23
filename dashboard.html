@@ -2296,8 +2296,12 @@ if(empty){el.hidden=true;if(i){empty.classList.add('first-look-empty');empty.inn
 if(i){el.innerHTML=`<strong>${esc(i.title)}</strong>${firstLookBar(i)}${i.wait?`<small>${esc(i.wait)}</small>`:''}`;el.hidden=false}else el.hidden=true}
 function renderReviewLive(){const live=state.review_live||{};$('#review-live').innerHTML=reviewLiveRows(live).join('');const none=$('#analyses .no-reviews');if(none)none.hidden=!!$('#review-live').innerHTML;renderFirstLook(live)}
 let reviewWasLive=false;
-setInterval(async()=>{if(document.hidden||!state||!((state.review_live?.runs||[]).length||reviewWasLive))return;try{const live=await request('api/reviews/live');const running=(live.runs||[]).length;
-if(!running&&reviewWasLive){reviewWasLive=false;refresh();return}reviewWasLive=!!running;state.review_live=live;renderReviewLive()}catch(e){}},5000);
+// While a review runs, or the first look is about to start, look every 5 s; a card a running review just saved shows at once
+const firstLookPending=()=>['due','waiting'].includes(state?.review_live?.first_look?.state)&&state.review_live.first_look.why!=='model';
+setInterval(async()=>{if(document.hidden||!state||!((state.review_live?.runs||[]).length||reviewWasLive||firstLookPending()))return;try{const live=await request('api/reviews/live');const running=(live.runs||[]).length;
+const before=state.review_live?.cards,fresh=live.cards&&before&&(live.cards.newest!==before.newest||live.cards.count!==before.count);
+if(fresh&&!canRefresh()){reviewWasLive=!!running;state.review_live={...live,cards:before};renderReviewLive();return}  // typing: on the next look
+if((!running&&reviewWasLive)||fresh){reviewWasLive=!!running;state.review_live=live;refresh();return}reviewWasLive=!!running;state.review_live=live;renderReviewLive()}catch(e){}},5000);
 function render(){renderNeedsYou();
 const finishedOpen=$('#finished-list')?.open||false,laterOpen=$('#later-list')?.open||false,promisesOpen=$('#promises-list')?.open||false;
 const drafts=Object.fromEntries([...document.querySelectorAll('#suggestions textarea,#suggestions .fleet-card input[id]')].filter(t=>t.value).map(t=>[t.id,t.value]));
