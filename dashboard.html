@@ -2221,7 +2221,8 @@ function renderHealthTabs(){const cs=state.connectors||[],bad=g=>cs.filter(c=>he
  for(const el of document.querySelectorAll('#health [data-health-for]'))el.hidden=!el.dataset.healthFor.split(' ').includes(current);
  for(const a of document.querySelectorAll('#connectors>article'))a.hidden=a.dataset.group!==current;if(current==='add')connectAdd()}
 // Connections, Add: every source this install can add, set up right here with the same steps as `assistant connect`;
-// its questions show one at a time. On a hosted machine Google and Microsoft are signed in on the account page.
+// its questions show one at a time. On a hosted machine Google and Microsoft are signed in on the account page, and a
+// source with its own sign-in there (Intercom) links to that page, which also offers pasting its token.
 let connectList=null,connectListAt=0,connectRun=null,connectTimer=0;
 const BROKER_LINK={gmail:'#google',calendar:'#google',outlook:'#microsoft',outlook_calendar:'#microsoft',zoom:'#source-zoom'};
 const connectPost=(action,args={})=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
@@ -2229,6 +2230,7 @@ async function connectAdd(force){if(connectRun)return;if(!force&&connectList&&Da
  try{connectList=await connectPost('connect_sources')}catch(e){$('#connect-add').innerHTML=`<p class="error">${esc(e.message)}</p>`;return}renderConnectAdd()}
 function renderConnectAdd(){const box=$('#connect-add');if(connectRun)return renderConnectRun();if(!connectList)return;
  const items=connectList.sources.map(x=>{const more=x.connected?`<small class="count">${x.connected} connected</small>`:'',what=x.what?`<small>${esc(x.what)}</small>`:'';
+  if(x.account_page&&connectList.manage_url)return `<a class="connect-source" href="${esc(connectList.manage_url+'#'+x.account_page)}" target="_blank" rel="noopener"><b>${esc(x.label)} ↗</b>${what}${more}</a>`;
   return x.broker?(connectList.manage_url?`<a class="connect-source" href="${esc(connectList.manage_url+(BROKER_LINK[x.service]||'#sources'))}" target="_blank" rel="noopener"><b>${esc(x.label)} ↗</b>${what}${more}</a>`:''):`<button type="button" class="connect-source" data-connect="${esc(x.name)}"><b>${esc(x.label)}</b>${what}${more}</button>`}).join('');
  box.innerHTML=`<p class="sub-note">Pick a source to connect.${connectList.saveable||connectList.manage_url?'':' This service can’t save its settings: use <code>assistant connect</code> in a terminal.'}</p><div class="connect-sources">${items}</div>`}
 // `name`, not `source`: the dashboard's requests carry their own `source`. With an account: that one signs in again.

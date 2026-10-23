@@ -236,6 +236,13 @@ class WebConnectTest(unittest.TestCase):
             view = self.wait(view, lambda v: v['state'] != 'running')
             self.assertEqual(view['state'], 'cancelled')
 
+    def test_intercom_names_its_place_on_the_account_page(self):
+        """A hosted Machine's account page signs Intercom in (the read-only app); here it can still be set up by token."""
+        by = {s['name']: s for s in self.app.action('connect_sources', {}, owner_dashboard=True)['sources']}
+        self.assertEqual(by['intercom']['account_page'], 'source-intercom')
+        self.assertFalse(by['intercom']['broker'])
+        self.assertNotIn('account_page', by['slack'])
+
     def test_hosted_google_and_microsoft_stay_on_the_account_page(self):
         self.app.config.update(google_broker={'url': 'https://cp.example.org/broker'}, manage_url='https://cp.example.org/account')
         listed = self.app.action('connect_sources', {}, owner_dashboard=True)
