@@ -33,6 +33,8 @@ SETUP = {'label': 'Intercom', 'what': 'Customer conversations in your Intercom w
                      'credential': 'intercom', 'poll_seconds': 600},
          'note': 'In Intercom\'s Developer Hub, open your app, then Authentication, and copy its access token.',
          'secret': 'Intercom access token',
+         # On a hosted Machine its account page also offers Sign in with Intercom (the read-only app), as well as pasting
+         'account_page': 'source-intercom',
          'hints': {'account_identity_mismatch': 'that token is for another Intercom workspace; add it as another account',
                    'intercom:HTTP_401': 'Intercom turned the access token down; copy it again from your app in the Developer Hub'}}
 VERSION = '2.11'
