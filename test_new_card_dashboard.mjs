@@ -135,7 +135,8 @@ await page.locator('.rename-reset').click();
   await page.locator('#new-card').waitFor();assert.notEqual(await page.evaluate(()=>document.documentElement.dataset.drawer),'open','the drawer closes');
   await page.locator('#new-card form button[aria-label="Close"]').tap();await page.locator('#new-card').waitFor({state:'hidden'});
   await page.waitForTimeout(800);await page.locator('#task-'+id(1)+' h3 .title-link').tap();await page.locator('#chat-log').waitFor();assert.equal(await page.locator('.rename-box').count(),0,'a tap opens the card');
-  await page.locator('[data-chat-drawer]').evaluate(b=>b.click());const link=page.locator(`#side-cards a[href="#chat=${id(2)}"]`);await link.waitFor();
+  // All tasks as a person reaches it: open the menu, then tap (an open menu is never redrawn under the tap)
+  await page.locator('#chat-menu summary').tap();await page.locator('#chat-menu [data-chat-drawer]').tap();const link=page.locator(`#side-cards a[href="#chat=${id(2)}"]`);await link.waitFor();
   await page.waitForTimeout(500);const box=await link.boundingBox();const cdp=await context.newCDPSession(page);
   const touch=(type,points)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:points});
   await touch('touchStart',[{x:box.x+20,y:box.y+box.height/2}]);await page.waitForTimeout(650);await touch('touchEnd',[]);

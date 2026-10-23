@@ -17,7 +17,7 @@ const foldedRow=async(page,label,tap)=>{const g=await page.evaluate(()=>{const r
  assert.equal(g.text,'1','the Graph count shows '+label);assert.ok(Math.abs(g.count.right-g.other.right)<=1,'the Graph count is in the rows\' column '+label+': '+g.count.right+' vs '+g.other.right);
  assert.ok(g.chev.left-g.lab.right>=5&&g.count.left-g.chev.right>=24,'the chevron sits apart from the label and the count '+label+': '+JSON.stringify(g));
  assert.ok(g.fold.width>=tap[0]&&g.fold.height>=tap[1],'the chevron has a tap target '+label+': '+g.fold.width+'x'+g.fold.height);
- await page.waitForFunction(()=>getComputedStyle(document.querySelector('#graph-fold')).opacity==='1',null,{timeout:2000})};  // folded, the chevron shows
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('#graph-fold')).opacity==='1')};  // folded, the chevron shows (its fade can take a while on a busy computer)
 
 // The desktop layout (from 1024px): a fixed sidebar with the tabs as rows, the cards as a list by section (Done folded,
 // each fold remembered), a filter and a Work/Personal switch; the main area gets a title per tab. The sidebar folds to
@@ -73,7 +73,7 @@ try{
   await page.reload();await page.locator('#side-cards a').first().waitFor();assert.equal(await page.locator('#side-cards a').count(),20,'folds are remembered');
   // Long titles fade at the edge and keep the full name as a tooltip
   const a=page.locator('#side-cards a').first();  // the fade is measured on the next frame, once the fonts are in (slower on macOS)
-  await page.waitForFunction(()=>document.querySelector('#side-cards a')?.classList.contains('fade'),null,{timeout:5000}).catch(()=>{});assert.match(await a.getAttribute('class')||'',/fade/);assert.match(await a.getAttribute('title'),/does not fit the sidebar/);
+  await page.waitForFunction(()=>document.querySelector('#side-cards a')?.classList.contains('fade'));assert.match(await a.getAttribute('class')||'',/fade/);assert.match(await a.getAttribute('title'),/does not fit the sidebar/);
   // The filter narrows the list; Work/Personal switches it
   await page.locator('#side-find').fill('number 2');assert.ok((await page.locator('#side-cards a').allTextContents()).every(t=>t.includes('number 2')));
   await page.locator('#side-find').fill('nothing like this');assert.equal(await page.locator('.side-empty').textContent(),'No cards match.');
@@ -115,8 +115,11 @@ try{
   const names=await page.evaluate(()=>[...document.querySelectorAll('.app-side nav [data-tab]')].filter(b=>b.offsetParent).map(b=>b.getAttribute('aria-label')));
   assert.equal(names[0],'Suggestions · 4 ready · 8 to decide');assert.deepEqual(names.slice(1),['Calendar','Events','Graph','Feedback','Connections']);
   for(const q of ['#open-settings','#side-toggle','#live'])assert.ok(await page.locator(q).getAttribute('aria-label'),q+' has a name');
-  const row=page.locator('.app-side nav [data-tab="inbox"]');await row.hover();await page.waitForTimeout(120);assert.equal(await page.locator('#side-tip').isVisible(),false,'not at once on hover');
-  await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide · G then S');  // with its key
+  // The delay is timed in the page, from the pointer arriving to the tip showing: a busy computer can only make it longer
+  await page.evaluate(()=>{window.tipTimes={};document.querySelector('#app-side').addEventListener('pointerover',()=>{tipTimes.over??=performance.now()},true);
+   new MutationObserver(()=>{if(!document.querySelector('#side-tip').hidden)tipTimes.shown??=performance.now()}).observe(document.querySelector('#side-tip'),{attributes:true,attributeFilter:['hidden']})});
+  const row=page.locator('.app-side nav [data-tab="inbox"]');await row.hover();
+  await page.locator('#side-tip').waitFor({state:'visible'});{const t=await page.evaluate(()=>tipTimes);assert.ok(t.shown-t.over>=250,'not at once on hover: '+JSON.stringify(t))}assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide · G then S');  // with its key
   const pos=await page.evaluate(()=>{const t=document.querySelector('#side-tip').getBoundingClientRect(),s=document.querySelector('#app-side').getBoundingClientRect(),r=document.querySelector('.app-side nav [data-tab="inbox"]').getBoundingClientRect();return {gap:t.left-s.right,mid:Math.abs((t.top+t.bottom)/2-(r.top+r.bottom)/2)}});
   assert.ok(pos.gap>=4&&pos.gap<=16&&pos.mid<2,JSON.stringify(pos));
   await page.screenshot({path:process.env.SHOT_DIR?process.env.SHOT_DIR+'/tip.png':'/dev/null'}).catch(()=>{});
@@ -161,7 +164,10 @@ try{
   assert.equal(await page.locator('#people-view .sub-tabs').count(),0,'no pills: the rows are the panes');
   assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations');assert.equal(await page.locator('#page-head .page-sub').textContent(),'38 organisations');
   assert.equal(await page.locator('#page-head .page-crumb').textContent(),'Graph');
-  await page.locator('.side-sub a[data-graph-sub="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');assert.equal(await lit(),'people');assert.equal(await page.locator('#page-head .page-sub').textContent(),'214 people');
+  // the row lights once the pane is drawn, a moment after the hash
+  await page.locator('.side-sub a[data-graph-sub="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');
+  await page.waitForFunction(()=>document.querySelector('.side-sub a[aria-current="page"]')?.dataset.graphSub==='people');assert.equal(await lit(),'people');
+  assert.equal(await page.locator('#page-head .page-sub').textContent(),'214 people');
   // Graph itself shows the overview as before, the pane it was on
   await tab(page,'events');assert.equal(new URL(page.url()).hash,'');assert.equal(await lit(),'');
   await page.locator('nav [data-tab="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');assert.equal(await lit(),'people');
@@ -171,7 +177,9 @@ try{
   await page.locator('#graph-fold').click();assert.ok(await page.locator('#graph-sub').isVisible());
   await page.locator('#side-toggle').click();assert.equal(await page.locator('.side-sub a[data-graph-sub="people"]').getAttribute('aria-label'),'People · 214');
   assert.ok(await page.locator('.side-sub .sq').first().isVisible());assert.ok(!(await page.locator('.side-sub .nl').first().isVisible()));
-  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Organisations · 38 · G then O');
+  // hover once the sidebar has folded: a row still sliding moves out from under the pointer
+  await page.waitForFunction(()=>document.documentElement.dataset.side==='collapsed'&&!document.querySelector('#app-side').getAnimations({subtree:true}).length);
+  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible'});assert.equal(await page.locator('#side-tip').textContent(),'Organisations · 38 · G then O');
   await page.locator('#side-toggle').click();await context.close()}
  // A phone and a tablet: a slim top bar with the menu button and the page's title; the sidebar is a drawer
  const touch=(page,from,to)=>page.evaluate(([from,to])=>{const el=document.elementFromPoint(from[0],from[1]),t=(x,y)=>new Touch({identifier:1,target:el,clientX:x,clientY:y});
@@ -269,8 +277,10 @@ try{
   await page.locator('#drawer-open').click();await settle(page);assert.equal(await page.locator('.side-sub a[aria-current="page"]').getAttribute('data-graph-sub'),'projects');await page.keyboard.press('Escape');await settle(page);
   await page.goBack();await settle(page);assert.ok(await page.locator('#inbox').isVisible(),'back from a Graph row goes back to Suggestions');
   // Resized to a computer with the drawer open: the sidebar is a column again and nothing stays inert
-  if(w===900){await page.locator('#drawer-open').click();await settle(page);await page.setViewportSize({width:1280,height:900});await settle(page);
-   assert.ok(!(await isOpen(page)));assert.ok(!(await page.evaluate(()=>document.querySelector('main').inert)));assert.ok(await page.locator('#side-cards').isVisible())}
+  if(w===900){await page.locator('#drawer-open').click();await settle(page);await page.setViewportSize({width:1280,height:900});
+   // the width change reaches the page a frame or more later
+   await page.waitForFunction(()=>document.documentElement.dataset.drawer!=='open');await settle(page);
+   assert.ok(!(await page.evaluate(()=>document.querySelector('main').inert)));assert.ok(await page.locator('#side-cards').isVisible())}
   await context.close()}
  assert.deepEqual(errors,[]);
 }finally{await browser?.close();server.close()}
