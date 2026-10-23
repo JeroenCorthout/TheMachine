@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings (the gear in the header): Work hours show the saved hours, toggle work days and save through
@@ -28,7 +29,7 @@ try{
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);
  assert.equal(await page.locator('#health #hours').count(),0);  // not on Connections any more
- await page.locator('#open-settings').click();
+ await navClick(page.locator('#open-settings'));
  await page.locator('#theme-toggle').waitFor();  // General first
  assert.equal(await page.locator('#open-settings').getAttribute('aria-current'),'page');
  assert.equal(await page.locator('#inbox').isHidden(),true);
@@ -84,14 +85,14 @@ try{
  assert.equal(await page.locator('#hours-days [aria-pressed="true"]').count(),0);
  // Not saveable here (no config file): shown, read-only, with where to change it.
  hours={...hours,saveable:false};
- await page.reload();await page.locator('#open-settings').click();
+ await page.reload();await navClick(page.locator('#open-settings'));
  assert.equal(await page.locator('#hours-save').isDisabled(),true);
  assert.match(await page.locator('#hours-error').textContent(),/config\.json/);
  // Another tab clears the gear; the gear brings Settings back. Light mode reads well too.
- await page.locator('nav [data-tab="events"]').click();
+ await navClick(page.locator('nav [data-tab="events"]'));
  assert.equal(await page.locator('#open-settings').getAttribute('aria-current'),'false');
  assert.equal(await page.locator('#settings').isHidden(),true);
- await page.locator('#open-settings').click();await page.locator('#settings-tabs [data-settings-tab="general"]').click();const was=await page.evaluate(()=>document.documentElement.dataset.theme);
+ await navClick(page.locator('#open-settings'));await page.locator('#settings-tabs [data-settings-tab="general"]').click();const was=await page.evaluate(()=>document.documentElement.dataset.theme);
  await page.locator('#theme-toggle').click();
  assert.notEqual(await page.evaluate(()=>document.documentElement.dataset.theme),was);
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));

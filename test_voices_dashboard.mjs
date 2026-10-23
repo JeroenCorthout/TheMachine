@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings, How you write: one line per channel. Save shows only after a change; Remove clears a line; a new channel
@@ -39,7 +40,7 @@ try{
   const skillCard=page.locator('#task-sk1');await skillCard.waitFor();
   assert.ok(await skillCard.getByRole('button',{name:'Create skill'}).count());
   assert.ok(await skillCard.locator('button',{hasText:'Not now'}).count());
-  await page.locator('#open-settings').click();await page.locator('#settings-tabs [data-settings-tab="writing"]').click();
+  await navClick(page.locator('#open-settings'));await page.locator('#settings-tabs [data-settings-tab="writing"]').click();
   const forms=page.locator('#voices .voice-form:not([data-new])');await forms.first().waitFor();
   assert.equal(await forms.count(),2);
   assert.match(await forms.nth(0).locator('.sig-head').textContent(),/Everywhere/);
@@ -72,7 +73,7 @@ try{
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   // What I've learned: grouped (how you write, facts, how to do things), newest first, merges shown with Undo.
   await page.goto('http://127.0.0.1:'+server.address().port+'/#feedback');
-  await page.locator('[data-tab="feedback"]').click();
+  await navClick(page.locator('[data-tab="feedback"]'));
   const learned=page.locator('#facts');await learned.locator('.learn-head').first().waitFor();
   assert.deepEqual(await learned.locator('.learn-head h3').allTextContents(),['How you write 2','Facts 2','How to do things 1','Moved into skills 1']);
   await learned.locator('[data-unmerge-skill="sk_9"]').click();

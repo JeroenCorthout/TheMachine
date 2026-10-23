@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile, mkdir} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Organisations show their logo from enrichment: https only, no referrer, lazy and fixed size, the initial behind it,
@@ -32,8 +33,8 @@ try{
    return u.hostname==='127.0.0.1'?route.continue():route.abort()});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port);
-  await page.locator('nav [data-tab="people"]').click();
-  await page.locator('[data-graph-pane="orgs"]').click();
+  await navClick(page.locator('nav [data-tab="people"]'));
+  await navClick(page.locator('.side-sub a[data-graph-sub="orgs"]'));
   const row=id=>page.locator(`#people-view article[data-node="org:${id}"] .org-pic`);
   await row('globex.example').waitFor();
   const img=row('globex.example').locator('img');

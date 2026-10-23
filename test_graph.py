@@ -267,10 +267,14 @@ class Graph(unittest.TestCase):
         detail = self.app.graph_action({'node_id': 'email:ann@client.com'})
         self.assertEqual(len(detail['recent']), 2)
         self.assertIn('email:bob@client.com', [n['id'] for n in detail['around']])
+        with self.store.connect() as db:
+            before = graph.overview(db)['counts']
+        self.assertEqual((before['person'], before['project']), (2, 1))  # Ann and Bob (not the owner); the Acme deal
         self.app.graph_build = self.build
         self.app.graph_action({'close_project': 'acme deal'})
         with self.store.connect() as db:
             self.assertEqual(graph.overview(db)['projects'], [])
+            self.assertEqual(graph.overview(db)['counts']['project'], 0)  # a closed project is not counted
         with self.assertRaises(ValueError):
             self.app.graph_action({'merge': ['email:ann@client.com']})
 

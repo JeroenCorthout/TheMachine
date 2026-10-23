@@ -330,7 +330,7 @@ try{
   assert.ok(m.left>=8&&m.right<=m.vw-8,`menu inside the screen at ${width}: ${m.left}–${m.right} of ${m.vw}`);
   await more.locator('summary').click()}
  await page.setViewportSize({width:1280,height:900});
- // On a phone: the page header steps aside, the task list is a drawer under ⋯
+ // On a phone: the page header steps aside, the app's drawer (the card list) opens from ⋯
  await page.setViewportSize({width:390,height:800});
  await page.evaluate(()=>{location.hash='#chat=c1c1c1c1c1c1c1c1'});
  await page.locator('h2.chat-title',{hasText:'Reply to the venue'}).waitFor();await page.waitForTimeout(1500);
@@ -345,10 +345,10 @@ try{
  assert.ok(fit.under<=1,'no space under the message box: '+fit.under);
  await page.locator('.chat-menu summary').click();
  await page.locator('.chat-menu-list [data-chat-drawer]').click();
- await page.waitForFunction(()=>document.querySelector('.chat-side').getBoundingClientRect().left>=0);
- await page.locator('.chat-side a',{hasText:'Renew the passport'}).click();
+ await page.waitForFunction(()=>document.documentElement.dataset.drawer==='open');  // All tasks opens the app's drawer
+ await page.locator('.side-cards a',{hasText:'Renew the passport'}).click();
  await page.locator('h2.chat-title',{hasText:'Renew the passport'}).waitFor();
- assert.ok(!(await page.locator('.chat-layout').evaluate(n=>n.classList.contains('drawer'))));
+ assert.ok(!(await page.evaluate(()=>document.documentElement.dataset.drawer)));
  // A cut-off or failed status answer is "offline": the quiet pill only, never a raw error; the next good one clears it
  for(const bad of [{status:200,body:'{"suggestions":[{"id',contentType:'application/json'},{status:502,body:'<html>Bad gateway</html>',contentType:'text/html'},{status:502,body:''},
   {status:503,body:'{"error":"The Machine is restarting…","restarting":true}',contentType:'application/json',headers:{'Retry-After':'5'},pill:/Restarting · retrying/}]){
