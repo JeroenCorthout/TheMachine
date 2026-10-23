@@ -2222,6 +2222,27 @@ def merge(db, a, b, same, now, source='agent'):
     db.execute('DELETE FROM graph_same WHERE a=? AND b=?', (a, b))
 
 
+def merge_all(db, pairs, now):
+    """Merge all: the owner merges every listed Same person? pair at once. Only pairs still asked count, so a pair marked
+    Not the same (or deleted, or merged meanwhile) is never in it. The batch is its time stamp, for one Undo."""
+    asked = {(r['a'], r['b']) for r in db.execute('SELECT a,b FROM graph_same')}
+    done = 0
+    for pair in pairs:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2 or tuple(sorted(map(str, pair))) not in asked:
+            continue
+        a, b = sorted(map(str, pair))
+        if db.execute('SELECT 1 FROM graph_merges WHERE a=? AND b=?', (a, b)).fetchone():
+            continue  # someone already decided about these two
+        merge(db, a, b, True, now, 'owner')
+        done += 1
+    return {'merged': done, 'batch': now if done else None}
+
+
+def unmerge_all(db, batch):
+    """Undo Merge all: the batch's merges go, so the pairs are separate people and asked again; any other decision stays."""
+    return db.execute("DELETE FROM graph_merges WHERE created_at=? AND same=1 AND source='owner'", (str(batch),)).rowcount
+
+
 # Delete permanently (the owner's right to have someone forgotten, GDPR art. 17): the person and what is tied to them
 # go; what stays is a keyed hash of each of their identifiers, so they are never added, looked up or learned again.
 class _Everyone:
