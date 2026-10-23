@@ -187,7 +187,8 @@ def preview(value):
         return merge_preview(value)
     if value['kind'] == 'finish':
         message = ('\n\n' + ('To ' + value['to_name'] + ':\n' if value.get('to_name') else '') + value['message']) if value.get('message') else ''
-        return value['preview'] + message + ('\n\n' + value['url'] if value.get('url') else '')
+        files = '\n\nAttachments: ' + attachment_list(value) if value.get('attachments') else ''
+        return value['preview'] + message + files + ('\n\n' + value['url'] if value.get('url') else '')
     if value['kind'] == 'whatsapp':
         return 'WhatsApp message to ' + value['to_name'] + '\n\n' + value['body']
     if value['kind'] == 'handoff':
@@ -273,7 +274,7 @@ def validate(value, config, allowed_accounts, recipient_options=None, linkedin_t
     elif value.get('kind') == 'finish':
         # Everything up to the final click is done; the owner confirms that click. Its run
         # repeats the step from these instructions, since a tab or session may have expired.
-        if set(value)-{'kind','label','instructions','preview','url','message','to_name'} or not value.get('label'):
+        if set(value)-{'kind','label','instructions','preview','url','message','to_name','attachments'} or not value.get('label'):
             raise ValueError('A final step needs a label, the exact instructions and a preview of what goes out')
         if value['label'].split()[0] not in FINISH_VERBS:
             raise ValueError('A final step label starts with what it does: ' + ', '.join(FINISH_VERBS[:8]) + '…')
@@ -294,6 +295,10 @@ def validate(value, config, allowed_accounts, recipient_options=None, linkedin_t
             raise ValueError('to_name goes with message')
         result=dict(value)
         if 'message' in result:result['message']=result['message'].strip()
+        # Files the step uploads (a receipt with a reply, a document a form asks for): only files this
+        # Machine saved for the card, copied into the store like an email's, so the owner sees and opens
+        # exactly those bytes on the card and Confirm uploads exactly them.
+        if 'attachments' in value:result['attachments']=store_attachments(value['attachments'],config)
     elif value.get('kind') == 'email_demo':
         if set(value)-{'kind','label','subject','body'} or value.get('label','Send')!='Send':
             raise ValueError('The Send demo is preview-only with fixed fictional addresses')
@@ -524,6 +529,9 @@ PLACEHOLDER = re.compile(r'(?i)\[(?:name|first name|your name|recipient|company|
 # Only the sender's own "here's the file" phrasing; "thanks for the attached invoice" is fine.
 ATTACHED = re.compile(r"(?i)\b(?:I(?:'ve| have)? attached|attached (?:is|are|you'll find|please find)|(?:please )?find attached|see (?:the )?attached|I(?:'m| am) attaching|in bijlage (?:vind|stuur|zit)|(?:vind|stuur) (?:je|u) (?:hierbij|in bijlage)|bijgevoegd vind|ci-joint|anbei)\b")
 
+# A final step whose instructions point at a file this Machine saved (to upload it) must list it.
+SAVED_FILE = re.compile(r'(?:data/assistant-attachments|memory/assistant)/\S*[^\s/.,;:)]')
+
 
 def check(value, result='', own_addresses=()):
     """Mistakes a Do it result can't go out with: checked before it's saved, so the
@@ -535,6 +543,9 @@ def check(value, result='', own_addresses=()):
             problems.append(f"“{action.get('label') or action['kind']}” still has a placeholder ({PLACEHOLDER.search(text)[0]}): fill it in from the evidence")
         if re.search(r'\[[^\]]+\]\((?!https?://)[^)]*\)', text):
             problems.append('A link has no real https:// address')
+        if action['kind'] == 'finish' and not action.get('attachments') and (
+                ATTACHED.search(text) or SAVED_FILE.search(action['instructions'])):
+            problems.append(f"“{action['label']}” uploads or mentions a file but lists none: add attachments:[<paths>] so the owner sees it, or reword it")
         if action['kind'] == 'email':
             if ATTACHED.search(action['body']) and not action.get('attachments'):
                 problems.append('The email mentions an attachment but has none: add attachments:[<paths>] or reword it')

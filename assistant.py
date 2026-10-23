@@ -8607,14 +8607,48 @@ def finish_text(step):
     return ''
 
 
+# Where a confirmed final step's files are staged for the browser's upload action, which only takes
+# files from OpenClaw's uploads folder.
+BROWSER_UPLOADS = Path('/tmp/openclaw/uploads')
+
+
+def stage_finish_files(step, job_id, config=None):
+    """Copy the files the owner saw on a final step out of the store (checksum verified) into the
+    browser's uploads folder, one folder per job so file names stay as shown. Returns the paths."""
+    folder = Path((config or {}).get('browser_upload_dir') or BROWSER_UPLOADS) / ('machine-' + re.sub(r'[^A-Za-z0-9]', '', job_id)[:32])
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    paths = []
+    for record in step.get('attachments', []):
+        data = next_actions.attachment_bytes(record, config or {})
+        path = folder / record['name']
+        if path.is_symlink():
+            path.unlink()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+        with os.fdopen(fd, 'wb') as out:
+            out.write(data)
+        paths.append(str(path))
+    return paths
+
+
+def finish_files(step):
+    """The files a confirmed final step uploads: exactly those the owner saw on the card, or none."""
+    if step.get('files_error'):
+        return f"\nThe files the owner saw could not be prepared ({step['files_error']}). Do not submit: record a blocker that says so."
+    if not step.get('attachments'):
+        return '\nThe owner saw no files with this step: attach or upload none, and remove any file an earlier draft left on the page. If the step needs a file, record a blocker.'
+    listed = '\n'.join(f"- {path} ({record['name']}, {next_actions.human_size(record['size'])})" for path, record in zip(step.get('staged', []), step['attachments']))
+    return ('\nThe owner saw these files with this step; upload exactly these from these paths (the browser upload action), and no others:\n' + listed +
+            '\nIf the page already holds files from an earlier draft, keep a file only when it is one of these; remove the rest. Before you submit, check the page shows each by name; after, check that what went out carries them, and say so in the result.')
+
+
 def preparation_prompt(job, facts='', config=None, edits='', rules='', style=''):
     # The standing rules live in PREPARATION.md, which the plugin prepends to every preparation
     # session (outside the runner's message limit); this message carries only the job itself.
     j,sid=job['job_id'],job['suggestion_id']
     opening = (f'''Prepare suggestion {sid} ahead. This is a preparation task, not a signal-review task. The owner has NOT tapped Do it yet: the card reaches them once it's ready, so they can approve it in one tap. Preparation job ID: {j}.
-Prepared ahead, so these limits win over the preparation rules: take the task as far as it goes without committing anything, so the owner only confirms the last step. Research, read and draft freely (evidence, web, files, read-only commands, logged-in apps, signing in), and fill in what the last step needs (a form up to Submit, a cart or payment up to Pay, a booking up to Book, a post up to Publish). Do not change, submit, send, pay, sign, delete, book or post anything anywhere, and never use send_now. End with that last step as a next action: an email, LinkedIn, Slack or X message as a ready draft; a merge as kind:merge; anything else as {{kind:finish,label:'Submit …'/'Pay …'/'Book …',instructions:<the exact last step with every value it needs, so it can be redone from the start if the page or session expired>,preview:<what goes out, as the owner should check it: amounts, dates, names, the text>,url:<the page>}}; when that step posts a message (a reply in a support inbox, a chat or DM in a web app), also give message:<its exact text, which the owner can edit> and to_name:<who gets it>. Several separate changes become a follow-up {{kind:prepare,label:'Apply …',instructions:<the exact changes>}}. If you can't get it ready without the owner, record a blocker: the card then reaches them as a normal suggestion.''' if job.get('ahead') else
+Prepared ahead, so these limits win over the preparation rules: take the task as far as it goes without committing anything, so the owner only confirms the last step. Research, read and draft freely (evidence, web, files, read-only commands, logged-in apps, signing in), and fill in what the last step needs (a form up to Submit, a cart or payment up to Pay, a booking up to Book, a post up to Publish). Do not change, submit, send, pay, sign, delete, book or post anything anywhere, and never use send_now. End with that last step as a next action: an email, LinkedIn, Slack or X message as a ready draft; a merge as kind:merge; anything else as {{kind:finish,label:'Submit …'/'Pay …'/'Book …',instructions:<the exact last step with every value it needs, so it can be redone from the start if the page or session expired>,preview:<what goes out, as the owner should check it: amounts, dates, names, the text>,url:<the page>}}; when that step posts a message (a reply in a support inbox, a chat or DM in a web app), also give message:<its exact text, which the owner can edit> and to_name:<who gets it>; when it uploads a file, attachments:[<paths>] (the card shows them; without it nothing is uploaded). Several separate changes become a follow-up {{kind:prepare,label:'Apply …',instructions:<the exact changes>}}. If you can't get it ready without the owner, record a blocker: the card then reaches them as a normal suggestion.''' if job.get('ahead') else
                f'''The owner confirmed the last step of suggestion {sid}: {job['finish']['label']}. This is a preparation task, not a signal-review task. Do only this step, which everything before it prepared: {job['finish']['instructions']}
-What the owner reviewed and confirmed: {job['finish']['preview']}{(chr(10)+'Page: '+job['finish']['url']) if job['finish'].get('url') else ''}{finish_text(job['finish'])}
+What the owner reviewed and confirmed: {job['finish']['preview']}{(chr(10)+'Page: '+job['finish']['url']) if job['finish'].get('url') else ''}{finish_text(job['finish'])}{finish_files(job['finish'])}
 If what you are about to submit differs from what they reviewed (another amount, date, recipient or text), or the step already happened, do not go ahead: record a blocker that says what changed. Otherwise do it, check that it went through (a confirmation, receipt or the new state) and save outcome:'done' with what happened and any reference. Preparation job ID: {j}.''' if job.get('finish') else
                f'''The owner accepted suggestion {sid}. This is a preparation task, not a signal-review task: the owner tapped Do it, so carry out the task itself. Owner-selected next step: {job.get('next_step') or 'the original offered preparation'}. Preparation job ID: {j}.''')
     if job.get('finish'):
@@ -11093,7 +11127,11 @@ class App:
             if chosen:
                 step=json.loads(chosen['payload'])
                 job['next_step']=step['instructions']
-                if step['kind']=='finish':job['finish']=step
+                if step['kind']=='finish':
+                    job['finish']=step
+                    if step.get('attachments'):
+                        try:job['finish']={**step,'staged':stage_finish_files(step,job['job_id'],self.config)}
+                        except (ValueError,OSError) as error:job['finish']={**step,'files_error':str(error) if isinstance(error,ValueError) else 'a file is missing'}
             with self.store.connect() as db:
                 job['ahead']=bool(db.execute('SELECT early FROM suggestions WHERE id=?',(job['suggestion_id'],)).fetchone()[0])
             # A chat message (dashboard chat, decision chat-…) in a session that already has the card's context: a short
