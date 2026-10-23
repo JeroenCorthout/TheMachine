@@ -11148,10 +11148,10 @@ class App:
                 if r['source'] == 'fleet':
                     continue
                 if was and r['choice'] == 'accept':
-                    owner.append({'kind': 'event', 'text': 'Back for a check-in' + via, 'choice': 'checkin', 'mine': True, 'at': at})
+                    owner.append({'kind': 'event', 'text': 'Brought it back for a check-in' + via, 'choice': 'checkin', 'mine': True, 'at': at})
                     continue
             elif waiting:
-                owner.append({'kind': 'event', 'text': 'Check-in moved' + via, 'choice': 'snooze', 'mine': True, 'at': at})
+                owner.append({'kind': 'event', 'text': 'Moved the check-in' + via, 'choice': 'snooze', 'mine': True, 'at': at})
                 continue
             if r['choice'] == 'other':
                 owner.append({'kind': 'you', 'text': clamp(r['feedback'], 5000), 'via': r['source'], 'at': at})

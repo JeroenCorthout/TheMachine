@@ -111,7 +111,7 @@ class CheckInChat(unittest.TestCase):
             owner, _ = self.app.card_chat_service(db, self.sid)
         # With the teammate: Change time moves the check-in, Check in now brings it back. After that, a snooze is a snooze.
         self.assertEqual([i['text'] for i in owner if i['kind'] == 'event'],
-                         ['Check-in moved', 'Back for a check-in in Telegram', 'Snoozed', 'Unsnoozed'])
+                         ['Moved the check-in', 'Brought it back for a check-in in Telegram', 'Snoozed', 'Unsnoozed'])
 
 
 if __name__ == '__main__':

@@ -559,6 +559,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 .card .draft.clamp .db{max-height:calc(14*1.5em);overflow:hidden;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent)}
 .card .draft .attachments{margin:10px 0 0;gap:6px}.card .draft .attachment{padding:4px 11px;font-size:.82rem;background:var(--surface)}
 .card .card-foot{margin-top:10px;font-size:.84rem;color:var(--faint)}.card .card-foot .source{color:var(--faint)}
+.card .checkin-line{margin:-4px 0 0;font-size:.84rem;color:var(--faint)}  /* when a handoff comes back to check in: the source line's style, under the status */
 .card .card-foot .read-original{align-items:flex-start;color:var(--faint);font-weight:400;text-align:left;text-decoration:none}.card .card-foot .read-original:is(:hover,:focus,:active){background:none;text-decoration:none}
 .card .card-foot .read-original::before,.card .card-foot .read-original>span{flex:none;margin-top:calc((1lh - 14px)/2)}.card .card-foot .read-original>span{margin-top:0}  /* icon and arrow sit on the first line when the source wraps; no underline, so the arrow never gets one */
 @media (hover:hover){.card .card-foot .read-original:hover{color:var(--text)}}
@@ -601,7 +602,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
   .card .body{font-size:1.08rem;line-height:1.55}
   .card .draft{max-width:none;margin-top:16px;padding:14px 16px;font-size:1.02rem;line-height:1.55}
   .card .draft .dm{font-size:.88rem;margin-bottom:8px}
-  .card .card-foot{margin-top:14px;font-size:.92rem}
+  .card .card-foot{margin-top:14px;font-size:.92rem}.card .checkin-line{font-size:.92rem}
   .card .actions:not(.result-actions){display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px;margin-top:16px}
   .card .actions:not(.result-actions)>.spacer{display:none}
   .card .actions:not(.result-actions)>:is(button,a.open){min-width:0;min-height:48px;font-size:1rem}
@@ -609,7 +610,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 }
 @media(max-width:560px){
   .card,.card.card{padding:16px 16px 14px}
-  .card .actions:not(.result-actions)>:is(button,a.open){flex:1 1 28%;min-width:0;min-height:44px;padding:8px 6px;font-size:.9rem}
+  .card .actions:not(.result-actions)>:is(button,a.open){flex:1 1 28%;min-width:max-content;min-height:44px;padding:8px 10px;font-size:.9rem;white-space:nowrap}  /* a label never wraps: whole buttons take the next row */
   .card .actions:not(.result-actions):has(>:nth-child(4):last-child)>*{flex-basis:40%}
   .card .actions>button.quiet{margin-left:0}
   .card .actions:not(.result-actions)>.more-actions{flex:1 1 28%;min-width:0}.card .more-actions>summary{min-height:44px;padding:8px 6px;font-size:.9rem}
@@ -1336,7 +1337,7 @@ const drafts=s.status==='prepared'?smart.filter(a=>DRAFT_KINDS.includes(a.kind)&
 // One faint line, like the site: the source itself opens the original; Read result and Copy draft (when there is a draft or file) sit at its end.
     const results=s.status==='prepared'||s.result_files?.length?`<span class="foot-links"><button type="button" class="link" data-id="${s.id}" data-result="read">Read result</button>${(messageDrafts(s).length||s.result_files?.length)&&!copyLead(s,smart)?`<button type="button" class="link" data-id="${s.id}" data-result="copy">Copy draft</button>`:''}</span>`:'';
     const readLabel=isEmail(s)?'Read email':'Read message',src=s.source_line?esc(sourceText(s.source_line)):'';
-    const foot=hasOriginal(s)||s.source_line||s.snoozed_until||results?`<div class="card-foot">${hasOriginal(s)?`<button type="button" class="link read-original via-${cardViaIcon(s)}" data-id="${s.id}" data-original="read" aria-label="${readLabel}" title="${readLabel}">${src||readLabel}<span aria-hidden="true"> ↗</span></button>`:src?`<p class="source">${src}</p>`:''}${s.snoozed_until?`<span class="back-on" title="${esc(date(s.snoozed_until))}">${esc(s.handoff_wait?checkinLabel(s):backLabel(s.snoozed_until))}</span>`:''}${results}</div>`:'';
+    const foot=hasOriginal(s)||s.source_line||s.snoozed_until||results?`<div class="card-foot">${hasOriginal(s)?`<button type="button" class="link read-original via-${cardViaIcon(s)}" data-id="${s.id}" data-original="read" aria-label="${readLabel}" title="${readLabel}">${src||readLabel}<span aria-hidden="true"> ↗</span></button>`:src?`<p class="source">${src}</p>`:''}${s.snoozed_until&&!s.handoff_wait?`<span class="back-on" title="${esc(date(s.snoozed_until))}">${esc(backLabel(s.snoozed_until))}</span>`:''}${results}</div>`:'';
 // A page the task's own run worked on opens in the Machine's browser (its viewer, with that tab in front), never in yours.
 const viewIn=s.browser_view&&!smart.some(a=>a.browser)?[{kind:'open',browser:true,label:s.browser_view.label,site:s.browser_view.site}]:[];
 const smartButtons=s.status==='prepared'?[...smart,...viewIn].map(a=>a.kind==='handoff'?(canHandoff(s)?`<button class="primary" data-fleet-handoff="${esc(s.id)}">${esc(a.label||'Hand off')}</button>`:''):a.kind==='open'&&a.browser?`<a class="open${finalStep(s)?' primary':''}" href="${esc(state.browser_link||'#')}" target="_blank" rel="noopener" data-browser-show="${esc(s.id)}"${a.site?` title="${esc(a.site)}, in your Machine’s browser"`:''}>${esc(a.label)} ↗</a>`:a.kind==='open'?`<a class="open" href="${esc(safeURL(a.url))}" target="_blank" rel="noreferrer">${esc(a.label)} ↗</a>`:!(a.kind==='finish'&&(a.state||s.action_status)?.status==='done')&&!sendBusy(a.state||s.action_status)?`<button class="primary" data-id="${s.id}" data-smart="${a.revision}">${esc(sendLabel(a)||(a.kind==='prepare'?'Prepare next step':'Review and send'))}</button>`:'').join(''):'';
@@ -2267,7 +2268,7 @@ const chatLong=(t,lines=4)=>String(t||'').split('\n').length>lines||String(t||''
 const chatViaIcon=(v,note)=>note?'note':/^(email|gmail|outlook|mail)/i.test(v||'')?'mail':/calendar/i.test(v||'')?'cal':'chat';
 const CHAT_VIA={email:'Email',gmail:'Email',slack:'Slack',linkedin:'LinkedIn',whatsapp:'WhatsApp',telegram:'Telegram',x:'X',calendar:'Calendar',intercom:'Intercom',github:'GitHub',android:'Phone'};
 // The owner's own taps read as what they did, not a bare button name
-const CHAT_TAPS={'Do it':'You chose Do it','Reopened':'You reopened it','Snoozed':'You snoozed it','Unsnoozed':'You unsnoozed it','Back for a check-in':'You brought it back for a check-in','Check-in moved':'You moved the check-in','Marked done':'You marked it done'};
+const CHAT_TAPS={'Do it':'You chose Do it','Reopened':'You reopened it','Snoozed':'You snoozed it','Unsnoozed':'You unsnoozed it','Marked done':'You marked it done'};
 const chatVia=v=>CHAT_VIA[v]||(v&&v!=='signal'?v[0].toUpperCase()+v.slice(1):'');
 // Whose side an item is on: the owner's messages and taps on the right, the Machine and the people it is about on the left.
 const chatSide=i=>i.kind==='you'||i.kind==='event'&&i.mine||i.kind==='source'&&i.mine?'you':i.kind==='event'?'mid':'them';
@@ -2587,7 +2588,7 @@ const DECLINE_PICKS=['Not mine','Already done','No time this week'];
 function fleetNoteEditor(w,c){const id=esc(w.id),no=c==='decline';return`<div class="change-editor dismiss-editor fleet-note-editor"><p class="dismiss-q" id="fleet-note-q-${id}">${no?'Why?':'Note to '+esc(w.name)} <small>Optional</small></p>${no?`<div class="reason-chips" role="group" aria-labelledby="fleet-note-q-${id}">${DECLINE_PICKS.map(r=>`<button type="button" class="reason" aria-pressed="false" data-fleet-pick="${esc(r)}">${esc(r)}</button>`).join('')}</div>`:''}<textarea id="fleet-note-${id}" rows="1" maxlength="160" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><p class="muted">Only ${esc(w.name)} sees it.</p><div class="actions"><button class="primary" data-fleet-note-send="${id}" data-choice-f="${c}">${no?'Decline':'Accept'}</button><button type="button" class="ghost" data-fleet-note-cancel="${id}">Cancel</button></div></div>`}
 // A handoff a teammate declined (or let expire): the card is back, with what to do now.
 const handoffBackActions=s=>`<div class="actions"><button class="primary" data-handoff-mine="${esc(s.id)}">Do it myself</button>${canHandoff(s)?`<button class="ghost" data-fleet-handoff="${esc(s.id)}">Hand to someone else</button>`:''}<button class="ghost" data-id="${s.id}" data-choice="complete">Mark done</button></div>`;
-function handoffLine(h){const n=h.note?`: ${esc(h.note)}`:'';return h.stage==='declined'?`${esc(h.name)} declined${n||'.'}`:h.stage==='expired'?`${esc(h.name)} didn’t answer in time.`:`Handed off to ${esc(h.name)}: ${esc(h.stage)}${h.note?` (${esc(h.note)})`:''}`}
+function handoffLine(h){const n=h.note?`: ${esc(h.note)}`:'';return ['asked','waiting for them'].includes(h.stage)?`Handed off to ${esc(String(h.name||'').split(' ')[0])}, waiting for an answer`:h.stage==='declined'?`${esc(h.name)} declined${n||'.'}`:h.stage==='expired'?`${esc(h.name)} didn’t answer in time.`:`Handed off to ${esc(h.name)}: ${esc(h.stage)}${h.note?` (${esc(h.note)})`:''}`}
 // Fleet items that need you are cards under Suggestions (tagged Fleet, Work), built from api/fleet: a teammate's
 // question or request (their words, shown quoted, never acted on), a meeting's follow-ups to split, and confirmations
 // the relay asks for. The Fleet tab keeps people, rules, briefs, your own asks and the log.
@@ -2655,7 +2656,7 @@ function fleetSync(force){if(!state?.fleet?.on)return Promise.resolve();if(fleet
 const fleetOn=(type,fn)=>{for(const el of [$('#fleet-view'),$('#suggestions')])el.addEventListener(type,fn)};
 function fleetIntroOffers(f,work,inFleet){const offers=(f.intro_offers||[]).filter(o=>inFleet(o,work));
  return offers.length?`<div class="list">${offers.map(o=>`<article><p><strong>${esc(o.name)}</strong> knows someone at ${esc(o.about)}.</p><form class="fleet-ask fleet-intro-form" data-fleet="${esc(o.fleet)}" data-member="${esc(o.member_id)}" data-about="${esc(o.about)}"><input name="note" maxlength="300" placeholder="Why, in a line (optional; they see it)" aria-label="Why"><button class="primary">Ask ${esc(o.name)} for an intro</button></form></article>`).join('')}</div>`:''}
-function fleetHandoff(s){if(s.fleet_handoff)return`<p class="note${s.fleet_handoff.back?'':' handled'} fleet">${handoffLine(s.fleet_handoff)}</p>`;  // also once it is done
+function fleetHandoff(s){if(s.fleet_handoff)return`<p class="note${s.fleet_handoff.back?'':' handled'} fleet">${handoffLine(s.fleet_handoff)}</p>${s.handoff_wait&&s.snoozed_until?`<p class="checkin-line" title="${esc(date(s.snoozed_until))}">${esc(checkinLabel(s))}</p>`:''}`;  // also once it is done
  if(closed(s)||!state?.fleet?.on||s.scope!=='work')return'';
  if(s.fleet_handoff)return`<p class="note handled fleet">Handed off to ${esc(s.fleet_handoff.name)}: ${esc(s.fleet_handoff.stage)}</p>`;
  return''}  // the Hand off button sits with the card's other buttons (cardActions); its form with the other editors

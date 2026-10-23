@@ -49,11 +49,15 @@ try{
  // Handed off: under Later, saying to whom, with nothing to send again.
  await page.locator('#later-list>summary').click();
  const later=page.locator('#later-list #task-c1');await later.waitFor();
- assert.match(await later.innerText(),/Handed off to Kim: asked/);
+ assert.match(await later.innerText(),/Handed off to Kim, waiting for an answer/);
  assert.doesNotMatch(await later.innerText(),/Review and send|Hand off to Kim/);
  assert.equal(await page.locator('#task-c1').count(),1);
  // Later here is when it comes back to check in with them, not a snooze: its line and buttons say so.
- assert.match(await later.locator('.back-on').innerText(),/^Check in with Kim \S+ \d\d:\d\d if no answer$/);
+ assert.match(await later.locator('.checkin-line').innerText(),/^Check in with Kim \S+ \d\d:\d\d if no answer$/);
+ assert.equal(await later.locator('.back-on').count(),0);  // on its own line under the status, not in the source row
+ assert.ok(await later.locator('.fleet+.checkin-line').count());
+ // A label never wraps: each button is one line high.
+ for(const b of await later.locator('.actions>button').all())assert.ok((await b.evaluate(x=>x.scrollWidth<=x.clientWidth+1&&getComputedStyle(x).whiteSpace==='nowrap')),await b.innerText());
  assert.doesNotMatch(await later.innerText(),/Back |Unsnooze|Snoozed/);
  assert.deepEqual(await later.locator('.actions button').evaluateAll(b=>b.map(x=>x.textContent.trim()).filter(Boolean)).then(t=>t.slice(0,3)),['Check in now','Change time','Not needed']);
  assert.equal(await later.locator('.actions [data-choice="accept"]').innerText(),'Check in now');
