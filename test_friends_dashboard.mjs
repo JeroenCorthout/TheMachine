@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Fleet tab, Friends: a request waiting shows Accept, Decline and Block; adding goes by exact username; a friend's
@@ -34,7 +35,7 @@ try{
   const page=await (await browser.newContext({viewport:{width,height:900},colorScheme:scheme})).newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   await page.goto('http://127.0.0.1:'+server.address().port);
-  await page.locator('nav [data-tab="fleet"]').click();await page.locator('[data-fleet-pane="friends"]').click();await page.locator('#fleet-friends').waitFor();
+  await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('[data-fleet-pane="friends"]').click();await page.locator('#fleet-friends').waitFor();
   assert.deepEqual(errors,[]);
   const friends=page.locator('#fleet-friends');
   assert.match(await friends.innerText(),/Your username: sam/);

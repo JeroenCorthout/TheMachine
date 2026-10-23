@@ -72,7 +72,7 @@ try{
  const deep=await context.newPage();deep.on('pageerror',e=>errors.push(e.message));await deep.goto(base+'/#browser');await deep.locator('#browser-pane').waitFor();await deep.close();
  // A phone keeps the new tab
  const phone=await browser.newContext({viewport:{width:390,height:800}});await phone.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
- const p2=await phone.newPage();p2.on('pageerror',e=>errors.push(e.message));await p2.goto(base);await p2.locator('#open-settings').waitFor();
+ const p2=await phone.newPage();p2.on('pageerror',e=>errors.push(e.message));await p2.goto(base);await p2.locator('#open-settings').waitFor({state:'attached'});  // in the drawer on a phone
  await p2.evaluate(()=>document.querySelector('#open-browser').click());await new Promise(r=>setTimeout(r,300));
  assert.equal(await p2.locator('#browser-pane').isHidden(),true);await phone.close();
  // No viewer on the dashboard's own address: a new tab, also on a computer

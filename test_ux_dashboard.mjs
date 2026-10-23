@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {execFileSync} from 'node:child_process';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick,scopeClick} from './nav-click.mjs';
 // Playwright comes with OpenClaw; PLAYWRIGHT_CORE and CHROMIUM_PATH override the defaults.
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 import {forceReplyPayload} from './openclaw-plugin/change-prompt.ts';
@@ -38,14 +39,14 @@ await page.screenshot({path:'/tmp/261012-approval-mobile.png',fullPage:true});
 await page.setViewportSize({width:390,height:844});
 await page.goto('http://127.0.0.1:'+server.address().port);await page.getByText('Needs your decision',{exact:true}).last().waitFor();
 // Connected-source cards must fit a narrow phone after the design-system change.
-await page.locator('nav [data-tab="health"]').click();
+await navClick(page.locator('nav [data-tab="health"]'));
 await page.locator('.health article:not([hidden])').first().waitFor();
 for(const width of [320,390]){
  await page.setViewportSize({width,height:844});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Connections overflows at '+width);
 }
 await page.setViewportSize({width:390,height:844});
-await page.locator('nav [data-tab="inbox"]').click();
+await navClick(page.locator('nav [data-tab="inbox"]'));
 
 {suggestions[0].source_line='Source: email from Ann Example · Sun 11 Oct';suggestions[2].source_line='Source: WhatsApp from Cara · Sat 10 Oct';await page.evaluate(()=>refresh());
 const card=page.locator('#task-'+ids[0]);assert.equal(await card.locator('.original-body,.email-frame').count(),0);
@@ -70,27 +71,27 @@ await dialog.getByText('1 related message').waitFor();await dialog.locator('deta
 await page.screenshot({path:'/tmp/261012-email-dialog.png'});
 await dialog.getByRole('button',{name:'Close email'}).click();await dialog.waitFor({state:'hidden'});
 {suggestions[0].scope='work';suggestions[1].scope='work';suggestions[2].scope='personal';await page.evaluate(()=>refresh());
-const filter=page.locator('.scope-filter');await filter.getByRole('button',{name:'Personal',exact:true}).click();
+const filter=page.locator('.scope-filter');await scopeClick(page,'Personal');
 assert.equal(await page.locator('#task-'+ids[0]).count(),0);await page.locator('#task-'+ids[2]+' .chip.scope').getByText('Personal',{exact:true}).waitFor();
-await filter.getByRole('button',{name:'Work',exact:true}).click();assert.equal(await page.locator('#task-'+ids[2]).count(),0);
+await scopeClick(page,'Work');assert.equal(await page.locator('#task-'+ids[2]).count(),0);
 await page.locator('#task-'+ids[0]+' .chip.scope').getByText('Work',{exact:true}).waitFor();
 assert.equal(await page.evaluate(()=>localStorage.getItem('scope-filter')),'work');
-await filter.getByRole('button',{name:'All',exact:true}).click();await page.locator('#task-'+ids[2]).waitFor();await page.screenshot({path:'/tmp/261012-scope-filter.png'});}
+await scopeClick(page,'All');await page.locator('#task-'+ids[2]).waitFor();await page.screenshot({path:'/tmp/261012-scope-filter.png'});}
 {// Notification links reveal the destination without changing saved device preferences.
 const filter=()=>page.locator('.scope-filter');
-await filter().getByRole('button',{name:'Personal',exact:true}).click();
+await scopeClick(page,'Personal');
 await page.evaluate(id=>location.hash='#card='+id,ids[0]);
 await page.locator('#task-'+ids[0]).waitFor({state:'visible'});
 await page.waitForFunction(()=>location.hash==='');
 assert.equal(await page.evaluate(()=>localStorage.getItem('scope-filter')),'personal');
 await page.evaluate(()=>refresh());assert.equal(await page.locator('#task-'+ids[0]).isVisible(),true);
 // An explicit filter selection ends the temporary reveal.
-await filter().getByRole('button',{name:'Personal',exact:true}).click();
+await scopeClick(page,'Personal');
 assert.equal(await page.locator('#task-'+ids[0]).count(),0);
-await filter().getByRole('button',{name:'All',exact:true}).click();
-await page.locator('[data-fold-tile="ready"]').click();
+await scopeClick(page,'All');
+await page.locator('#section-ready').click();
 assert.equal(await page.locator('#task-'+ids[2]).count(),0);
-await page.locator('nav [data-tab="events"]').click();
+await navClick(page.locator('nav [data-tab="events"]'));
 await page.evaluate(id=>location.hash='#card='+id,ids[2]);
 await page.locator('#task-'+ids[2]).waitFor({state:'visible'});
 await page.waitForFunction(()=>location.hash==='');
@@ -115,7 +116,7 @@ suggestions.push({...saved,id:missing});await page.evaluate(()=>refresh());
 await page.locator('#task-'+missing).waitFor({state:'visible'});assert.equal(await page.evaluate(()=>location.hash),'');
 suggestions.pop();await page.evaluate(()=>refresh());
 // Restore the fixture's normal preferences, not a live owner decision.
-await filter().getByRole('button',{name:'All',exact:true}).click();
+await scopeClick(page,'All');
 await page.locator('#later-list > summary').click();
 await page.locator('#finished-list > summary').click();
 await page.evaluate(()=>localStorage.setItem('folded-sections','[]'));
@@ -165,12 +166,12 @@ Object.assign(suggestions[1],{preparation_status:'blocked',preparation_started_a
 delete suggestions[0].due;delete suggestions[2].due;delete suggestions[2].next_action;await page.evaluate(()=>refresh());}
 {// Coming back later is folded by default and stays open once opened.
 const later=page.locator('#later-list');assert.equal(await later.getAttribute('open'),null);assert.equal(await page.locator('#task-'+ids[3]).isVisible(),false);
-// Count tiles fold their section: Later opens, Ready folds (and is remembered), tapping again restores.
-await page.locator('[data-fold-tile="later"]').click();assert.equal(await page.locator('#task-'+ids[3]).isVisible(),true);await page.waitForFunction(()=>document.querySelector('[data-fold-tile="later"]').getAttribute('aria-expanded')==='true');  // the details toggle event fires asynchronously
-await page.locator('[data-fold-tile="later"]').click();assert.equal(await page.locator('#task-'+ids[3]).isVisible(),false);
-await page.locator('[data-fold-tile="ready"]').click();assert.equal(await page.locator('#task-'+ids[2]).count(),0);assert.equal(await page.locator('#section-ready').getAttribute('aria-expanded'),'false');
+// Section heads fold their section: Later opens, Ready folds (and is remembered), tapping again restores.
+await later.locator(':scope>summary').click();await page.locator('#task-'+ids[3]).waitFor();
+await later.locator(':scope>summary').click();await page.locator('#task-'+ids[3]).waitFor({state:'hidden'});
+await page.locator('#section-ready').click();assert.equal(await page.locator('#task-'+ids[2]).count(),0);assert.equal(await page.locator('#section-ready').getAttribute('aria-expanded'),'false');
 assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('folded-sections'))),['ready']);
-await page.locator('#section-ready').click();assert.equal(await page.locator('#task-'+ids[2]).isVisible(),true);assert.equal(await page.locator('[data-fold-tile="ready"]').getAttribute('aria-expanded'),'true');
+await page.locator('#section-ready').click();assert.equal(await page.locator('#task-'+ids[2]).isVisible(),true);
 await later.locator(':scope>summary').getByText('Coming back later').waitFor();await later.locator(':scope>summary').click();await page.locator('#task-'+ids[3]).waitFor();
 await page.evaluate(()=>refresh());assert.equal(await page.locator('#task-'+ids[3]).isVisible(),true);
 await later.locator(':scope>summary').click();await page.locator('#task-'+ids[3]).waitFor({state:'hidden'});await page.waitForTimeout(300);await page.screenshot({path:'/tmp/261012-later-folded.png'});}
@@ -178,6 +179,8 @@ await page.locator('#task-'+ids[2]).getByRole('button',{name:'Read message',exac
 suggestions[2].source_line=undefined;suggestions[2].event_ids='[3]';suggestions[2].original_urls=['https://mail.google.com/mail/u/?authuser=x#all/1'];await page.evaluate(()=>refresh());
 await page.locator('#task-'+ids[2]).getByRole('button',{name:'Read email',exact:true}).waitFor();
 suggestions[0].source_line=undefined;suggestions[2].source_line=undefined;await page.evaluate(()=>refresh());}
+// The longest relative time, set right here: 59 minutes at the start of the run turns into a short "1 hour ago" on a slow run
+suggestions[0].created_at=new Date(Date.now()-45*60000).toISOString();await page.evaluate(()=>refresh());await page.locator('#task-'+ids[0]+' .meta time',{hasText:'45 minutes ago'}).waitFor();
 for(const width of [320,360,390,768]){
 await page.setViewportSize({width,height:844});await page.locator('#task-'+ids[0]+' .meta time').waitFor();  // laid out at the new width
 const layout=await page.locator('#task-'+ids[0]+' .meta').evaluate(el=>{
@@ -240,7 +243,7 @@ await smartCard.getByRole('button',{name:'Review and send',exact:true}).click();
 const demoPosts=posts.length;await page.locator('#send-cancel').click();assert.equal(posts.length,demoPosts);
 assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
 await tap(page.locator('#task-'+ids[2]),'Mark done');await page.locator('#toast [data-undo]').click();await page.locator('#task-'+ids[2]).getByRole('button',{name:'Read result',exact:true}).waitFor();assert.equal(posts.at(-1).choice,'undo');
-await page.getByRole('button',{name:'Connections',exact:false}).click();assert.equal(await page.locator('#connectors .state-dot.t-mint').count(),1);assert.equal(await page.locator('#connectors .state-dot.t-amber').count(),1);assert.equal(await page.getByText('32 failed syncs',{exact:false}).isVisible(),false);
+await navClick(page.locator('nav [data-tab="health"]'));assert.equal(await page.locator('#connectors .state-dot.t-mint').count(),1);assert.equal(await page.locator('#connectors .state-dot.t-amber').count(),1);assert.equal(await page.getByText('32 failed syncs',{exact:false}).isVisible(),false);
 assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));assert.deepEqual(errors,[]);
 
 // Runtime errors and committed review outcomes are distinct and fit a phone.
@@ -270,9 +273,9 @@ for(const width of [320,390]){await page.setViewportSize({width,height:700});ass
 await page.screenshot({path:'/tmp/261013-review-observability.png',fullPage:true});
 await page.setViewportSize({width:390,height:844});
 reviewRuns=[];reviewHealth={};await page.evaluate(()=>refresh());
-await page.screenshot({path:'/tmp/261011-assistant-connections.png',fullPage:true});await page.getByRole('button',{name:'Suggestions',exact:false}).click();await page.screenshot({path:'/tmp/261011-assistant-inbox.png',fullPage:true});
+await page.screenshot({path:'/tmp/261011-assistant-connections.png',fullPage:true});await navClick(page.locator('nav [data-tab="inbox"]'));await page.screenshot({path:'/tmp/261011-assistant-inbox.png',fullPage:true});
 // Light mode: a sun/moon switch in Settings, remembered per browser; HTML emails keep their own colours in light.
-await page.locator('#open-settings').click();
+await navClick(page.locator('#open-settings'));
 {const theme=()=>page.evaluate(()=>[document.documentElement.dataset.theme,document.documentElement.dataset.themeMode]);
 const toggle=page.locator('#theme-toggle');const size=()=>toggle.evaluate(el=>{const b=el.getBoundingClientRect();return b.width+'x'+b.height});
 assert.deepEqual(await theme(),['dark','auto']);assert.equal(await toggle.getAttribute('aria-checked'),'false');const before=await size();
@@ -284,7 +287,7 @@ await toggle.click();assert.deepEqual(await theme(),['light','light']);assert.eq
 assert.match(await page.evaluate(()=>document.cookie),/(^|; )theme=light(;|$)/);  // shared with the hosted app's pages
 await page.waitForTimeout(400);await toggle.screenshot({path:'/tmp/261013-toggle-light.png'});
 assert.equal(await page.evaluate(()=>getComputedStyle(document.body).color),'rgb(29, 29, 27)');
-await page.reload();await page.locator('#settings:not([hidden])').waitFor();await page.locator('nav [data-tab="inbox"]').click();await page.locator('#task-'+ids[0]).waitFor();assert.deepEqual(await theme(),['light','light']);  // a reload stays in Settings (#settings/general)
+await page.reload();await page.locator('#settings:not([hidden])').waitFor();await navClick(page.locator('nav [data-tab="inbox"]'));await page.locator('#task-'+ids[0]).waitFor();assert.deepEqual(await theme(),['light','light']);  // a reload stays in Settings (#settings/general)
 await page.setViewportSize({width:1100,height:900});await page.screenshot({path:'/tmp/261013-light-desktop.png'});
 {await page.setViewportSize({width:1100,height:2600});const f=await page.locator('.site-footer').evaluate(el=>[el.getBoundingClientRect().bottom,innerHeight,el.textContent]);
 assert.ok(Math.abs(f[0]-f[1])<2,'footer sits at the bottom of a short page: '+f);assert.match(f[2],/© 20\d\d The Machine\. /);await page.screenshot({path:'/tmp/261013-footer-tall.png'});}
@@ -295,7 +298,7 @@ await page.locator('#email-dialog iframe.email-frame').evaluate(fr=>new Promise(
 assert.equal(await f.locator('#box').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');
 assert.equal(await f.locator('html').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)');
 await page.getByRole('button',{name:'Close email'}).click();
-await page.locator('#open-settings').click();await toggle.click();assert.deepEqual(await theme(),['dark','dark']);
+await navClick(page.locator('#open-settings'));await toggle.click();assert.deepEqual(await theme(),['dark','dark']);
 // Picked in the app meanwhile (the shared cookie): coming back to the tab shows it.
 await page.evaluate(()=>{document.cookie='theme=light; Path=/';document.dispatchEvent(new Event('visibilitychange'))});
 assert.deepEqual(await theme(),['light','light']);assert.equal(await toggle.getAttribute('aria-checked'),'true');

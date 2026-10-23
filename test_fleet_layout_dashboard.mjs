@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Fleet tab layout with a full Fleet, friends and history: one pill per view (the Fleet, Friends, Sharing, Activity),
@@ -48,7 +49,7 @@ try{
   const page=await (await browser.newContext({viewport:{width,height:900},colorScheme:scheme})).newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port);
-  await page.locator('nav [data-tab="fleet"]').click();await page.locator('.fleet-tabs').waitFor();
+  await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('.fleet-tabs').waitFor();
   assert.deepEqual(await page.locator('.fleet-tabs [data-fleet-pane]').allInnerTexts(),['Acme','Friends\n1','Sharing','Activity']);
   assert.equal(await page.locator('#fleet-discover').count(),1);  // the slot for suggested connections
   for(const pane of ['fleet-'+FL,'friends','sharing','activity']){
@@ -65,7 +66,7 @@ try{
   assert.equal(await page.locator(`[data-pane="sharing"] .fleet-rule[data-fleet="${FR}"][data-member="*"]`).count(),2);
   assert.equal(await page.locator('[data-pane="sharing"] #fleet-meetings').count(),1);
   // Remembered: the next visit opens the same view.
-  await page.reload();await page.locator('nav [data-tab="fleet"]').click();await page.locator('.fleet-tabs').waitFor();
+  await page.reload();await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('.fleet-tabs').waitFor();
   assert.equal(await page.locator('.fleet-pane:not([hidden])').getAttribute('data-pane'),'sharing');
   // Live: the background refresh redraws the open tab, and keeps a draft being typed.
   await page.locator('[data-fleet-pane="fleet-'+FL+'"]').click();

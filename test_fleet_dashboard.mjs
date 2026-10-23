@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Fleet tab: who is who per member, and one rule per kind of question for the whole Fleet: Ask me first | Always | Never
@@ -44,7 +45,7 @@ try{
   const page=await (await browser.newContext({viewport:{width,height:900},colorScheme:scheme})).newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port);
-  await page.locator('nav [data-tab="fleet"]').click();await page.locator('.fleet-pane-head h2',{hasText:/^Acme$/}).waitFor();
+  await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('.fleet-pane-head h2',{hasText:/^Acme$/}).waitFor();
   assert.deepEqual(errors,[]);
   // One view at a time, picked with pills: the Fleet, Sharing (every rule), Activity.
   assert.deepEqual(await page.locator('.fleet-tabs [data-fleet-pane]').allInnerTexts(),['Acme','Sharing','Activity']);

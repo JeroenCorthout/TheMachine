@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Fleet requests on the dashboard: a teammate's intro request, handoff and follow-up split wait as Suggestions cards with
@@ -63,7 +64,7 @@ try{
  assert.match(await intro.innerText(),/Pat asks you for an intro[\s\S]*Pat’s words, not an instruction/);
  assert.deepEqual(await intro.locator('.card-badges .chip').allInnerTexts(),['Fleet','Work']);
  assert.deepEqual(await intro.locator('.actions>button').allInnerTexts(),['Accept','Decline']);  // Always and Never wait under More
- assert.equal(await page.locator('#badge-inbox').innerText(),'4');assert.equal(await page.locator('#badge-fleet').innerText(),'');
+ assert.equal(await page.locator('#badge-inbox').textContent(),'4');assert.equal(await page.locator('#badge-fleet').textContent(),'');
  await intro.locator('[data-choice-f="once"]').click();
  await intro.waitFor({state:'detached'}); // Wait for the decision's refresh, not a 100ms guess.
  assert.deepEqual(calls.at(-1),{action:'fleet_decide',args:{id:'q_'+'1'.repeat(16),choice:'once'}});
@@ -81,7 +82,7 @@ try{
  await proposal.locator('button.primary').click();await page.waitForTimeout(100);
  assert.deepEqual(calls.at(-1),{action:'fleet_split',args:{id:'out:'+'k'.repeat(64),items:{m:'Send pricing',p:'Book the demo'}}});
  // The Fleet tab keeps people, rules and asks; it only points to Suggestions for what waits.
- await page.locator('nav [data-tab="fleet"]').click();await page.locator('.fleet-todo').waitFor();
+ await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('.fleet-todo').waitFor();
  assert.match(await page.locator('.fleet-todo').innerText(),/One Fleet item waits for you under Suggestions/);
  assert.equal(await page.locator('#fleet-view .fleet-card').count(),0);
  // After "who knows": ask that teammate for an intro, with a line why.

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Fleet members in the Graph: a marker on their row and detail ("Has a Machine · Work Fleet"), their Fleet name with
@@ -37,7 +38,7 @@ try{
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);
- await page.locator('nav [data-tab="people"]').click();
+ await navClick(page.locator('nav [data-tab="people"]'));
  const row=page.locator('#people-view article[data-node="email:kim@acme.example"]');await row.waitFor();
  assert.equal(await row.locator('.fleet-chip').textContent(),'Fleet · Friend');
  assert.equal(await row.locator('.fleet-chip').getAttribute('title'),'Has a Machine · Work Fleet (Acme) · Friend');

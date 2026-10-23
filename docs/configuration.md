@@ -31,6 +31,7 @@
 | `google_broker` | — | `url` of a Google token broker, for accounts with `"transport": "broker"` (below). Their refresh tokens stay on this machine, in `mail-grants.json` next to the database, sealed with the message key (docs/sources.md) |
 | `microsoft_broker` | — | `url` of a Microsoft token broker, for Outlook accounts with `"transport": "broker"` |
 | `microsoft_graph` | — | `client_id` and `tenant` (`common`) of your own Entra app, for Outlook accounts with `"transport": "graph"` |
+| `salesflare_server` | — | `api_base` and `app_base` a new Salesflare account starts on instead of Salesflare's own (a hosted machine's control plane sets it for a team on staging). Only https addresses on salesflare.com subdomains count. An address typed when a key is rejected must be https too |
 | `heartbeat_job_id` | `""` | Optional OpenClaw cron job ID of your main heartbeat, for its health line |
 | `manage_url` | `""` | Optional https page where this install is set up (a hosted machine); the dashboard links to it from Settings (the **Account ↗** tab and General) and Add a connection |
 | `needs_you_file` | unset | Optional JSON list of `{id, text, url, action}` notes from a hosting layer; the dashboard shows them under Needs you, with sources that are not fully set up and connections that need signing in again |

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // A very long address in the People lists is cut off with an ellipsis instead of widening the page.
@@ -27,7 +28,7 @@ try{
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);
- await page.locator('nav [data-tab="people"]').click();
+ await navClick(page.locator('nav [data-tab="people"]'));
  const row=page.locator(`#people-view article[data-node="email:${long}"]`);
  await row.waitFor();
  for(const width of [320,390]){

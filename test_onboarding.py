@@ -498,6 +498,58 @@ elif args[:2] == ["api", "call"]:
         account = self.saved()['accounts'][0]
         self.assertEqual((account['api_base'], account['app_base']), ('https://stagingapi.example.test', 'https://staging.example.test'))
 
+    def test_a_new_salesflare_account_starts_on_the_preset_server_and_only_sends_the_key_there(self):
+        staging = {'api_base': 'https://stagingapi.salesflare.com', 'app_base': 'https://staging.salesflare.com'}
+        self.config(salesflare_server=staging)
+        asked = []
+        def get(source, path, params=None):
+            asked.append(source.account['api_base'])
+            return {'id': 5, 'email': 'alex@acme.test', 'team': {'id': 6}}
+        with mock.patch.object(onboarding.assistant().Salesflare, 'get', get):
+            onboarding.connect(self.path, 'crm', FakeUI(secrets=['k']), restart=False)
+        account = self.saved()['accounts'][0]
+        self.assertEqual((account['api_base'], account['app_base']), (staging['api_base'], staging['app_base']))
+        self.assertEqual(set(asked), {'https://stagingapi.salesflare.com'})
+        # one connected before keeps its own server when it is set up again
+        prod = dict(EXAMPLE['work-crm'], api_base='https://api.salesflare.com', app_base='https://app.salesflare.com')
+        self.config(prod, salesflare_server=staging)
+        asked.clear()
+        with mock.patch.object(onboarding.assistant().Salesflare, 'get', get):
+            onboarding.connect(self.path, 'crm', FakeUI(answers=['1'], secrets=['k']), restart=False)
+        self.assertEqual(set(asked), {'https://api.salesflare.com'})
+        self.assertEqual(self.saved()['accounts'][0]['app_base'], 'https://app.salesflare.com')
+
+    def test_a_salesflare_preset_counts_only_as_https_on_salesflare_com(self):
+        good = {'api_base': 'https://stagingapi.salesflare.com', 'app_base': 'https://staging.salesflare.com/'}
+        self.assertEqual(onboarding.salesflare_preset({'salesflare_server': good}),
+                         {'api_base': 'https://stagingapi.salesflare.com', 'app_base': 'https://staging.salesflare.com'})
+        for api in ('http://stagingapi.salesflare.com', 'https://stagingapi.salesflare.com.evil.test', 'https://salesflare.com',
+                    'https://evilsalesflare.com', 'https://x@stagingapi.salesflare.com', 'https://stagingapi.salesflare.com:8443',
+                    'https://stagingapi.salesflare.com/v2', 'https://stagingapi.salesflare.com?x=1', 'stagingapi.salesflare.com', 7):
+            self.assertIsNone(onboarding.salesflare_preset({'salesflare_server': dict(good, api_base=api)}), api)
+        self.assertIsNone(onboarding.salesflare_preset({'salesflare_server': 'https://stagingapi.salesflare.com'}))
+        self.assertIsNone(onboarding.salesflare_preset({}))
+
+    def test_another_salesflare_server_must_be_https(self):
+        self.config(EXAMPLE['work-crm'])
+        def get(source, path, params=None):
+            raise onboarding.assistant().SourceError('salesflare', 401)
+        with mock.patch.object(onboarding.assistant().Salesflare, 'get', get), self.assertRaises(onboarding.SetupError) as caught:
+            onboarding.connect(self.path, 'crm', FakeUI(answers=['http://stagingapi.example.test'], secrets=['k']), restart=False)
+        self.assertIn('not an https address', caught.exception.message)
+        for typed in ('ftp://x.test', 'https://u:p@x.test', 'https://x.test?k=1', 'https://'):
+            self.assertRaises(onboarding.SetupError, onboarding.salesflare_address, typed)
+        self.assertEqual(onboarding.salesflare_address('stagingapi.example.test/'), 'https://stagingapi.example.test')
+        self.assertEqual(onboarding.salesflare_app_base('https://stagingapi.example.test'), 'https://staging.example.test')
+
+    def test_the_same_salesflare_address_again_stops_instead_of_asking_forever(self):
+        self.config(EXAMPLE['work-crm'])
+        def get(source, path, params=None):
+            raise onboarding.assistant().SourceError('salesflare', 401)
+        with mock.patch.object(onboarding.assistant().Salesflare, 'get', get), self.assertRaises(onboarding.SetupError) as caught:
+            onboarding.connect(self.path, 'crm', FakeUI(answers=['api.salesflare.com'] * 3, secrets=['k']), restart=False)
+        self.assertIn('rejected that key', caught.exception.message)
+
     def test_dashboard_on_your_own_domain_counts(self):
         self.stub('tailscale', 'print("{}")')
         config = {'port': 8787, 'dashboard_host': 'my.example.test', 'dashboard_path': '/'}
