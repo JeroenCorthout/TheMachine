@@ -11,7 +11,7 @@
 
 ### Calendar
 
-The **Calendar** tab shows the next seven days: meetings from your connected calendars (with their prep card when there is one), cards due or coming back that day, handoff check-ins and promises with a date. Overdue cards and promises come first. A row opens its card's chat, the Promises list, or the meeting in its own calendar. Looking changes nothing. On a computer, **Week** shows the same days as columns.
+The **Calendar** tab shows the next seven days: meetings from your connected calendars (with their prep card when there is one), cards due or coming back that day, handoff check-ins and promises with a date (the same promise once). Overdue cards and promises come first. A row opens its card's chat, the Promises list, or the meeting in its own calendar. Looking changes nothing. On a computer, **Week** shows the same days as columns.
 
 ### Work hours
 

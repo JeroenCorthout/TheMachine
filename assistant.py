@@ -3830,6 +3830,12 @@ class Store:
                                               (event['id'], direction, who)) if r['what'] == what), None)
             if row:
                 return {'id': row['id'], 'status': row['status'], 'duplicate': True}
+            # A plan made together ("let's do it Sunday" and the yes to it) reads as a promise from both
+            # sides, in two messages: one open promise with that person for the same thing is enough
+            same = lambda r: ' '.join(r['what'].split()).casefold() == what.casefold()
+            row = next((r for r in db.execute("SELECT id,status,what FROM promises WHERE status='open' AND who=? COLLATE NOCASE", (who,)) if same(r)), None)
+            if row:
+                return {'id': row['id'], 'status': row['status'], 'duplicate': True}
             cursor = db.execute('INSERT INTO promises(direction,who,what,due,check_at,event_id,account_id,watch,status,created_at,updated_at) '
                                 "VALUES(?,?,?,?,?,?,?,?,'open',?,?) ON CONFLICT(event_id,direction,who,what) DO NOTHING",
                                 (direction, who, what, due, check_at, event['id'], event['account_id'], encoded({**watch, 'promise': True}) if watch else None, stamp, stamp))

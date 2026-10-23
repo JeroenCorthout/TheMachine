@@ -67,6 +67,20 @@ class Promises(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM suggestions').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT count(*) FROM promises').fetchone()[0], 1)
 
+    def test_a_plan_made_together_is_one_promise(self):
+        # "Let's go over the deck Sunday" from them, and the yes to it from the owner: the same plan once
+        saved = self.record(what='go over the deck together on Sunday', due='2026-10-25')
+        again = self.record(direction='mine', event_id=self.mine, who='sam lee', what='Go over the deck  together on Sunday', due='2026-10-25')
+        self.assertEqual((again['id'], again['duplicate']), (saved['id'], True))
+        # Something else with them, or the same words with someone else, is its own promise
+        self.assertEqual(self.record(direction='mine', event_id=self.mine, what='send the deck')['status'], 'open')
+        self.assertEqual(self.record(who='Alex Kim', what='go over the deck together on Sunday')['status'], 'open')
+        # Once the first is closed, a new one can be recorded
+        self.app().action('promise', {'id': saved['id'], 'status': 'kept', 'reason': 'They went over it'})
+        self.assertNotIn('duplicate', self.record(event_id=self.mine, what='go over the deck together on Sunday'))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM promises').fetchone()[0], 4)
+
     def test_direction_must_match_who_wrote_the_message(self):
         with self.assertRaisesRegex(ValueError, 'messages they sent'):
             self.record(direction='mine')

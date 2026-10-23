@@ -22,7 +22,7 @@ const meetings=[
  {id:103,account_id:'cal',title:'Quarterly planning',start:iso(at(1,14)),end:iso(at(1,15,30)),all_day:false,location:'Room 2',guests:8,url:'https://calendar.google.com/calendar/event?eid=planning'},
  {id:104,account_id:'cal',title:'Team offsite',start:iso(at(3,0)),end:iso(at(5,0)),all_day:true,location:'Lakeside',guests:0,url:null},
  {id:105,account_id:'cal',title:'Intro call with Example Ltd',start:iso(at(4,11)),end:iso(at(4,11,30)),all_day:false,location:'',guests:1,url:'https://calendar.google.com/calendar/event?eid=intro'},
- {id:106,account_id:'cal',title:'Dentist',start:iso(at(6,8,30)),end:iso(at(6,9)),all_day:false,location:'',guests:0,url:null}];
+ {id:106,account_id:'cal',title:'Dentist',start:iso(at(6,8,30)),end:iso(at(6,8,30)),all_day:false,location:'',guests:0,url:null}];  // no end time: ends when it starts
 const card=(id,title,status,extra={})=>({id:id.repeat(16).slice(0,16),title,body:'Made-up card for the Calendar test.',status,scope:'work',created_at:now,event_ids:[],...extra});
 const cards=[
  card('a','Prep notes for the pilot review','prepared',{event_ids:'[102]',due:day(0)}),  // as /api/status sends it: JSON text
@@ -35,6 +35,7 @@ const cards=[
 const promises=[
  {id:1,direction:'mine',who:'Alex Morgan',what:'Send the Q3 deck',due:day(4),state:'open',made_at:now,check_at:now},
  {id:2,direction:'theirs',who:'Sam Lee',what:'Send the signed contract',due:day(2),state:'open',made_at:now,check_at:now},
+ {id:4,direction:'theirs',who:'alex morgan',what:'Send the  Q3 deck',due:day(4),state:'open',made_at:now,check_at:now},  // the same plan, seen from both sides
  {id:3,direction:'theirs',who:'Kim',what:'On a card already',due:day(0),state:'card',made_at:now,check_at:now}];
 let calls=[],calendarAsks=[],calendarDown=false,empty=false;
 const state=()=>({suggestions:empty?[]:cards,promises:empty?[]:promises,connectors:[{id:'cal',email:'owner@example.com',service:'calendar',status:'ok'}],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]}});
@@ -80,7 +81,8 @@ try{
   assert.match(b[3].rows.join('\n'),/09:00 \| Check in with Robin \| If no answer · Venue booking for the offsite/);
   assert.match(b[3].rows.join('\n'),/Due \| Send the signed contract \| Sam Lee promised/);
   assert.match(b[4].rows.join('\n'),/All day \| Team offsite/);assert.match(b[5].rows.join('\n'),/All day \| Team offsite/);assert.ok(!b[6].rows.join().includes('Team offsite'),'an all-day end is exclusive');
-  assert.match(b[5].rows.join('\n'),/Due \| Send the Q3 deck \| Promised to Alex Morgan/);
+  assert.match(b[5].rows.join('\n'),/Due \| Send the Q3 deck \| Promised to Alex Morgan/);assert.equal(b[5].rows.filter(r=>/Q3 deck/i.test(r)).length,1,'one row per promise');
+  assert.equal(await page.locator('.cal-item',{hasText:'Dentist'}).locator('.cal-sub').count(),0);assert.match(b[7].rows.join('\n'),/^08:30 \| Dentist \| $/m,'no end time: only the start');
   assert.ok(!b.some(x=>x.rows.join().includes('Due next month')));
   // No event line starts with "You"
   assert.ok(!b.flatMap(x=>x.rows).some(r=>r.split(' | ').some(p=>/^You\b/.test(p))));
