@@ -446,6 +446,9 @@ FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
 OWNER_ACTIONS |= FLEET_REQUEST_ACTIONS
 # Friends (friends.py): adding, accepting, removing and blocking friends, and asking a friend when they are free.
+# Shared connectors (shared_connectors.py): sharing, OKs, replacing and stopping, from the owner's dashboard only.
+SHARE_ACTIONS = {'fleet_share', 'fleet_share_ok', 'fleet_share_replace', 'fleet_share_stop'}
+OWNER_ACTIONS |= SHARE_ACTIONS
 FRIEND_ACTIONS = {'fleet_friend', 'fleet_availability', 'fleet_network'}  # fleet_network: finding people on the Network (discovery.py)
 OWNER_ACTIONS |= FRIEND_ACTIONS
 # Family (family.py): asking when everyone is free, proposing a to-do or a plan. The owner's own, from their dashboard.
@@ -9454,6 +9457,11 @@ def reconnect_help(account, manage):
     if not account:
         return {}
     service = account.get('service', 'gmail')
+    shared = account.get('shared') if isinstance(account.get('shared'), dict) else None
+    if shared and not shared.get('origin'):  # a Fleet admin's shared connector: only its admins change it (shared_connectors.py)
+        return {'shared_by': str(shared.get('fleet_name') or 'your Fleet')}
+    if shared:
+        return {'connect_name': 'crm' if service == 'salesflare' else service, 'shared_with': str(shared.get('fleet_name') or 'your Fleet')}
     if manage and account.get('transport') == 'broker':
         return {'account_page': urllib.parse.urljoin(manage, '#microsoft' if service in MICROSOFT_SERVICES else '#source-zoom' if service == 'zoom' else '#google')}
     return {'connect_name': 'crm' if service == 'salesflare' else service}
@@ -9554,6 +9562,9 @@ class App:
             self.fleet.own_event = lambda event: own_or_joined(event, self.store.owner_user_ids)  # silent acceptance: only what the owner did
             self.fleet.notify_brief = self.fleet_notify_brief
             self.fleet.remove_work = self.fleet_remove_work
+            # Shared connectors (shared_connectors.py): kept in config.json, checked with the connector's own profile read
+            self.fleet.save_config = self.fleet_save_config
+            self.fleet.connector_profile = self.shared_connector_profile
         # Skills (skills.py): the owner's how-tos, written to the OpenClaw workspace; shared ones come in through the Fleet.
         self.skills = skills.Skills(self.store.connect, config.get('openclaw_workspace') or WORKSPACE, self.fleet, config=config)
         self.skills.finder = self.skills_find_start
@@ -10851,6 +10862,15 @@ class App:
             return self.fleet.ask_free(str(args.get('text') or ''), args.get('fleet') or 'work')
         if name == 'fleet_brief':
             return self.fleet.set_brief(args.get('every'), args.get('tell'))
+        if name == 'fleet_share':  # share a connected Intercom with a Work Fleet: the members ticked, and every confirmed admin
+            members = args.get('members') if isinstance(args.get('members'), list) else []
+            return self.fleet.share(str(args.get('account') or ''), str(args.get('fleet') or ''), [str(m) for m in members][:200])
+        if name == 'fleet_share_ok':
+            return self.fleet.share_ok(str(args.get('id') or ''), args.get('choice'))
+        if name == 'fleet_share_replace':
+            return self.fleet.share_replace(str(args.get('fleet') or ''), str(args.get('service') or ''), args.get('token'))
+        if name == 'fleet_share_stop':
+            return self.fleet.share_stop(str(args.get('fleet') or ''), str(args.get('service') or ''))
         if name == 'fleet_brief_hide':  # Not needed on one line of the team brief
             return self.fleet.hide_brief_item(str(args.get('fleet') or ''), args.get('key'))
         if name == 'fleet_intro':  # ask one teammate who knows someone there for an intro
@@ -11683,12 +11703,19 @@ class App:
                 raise ValueError('That account is not connected here')
             if 'account_page' in reconnect_help(account, manage if hosted else None):
                 raise ValueError('Your account page signs this one in and out')
+            help_ = reconnect_help(account, None)
+            if help_.get('shared_by'):
+                raise ValueError(f"Shared by {help_['shared_by']}: only its admins can change it")
+            if name == 'connect_remove' and help_.get('shared_with'):
+                raise ValueError(f"Stop sharing it with {help_['shared_with']} first")
         if name == 'connect_scope':
             # Work (with its company) or Personal, for a sign-in and the accounts on the same address: the owner's
             # own marking, which a Work Fleet's removal follows (work_removal.py). Also for one the account page signs in.
             account = next((a for a in self.config['accounts'] if a['id'] == args.get('account')), None)
             if not account:
                 raise ValueError('That account is not connected here')
+            if reconnect_help(account, None).get('shared_by'):
+                raise ValueError('Shared by ' + reconnect_help(account, None)['shared_by'] + ': only its admins can change it')
             if not getattr(self, 'config_path', None):
                 raise ValueError('This service cannot save its settings')
             if not isinstance(args.get('boundary'), str):
@@ -12962,6 +12989,30 @@ class App:
                 LOG.error('enrichment error=%s', type(error).__name__)
                 wait = 3600
 
+    def fleet_save_config(self, change, restart):
+        """A shared connector changed (shared_connectors.py): the same change to config.json, then a restart when asked."""
+        if not getattr(self, 'config_path', None):
+            raise ValueError('This service cannot save its settings')
+        import onboarding
+        saved = onboarding.load(self.config_path)
+        change(saved)
+        onboarding.save(self.config_path, saved)
+        if restart:
+            restart_self(5)
+
+    def shared_connector_profile(self, service, account, token):
+        """Reads a token's own profile once (Intercom: GET /me), as connecting does; ValueError when it doesn't work."""
+        plugin = load_connector(service)
+        if not plugin or not hasattr(plugin, 'Source'):
+            raise ValueError('That connector cannot be checked here')
+        helpers = types.SimpleNamespace(**{**vars(CONNECTOR_HELPERS), 'credential': lambda config, name: token})
+        try:
+            plugin.Source(self.config, account, helpers).connect()
+        except SourceError as error:
+            raise ValueError('account_identity_mismatch' in str(error) and 'That token is for another workspace'
+                             or 'That token does not work: ' + str(error)) from None
+        return account
+
     def fleet_remove_work(self, item):
         """The control plane, through the Network: remove a Work Fleet's company data (work_removal.py), then restart."""
         if not getattr(self, 'config_path', None):
@@ -13051,6 +13102,10 @@ class App:
     def fleet_view(self):
         """The Fleet tab, with each member who is in the graph linked to their person there."""
         view = self.fleet.view()
+        try:
+            view['shared'] = self.fleet.shared_view()  # shared connectors: what this Machine shares or holds, and OKs to give
+        except (ValueError, OSError, KeyError, TypeError, fleet.Off) as error:
+            LOG.info('shared connectors view error=%s', type(error).__name__)
         try:
             with self.store.connect() as db:
                 found = {(x['fleet'], x['member_id']): node for node, m in self.graph_fleet_marks(db).items() for x in m['in']}
@@ -13429,7 +13484,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

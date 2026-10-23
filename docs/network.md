@@ -38,6 +38,36 @@ how messages stay reliable, and where it's going.
 The sealing needs nothing beyond Python: it uses the `cryptography` package when it's installed (fast), and otherwise
 its own implementation of the same standard algorithms.
 
+## Shared connectors
+
+A Work Fleet's admins can share a connector (Intercom for now) with the Fleet, so the team's Machines read the same
+customer conversations without anyone pasting a token. The token goes from Machine to Machine, sealed. The Network
+never has it, and never needs it.
+
+- **Only an admin's Machine sends it**, and only to the Machines an admin said OK to. The first share lists the
+  members to tick; confirmed admins get it by default. Someone who joins later shows as a card, "Share Intercom with
+  <name>'s Machine?". The OK is for the keys their Machine had then: when they change, nothing goes until an admin
+  says OK again. Members never pass it on.
+- **A signed grant goes with it**, for that Fleet, connector, workspace and recipient (their member id and key
+  fingerprint), and for a hash of the token (SHA-256 over the grant id and the token). The receiving Machine takes the
+  token only when it came sealed, from an admin it trusts, with a grant for exactly this Machine and this token that is
+  still the Fleet's current one. Anything else is dropped.
+- **Admins are vouched for by Machine keys**, not only by what the Network says. The owner's Machine signs its own key
+  (the first one your Machine sees is pinned); an admin your Machine trusts confirms each new admin after their owner's
+  OK ("Confirm <name> as an admin of <Fleet>?"). An admin only the Network made shows as "Not confirmed yet" and gets
+  nothing. The owner's Machine can also name, after their OK, who takes the Fleet over if they delete their account.
+  The Network can drop someone from the set (they left, or were demoted), never add one.
+- **Where it lives.** In a credential file of its own (mode 600) next to your database: never in `config.json`, the
+  Fleet's tables or a log. The account is read-only and in the Fleet's company (`work:<Fleet>`). Connections shows
+  "Shared by <Fleet>. Its admins manage it." with nothing to change.
+- **Leaving.** Leaving or being removed takes the shared account with the Fleet's other work accounts, and your
+  Machine drops it when the Fleet stops showing it or is off. The remaining admins' Machines then show "<name> had the
+  Intercom token. Replace it in Intercom." with a field for the new one; any admin can replace it, the new token goes
+  to who stays, and every Machine drops the old one. Stop sharing on an admin's Fleet tab does the same for everyone.
+- **Limits.** A Machine that joins after the owner changed trusts the first root it sees. A stopped or replaced share
+  reaches the Machines within about 10 minutes. Intercom's API doesn't say what a token may do, so use a dedicated
+  Intercom app with read permissions only. Code: `shared_connectors.py` and `fleet_trust.py`.
+
 ## Reliability
 
 - Every question has an id; a retry never asks twice, and your Machine never acts on the same question twice.

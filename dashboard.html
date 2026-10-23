@@ -722,6 +722,7 @@ strong.nb{white-space:nowrap}
 .sub-tabs>a.stab-out{flex:0 0 auto;display:inline-flex;align-items:center;border:1px solid var(--border);color:var(--muted);font-weight:600;font-size:.9rem;padding:6px 14px;border-radius:999px;white-space:nowrap;text-decoration:none}.sub-tabs>a.stab-out:hover{color:var(--text);border-color:var(--mint)}.sub-tabs>a.stab-out[hidden]{display:none}.stab-off{display:none!important}
 @media(max-width:600px){.sub-tabs>a.stab-out{padding:6px 11px;font-size:.85rem}}
 .fleet-pane-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:0 0 14px}.fleet-pane-head h2{margin:0;font-size:1.15rem}
+.share-pick{display:flex;gap:8px;align-items:baseline;padding:4px 0;flex-wrap:wrap}.share-new summary{cursor:pointer;margin-top:8px}.share-replace input{width:100%;max-width:420px}
 .fleet-box{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:16px 20px;margin:0 0 14px;min-width:0}
 .fleet-box>h3{margin:0 0 4px;font-size:1rem}.fleet-box>.sub{margin:0 0 12px;color:var(--muted);font-size:.88rem;line-height:1.45}.fleet-box>h3+:not(.sub){margin-top:10px}
 .fleet-box .fleet-people{margin:0}.fleet-box .fleet-ask{margin:0 0 4px}.fleet-box .list{margin-top:12px}.fleet-box>:last-child{margin-bottom:0}
@@ -2256,8 +2257,9 @@ document.addEventListener('change',async e=>{const s=e.target.closest('select[da
  if(!b){const name=(prompt('Company name')||'').trim();if(!name){s.value=s.dataset.was;return}b='work:'+name}
  s.disabled=true;try{const r=await connectPost('connect_scope',{account:s.dataset.scope,boundary:b});toast(r.restarting?'Saved. Restarting…':'Saved. Restart the service to use it.');setTimeout(refresh,r.restarting?8000:500)}catch(err){toast(err.message,true);s.disabled=false;s.value=s.dataset.was}});
 function connActions(c){const name=esc(c.display_name||c.email||c.id);
+ if(c.shared_by)return `<p class="note">Shared by ${esc(c.shared_by)}. Its admins manage it.</p>`;  // shared_connectors.py: no token, no Disconnect here
  if(c.account_page)return `<div class="actions conn-actions"><a class="btn-link" href="${esc(c.account_page)}" target="_blank" rel="noopener">Reconnect or disconnect ↗</a></div>`;
- return c.connect_name?`<div class="actions conn-actions"><button type="button" class="ghost" data-reconnect="${esc(c.connect_name)}" data-account="${esc(c.id)}">Reconnect</button><button type="button" class="ghost danger" data-disconnect="${esc(c.id)}" data-name="${name}">Disconnect</button></div>`:''}
+ return (c.shared_with?`<p class="note">Shared with ${esc(c.shared_with)}.</p>`:'')+(c.connect_name?`<div class="actions conn-actions"><button type="button" class="ghost" data-reconnect="${esc(c.connect_name)}" data-account="${esc(c.id)}">Reconnect</button><button type="button" class="ghost danger" data-disconnect="${esc(c.id)}" data-name="${name}">Disconnect</button></div>`:'')}
 function connectorCard(c,open){
 const unit={calendar:'events',android:'notifications',gateway:'alerts',github:'notifications',stripe:'events',rss:'items'}[c.service]||'messages',t=connectorTone(c);
 return `<article data-group="${healthGroup(c.service)}"><div class="conn-head">${icon(c.service)}<div><h3>${esc(c.display_name||c.email)}</h3><small>${service(c.service)} · ${esc(scopeLabel(c.boundary))}</small></div><span class="state-dot t-${t}" title="${esc(connectorHealth(c).text)}"></span></div>
@@ -3249,6 +3251,21 @@ const fleetRules=(work,f,several,whom)=>`<div class="fleet-rules-head"><h3>What 
 const fleetScopeOf=b=>({only:b.querySelector('[data-scope="only"]').value,never:b.querySelector('[data-scope="never"]').value,work_only:b.querySelector('[data-scope="work_only"]').checked});
 // The team brief (what the Fleet saw) and free questions, per Work Fleet. A teammate's free question and answers are their own words: shown as text, never acted on.
 const fleetDay=at=>esc(new Date(at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}));
+// Shared connectors (shared_connectors.py): what this Fleet shares, OKs this Machine's owner gives, and sharing one.
+function fleetShared(f,work){const v=f.shared||{},mine=(v.prompts||[]).filter(p=>p.fleet===work.id),shares=(v.shares||[]).filter(s=>s.fleet===work.id);
+ const can=(v.can_share||[]).find(c=>c.fleet===work.id),own=(v.accounts||[]).filter(a=>!shares.some(s=>s.service===a.service&&s.label));
+ const ask={recipient:p=>`Share ${esc(svcName(p.service))} with ${esc(p.name)}'s Machine?`,rekey:p=>`${esc(p.name)}'s Machine has new keys. Share ${esc(svcName(p.service))} again?`,
+  admin:p=>`Confirm ${esc(p.name)} as an admin of ${esc(p.fleet_name)}?`,successor:p=>`If you delete your account, ${esc(p.name)} owns ${esc(p.fleet_name)}. Confirm them?`,
+  replace:p=>`${esc(p.name)} had the ${esc(svcName(p.service))} token. Replace it in Intercom.`};
+ const yes={recipient:'Share',rekey:'Share',admin:'Confirm',successor:'Confirm'};
+ const card=p=>`<article id="share-${esc(p.id)}"><p>${(ask[p.kind]||(()=>''))(p)}</p>${p.email?`<p class="muted">${esc(p.email)}</p>`:''}${p.fp&&p.kind!=='replace'?`<p class="muted mono" title="Their Machine's safety number">${esc(p.fp)}</p>`:''}`+
+  (p.kind==='replace'?`<form class="share-replace" data-fleet="${esc(p.fleet)}" data-service="${esc(p.service)}"><input name="token" type="password" autocomplete="off" placeholder="New access token" aria-label="New access token" required><div class="actions"><button class="primary">Replace</button><button type="button" class="ghost" data-share-ok="${esc(p.id)}" data-choice="no">Later</button></div></form>`
+   :`<div class="actions"><button class="primary" data-share-ok="${esc(p.id)}" data-choice="yes">${yes[p.kind]}</button><button class="ghost" data-share-ok="${esc(p.id)}" data-choice="no">Not now</button></div>`)+'</article>';
+ const row=s=>s.unconfirmed?`<p class="muted">Not confirmed yet: ${s.unconfirmed.map(esc).join(', ')}</p>`:`<article><p><strong>${esc(s.label)}</strong>${s.workspace?' · '+esc(s.workspace):''}</p><p class="muted">${s.admin?`Shared by ${esc(s.by||'an admin')}${s.held_by.length?' · Held by '+s.held_by.map(esc).join(', '):''}`:`Shared by ${esc(work.name)}${s.have?'':' · Waiting for an admin\'s Machine'}`}</p>${s.admin?`<div class="actions"><button class="ghost danger" data-share-stop="${esc(s.service)}" data-fleet="${esc(work.id)}">Stop sharing</button></div>`:''}</article>`;
+ const form=can&&own.length?`<details class="share-new"><summary>Share ${esc(own[0].label)}</summary><form class="share-form" data-fleet="${esc(work.id)}" data-account="${esc(own[0].id)}"><p class="muted">Use a dedicated Intercom app with read permissions only. Admins get it. Tick who else does.</p>${can.members.map(m=>`<label class="share-pick"><input type="checkbox" name="m" value="${esc(m.member_id)}"${m.confirmed?' checked disabled':''}${m.keys?'':' disabled'}> ${esc(m.name)} <small class="muted">${esc(m.confirmed?'admin':m.email||'')}${m.keys?'':' · needs an update'}</small></label>`).join('')}<div class="actions"><button class="primary">Share</button></div></form></details>`:'';
+ if(!mine.length&&!shares.length&&!form)return'';
+ return `<div class="fleet-box"><h3>Shared connectors</h3>${mine.length?`<div class="list">${mine.map(card).join('')}</div>`:''}${shares.length?`<div class="list">${shares.map(row).join('')}</div>`:''}${form}</div>`}
+const svcName=s=>({intercom:'Intercom'})[s]||s||'it';
 function fleetBrief(f,work){const b=(f.briefs||{})[work.id];if(!b)return'';const items=b.items||[],n=b.shown||5;
  const line=(i,k)=>`<li class="fleet-brief-item${k>=n?' fleet-brief-more':''}"${k>=n?' hidden':''}><span class="fleet-brief-line"><strong title="${esc(i.title)}">${esc(i.title)}</strong><small class="muted">${esc(i.why)}</small></span><span class="fleet-brief-do">${i.open?`<a class="fleet-brief-open" href="${esc(safeURL(i.open))}" target="_blank" rel="noopener">Open</a>`:''}${i.ask?`<button type="button" class="ghost" data-brief-ask="${esc(i.ask)}" data-fleet="${esc(work.id)}">Ask</button>`:''}<button type="button" class="quiet" data-brief-hide="${esc(i.key)}" data-fleet="${esc(work.id)}">Not needed</button></span></li>`;
  return `<article class="fleet-brief" id="fleet-brief-${esc(work.id)}"><p><strong>What the Fleet saw</strong> <small class="muted">${fleetDay(b.built_at)}</small></p>${items.length?`<ul class="fleet-brief-list">${items.map(line).join('')}</ul>${items.length>n?`<button type="button" class="quiet fleet-brief-show" data-brief-more>Show ${items.length-n} more</button>`:''}`:'<p class="muted">Nothing that needs the team.</p>'}</article>`}
@@ -3502,7 +3519,7 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
  const notices=f.notices||[],asking=notices.filter(n=>n.buttons.length),told=notices.filter(n=>!n.buttons.length&&!/^friend_/.test(n.kind));
  const noticeCard=n=>`<article id="fleet-${esc(n.id)}"><p>${esc(n.text)}</p>${n.detail?`<p class="muted">${esc(n.detail)}</p>`:''}${n.outcome?`<p class="muted">→ ${esc(n.outcome)}</p>`:''}${n.reason?`<p class="note">${esc(n.reason)}</p>`:''}${n.buttons.length?`<div class="actions">${n.buttons.map(b=>`<button${b.choice==='confirm'?' class="primary"':''} data-fleet-notice="${esc(n.id)}" data-choice-n="${b.choice}" data-key="${esc(n.key)}">${esc(b.label)}</button>`).join('')}</div>`:''}<p><small class="mono">${esc(new Date(n.at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small></p></article>`;
  for(const work of works){const asked=f.asked.filter(a=>inFleet(a,work));
-  let h=`<div id="fleet-${esc(work.id)}">`+head(work,(work.people||[]).length)+people(work);
+  let h=`<div id="fleet-${esc(work.id)}">`+head(work,(work.people||[]).length)+people(work)+fleetShared(f,work);
   if(work.members.length){
    h+=box('Who knows someone?','Their Machines say how well they know someone there and when they last talked. Names only if they allow it.',
     `<form class="fleet-ask fleet-ask-form" data-fleet="${esc(work.id)}"><input name="about" maxlength="120" placeholder="A company, domain, email address or name" aria-label="Who knows someone at"><button class="primary">Ask ${several?esc(work.name):'the Fleet'}</button></form>`+fleetIntroOffers(f,work,inFleet)
@@ -3626,6 +3643,15 @@ fleetOn('click',async e=>{const p=e.target.closest('[data-fleet-pick]');if(p){co
  const n=e.target.closest('[data-fleet-note-send]');if(!n)return;const box=n.closest('.fleet-note-editor'),id=n.dataset.fleetNoteSend;
  const note=[box?.querySelector('.reason[aria-pressed="true"]')?.dataset.fleetPick,(box?.querySelector('textarea')?.value||'').trim()].filter(Boolean).join(': ').slice(0,160);n.disabled=true;
  try{const r=await fleetPost('fleet_decide',{id,choice:n.dataset.choiceF,...(note?{note}:{})});fleetNoting.delete(id);toast((r.status==='answered'?'Accepted.':'Declined.')+(note?' They see your note.':''));await fleetView();await refresh()}catch(err){n.disabled=false;toast(err.message,true)}});
+fleetOn('click',async e=>{const b=e.target.closest('[data-share-ok],[data-share-stop]');if(!b)return;
+ if(b.dataset.shareStop&&!confirm('Stop sharing it? Every teammate\'s Machine drops the token.'))return;b.disabled=true;
+ try{if(b.dataset.shareStop){await fleetPost('fleet_share_stop',{fleet:b.dataset.fleet,service:b.dataset.shareStop});toast('Stopped sharing.')}
+  else{const r=await fleetPost('fleet_share_ok',{id:b.dataset.shareOk,choice:b.dataset.choice});toast(r.done?'Done. Their Machine gets it next.':'Okay.')}
+  await fleetView()}catch(err){b.disabled=false;toast(err.message,true)}});
+fleetOn('submit',async e=>{const t=e.target;if(!t.matches('.share-form,.share-replace'))return;e.preventDefault();const btn=t.querySelector('button.primary');btn.disabled=true;
+ try{if(t.matches('.share-form')){const r=await fleetPost('fleet_share',{fleet:t.dataset.fleet,account:t.dataset.account,members:[...t.querySelectorAll('input[name=m]:checked:not(:disabled)')].map(i=>i.value)});toast(`Shared with ${r.shared_with} ${r.shared_with===1?'Machine':'Machines'}.`)}
+  else{await fleetPost('fleet_share_replace',{fleet:t.dataset.fleet,service:t.dataset.service,token:t.elements.token.value.trim()});t.elements.token.value='';toast('Replaced. Teammates get the new one.')}
+  await fleetView()}catch(err){btn.disabled=false;toast(err.message,true)}});
 fleetOn('click',async e=>{const b=e.target.closest('[data-fleet-decide]');if(!b)return;
  if(b.dataset.choiceF==='decline'&&FLEET_REQ.includes(fleetData?.waiting?.find(x=>x.id===b.dataset.fleetDecide)?.kind)){fleetNoting.set(b.dataset.fleetDecide,'decline');fleetRedraw();return}
  b.disabled=true;
