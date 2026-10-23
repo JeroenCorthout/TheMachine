@@ -36,7 +36,7 @@
 | `needs_you_file` | unset | Optional JSON list of `{id, text, url, action}` notes from a hosting layer; the dashboard shows them under Needs you, with sources that are not fully set up and connections that need signing in again |
 | `browser_url` | unset | Optional page that shows the assistant's browser (a hosted machine's viewer, or `./install.sh --browser-viewer`'s); a card waiting on the browser links to it |
 | `browser_cdp_url` | `http://127.0.0.1:9222` | That browser's DevTools address on this machine; **Open the browser** brings the tab a task uses to the front through it (also when it opens a viewer), and a Preparing card's live look at its tab is taken through it |
-| `browser_vnc` | unset | Optional VNC server showing this computer's screen, as a unix socket path or a `127.0.0.1:port`; the dashboard then shows that screen live at `/browser/` (see [browser setup](sources.md)) |
+| `browser_vnc` | unset | Optional VNC server showing this computer's screen, as a unix socket path or a `127.0.0.1:port`; the dashboard then shows that screen live at `/browser` (see [browser setup](sources.md)) |
 | `browser_novnc` | `~/.local/share/machine-browser/web` | The noVNC files the dashboard serves for `browser_vnc` (`python3 browser_viewer.py web DIR [NOVNC]` builds them) |
 | `browser_lease_script` | `integrations/browser-lease.py` | Lease helper Do it runs use for the shared browser |
 | `delivery_enabled` | `false` | Send cards to Telegram (leave off while you test) |

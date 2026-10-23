@@ -189,16 +189,48 @@ def window_region(cdp_url):
 
 
 # ------------------------------------------------- the dashboard's own view of a desktop (browser_vnc, optional)
-VIEW_QUERY = 'autoconnect=1&reconnect=1&resize=off&view_clip=1&frame=window'
 WS_GUID = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 MAX_FRAME = 16 << 20
 
 
-def view_link(base='/'):
-    """The dashboard's viewer page under `base` (the dashboard's own path). The websocket path is given from the root
-    for noVNC releases that read it that way; newer ones read it relative, which also stays under /browser/."""
-    base = '/' + base.strip('/') + '/' if base.strip('/') else '/'
-    return base + 'browser/vnc.html?' + VIEW_QUERY + '&path=' + urllib.parse.quote(base.lstrip('/') + 'browser/websockify')
+VIEW_QUERY = 'autoconnect=1&reconnect=1&resize=off&view_clip=1&frame=window'
+
+
+def view_link(base='/', web=None):
+    """The dashboard's viewer under `base` (the dashboard's own path): just <base>browser, with its settings in the
+    dashboard's /browser/defaults.json and mandatory.json (`view_settings`). A noVNC from before those files (1.5)
+    gets the long vnc.html?... address, which keeps working on newer ones too."""
+    if web is None or has_settings(web):
+        return _base(base) + 'browser'
+    return _base(base) + 'browser/vnc.html?' + VIEW_QUERY + '&path=' + urllib.parse.quote(_base(base).lstrip('/') + 'browser/websockify')
+
+
+def has_settings(web=WEB):
+    """Whether this noVNC reads defaults.json and mandatory.json (1.5 and later)."""
+    try:
+        return 'defaults.json' in (Path(web).expanduser() / 'vnc.html').read_text()
+    except (OSError, UnicodeError):
+        return False
+
+
+def _base(base):
+    return '/' + base.strip('/') + '/' if base.strip('/') else '/'
+
+
+def view_settings(base='/'):
+    """noVNC's own settings for the dashboard's viewer, as (defaults.json, mandatory.json). The websocket path is
+    absolute and fixed, so it works from /browser, /browser/ and vnc.html alike; `frame` is for machine-view.js."""
+    defaults = {'autoconnect': True, 'reconnect': True, 'resize': 'off', 'view_clip': True, 'frame': 'window'}
+    return defaults, {'path': _base(base) + 'browser/websockify'}
+
+
+def short_page(page, base='/'):
+    """vnc.html for <base>browser and <base>browser/: a <base> first in its head, so its own relative files,
+    settings and websocket resolve under /browser/ also without the trailing slash."""
+    tag = '<base href="' + _base(base) + 'browser/">'
+    head = page.find('<head')
+    end = page.find('>', head) + 1 if head >= 0 else 0
+    return page[:end] + tag + page[end:]
 
 
 def vnc_target(spec):

@@ -130,6 +130,19 @@ class OwnerBoundary(unittest.TestCase):
             conn.request('GET', path, headers=headers); r = conn.getresponse(); body = r.read(); conn.close(); return r.status, body
         owner = {'Host': 'machine.example:8443', 'Tailscale-User-Login': 'owner@example.com'}
         self.assertEqual(get('/browser/vnc.html', owner), (200, b'<html>viewer</html>'))
+        self.assertEqual(json.loads(get('/browser/mandatory.json', owner)[1]), {'path': '/browser/websockify'})  # none in this noVNC
+        self.assertEqual(get('/browser/other.json', owner)[0], 404)
+        (web / 'vnc.html').write_text('<html><head></head>viewer</html>'); (web / 'defaults.json').write_text('{"bell": "off"}'); (web / 'mandatory.json').write_text('{}')
+        for short in ('/browser', '/browser/'):  # the short link: vnc.html itself, its files resolving under /browser/
+            status, body = get(short, owner)
+            self.assertEqual(status, 200); self.assertIn(b'<head><base href="/browser/">', body)
+            self.assertEqual(get(short, {'Host': 'machine.example:8443', 'Tailscale-User-Login': 'other@example.com'})[0], 403)
+            self.assertEqual(get(short, {'Authorization': 'Bearer ' + TOKEN})[0], 403)
+            self.assertEqual(get(short, {})[0], 403)
+        self.assertEqual(json.loads(get('/browser/defaults.json', owner)[1]), {'bell': 'off', 'autoconnect': True, 'reconnect': True, 'resize': 'off', 'view_clip': True, 'frame': 'window'})
+        self.assertEqual(json.loads(get('/browser/mandatory.json', owner)[1]), {'path': '/browser/websockify'})
+        self.assertEqual(get('/browser/defaults.json', {'Authorization': 'Bearer ' + TOKEN})[0], 403)
+        self.assertEqual(get('/browserx', owner)[0], 404)
         with patch.object(a.browser_viewer, 'window_region', return_value={'x': 0.5, 'y': 0, 'w': 0.5, 'h': 1}):
             self.assertEqual(json.loads(get('/browser/region', owner)[1]), {'region': {'x': 0.5, 'y': 0, 'w': 0.5, 'h': 1}})
         self.assertEqual(get('/browser/vnc.html', {'Host': 'machine.example:8443', 'Tailscale-User-Login': 'other@example.com'})[0], 403)
@@ -138,8 +151,11 @@ class OwnerBoundary(unittest.TestCase):
         self.assertEqual(get('/browser/websockify', {**upgrade, 'Origin': 'https://evil.example'})[0], 403)
         self.assertEqual(get('/browser/websockify', upgrade)[0], 403)  # no Origin at all
         self.assertEqual(get('/browser/websockify', {**upgrade, 'Origin': 'https://machine.example:8443'})[0], 502)  # owner, but no screen here
+        self.assertEqual(get('/browser', {**upgrade, 'Origin': 'https://evil.example'})[0], 403)
+        self.assertEqual(get('/browser', upgrade)[0], 403)
         self.app.config.pop('browser_vnc')
         self.assertEqual(get('/browser/vnc.html', owner)[0], 404)
+        self.assertEqual(get('/browser', owner)[0], 404)
 
     def test_caddy_forwarded_peer_is_identified_by_tailscale_whois(self):
         port=self.serve()

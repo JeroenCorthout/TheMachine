@@ -1,10 +1,13 @@
 // The Machine: a desktop's screen on a phone. Opens on the browser's own window (from the dashboard's
 // /browser/region), with pinch to zoom, one or two fingers to move around, a tap to click, and buttons for
-// the whole screen, zooming and the keyboard. Only for links with frame=window (the dashboard's own view).
+// the whole screen, zooming and the keyboard. Only for the dashboard's own view: frame=window in the link, or in
+// the dashboard's defaults.json for its short /browser link.
 import UI from './app/ui.js';
 
 const params = new URLSearchParams(location.search);
-if (params.get('frame') === 'window') {
+const framed = params.has('frame') ? params.get('frame') === 'window'
+    : await fetch('defaults.json', {cache: 'no-store'}).then((r) => (r.ok ? r.json() : {})).then((d) => d?.frame === 'window', () => false);
+if (framed) {
     let rfb = null, zoom = 1, region = null, touch = null, whole = false;
     const display = () => rfb && rfb._display;
     const screen = () => rfb._screenSize();
