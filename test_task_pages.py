@@ -16,7 +16,7 @@ EMAIL_TEXT = ('Hi, the venue confirmed the fourteenth of November and needs the 
 class FakeNetwork:
     """The control plane's /task-invite, as far as a Machine sees it."""
     def __init__(self):
-        self.pages, self.replies, self.calls = {}, {}, []
+        self.pages, self.replies, self.calls, self.n = {}, {}, [], 0
 
     def call(self, body):
         self.calls.append(body)
@@ -42,7 +42,8 @@ class FakeNetwork:
         """What the page's script sends: the answer sealed with the reply key (static/task.js on the control plane)."""
         sealed, _ = task_invites.seal({'answer': answer, 'note': note}, task_invites._unb64(task_invites.derived(key, 'reply')))
         found = self.replies.setdefault(LINK_ID, [])
-        found.append({'n': len(found) + 1, 'sealed': sealed, 'at': '2026-10-24T09:00:00+00:00'})
+        self.n += 1
+        found.append({'n': self.n, 'sealed': sealed, 'at': '2026-10-24T09:00:00+00:00'})
 
 
 class TaskPages(unittest.TestCase):
@@ -151,6 +152,28 @@ class TaskPages(unittest.TestCase):
         # A forged answer (sealed with another key) never opens
         self.network.answer(task_invites.seal({'title': 'x'})[1], 'cant')
         self.assertEqual(self.app.task_pages.round(), 0)
+
+    def test_cant_do_this_brings_the_card_back_to_ready_with_their_words(self):
+        card = self.handed()
+        self.share(card)
+        key = task_invites.LINK.search(self.body(card)).group(2)
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.store._decide(db, card, 'complete', 'Sent', 'sent:job-1', 'assistant')  # the email went out
+        self.network.answer(key, 'cant', 'Out until Monday.')
+        self.assertEqual(self.app.task_pages.round(), 1)
+        self.assertEqual(self.card_row(card)['status'], 'prepared')  # back in Ready
+        with self.store.connect() as db:
+            why = db.execute("SELECT feedback,source FROM decisions WHERE suggestion_id=? ORDER BY rowid DESC LIMIT 1", (card,)).fetchone()
+        self.assertEqual(tuple(why), ('They can\'t do this (task page): "Out until Monday."', 'fleet'))
+        self.assertEqual(self.status(card)['answers'][-1]['note'], 'Out until Monday.')
+        # An "on it" never reopens a card the owner closed
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.store._decide(db, card, 'complete', '', 'dash-1', 'dashboard')
+        self.network.answer(key, 'on')
+        self.assertEqual(self.app.task_pages.round(), 1)
+        self.assertEqual(self.card_row(card)['status'], 'completed')
 
     def test_mark_done_and_stop_sharing(self):
         card = self.handed()

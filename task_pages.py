@@ -211,12 +211,31 @@ class TaskPages:
                     LOG.warning('task page update error=%s', type(error).__name__)
             self.save(card_id, state, record)
             for answer in fresh:
+                if answer['answer'] == 'cant':
+                    self.back(card_id, answer, invite_id, record['seen'])
                 count += 1
                 tell = getattr(getattr(self.app, 'fleet', None), 'tell', None)  # the app's fleet_tell: phone and Telegram
                 if tell:
                     note = f' "{answer["note"]}"' if answer['note'] else ''
                     tell(f'Task page for "{record["task"]["title"]}": {TOLD[answer["answer"]]}.{note}'[:200], 'task-page-' + str(card_id))
         return count
+
+    def back(self, card_id, answer, invite_id, n):
+        """Can't do this: the card comes back to Ready, the answer quoted on it. Closed by the email's send or the
+        owner's Mark done, it reopens; snoozed, it wakes. Any other state (a newer choice of the owner's) stays."""
+        note = f': "{answer["note"]}"' if answer.get('note') else ''
+        why = f"They can't do this (task page){note}"[:400]
+        decision = f'task-page-back-{invite_id}-{n}'
+        store = self.app.store
+        with store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM decisions WHERE id=?', (decision,)).fetchone():
+                return
+            row = db.execute('SELECT status FROM suggestions WHERE id=?', (str(card_id),)).fetchone()
+            if row and row['status'] == 'completed':
+                store._decide(db, str(card_id), 'reopen', why, decision, 'fleet')
+            elif row and row['status'] == 'snoozed':
+                store._decide(db, str(card_id), 'accept', why, decision, 'fleet')
 
     # -- for the dashboard
     def view(self, card_id, state=None, record=None, card_status=None):

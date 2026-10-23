@@ -58,6 +58,18 @@ try{
  assert.match(await reply.innerText(),/Reply on the task page: I’m on it[\s\S]*<img src=x[\s\S]*Signing tomorrow\./);
  assert.equal(await reply.locator('img').count(),0);
  assert.equal(await page.evaluate(()=>window.pwned),undefined);
+ assert.equal(await c.locator('[data-tp-done]').count(),0);  // the email is still a draft: nothing to mark done yet
+ // Sent and Done: the page row keeps only Stop sharing
+ Object.assign(card,{status:'completed'});state.suggestion_counts={completed:1};
+ await page.evaluate(()=>refresh());
+ for(const d of await page.locator('details:has(#task-c1)').all())await d.evaluate(x=>x.open=true);
+ assert.equal(await c.locator('[data-tp-done]').count(),0);
+ assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri 30 Oct\.\s*Stop sharing$/);
+ // Back in Ready after the send (reopened by Can't do this): a page row with Mark done, no "Goes out with this email"
+ Object.assign(card,{status:'prepared',action_status:{status:'sent'}});state.suggestion_counts={prepared:1};
+ await page.evaluate(()=>refresh());
+ assert.equal(await c.locator('[data-tp-done]').count(),1);
+ assert.doesNotMatch(await c.locator('.tp-shared').innerText(),/Goes out/);
  await c.locator('[data-tp-stop]').click();
  await page.waitForTimeout(300);
  assert.deepEqual(calls.at(-1),{action:'task_page_stop',args:{suggestion_id:'c1'}});

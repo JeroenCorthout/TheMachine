@@ -18,6 +18,7 @@ What the other Machine adds is their words, kept to a fixed form and shown quote
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -164,11 +165,22 @@ def first_name(name):
     return (str(name or '').split() or [''])[0]
 
 
+DAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+
+
+def spoken_day(day, today=None):
+    """A date as a person writes it in an email: "Saturday 31 October", with the year only when it is not this year."""
+    found = dt.date.fromisoformat(day)
+    year = '' if found.year == (today or dt.date.today()).year else f' {found.year}'
+    return f'{DAYS[found.weekday()]} {found.day} {MONTHS[found.month - 1]}{year}'
+
+
 def draft(task, to_name, me, link=None):
     """The email: the task in plain words. With a task page the owner approved, one plain line with its link. Never a
     promotional line or signature. Plain code, no model."""
     hello = f"Hi {first_name(to_name) or 'there'},"
-    due = f"\n\nIt would be great to have it by {task['due']}." if task.get('due') else ''
+    due = f"\n\nIt would be great to have it by {spoken_day(task['due'])}." if task.get('due') else ''
     subject = f"Could you take this on: {task['title']}"[:120]
     body = (f"{hello}\n\nCould you take this on?\n\n{task['title']}\n{task.get('summary', '')}{due}\n\n"
             f"Just reply to this email to let me know.\n\nBest,\n{first_name(me) or me}")
