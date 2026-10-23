@@ -30,6 +30,9 @@ REFRESH_DAYS = 90
 RETRY_HOURS = 24        # after an error (timeout, rate limit)
 PER_PASS = 5
 PER_DAY = 50
+# Paired with the Network, a self-hosted Machine gets hosted's organisation budget (the control plane's 1,000 a day).
+PAIRED_PER_PASS = 50
+PAIRED_PER_DAY = 1000
 PRESETS = {
     'apollo': {'url': 'https://api.apollo.io/api/v1/organizations/enrich?domain={domain}', 'headers': {'X-Api-Key': '{key}'}},
     'peopledatalabs': {'url': 'https://api.peopledatalabs.com/v5/company/enrich?website={domain}', 'headers': {'X-Api-Key': '{key}'},
@@ -252,15 +255,17 @@ def save(db, domain, status, profile, now):
                (domain, status, json.dumps(profile) if profile else None, now))
 
 
-def step(connect, config, now, per_pass=PER_PASS):
-    """Look up a few organisations. Returns how many got a profile; stops at the first service error."""
+def step(connect, config, now, per_pass=None, paired=False):
+    """Look up a few organisations. Returns how many got a profile; stops at the first service error. Paired with the
+    Network: hosted's budget (PAIRED_PER_DAY, PAIRED_PER_PASS) unless per_day says otherwise."""
     cfg = settings(config)
     if not cfg:
         return 0
+    per_pass = per_pass or (PAIRED_PER_PASS if paired else PER_PASS)
     with connect() as db:
         today = now[:10]
         used = db.execute("SELECT count(*) FROM org_profiles WHERE substr(fetched_at,1,10)=? AND status!='wrong'", (today,)).fetchone()[0]
-        domains = due(db, now, max(0, min(per_pass, int(cfg.get('per_day') or PER_DAY) - used)))
+        domains = due(db, now, max(0, min(per_pass, int(cfg.get('per_day') or (PAIRED_PER_DAY if paired else PER_DAY)) - used)))
     found = 0
     for domain in domains:
         try:
@@ -273,6 +278,21 @@ def step(connect, config, now, per_pass=PER_PASS):
             save(db, domain, 'found' if profile else 'none', profile, now)
         found += bool(profile)
     return found
+
+
+def readable_name(domain):
+    """A name to show for an organisation known only by its domain: "Remy" for remy.be, "Blue Fox" for blue-fox.io,
+    "KBC" for kbc.be (no vowels: an acronym)."""
+    label = registrable(str(domain or '').strip().lower().removeprefix('www.')).split('.')[0]
+    words = [w for w in re.split(r'[-_]+', label) if w]
+    if not words:
+        return str(domain or '')
+    return ' '.join(w.upper() if not re.search(r'[aeiouy0-9]', w) else w[:1].upper() + w[1:] for w in words)
+
+
+def website(domain):
+    """The website an email domain stands for: its own registrable domain (mail.remy.be is remy.be)."""
+    return 'https://' + registrable(str(domain or '').strip().lower().removeprefix('www.'))
 
 
 def summary(profile):
@@ -845,6 +865,191 @@ def contact_photos_step(connect, now, limit=CONTACT_PHOTOS_PER_PASS, fetch=None)
                 have.add(node)
                 saved += 1
     return saved
+
+
+# Facts about people from what the connectors already read while they run: Slack profiles (the users.info lookup done
+# for names), X's user objects in mentions and DMs, LinkedIn's messaging participants, Google contacts and the
+# Workspace directory (the same daily read as their photos), and CRM contacts. Never an extra call, scope or sign-in.
+# Each fact keeps where it came from and when (person_facts). What someone says about themselves (their own Slack,
+# X, LinkedIn or Google profile) beats a record someone else keeps about them (a contact the owner made, the
+# directory, the CRM), which beats a look-up's guess (person_profiles). Kept on this Machine, sealed like message
+# contents, never sent anywhere; Delete permanently removes them.
+FACT_FIELDS = {'title': 120, 'company': 120, 'headline': 220, 'bio': 400, 'location': 120, 'website': 200,
+               'timezone': 64, 'phone': 32, 'x': 15, 'linkedin_url': 200}
+STATED, RECORD = 2, 1  # their own words; a record about them. A look-up counts 0.
+VIEW_FACTS = ('headline', 'bio')  # their own longer words: read at view time, never copied into the graph
+FACT_SOURCES = {'slack': 'Slack', 'x': 'X', 'linkedin': 'LinkedIn', 'google': 'Google', 'salesflare': 'Salesflare'}
+FACT_SCHEMA = ('CREATE TABLE IF NOT EXISTS person_facts(identifier TEXT NOT NULL,field TEXT NOT NULL,value TEXT NOT NULL,rank INTEGER NOT NULL,'
+               'source TEXT NOT NULL,seen_at TEXT NOT NULL,PRIMARY KEY(identifier,field))')
+WEBSITE = re.compile(r'https?://[A-Za-z0-9.-]{1,200}\.[A-Za-z]{2,}(?::\d{2,5})?(?:/[^\s"\'<>\\]{0,180})?')
+X_PHOTO = re.compile(r'https://pbs\.twimg\.com/profile_images/\d{1,25}/[A-Za-z0-9_-]{1,100}_normal\.(?:jpe?g|png|webp)')
+LINKEDIN_PHOTO = re.compile(r'https://media\.licdn\.com/dms/image/[^\s"\'<>\\]{10,600}')
+
+
+def fact_tables(db):
+    db.execute(FACT_SCHEMA)
+
+
+def clean_fact(field, value):
+    """The fact as it is kept, or None when it isn't one: plain text on one line, cut to its field's length;
+    links, handles, numbers and time zones only in their own shape."""
+    if field not in FACT_FIELDS or not isinstance(value, str):
+        return None
+    text = ' '.join(''.join(c for c in value if c.isprintable() or c.isspace()).split())[:FACT_FIELDS[field]].strip()
+    if field == 'website':
+        text = text if WEBSITE.fullmatch(text) else ''
+    elif field == 'linkedin_url':
+        text = text.split('?')[0] if LINKEDIN.fullmatch(text.split('?')[0]) else ''
+    elif field == 'x':
+        text = text.lstrip('@') if re.fullmatch(r'@?[A-Za-z0-9_]{1,15}', text) else ''
+    elif field == 'phone':
+        text = text if re.fullmatch(r'\+?[0-9][0-9 ().-]{5,30}', text) and 6 <= len(re.sub(r'\D', '', text)) <= 15 else ''
+    elif field == 'timezone':
+        try:
+            import zoneinfo
+            zoneinfo.ZoneInfo(text)
+        except Exception:
+            text = ''
+    return text or None
+
+
+def offer_facts(db, offers, source, now):
+    """Keeps what a connector read about people: offers are (identifiers, {field: value}, rank). A fact of a higher
+    rank stays; the same rank or higher replaces it. A field the same source now leaves empty (someone cleared their
+    Slack title) goes. People deleted permanently get nothing. Returns how many facts changed."""
+    fact_tables(db)
+    try:
+        import graph
+        gone = graph.forgotten(db)
+    except Exception:
+        gone = lambda identifier: False
+    changed = 0
+    for ids, fields, rank in offers:
+        for identifier in dict.fromkeys(ids):
+            if not isinstance(identifier, str) or ':' not in identifier or gone(identifier):
+                continue
+            for field, raw in fields.items():
+                if field not in FACT_FIELDS:
+                    continue
+                value = clean_fact(field, raw)
+                row = db.execute('SELECT value,rank,source FROM person_facts WHERE identifier=? AND field=?', (identifier, field)).fetchone()
+                if value is None:
+                    if row and row[2] == source and raw is not None:
+                        db.execute('DELETE FROM person_facts WHERE identifier=? AND field=?', (identifier, field))
+                        changed += 1
+                    continue
+                if row and (row[1] > rank or (row[0] == value and row[1] == rank)):
+                    if row[0] == value:
+                        db.execute('UPDATE person_facts SET seen_at=? WHERE identifier=? AND field=?', (now, identifier, field))
+                    continue
+                db.execute('INSERT INTO person_facts(identifier,field,value,rank,source,seen_at) VALUES(?,?,?,?,?,?) ON CONFLICT(identifier,field) DO UPDATE SET '
+                           'value=excluded.value,rank=excluded.rank,source=excluded.source,seen_at=excluded.seen_at',
+                           (identifier, field, value, int(rank), source, now))
+                changed += 1
+    return changed
+
+
+def people_facts(db, fields=None):
+    """{identifier: {field: (value, rank, source, seen_at)}}."""
+    try:
+        rows = db.execute('SELECT identifier,field,value,rank,source,seen_at FROM person_facts').fetchall()
+    except Exception:
+        return {}
+    out = {}
+    for identifier, field, value, rank, source, seen_at in rows:
+        if fields is None or field in fields:
+            out.setdefault(identifier, {})[field] = (value, rank, source, seen_at)
+    return out
+
+
+def best_facts(found, fields=None):
+    """The best of each field over a person's identities: the highest rank, then the latest."""
+    best = {}
+    for facts in found:
+        for field, fact in facts.items():
+            if (fields is None or field in fields) and (field not in best or (fact[1], fact[3]) > (best[field][1], best[field][3])):
+                best[field] = fact
+    return best
+
+
+def with_facts(profile, found):
+    """A person's profile with their facts: one they or a record state beats the look-up's guess; each says where it
+    came from and when (sources). Their headline and bio aren't copied here (VIEW_FACTS)."""
+    best = best_facts(found, [f for f in FACT_FIELDS if f not in VIEW_FACTS])
+    if not best:
+        return profile
+    profile = dict(profile or {})
+    sources = dict(profile.get('sources') or {})
+    for field, (value, rank, source, seen_at) in best.items():
+        if field in profile and profile[field] and rank <= 0:
+            continue
+        profile[field] = value
+        sources[field] = {'from': FACT_SOURCES.get(source, source), 'at': seen_at[:10], 'own': rank >= STATED}
+    profile['sources'] = sources
+    return profile
+
+
+def view_facts(db, ids):
+    """A person's headline and bio in their own words, for their page."""
+    found = people_facts(db, VIEW_FACTS)
+    best = best_facts([found[i] for i in ids if i in found])
+    return {field: {'text': value, 'from': FACT_SOURCES.get(source, source), 'at': seen_at[:10]}
+            for field, (value, rank, source, seen_at) in best.items()}
+
+
+def slack_facts(user):
+    """What someone put on their own Slack profile: title, phone and time zone."""
+    profile = user.get('profile') or {}
+    if user.get('is_bot') or user.get('deleted') or not user.get('id'):
+        return None
+    return (['slack:' + str(user['id'])], {'title': profile.get('title') or '', 'phone': profile.get('phone') or '',
+                                           'timezone': user.get('tz') or ''}, STATED)
+
+
+def google_facts(person):
+    """Job title, company and phone from a Google contact or directory person: their own profile says it (STATED), or
+    the owner's contact or the directory does (RECORD)."""
+    kind = lambda item: ((item.get('metadata') or {}).get('source') or {}).get('type')
+    ids = ['email:' + str(e.get('value')).strip().lower() for e in (person.get('emailAddresses') or [])
+           if isinstance(e, dict) and '@' in str(e.get('value') or '')]
+    if not ids:
+        return []
+    orgs = [o for o in person.get('organizations') or [] if isinstance(o, dict) and (o.get('title') or o.get('name')) and not o.get('endDate')]
+    org = min(orgs, key=lambda o: (not (o.get('metadata') or {}).get('primary'), kind(o) != 'PROFILE')) if orgs else {}
+    phones = [n for n in person.get('phoneNumbers') or [] if isinstance(n, dict) and n.get('canonicalForm')]
+    out = []
+    if org:
+        out.append((ids, {'title': org.get('title') or '', 'company': org.get('name') or ''}, STATED if kind(org) == 'PROFILE' else RECORD))
+    if phones:
+        out.append((ids, {'phone': str(phones[0]['canonicalForm'])}, RECORD))
+    return out
+
+
+def facts_from_signals(connect, now):
+    """Once: the facts already in stored signals (LinkedIn headlines, CRM job titles), so people read before facts
+    were kept get them too. Returns how many were kept."""
+    with connect() as db:
+        fact_tables(db)
+        db.execute('CREATE TABLE IF NOT EXISTS enrich_prefs(key TEXT PRIMARY KEY,value TEXT NOT NULL)')
+        if db.execute("SELECT 1 FROM enrich_prefs WHERE key='facts_from_signals'").fetchone():
+            return 0
+        offers = {}
+        for kind, metadata, at in db.execute("SELECT kind,metadata,occurred_at FROM events WHERE deleted=0 AND kind IN "
+                                             "('linkedin.message','salesflare.email','salesflare.meeting') ORDER BY occurred_at"):
+            try:
+                m = json.loads(metadata or '{}')
+            except ValueError:
+                continue
+            if kind == 'linkedin.message' and m.get('headline') and m.get('conversation_id') and not m.get('group'):
+                offers[('li:' + str(m['conversation_id']), 'headline')] = (str(m['headline']), STATED, 'linkedin')
+            for c in (m.get('contacts') or ()) if kind != 'linkedin.message' else ():
+                if isinstance(c, dict) and '@' in str(c.get('email') or '') and c.get('role'):
+                    offers[('email:' + str(c['email']).lower(), 'title')] = (str(c['role']), RECORD, 'salesflare')
+        kept = 0
+        for (identifier, field), (value, rank, source) in offers.items():
+            kept += offer_facts(db, [([identifier], {field: value}, rank)], source, now)
+        db.execute("INSERT INTO enrich_prefs(key,value) VALUES('facts_from_signals',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (now,))
+    return kept
 
 
 def photo(db, key):

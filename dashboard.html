@@ -400,7 +400,7 @@ dialog input{display:block;width:100%;margin-top:8px}
 .graph-list article{margin:0;padding:12px 16px;min-width:0}
 .graph-row{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
 .person-pic{position:relative;flex:none;display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;overflow:hidden;background:var(--sunken);color:var(--muted);font:600 10.5px/1 var(--sans);letter-spacing:.02em}.person-pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.person-pic.big{width:44px;height:44px;font-size:15px}
-.person-facts a{white-space:nowrap}.person-item .graph-row .graph-bar{margin-left:auto}.person-item>.graph-sub{padding-left:36px}.person-head{flex:1 1 auto;min-width:0}.person-head h3{overflow-wrap:anywhere}.person-job{margin:2px 0 0;color:var(--muted);font-size:.95rem;overflow-wrap:anywhere}
+.person-facts a{white-space:nowrap}.person-bio{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.person-item .graph-row .graph-bar{margin-left:auto}.person-item>.graph-sub{padding-left:36px}.person-head{flex:1 1 auto;min-width:0}.person-head h3{overflow-wrap:anywhere}.person-job{margin:2px 0 0;color:var(--muted);font-size:.95rem;overflow-wrap:anywhere}
 .person-page .name-row{align-items:flex-start}.person-page .name-row>.person-pic{margin-top:1px}.person-page .name-row>button{margin-top:2px}
 @media (min-width:700px){.person-page>:not(.name-row){margin-left:52px}}
 .org-row button.node{display:inline;min-height:0;box-shadow:none;border-radius:0;padding:0;border:0;background:none;color:var(--text);font:inherit;font-weight:600;text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px}.org-row button.node:hover{text-decoration-color:currentColor}
@@ -3709,13 +3709,15 @@ function calRender(){const box=$('#calendar-view');if(!box||!state)return;const 
  // Earlier days coming in above, or a week's meetings arriving, never move what is on screen; the time grid keeps its hour
  const keep=list&&!$('#calendar').hidden?calAnchor(box):null,pane=box.querySelector('.cal-tg-scroll'),hash=calHash(),y=pane&&calGridShown===hash?pane.scrollTop:null;
  if(box.innerHTML!==html){box.innerHTML=html;if(keep){const el=box.querySelector(`[data-day="${keep.day}"]`),d=el?el.getBoundingClientRect().top-keep.top:0;if(Math.abs(d)>.5)scrollBy(0,d)}calObserve(box)}
- const p=box.querySelector('.cal-tg-scroll');if(p){if(y!=null)p.scrollTop=y;else if(calMeetings){p.scrollTop=calFirstHour(box)*CAL_HOUR;calGridShown=hash}}
+ const p=box.querySelector('.cal-tg-scroll');if(p){if(y!=null)p.scrollTop=y;else if(calMeetings&&p.clientHeight){p.scrollTop=calFirstHour(box,p.clientHeight/CAL_HOUR)*CAL_HOUR;calGridShown=hash}}  // a hidden pane can't scroll: wait until it shows
  calBadge();pageHead()}
-// The time grid opens an hour before now on today's week while there is more to come, else an hour before the first
-// meeting (08:00 when there is none)
+// The time grid opens a little before the range's first timed meeting, or 08:00 when that is earlier; later in
+// the day the now line stays in view. Also on ‹ › and Today
 let calGridShown='';
-function calFirstHour(box){const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR),h=new Date().getHours()-1;
- if(box.querySelector('.cal-now')&&tops.some(t=>t>=h))return Math.max(0,h);return tops.length?Math.max(0,Math.floor(Math.min(...tops))-1):8}
+function calFirstHour(box,shown=8){const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR).filter(t=>t>=0);
+ let h=Math.max(0,Math.min(8,...tops)-.5);const now=box.querySelector('.cal-now');
+ if(now){const n=parseFloat(now.style.top)/CAL_HOUR;if(n>h+shown-.5)h=Math.max(0,n-Math.min(2,shown/3))}
+ return Math.min(h,Math.max(0,24-shown))}
 // The row's count: what is on today, also before the Calendar is opened (its meetings come once, a moment after the start)
 function calBadge(){if(!state)return;const {items}=calItems(),n=items.filter(i=>i.day===localDay(new Date())).length,b=$('#badge-calendar');if(b&&b.textContent!==(n?String(n):''))b.textContent=n?String(n):''}
 setTimeout(()=>calFetch().then(calBadge),2000);
@@ -4530,7 +4532,7 @@ const ORG_FIELDS=[['name','Name',100],['website','Website',200],['linkedin_url',
 // No maxlength or pattern on the fields: a looked-up value can be longer than the owner may type, and the browser
 // would then block Save without a word. Only what the owner changed is checked, by orgCheck, with the error under its field.
 const orgForm=n=>{const p=n.profile||{},v={...p,name:n.name,size:p.size||(p.employees?String(p.employees):'')};
- return `<form class="org-form" id="org-form" data-node-id="${esc(n.id)}" novalidate hidden>${ORG_FIELDS.map(([k,t])=>`<label class="graph-sub">${t}${k==='about'?`<textarea name="${k}" rows="5" aria-describedby="org-err-${k}">${esc(v[k]||'')}</textarea>`:`<input name="${k}" value="${esc(v[k]??'')}" aria-describedby="org-err-${k}"${k==='founded'?' inputmode="numeric"':''}${k==='name'?' placeholder="Leave empty to use the name from their messages"':''}>`}<small class="field-error" id="org-err-${k}"></small></label>`).join('')}<p class="graph-sub muted">Your edits stay. Empty a field to use the looked-up value again.</p>${n.profile&&!n.wrong?'<p class="org-buttons"><button type="button" class="ghost" data-org-wrong>Wrong company, clear details</button></p>':''}</form>`};
+ return `<form class="org-form" id="org-form" data-node-id="${esc(n.id)}" novalidate hidden>${ORG_FIELDS.map(([k,t])=>`<label class="graph-sub">${t}${k==='about'?`<textarea name="${k}" rows="5" aria-describedby="org-err-${k}">${esc(v[k]||'')}</textarea>`:`<input name="${k}" value="${esc(v[k]??'')}" aria-describedby="org-err-${k}"${k==='founded'?' inputmode="numeric"':''}${k==='name'?' placeholder="Leave empty to use the name from their messages"':''}>`}<small class="field-error" id="org-err-${k}"></small></label>`).join('')}<p class="graph-sub muted">Your edits stay. Empty a field to use the looked-up value again.</p>${n.profile&&Object.keys(n.profile).some(k=>k!=='website')&&!n.wrong?'<p class="org-buttons"><button type="button" class="ghost" data-org-wrong>Wrong company, clear details</button></p>':''}</form>`};
 const orgActions='<span class="org-actions"><button class="ghost" data-org-edit>Edit</button><button type="button" class="ghost" data-org-cancel>Cancel</button><button type="submit" form="org-form" class="primary" data-org-save>Save</button></span>';
 // What the server would refuse, for the fields the owner changed only: [field, message] pairs.
 const orgCheck=changed=>ORG_FIELDS.flatMap(([k,,max])=>{const t=changed[k];if(!t)return[];
@@ -4544,12 +4546,22 @@ const orgErrors=(f,errs)=>{for(const [k] of ORG_FIELDS){const el=f.elements[k],m
 // What an enrichment service says about a work contact: their job title under their name (with the company's name when
 // they have no organisation yet; otherwise the organisation's own row links it), where they are, and LinkedIn.
 const COUNTRY=c=>{try{return /^[A-Z]{2}$/.test(c)?new Intl.DisplayNames([],{type:'region'}).of(c):c}catch{return c}};
-const personJob=n=>{const p=n.kind==='person'&&n.profile;if(!p)return'';const at=n.org&&n.org_name?'':p.company?esc(p.company):'';
- const job=p.title&&at?`${esc(p.title)} at ${at}`:p.title?esc(p.title):at;return job?`<p class="person-job">${job}</p>`:''};
-const personProfile=n=>{const p=n.kind==='person'&&n.profile;if(!p)return'';
- const place=[p.city,COUNTRY(p.country)].filter(Boolean).join(', ');
- const li=/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/in\//.test(p.linkedin_url||'')?`<a href="${esc(p.linkedin_url)}" target="_blank" rel="noreferrer">LinkedIn ↗</a>`:'';
- return `${place||li?`<p class="graph-sub person-facts">${[esc(place),li].filter(Boolean).join(' · ')}</p>`:''}`};
+// Facts their connectors read (their own Slack, X or LinkedIn profile, a contact, the CRM) come first; hover says where from.
+const personJob=n=>{const p=n.kind==='person'&&(n.profile||{});if(!p)return'';const at=n.org&&n.org_name?'':p.company?esc(p.company):'';
+ const title=p.title||(!at&&n.headline)||'';
+ const job=title&&at?`${esc(title)} at ${at}`:title?esc(title):at;return job?`<p class="person-job">${job}</p>`:''};
+const FACT_FROM=p=>{const s=Object.values(p.sources||{}).map(x=>x.from);return s.length?'From '+[...new Set(s)].join(', '):''};
+const localTime=tz=>{try{return tz?new Intl.DateTimeFormat([],{hour:'2-digit',minute:'2-digit',timeZone:tz}).format(new Date())+' their time':''}catch{return''}};
+const personProfile=n=>{const p=n.kind==='person'&&(n.profile||{});if(!p)return'';
+ const place=p.location||[p.city,COUNTRY(p.country)].filter(Boolean).join(', ');
+ const link=(u,t)=>`<a href="${esc(u)}" target="_blank" rel="noreferrer">${t} ↗</a>`;
+ const li=/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/in\//.test(p.linkedin_url||'')?link(p.linkedin_url,'LinkedIn'):'';
+ const x=/^[A-Za-z0-9_]{1,15}$/.test(p.x||'')?link('https://x.com/'+p.x,'X'):'';
+ const web=/^https?:\/\/[^\s]+$/.test(p.website||'')?link(p.website,esc(p.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,'').slice(0,40))):'';
+ const tel=/^\+?[0-9][0-9 ().-]{5,30}$/.test(p.phone||'')?`<a href="tel:${esc(p.phone.replace(/[^0-9+]/g,''))}">${esc(p.phone)}</a>`:'';
+ const bits=[esc(place),esc(localTime(p.timezone)),tel,li,x,web].filter(Boolean),from=FACT_FROM(p);
+ const bio=n.bio?.text?`<p class="graph-sub person-bio" title="${esc('From '+n.bio.from+', '+n.bio.at)}">${esc(n.bio.text)}</p>`:'';
+ return `${bits.length?`<p class="graph-sub person-facts"${from?` title="${esc(from)}"`:''}>${bits.join(' · ')}</p>`:''}${bio}`};
 // A person's ⋯ menu: Rename, and Delete permanently… (rarely needed), which opens its own confirm step under the header.
 const personMenu='<details class="fact-menu person-menu"><summary aria-label="More for this person" title="More">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-name-edit>Rename</button><button type="button" role="menuitem" class="danger" data-person-delete>Delete permanently…</button></div></details>';
 const deleteRow=n=>n.kind!=='person'?'':`<div class="person-delete"><div class="person-delete-confirm" hidden><p>Delete ${esc(n.name)} and everything The Machine knows about them? This can’t be undone.</p><p class="muted">Won’t be added again.</p><div class="row"><button class="danger-solid" data-person-delete-yes>Delete</button><button class="ghost" data-person-delete-no>Cancel</button></div></div></div>`;
