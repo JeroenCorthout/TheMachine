@@ -52,6 +52,12 @@ async function sidebar(page,label){
  if(await fold.getAttribute('aria-expanded')==='false')await fold.click();
  assert.equal(await d.locator('a').count(),10,'Done opens on its 10 latest '+label);
  assert.equal(await d.locator('a').first().textContent(),'Done card 0');
+ // A phone searches with the palette: done cards come in their own group under the open ones, also ones not loaded yet
+ if(await page.locator('#drawer-open').isVisible()){await page.keyboard.press('Escape');await page.locator('#find-open').click();await page.locator('#pal-q').fill('boat');
+  await until(async()=>await page.locator('#pal-list .pal-item',{hasText:'about the boat'}).count()===1,'phone search finds done card 150 '+label);
+  assert.ok((await page.locator('#pal-list .pal-group').allTextContents()).includes('Done'),'in a Done group '+label);
+  await until(async()=>calls.some(c=>c.startsWith('/api/cards/done?limit=8&q=boat')),'asked of the Machine '+label);
+  await page.keyboard.press('Escape');await page.locator('#drawer-open').click();await page.waitForTimeout(400)}
  // a search finds a done card that was never loaded in the list (on a phone, from the top bar's search)
  if(await page.locator('#side-find').isVisible()){await page.locator('#side-find').fill('boat');await until(async()=>await page.locator('#side-cards a',{hasText:'about the boat'}).count()===1,'search finds done card 150 '+label);
   await page.locator('#side-find').fill('')}await until(async()=>await d.locator('a').count()===10,'back to 10 '+label);

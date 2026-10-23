@@ -94,7 +94,7 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   right sets the order (Closest, Last contact, Name A–Z; for Projects Last activity, Name A–Z, Stage), kept per page on
   the device. The Graph search waits for a short pause in typing (Enter and Find are at once); emptying it brings the
   list back as it was, at once, and a late answer to an older search never shows. The chevron next to Graph darkens on
-  hover inside the row's own highlight, with no box of its own. The browser tab's title follows the page.
+  hover inside the row's own highlight, with no box of its own. The browser tab's title follows the page. The command palette lists done cards in a Done group under the open ones, also those not loaded yet.
 - **Calendar**: the next seven days, read-only. An agenda by day (Overdue, Today, Tomorrow, then each weekday), one
   row per item: the time (or Due, All day), a tone dot (a ring for a meeting, amber due, orange overdue, lavender coming
   back or a check-in, mint a promise), the title and one quiet line. A meeting's card shows as a chip (in the line on a

@@ -5316,7 +5316,7 @@ function palDialog(){let d=$('#palette');if(d)return d;d=document.createElement(
  d.addEventListener('mousemove',e=>{const o=e.target.closest('[data-pal]');if(o&&+o.dataset.pal!==pal.sel){pal.sel=+o.dataset.pal;palPaint(false)}});
  return d}
 function palOpen(){const d=palDialog();if(d.open)return;for(const x of document.querySelectorAll('dialog[open]'))if(x!==d)return;
- pal.from=document.activeElement;pal.ctx=kbCtx();pal.q='';pal.sel=0;pal.found=null;pal.seq++;if(typeof drawerClose==='function')drawerClose();
+ pal.from=document.activeElement;pal.ctx=kbCtx();pal.q='';pal.sel=0;pal.found=null;pal.done=[];pal.seq++;if(typeof drawerClose==='function')drawerClose();
  const q=d.querySelector('#pal-q');q.value='';d.showModal();q.focus();palRender()}
 function palClose(){const d=$('#palette');clearTimeout(pal.timer);pal.seq++;if(d?.open)d.close();if(d?.contains(document.activeElement))document.activeElement.blur();  /* never left in the closed field, or keys would think you type */
  const f=pal.from;pal.from=null;if(f?.isConnected&&f!==document.body)f.focus({preventScroll:true})}
@@ -5330,6 +5330,9 @@ function palRows(){const q=pal.q.trim(),ctx=pal.ctx,recent=palRecent(),groups=[]
   if(groups.length>1){const best=g=>g[1][0].s;groups.sort((x,y)=>best(y)-best(x))}
   const cards=(state.suggestions||[]).filter(s=>!closed(s)).map(s=>({s,score:palScore(q,s.title)})).filter(x=>x.score>=40)  /* words, not scattered letters */.sort((x,y)=>y.score-x.score).slice(0,5);
   if(cards.length)groups.push(['Cards',cards.map(({s})=>({a:{id:'card:'+s.id,run:()=>chatGo(s.id),entity:true},label:s.title,sub:s.scope==='work'?'Work':s.scope==='personal'?'Personal':''}))]);
+  // Done cards in their own group under the open ones: the loaded ones and what the Machine found among all of them
+  {const seen=new Set(),done=[...(state.suggestions||[]).filter(closed),...pal.done||[]].filter(s=>!seen.has(s.id)&&seen.add(s.id)).map(s=>({s,score:palScore(q,s.title)})).filter(x=>x.score>=40).sort((x,y)=>y.score-x.score).slice(0,5);
+   if(done.length)groups.push(['Done',done.map(({s})=>({a:{id:'card:'+s.id,run:()=>{doneExtra.set(s.id,s);cardsMerge();chatGo(s.id)},entity:true},label:s.title,sub:s.scope==='work'?'Work':s.scope==='personal'?'Personal':''}))])}
   for(const [kind,name] of [['person','People'],['org','Organisations'],['project','Projects']]){const xs=(pal.found||[]).filter(n=>n.kind===kind).slice(0,5);
    if(xs.length)groups.push([name,xs.map(n=>({a:{id:'graph:'+n.id,run:()=>{location.hash=graphHash(n.id)},entity:true},label:n.name||n.id,sub:kind==='person'?(n.ids||[])[0]||'':kind==='org'&&n.domain!==n.name?n.domain||'':''}))])}}
  return groups}
@@ -5345,8 +5348,10 @@ function palPaint(scroll=true){const d=$('#palette');if(!d)return;const q=d.quer
 // People, organisations and projects come from the Graph's own search (api/graph?q=), a moment after typing stops;
 // an answer to an older query is dropped.
 function palFind(){clearTimeout(pal.timer);const q=pal.q.trim(),seq=++pal.seq;if(q.length<2){pal.found=[];return}pal.found=null;
- pal.timer=setTimeout(async()=>{let found=[];try{const r=await request('api/graph?q='+encodeURIComponent(q));found=Array.isArray(r?.found)?r.found:[]}catch{}
-  if(seq!==pal.seq||!$('#palette')?.open)return;pal.found=found;palRender()},180)}
+ pal.timer=setTimeout(async()=>{let found=[],done=[];const e=encodeURIComponent(q);
+  await Promise.all([request('api/graph?q='+e).then(r=>{found=Array.isArray(r?.found)?r.found:[]}).catch(()=>{}),
+   request('api/cards/done?limit=8&q='+e).then(r=>{done=Array.isArray(r?.cards)?r.cards:[]}).catch(()=>{})]);  /* done cards beyond the loaded ones */
+  if(seq!==pal.seq||!$('#palette')?.open)return;pal.found=found;pal.done=done;palRender()},180)}
 function palPick(i){const x=pal.items[i];if(!x)return;const ctx=pal.ctx;palClose();if(!x.a.entity)palRemember(x.a.id);actRun(x.a,ctx)}
 
 // The shortcut sheet (?), from the same registry.
