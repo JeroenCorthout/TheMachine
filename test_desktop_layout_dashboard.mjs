@@ -188,11 +188,14 @@ try{
  for(const [w,h] of [[390,844],[360,740],[430,932],[900,1100]]){const {context,page}=await open(w,h);
   assert.ok(await page.locator('#drawer-open').isVisible(),'the menu button at '+w);assert.ok(!(await page.locator('#app-side').isVisible()),'the drawer is closed at '+w);
   // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
-  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#page-head .page-title')}});
+  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#page-head .page-sub')}});
    assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
    assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
-  await quietTagline(page,'at '+w);
-  assert.ok(await page.locator('#page-head .page-title').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
+  {const q=await page.evaluate(()=>{const t=document.querySelector('#page-head .page-title'),s=document.querySelector('#page-head .page-sub'),r=s.getBoundingClientRect();
+    return {tag:t.getBoundingClientRect().width,named:t.textContent.length>0,sub:s.textContent,top:r.top,bar:document.querySelector('#topbar').getBoundingClientRect().bottom,size:parseFloat(getComputedStyle(s).fontSize)}});
+   assert.ok(q.tag<=1&&q.named,'no tagline on a phone, still there for screen readers, at '+w);assert.ok(q.sub&&q.size>=14,'the counts stay, readable, at '+w);
+   assert.ok(q.top>=q.bar+4&&q.top<=q.bar+40,'the counts sit just under the top bar at '+w+': '+(q.top-q.bar))}
+  assert.ok(await page.locator('#page-head .page-sub').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
   for(const t of TABS){await tab(page,t);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
   await tab(page,'inbox');await page.evaluate(()=>scrollTo(0,0));
   // The menu button opens it: nearly the full width, the rest of the page inert, focus on its ✕, the rows and the cards in it, Settings at the bottom

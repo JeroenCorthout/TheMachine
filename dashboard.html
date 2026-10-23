@@ -1337,8 +1337,11 @@ body main{padding-top:0}
   .app-side .head-side>.live{min-height:36px}
   #open-browser:not([hidden]){display:flex}
   .page-head{display:flex;align-items:center;gap:12px;margin:4px 0 22px}
-  .page-title{font-size:26px}.page-head.greet .page-title{font-size:var(--fs-lg)}
-  .page-head.greet{margin:2px 0 18px}
+  .page-title{font-size:26px}
+  /* A phone shows only the counts under the top bar; the tagline stays for screen readers */
+  .page-head.greet{margin:6px 0 20px}
+  .page-head.greet .page-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .page-head.greet .page-sub{margin:0;font-size:var(--fs-md)}
   .page-avatar{display:none}  /* the top bar carries the mascot on a phone */
   .chat-layout [data-chat-drawer]{display:flex}
 }
