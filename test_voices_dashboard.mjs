@@ -74,13 +74,13 @@ try{
   await page.goto('http://127.0.0.1:'+server.address().port+'/#feedback');
   await page.locator('[data-tab="feedback"]').click();
   const learned=page.locator('#facts');await learned.locator('.learn-head').first().waitFor();
-  assert.deepEqual(await learned.locator('.learn-head').allTextContents(),['How you write','Facts','How to do things','Moved into skills']);
+  assert.deepEqual(await learned.locator('.learn-head h3').allTextContents(),['How you write 2','Facts 2','How to do things 1','Moved into skills 1']);
   await learned.locator('[data-unmerge-skill="sk_9"]').click();
   await page.locator('#toast',{hasText:'Notes restored.'}).waitFor({state:'attached'});
   assert.deepEqual(posts.at(-1),{action:'unmerge_fact',args:{skill:'sk_9'}});
   assert.match(await learned.locator('.learn-note').textContent(),/Condensed 3 notes on/);
-  assert.equal(await learned.locator('.voice-text').first().evaluate(e=>getComputedStyle(e).whiteSpace),'pre-line');  // a block keeps its lines
-  const rows=await learned.locator(':scope>div:not(.learn-head):not(.learn-note) .grow').allTextContents();
+  assert.equal(await learned.locator('.voice-row[data-channel="Email"] .voice-lines li').count(),2);  // a block keeps its lines
+  const rows=await learned.locator('.learn-group .list>div .grow').allTextContents();
   assert.match(rows[rows.indexOf(rows.find(r=>r.startsWith('Newest')))],/Merged from 2 notes/);
   assert.ok(rows.findIndex(r=>r.startsWith('Newest'))<rows.findIndex(r=>r.startsWith('Older')));
   await learned.locator('[data-unmerge-fact="9"]').click();
