@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><base href="__BASE__"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!doctype html><html lang="en"><meta charset="utf-8"><base href="__BASE__"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>The Machine · Suggestions</title>
 <meta name="theme-color" content="#1b1c1f">
 <script>// Theme: light or dark as picked here or in the hosted app (the "theme" cookie, shared under the app's domain), else the device's own setting.
@@ -1024,9 +1024,10 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 .chat-status{display:flex;gap:6px;align-items:baseline;justify-content:center;font-size:var(--chat-meta);color:var(--chat-quiet);line-height:1.5}.chat-status:empty{display:none}.chat-status:not(:empty){margin:0 0 12px}
 .chat-picks{display:flex;flex-wrap:nowrap;gap:8px;margin:0 0 12px;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}.chat-picks::-webkit-scrollbar{display:none}.chat-picks:empty,.chat-picks[hidden]{display:none}
 .chat-say{flex:none;width:auto;min-height:30px;margin:0;padding:4px 12px;border:1px solid var(--c-line-strong);border-radius:999px;background:none;box-shadow:none;color:var(--muted);font:400 .84rem/1.3 var(--sans);white-space:nowrap;cursor:pointer}.chat-say:hover{background:var(--c-hover);color:var(--text)}
-.chat-box{display:flex;align-items:flex-end;gap:8px;padding:10px 10px 10px 18px;border-radius:28px;background:var(--surface);border:1px solid var(--c-line-strong);box-shadow:0 6px 20px -14px #0006}
+.chat-box{display:flex;align-items:flex-end;gap:8px;padding:10px 10px 10px 8px;border-radius:28px;background:var(--surface);border:1px solid var(--c-line-strong);box-shadow:0 6px 20px -14px #0006}
 .chat-box:focus-within{border-color:color-mix(in srgb,var(--c-accent) 55%,var(--c-line-strong))}
-.chat-box textarea{flex:1;min-height:0;height:22px;max-height:160px;margin:6px 0;padding:0;border:0;background:none;resize:none;box-shadow:none;outline:none;line-height:22px;font-size:1rem}
+.chat-box textarea{flex:1;min-width:0;min-height:0;height:34px;max-height:160px;margin:0;padding:6px 0 6px 14px;box-sizing:border-box;border:0;border-radius:0;background:none;resize:none;box-shadow:none;outline:none;line-height:22px;font-size:1rem;text-indent:0;text-align:left;transition:none}
+.chat-box textarea::placeholder{text-indent:0;padding:0;opacity:1}
 .chat-tools{display:flex;align-items:center;gap:6px}.chat-tools .grow{display:none}
 .chat-send{display:grid;place-items:center;flex:none;width:34px;height:34px;min-height:0;margin:0;padding:0;border:0;border-radius:50%;background:var(--c-accent);color:var(--c-accent-ink,#fff);box-shadow:none;cursor:pointer}.chat-send svg{width:17px;height:17px}
 .chat-send:disabled{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--chat-quiet);cursor:default}
@@ -1049,11 +1050,12 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
   body.chat-open main{padding:0 20px}
   .chat-main{min-height:100dvh}
   .chat-head{margin:0 -20px;padding:calc(10px + env(safe-area-inset-top)) 12px 12px 8px}
-  .chat-log{padding:24px 0 12px}
+  .chat-log{padding:24px 0 calc(12px + var(--kb,0px))}
   .chat-layout [data-chat-drawer]{display:flex}
   .chat-msg.you{max-width:86%}
   .chat-result{padding:14px 16px 12px}
-  .chat-compose{padding:14px 0 calc(max(12px,env(safe-area-inset-bottom)) + 8px)}
+  .chat-compose{bottom:var(--kb,0px);padding:14px 0 calc(max(12px,env(safe-area-inset-bottom)) + 8px)}
+  body.kb-open .chat-compose{padding-bottom:10px}
   .chat-side{position:fixed;inset:0 auto 0 0;z-index:30;width:min(300px,85vw);max-height:none;padding:calc(16px + env(safe-area-inset-top)) 16px 16px;background:var(--bg);box-shadow:var(--shadow-pop);transform:translateX(-105%);transition:transform .2s;overscroll-behavior:contain}
   .chat-layout.drawer .chat-side{transform:none}
   .chat-layout.drawer::before{content:'';position:fixed;inset:0;z-index:29;background:#0006}
@@ -2002,11 +2004,11 @@ const laterCards=items=>items.map((s,i)=>(i===0||backDay(s)!==backDay(items[i-1]
 $('#suggestion-summary').innerHTML=`<div class="summary-row"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div></div>`;
 $('#suggestion-stats').innerHTML=`<div class="stats">${[[ready,'Ready','mint','ready'],[needs,'To decide','amber','needs'],[preparing,'Preparing','lavender','preparing'],[later,'Later','lavender','later']].map(([items,title,t,key])=>`<button type="button" class="stat t-${t}${items.length?'':' zero'}" data-fold-tile="${key}" aria-expanded="${!!items.length&&(key==='later'?laterOpen:!folded.has(key))}" aria-label="${items.length} ${title}${items.length?', tap to show or hide':''}" ${items.length?'':'disabled'}><b>${items.length}</b><span>${title}</span></button>`).join('')}</div>`;
 $('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:scopeFilter==='personal'?0:state.fleet?.waiting||0))||'';$('#tab-fleet').hidden=!state.fleet?.on;navFade();$('#badge-fleet').textContent='';
-$('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
+if(!chatOpen())$('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
 // Snoozed cards are out of the way by choice: folded by default, open state kept across refreshes.
 +(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed this week</span><span class="count">${recent.length}</span></summary>${recent.map(suggestionCard).join('')||'<p class="muted">Nothing finished or dismissed this week.</p>'}${older?`<p class="muted">${older} older ${older===1?'item is':'items are'} under Feedback.</p>`:''}</details>`;
-{const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)$('#suggestions').innerHTML=chatView(c,[[ready,'Ready'],[needs.filter(x=>typeof x!=='string'),'To decide'],[preparing,'Preparing'],[later,'Later'],[recent,'Done']])}
-for(const[id,v]of Object.entries(drafts)){const t=document.getElementById(id);if(t){t.value=v;t.classList.add('filled')}}
+{const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)chatMount(c.id,chatView(c,[[ready,'Ready'],[needs.filter(x=>typeof x!=='string'),'To decide'],[preparing,'Preparing'],[later,'Later'],[recent,'Done']]))}
+for(const[id,v]of Object.entries(drafts)){const t=document.getElementById(id);if(t&&t.value!==v){t.value=v;t.classList.add('filled')}}
 for(const id of moreOpen){const menu=document.getElementById(id)?.querySelector('.more-actions');if(menu)menu.open=true}
 fleetSync();
 const choiceTone={accept:'mint',complete:'mint',reject:'muted',snooze:'lavender',other:'amber',reopen:'lavender',undo:'lavender',retry:'lavender',update:'lavender'};
@@ -2297,11 +2299,11 @@ function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…'
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
  const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
- return `<div class="chat-layout${chatDrawer?' drawer':''}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title">${esc(s.title)}</h2>
+ return `<div class="chat-layout${chatDrawer?' drawer':''}" data-chat="${s.id}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title">${esc(s.title)}</h2>
   <details class="chat-menu" id="chat-menu"><summary aria-label="More actions" title="More actions">${DOTS}</summary><div class="chat-menu-list" role="group" aria-label="More actions">${p.rest}<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button></div></details></header>
  <article id="task-${s.id}" class="chat-panel">${p.panel}</article><div class="chat-log" id="chat-log" aria-live="polite">${chatLog(s)}</div>
  <div class="chat-compose"><div class="chat-status" id="chat-status">${chatStatus(s,p)}</div><div class="chat-picks" id="chat-picks"${chatPicksShown()?'':' hidden'}>${chatPicks(s)}</div><div class="chat-box"><textarea id="chat-input" rows="1" aria-label="Message" placeholder="Ask or change something" enterkeyhint="send"></textarea><div class="chat-tools"><span class="grow"></span><button type="button" class="chat-send" data-chat-send aria-label="Send" title="Send" disabled>${SEND}</button></div></div></div></div></div>`}
-function chatGrow(t){if(!t)return;t.style.height='22px';t.style.height=Math.min(160,t.scrollHeight)+'px';const b=$('[data-chat-send]');if(b)b.disabled=!t.value.trim()}
+function chatGrow(t){if(!t)return;t.style.height='34px';t.style.height=Math.min(160,Math.max(34,t.scrollHeight))+'px';const b=$('[data-chat-send]');if(b)b.disabled=!t.value.trim()}
 // On open: the latest at the bottom, nothing cut off under the header; a short chat just sits under the header.
 // On a computer the thread scrolls in its own box; on a phone the page scrolls.
 const chatScroller=()=>{const l=$('#chat-log');return l&&getComputedStyle(l).overflowY!=='visible'?l:null};
@@ -2310,6 +2312,21 @@ function chatScrollStart(){const log=$('#chat-log');if(!log)return;if(chatScroll
  // The first item under the header starts whole when only a little of it is hidden; otherwise it fades under the header.
  const head=$('.chat-head')?.getBoundingClientRect().bottom||0,cut=[...log.children].find(n=>{const b=n.getBoundingClientRect();return b.top<head-1&&b.bottom>head+1});
  if(cut&&head-cut.getBoundingClientRect().top<=12)scrollBy(0,-(head-cut.getBoundingClientRect().top))}
+// A refresh while the chat is open updates the thread, list and header in place and keeps the message box itself,
+// so a field you are typing in never loses its focus, text or caret.
+function chatMount(id,html){const box=$('#suggestions'),cur=box.querySelector(':scope>.chat-layout');
+ if(!cur||cur.dataset.chat!==id||!cur.querySelector('#chat-input')){box.innerHTML=html;return}
+ const t=document.createElement('template');t.innerHTML=html;const nu=t.content.querySelector('.chat-layout');cur.className=nu.className;
+ const swap=sel=>{const a=cur.querySelector(sel),b=nu.querySelector(sel);if(!a||!b)return;const top=a.scrollTop;a.replaceWith(b);b.scrollTop=top};
+ swap('.chat-side');swap('.chat-panel');swap('#chat-log');if(!cur.querySelector('#chat-menu')?.open)swap('.chat-head');swap('#chat-status');swap('#chat-picks')}
+// Where the browser doesn't shrink the page for the on-screen keyboard (iOS Safari, older Chrome), lift the message box
+// above it by the part of the window the keyboard covers; and keep the latest message in view when you were at the end.
+let chatAtEnd=false;
+const chatEndNow=()=>{const l=chatScroller();return l?l.scrollTop+l.clientHeight>=l.scrollHeight-80:innerHeight+scrollY>=document.documentElement.scrollHeight-80};
+function chatKeyboard(){const v=window.visualViewport;if(!v)return;const kb=Math.max(0,Math.round(innerHeight-v.height-v.offsetTop)),typing=document.activeElement?.id==='chat-input';
+ document.documentElement.style.setProperty('--kb',(typing?kb:0)+'px');document.body.classList.toggle('kb-open',typing&&(kb>0||innerHeight<screen.height*.6));
+ if(typing&&chatAtEnd)requestAnimationFrame(chatToEnd)}
+window.visualViewport?.addEventListener('resize',chatKeyboard);window.visualViewport?.addEventListener('scroll',chatKeyboard);addEventListener('resize',chatKeyboard);
 function paintChat(){const log=$('#chat-log'),s=chatOpen();if(!log||!s)return;const l=chatScroller(),end=l?l.scrollTop+l.clientHeight>=l.scrollHeight-80:innerHeight+scrollY>=document.documentElement.scrollHeight-80;log.innerHTML=chatLog(s);
  const st=$('#chat-status');if(st)st.innerHTML=chatStatus(s);const menu=$('#chat-menu');if(menu&&!menu.open)menu.querySelector('.chat-menu-list').innerHTML=chatParts(s).rest+`<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button>`;
  const picks=$('#chat-picks');if(picks){picks.innerHTML=chatPicks(s);picks.hidden=!chatPicksShown()}
@@ -2338,8 +2355,8 @@ $('#suggestions').addEventListener('click',e=>{const a=e.target.closest('a[href^
  location.hash=href});
 $('#suggestions').addEventListener('toggle',e=>{const k=e.target.dataset?.foldKey;if(k==null||!e.target.closest('#chat-log'))return;e.target.open?chatOpenSet.add(k):chatOpenSet.delete(k)},true);
 $('#suggestions').addEventListener('input',e=>{if(e.target.id==='chat-input')chatGrow(e.target)});
-$('#suggestions').addEventListener('focusin',e=>{if(e.target.id==='chat-input'&&$('#chat-picks'))$('#chat-picks').hidden=false});
-$('#suggestions').addEventListener('focusout',e=>{if(e.target.id!=='chat-input')return;setTimeout(()=>{const p=$('#chat-picks');if(p&&!p.contains(document.activeElement))p.hidden=!chatPicksShown()},150)});
+$('#suggestions').addEventListener('focusin',e=>{if(e.target.id!=='chat-input')return;chatAtEnd=chatEndNow();if($('#chat-picks'))$('#chat-picks').hidden=false;chatKeyboard();setTimeout(chatKeyboard,350)});
+$('#suggestions').addEventListener('focusout',e=>{if(e.target.id!=='chat-input')return;setTimeout(chatKeyboard,0);setTimeout(()=>{const p=$('#chat-picks');if(p&&!p.contains(document.activeElement))p.hidden=!chatPicksShown()},150)});
 // Enter sends with a keyboard; on a touch screen Enter is a new line and the button sends.
 $('#suggestions').addEventListener('keydown',e=>{if(e.target.id!=='chat-input'||e.key!=='Enter'||e.shiftKey||e.isComposing||e.ctrlKey||e.metaKey||matchMedia('(pointer: coarse)').matches)return;e.preventDefault();$('[data-chat-send]')?.click()});
 $('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
