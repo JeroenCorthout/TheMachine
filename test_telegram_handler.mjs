@@ -203,6 +203,22 @@ const handled=await beforeDispatch({content:'I fixed it already',timestamp:17916
  const stranger=tap(`assistant:fleetn:${n}:confirm`);stranger.senderId='someone-else';await handler(stranger);
  const group=tap(`assistant:fleetn:${n}:confirm`);group.callback.chatId='-100200';await handler(group);assert.equal(calls.length,0);assert.equal(replies.length,quiet);  // not the owner's chat: silence
  globalThis.fixtureCall=saved;}
+// The weekly recap: a tap goes to the service with the tapped message id; the service edits the recap itself. A refusal says why.
+{const saved=globalThis.fixtureCall,calls=[];const r='r_'+'e'.repeat(12);
+ globalThis.fixtureCall=async(action,args)=>{calls.push([action,args]);if(args.message_id!=='777')throw Object.assign(new Error('That Telegram message is not the recap this line was sent in'),{status:400});
+  return args.choice==='keep'?{status:'filtered',reason:'Already done: filtered.'}:{status:'filtered'};};
+ const tap=(data,message='777')=>({...ctx('accept',message),callback:{data,chatId:'1000001',messageId:message}});
+ const before=edits.length,said=replies.length;await handler(tap(`assistant:recap:${r}:filter`));
+ assert.deepEqual(calls.pop(),['recap_decide',{id:r,choice:'filter',source:'telegram',message_id:'777',decision_id:'telegram:unique'}]);
+ assert.equal(edits.length,before);assert.equal(replies.length,said);  // the service edits the message; nothing to say
+ await handler(tap(`assistant:recap:${r}:keep`));calls.pop();assert.match(replies.pop().text,/Already done/);
+ await handler(tap(`assistant:recap:${r}:undo`,'999'));calls.pop();assert.match(replies.pop().text,/not the recap/);
+ globalThis.fixtureCall=async(action,args)=>{calls.push([action,args]);throw Object.assign(new Error('The operation was aborted'),{name:'AbortError'});};
+ await handler(tap(`assistant:recap:${r}:drop`));calls.pop();assert.match(replies.pop().text,/did not answer just now, so nothing was done/);
+ const heard=replies.length;await handler(tap(`assistant:recap:${r}:send`));await handler(tap(`assistant:recap:r_x:filter`));assert.equal(calls.length,0);
+ assert.equal(replies.length,heard+2);replies.pop();replies.pop();  // only its own choices: anything else is an unknown button
+ const stranger=tap(`assistant:recap:${r}:filter`);stranger.senderId='someone-else';await handler(stranger);assert.equal(calls.length,0);
+ globalThis.fixtureCall=saved;}
 console.log('Telegram handler: snooze menu, typed callback sizes, old recorded cards, completion and ownership passed.');
 
 await rm(fixtureDir,{recursive:true,force:true});
