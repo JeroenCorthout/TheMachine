@@ -9,8 +9,13 @@ meeting more, a newsletter or mass mailing not at all. Card decisions teach it t
 and Mark done strengthen the people on the evidence, Not relevant weakens them.
 
 People are matched by identifiers only (email address, phone, Slack user, LinkedIn or X
-conversation, GitHub login), joined when Slack reports the user's email, when the same full name
-appears on two different channels, or when the owner or agent says so (merges). Projects are named
+conversation, GitHub login), joined on strong evidence only: Slack reports the user's email, the same
+full name is on two identities in one message or conversation, a lookup found the same LinkedIn
+profile for both, their WhatsApp number is in their own mail, the same full name appears on two
+different channels (one person with it per channel), or the owner or agent says so (merges). Weaker
+evidence (that name shared by two people on one channel, a similar name with the same company, people,
+project or role) is only offered as "Same person?" (graph_same); the owner's Merge or Not the same is
+kept in graph_merges, and Not the same also undoes a merge for good. Projects are named
 by the review agent and the owner, and spread to the rest of their threads; a signal that reads like
 a labelled one and shares a person with it is probably part of it too (weaker, until a review
 confirms). Threads that read alike and share people, but nobody named, are offered to a review as
@@ -47,6 +52,7 @@ CREATE TABLE IF NOT EXISTS event_projects(event_id INTEGER NOT NULL,project_id I
   source TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(event_id,project_id));
 CREATE TABLE IF NOT EXISTS identity_names(identifier TEXT PRIMARY KEY,name TEXT,email TEXT,checked_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_merges(a TEXT NOT NULL,b TEXT NOT NULL,same INTEGER NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(a,b));
+CREATE TABLE IF NOT EXISTS graph_same(a TEXT NOT NULL,b TEXT NOT NULL,why TEXT NOT NULL,score REAL NOT NULL,PRIMARY KEY(a,b));
 CREATE TABLE IF NOT EXISTS graph_nodes(id TEXT PRIMARY KEY,kind TEXT NOT NULL,name TEXT NOT NULL,strength REAL NOT NULL,
   last_at TEXT,signals INTEGER NOT NULL,gap_days REAL,quiet INTEGER NOT NULL DEFAULT 0,trend REAL,info TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_links(a TEXT NOT NULL,b TEXT NOT NULL,kind TEXT NOT NULL,strength REAL NOT NULL,last_at TEXT,PRIMARY KEY(a,b));
@@ -99,7 +105,7 @@ FREEMAIL = {'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.be', 'outlook
             'yahoo.com', 'yahoo.fr', 'icloud.com', 'me.com', 'mac.com', 'proton.me', 'protonmail.com', 'telenet.be', 'skynet.be',
             'gmx.com', 'gmx.de', 'web.de', 'aol.com', 'pandora.be', 'scarlet.be', 'proximus.be', 'yandex.com', 'zoho.com'}
 ROLE = re.compile(r'^(?:info|support|hello|hi|team|sales|billing|admin|office|contact|help|accounts?|finance|jobs|hr|press|legal|security|privacy|feedback)@')
-GENERIC_NAMES = {'you', 'linkedin member', 'x conversation', 'linkedin conversation', 'unknown'}
+GENERIC_NAMES = {'you', 'linkedin member', 'x conversation', 'linkedin conversation', 'unknown', 'unknown sender', 'unknown caller'}
 WEIGHTS = {'owner': 0.6, 'them': 0.3, 'met': 0.5}
 DECISION_WEIGHT = {'accept': 1.0, 'send': 1.0, 'complete': 1.0, 'other': 0.5, 'reject': -0.5}
 # Cosine between local embeddings (see embeddings.py). Meaning alone groups by genre (every partnership
@@ -125,6 +131,8 @@ def ensure(db):
         db.execute('ALTER TABLE graph_events ADD COLUMN probable INTEGER NOT NULL DEFAULT 0')
     if 'direct' not in {r[1] for r in db.execute('PRAGMA table_info(graph_events)')}:
         db.execute('ALTER TABLE graph_events ADD COLUMN direct INTEGER NOT NULL DEFAULT 0')
+    if 'source' not in {r[1] for r in db.execute('PRAGMA table_info(graph_merges)')}:  # who said it (2026-10-23): the owner, or a review (older rows)
+        db.execute('ALTER TABLE graph_merges ADD COLUMN source TEXT')
     have = {r[1] for r in db.execute('PRAGMA table_info(person_roles)')}
     for column in ('event_id INTEGER', 'quote TEXT', 'hints TEXT', 'checked_at TEXT'):  # a role's evidence and when it was last read
         if column.split()[0] not in have:
@@ -178,6 +186,7 @@ def bulk(address):
     return bool(BULK.search(address))
 
 
+DOMAIN_NAME = re.compile(r'[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}')  # "HelloTV.nl": a sender's domain, not a person's name
 SUFFIX = re.compile(r'\s+(?:[|/\-–—•·:@]|via|from|at|for)\s+.*$')
 DEGREE = re.compile(r'^(?:[A-Z]{2,6}|Ph\.?D\.?|MSc|BSc|Jr\.?|Sr\.?)$')
 
@@ -207,7 +216,7 @@ def plain_name(name):
     """Comparable full name: accents, case, punctuation and extra spaces removed; None unless it
     looks like a person's full name (two or more words, no address)."""
     name = person_name(name)
-    if not name or '@' in name or name.casefold() in GENERIC_NAMES:
+    if not name or '@' in name or name.casefold() in GENERIC_NAMES or DOMAIN_NAME.fullmatch(name):
         return None
     folded = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode().casefold()
     words = re.findall(r'[a-z]+', folded)
@@ -344,10 +353,133 @@ def thread_key(kind, m):
     return None, False
 
 
+# Same person? Why two identities were joined (strong evidence), as the person page says it.
+JOINED_WHY = {'owner': 'merged by you', 'agent': 'merged by a review', 'directory': 'their Slack profile has this address',
+              'message': 'same name, both on one message', 'thread': 'same name, both in one conversation',
+              'profile': 'the same LinkedIn profile', 'signature': 'this number is in their own email', 'name': 'same full name on two channels'}
+PHONE = re.compile(r'(?<![\w+])(?:\+|00)?\d[\d ()./-]{7,18}\d(?![\w])')
+QUOTED = re.compile(r'^(?:>|On .{4,200} wrote:\s*$|-{2,} ?(?:Original|Forwarded) |From: |Van: |Le .{4,200} a écrit|Am .{4,200} schrieb)', re.M)
+SIGNATURE_MAILS = 12     # recent mails read per address for a phone number in its own text
+SAME_BUCKET = 60         # more people than this with one first name: too common to compare
+
+
+def name_words(name, identifier=None):
+    """Folded words of a person's name; for an address with no name, of its local part when that reads as a full name
+    (jane.doe@ → jane doe). Empty when there is no name."""
+    name = person_name(name) if name else ''
+    if name and '@' not in name and not DOMAIN_NAME.fullmatch(name) and name.casefold() not in GENERIC_NAMES and name != shown_id(identifier or '', {}):
+        folded = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode().casefold()
+        return re.findall(r'[a-z]+', folded)
+    if identifier and identifier.startswith('email:'):
+        local = identifier[6:].split('@', 1)[0]
+        parts = re.split(r'[._-]', local.casefold())
+        if len(parts) >= 2 and all(re.fullmatch(r'[a-z]{2,}', p) for p in parts) and not ROLE.match(local + '@'):
+            return parts
+    return []
+
+
+def name_match(a, b):
+    """'same' (the same full name), 'similar' (the same first name, or one a short form of the other, and no other
+    surname: "Ann" and "Ann Lee", "Alex Lee" and "Alexander Lee", "Ann Lee" and "Ann Marie Lee") or None."""
+    if not a or not b:
+        return None
+    if a == b:
+        return 'same' if len(a) >= 2 else 'similar'
+    first = a[0] == b[0] or (min(len(a[0]), len(b[0])) >= 3 and (a[0].startswith(b[0]) or b[0].startswith(a[0])))
+    if not first:
+        return None
+    if len(a) >= 2 and len(b) >= 2 and a[-1] != b[-1]:
+        return None  # another surname: another person
+    return 'similar'
+
+
+def linkedin_key(url):
+    found = re.search(r'linkedin\.com/in/([^/?#\s]+)', str(url or ''), re.I)
+    return found[1].casefold() if found else None
+
+
+def own_text(body):
+    """A message's own text: without the quoted mail it answers or forwards, where other people's signatures are."""
+    body = str(body or '')
+    cut = QUOTED.search(body)
+    return body[:cut.start()] if cut else body
+
+
+def signature_pairs(db, senders, best, known):
+    """(email identifier, WhatsApp identifier) pairs where a WhatsApp number is in mail that address wrote itself (its
+    signature, "call me on ...") and both carry a matching name: a number alone could be a colleague's or an office's."""
+    phones = {}
+    for identifier in known:
+        if identifier.startswith('wa:') and identifier[3:].isdigit() and len(identifier) >= 12:
+            phones.setdefault(identifier[-9:], []).append(identifier)
+    wa_names = {i: name_words(best(i), i) for ids in phones.values() for i in ids}
+    wanted = {}
+    for identifier, mails in senders.items():
+        words = name_words(best(identifier), identifier)
+        if words and any(name_match(words, w) for w in wa_names.values()):
+            wanted[identifier] = [e for _, e in sorted(mails, reverse=True)[:SIGNATURE_MAILS]]
+    if not wanted:
+        return []
+    event_ids = sorted({e for ids in wanted.values() for e in ids})
+    bodies = {}
+    for start in range(0, len(event_ids), 500):
+        chunk = event_ids[start:start + 500]
+        bodies.update({r[0]: r[1] for r in db.execute(f"SELECT id,body FROM events WHERE id IN ({','.join('?' * len(chunk))})", chunk)})
+    pairs = []
+    for identifier, ids in sorted(wanted.items()):
+        words = name_words(best(identifier), identifier)
+        numbers = {re.sub(r'\D', '', p)[-9:] for e in ids for p in PHONE.findall(own_text(bodies.get(e))) if len(re.sub(r'\D', '', p)) >= 9}
+        for number in sorted(numbers):
+            for wa in phones.get(number, ()):
+                if name_match(words, wa_names[wa]):
+                    pairs.append((identifier, wa))
+    return pairs
+
+
+def likely_same(people, union, together, projects):
+    """Pairs of people who may be one, for the owner to Merge or keep apart: [(a, b, why, score)]. The same full name
+    is enough to ask (it was not joined because two people on one channel carry it); a similar name needs something
+    shared besides: the same company, people seen with both, a project, or the same role."""
+    buckets = collections.defaultdict(list)
+    for node, p in people.items():
+        if p['words']:
+            buckets[p['words'][0]].append(node)
+            if len(p['words'][0]) >= 3:
+                buckets[p['words'][0][:3]].append(node)  # "Alex" and "Alexander"
+    seen, out = set(), []
+    for members in buckets.values():
+        if len(members) > SAME_BUCKET:
+            continue
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                pair = tuple(sorted((a, b)))
+                if pair in seen or a == b:
+                    continue
+                seen.add(pair)
+                pa, pb = people[pair[0]], people[pair[1]]
+                match = name_match(pa['words'], pb['words'])
+                if not match or union.kept_apart(union.find(pair[0]), union.find(pair[1])):
+                    continue
+                shared = []
+                if pa['domains'] & pb['domains']:
+                    shared.append('both at ' + sorted(pa['domains'] & pb['domains'])[0])
+                if pa['role'] and pa['role'] == pb['role']:
+                    shared.append('the same role')
+                if together(pair[0]) & together(pair[1]):
+                    shared.append('with the same people')
+                if projects.get(pair[0], set()) & projects.get(pair[1], set()):
+                    shared.append('on the same project')
+                if match == 'same' and len(pa['words']) >= 2 or shared:
+                    why = ', '.join([('Same name' if match == 'same' else 'Similar name')] + shared)
+                    out.append((*pair, why, round(len(shared) + (2 if match == 'same' else 0) + min(pa['strength'], pb['strength']), 4)))
+    return sorted(out, key=lambda s: -s[3])[:300]
+
+
 class Union:
-    """Identifiers joined into people; a pair said to be different is never joined, directly or through others."""
+    """Identifiers joined into people; a pair said to be different is never joined, directly or through others.
+    Each join is kept as (a, b, why), so a person's page can say why they are one and undo it."""
     def __init__(self, apart=()):
-        self.parent, self.members, self.apart = {}, {}, set(apart)
+        self.parent, self.members, self.apart, self.edges = {}, {}, set(apart), []
 
     def find(self, x):
         if x not in self.parent:
@@ -357,15 +489,22 @@ class Union:
             x = self.parent[x]
         return x
 
-    def join(self, a, b):
+    def join(self, a, b, why=None):
+        first, second = a, b
         a, b = self.find(a), self.find(b)
-        if a == b or any(frozenset((x, y)) in self.apart for x in self.members[a] for y in self.members[b]):
-            return
+        if a == b or self.kept_apart(a, b):
+            return False
         # An email address names the node when there is one: stable and recognisable.
         if b.startswith('email:') and not a.startswith('email:'):
             a, b = b, a
         self.parent[b] = a
         self.members[a] |= self.members.pop(b)
+        self.edges.append((first, second, why))
+        return True
+
+    def kept_apart(self, a, b):
+        """True when someone said a member of one is not the same as a member of the other."""
+        return bool(self.apart) and any(frozenset((x, y)) in self.apart for x in self.members[a] for y in self.members[b])
 
 
 def parse_time(value):
@@ -524,6 +663,8 @@ def _build(db, config, now):
     appears = collections.defaultdict(set)  # identifier -> where they show up: a hint for a review, never a role
     owner_events = set()
     headlines = set()  # LinkedIn conversations whose person has a headline (read at view time: it stays sealed in the signal)
+    named_on = collections.defaultdict(lambda: collections.defaultdict(set))  # (message or conversation) -> full name -> identifiers
+    senders = collections.defaultdict(list)  # email identifier -> [(at, event id)] of mail it wrote: its own text may carry its number
     for event_id, account_id, kind, at, m in signals:
         if kind == 'gmail.message' and m.get('message-id'):
             if m['message-id'] in seen_message_ids:
@@ -551,6 +692,15 @@ def _build(db, config, now):
         if kind == 'linkedin.message' and isinstance(m.get('headline'), str) and m['headline'].strip() and not m.get('group'):
             headlines.add('li:' + str(m['conversation_id']))
         per_event[event_id] = (kind, at, account_id, m, found)
+        key, exact = thread_key(kind, m)
+        for identifier, name, _, _ in found:
+            full = plain_name(name) if name and '@' not in str(name) else None
+            if full and full not in owner.names and not ROLE.match(identifier.split(':', 1)[-1]):
+                named_on[('message', event_id)][full].add(identifier)
+                if key and exact:
+                    named_on[('thread', account_id, key)][full].add(identifier)
+        if kind == 'gmail.message' and found[0][3] in ('them', 'seen') and found[0][0].startswith('email:'):
+            senders[found[0][0]].append((at, event_id))
         if any(role in ('owner', 'met') for _, _, _, role in found):
             owner_events.add(event_id)
         for identifier, name, _, _ in found:
@@ -558,37 +708,67 @@ def _build(db, config, now):
                 names[identifier][person_name(name)] += 1
             if identifier.startswith('x:') and m.get('screen_name') and not m.get('from_me'):
                 x_names[identifier] = m['screen_name']
-    merges = db.execute('SELECT a,b,same FROM graph_merges ORDER BY created_at').fetchall()
-    union = Union(frozenset((r['a'], r['b'])) for r in merges if not r['same'])
+    merges = db.execute('SELECT a,b,same,source FROM graph_merges ORDER BY created_at').fetchall()
+    union = Union(frozenset((r['a'], r['b'])) for r in merges if not r['same'])  # Not the same, and an undone merge
     known = {identifier for (_, _, _, _, found) in per_event.values() for identifier, _, _, _ in found}
     for identifier in sorted(known):
         union.find(identifier)
     for r in merges:
-        if r['same']:
-            union.join(r['a'], r['b'])
+        if r['same'] and not gone(r['a']) and not gone(r['b']):
+            union.join(r['a'], r['b'], 'owner' if r['source'] == 'owner' else 'agent')
     for r in db.execute('SELECT identifier,name,email FROM identity_names'):
         if gone(r['identifier']) or (r['email'] and gone('email:' + r['email'].lower())):
             continue
         if r['name']:
             names[r['identifier']][person_name(r['name'])] += 3
         if r['email'] and r['identifier'] in known:
-            union.join('email:' + r['email'].lower(), r['identifier'])
-    by_name = collections.defaultdict(set)
-    for identifier in known:
-        best = names[identifier].most_common(1)
-        full = plain_name(best[0][0]) if best else None
-        if full:
-            by_name[full].add(identifier)
-    for full, group in by_name.items():
-        if full in owner.names:
-            continue  # the owner, writing from another channel
-        spaces = collections.Counter(i.split(':', 1)[0] for i in group)
-        # The same full name on different channels is one person, unless it's ambiguous
-        # within a channel (two addresses, two chats) or someone said they differ.
-        if len(spaces) > 1 and all(c == 1 for c in spaces.values()):
+            union.join('email:' + r['email'].lower(), r['identifier'], 'directory')
+
+    def best(identifier):
+        top = names[identifier].most_common(1)
+        return top[0][0] if top else None
+    # Strong evidence, never a name alone: the same full name on two identities in one message (someone writing from
+    # work with their own address in CC) or one conversation, ...
+    for where, by_full in sorted(named_on.items(), key=lambda item: item[0][0] != 'message'):
+        for full, group in sorted(by_full.items()):
             group = sorted(group, key=lambda i: (not i.startswith('email:'), i))
             for other in group[1:]:
-                union.join(group[0], other)
+                union.join(group[0], other, where[0])
+    # ... the same LinkedIn profile, found for both by a lookup, and their WhatsApp number in mail they wrote themselves.
+    by_profile = collections.defaultdict(set)
+    for r in db.execute("SELECT identifier,profile FROM person_profiles WHERE status='found' AND profile IS NOT NULL"):
+        try:
+            url = linkedin_key(json.loads(r['profile']).get('linkedin_url')) if r['identifier'] in known else None
+        except (ValueError, AttributeError):
+            url = None
+        if url:
+            by_profile[url].add(r['identifier'])
+    for url, group in sorted(by_profile.items()):
+        group = sorted(group, key=lambda i: (not i.startswith('email:'), i))
+        for other in group[1:]:
+            union.join(group[0], other, 'profile')
+    for address, number in signature_pairs(db, senders, best, known):
+        union.join(address, number, 'signature')
+    by_name = collections.defaultdict(set)
+    for identifier in known:
+        full = plain_name(best(identifier))
+        if full:
+            by_name[full].add(identifier)
+    for full, group in sorted(by_name.items()):
+        if full in owner.names:
+            continue  # the owner, writing from another channel
+        spaces = collections.defaultdict(set)
+        for i in group:
+            spaces[i.split(':', 1)[0]].add(union.find(i))
+        # The same full name on different channels is one person, unless two people carry it on one channel
+        # (two addresses or two chats not shown to be one) or someone said they differ: then it is only a question.
+        if len(spaces) > 1 and all(len(roots) == 1 for roots in spaces.values()):
+            group = sorted(group, key=lambda i: (not i.startswith('email:'), i))
+            for other in group[1:]:
+                union.join(group[0], other, 'name')
+    joined = collections.defaultdict(list)
+    for a, b, why in union.edges:
+        joined[union.find(a)].append((a, b, why))
 
     # How strong: per day, capped; faded by age.
     day_weight = collections.defaultdict(float)
@@ -721,6 +901,7 @@ def _build(db, config, now):
     stated_rows = {r['identifier']: dict(r) for r in db.execute('SELECT * FROM person_orgs')}
     stated = {}  # person node -> the statement of where they work, when no work address says it
     surnames = {n.split()[-1] for n in owner.names if len(n.split()) >= 2}
+    alike = {}  # person node -> what "Same person?" compares: name words, company domains, role
     for node, value in strength.items():
         if value < FLOOR:
             continue
@@ -768,6 +949,11 @@ def _build(db, config, now):
                 'accounts': sorted(accounts[node]), 'next_meeting': next_meeting[node].isoformat() if node in next_meeting else None,
                 'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk,
                 'profile': person_profile}
+        if len(group) > 1:
+            info['joined'] = [{'a': x, 'b': y, 'a_shown': shown_id(x, x_names), 'b_shown': shown_id(y, x_names), 'why': JOINED_WHY.get(why, 'joined'),
+                               'by': why} for x, y, why in joined.get(node, ()) if why]
+        alike[node] = {'words': name_words(name, node if name == shown_id(node, x_names) else None), 'strength': value,
+                       'domains': set(domains), 'role': ' '.join(str(role).casefold().split()) if role else None}
         nodes.append((node, 'person', name[:200], round(value, 4), last_day[node].isoformat() if node in last_day else None,
                       len(node_events[node]), usual, int(quiet), None, info))
     # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
@@ -797,6 +983,27 @@ def _build(db, config, now):
             named_orgs[org_id].append((node, value, said_org['org']))
         infos[node].update(org=org_id, org_by=said_org['source'] if said_org['source'] == 'owner' else 'review', org_name=said_org['org'],
                            org_via=said_org['via'], org_event_id=said_org['event_id'], org_at=said_org['said_at'])  # the quote stays sealed
+    # Same person? Likely pairs for the owner to Merge or keep apart, on both pages and in People.
+    seen_with = {}
+
+    def together(node):
+        if node not in seen_with:
+            seen_with[node] = {p for _, e in node_events[node] for p in event_people.get(e, ())} - {node}
+        return seen_with[node]
+    on_projects = collections.defaultdict(set)
+    for (node, pid), value in project_people.items():
+        if value >= FLOOR:
+            on_projects[node].add(pid)
+    same_rows = likely_same(alike, union, together, on_projects)
+    for a, b, why, _ in same_rows:
+        for one, other in ((a, b), (b, a)):
+            asks = infos[one].setdefault('same', [])
+            if len(asks) < 3:
+                asks.append({'id': other, 'why': why})
+    names_now = {n[0]: n[2] for n in nodes}
+    for info in infos.values():
+        for ask in info.get('same', ()):
+            ask['name'] = names_now.get(ask['id'])
     nodes = [n[:9] + (json.dumps(n[9]),) if isinstance(n[9], dict) else n for n in nodes]
     kept = {n[0] for n in nodes}
     for org_id, people in named_orgs.items():
@@ -877,6 +1084,8 @@ def _build(db, config, now):
         db.execute('DELETE FROM graph_links')
         db.execute('DELETE FROM graph_events')
         db.execute('DELETE FROM graph_unnamed')
+        db.execute('DELETE FROM graph_same')
+        db.executemany('INSERT OR REPLACE INTO graph_same(a,b,why,score) VALUES(?,?,?,?)', same_rows)
         db.executemany('INSERT OR REPLACE INTO graph_nodes(id,kind,name,strength,last_at,signals,gap_days,quiet,trend,info) VALUES(?,?,?,?,?,?,?,?,?,?)', nodes)
         db.executemany('INSERT OR REPLACE INTO graph_links(a,b,kind,strength,last_at) VALUES(?,?,?,?,?)', links)
         # A confirmed label wins over a probable one for the same signal.
@@ -889,7 +1098,8 @@ def _build(db, config, now):
         db.execute('ROLLBACK')
         raise
     return {'people': sum(1 for n in nodes if n[1] == 'person'), 'projects': sum(1 for n in nodes if n[1] == 'project'),
-            'links': len(links), 'signals': len(signals), 'probable': len(probable), 'unnamed': len(unnamed_rows), 'took_ms': took}
+            'links': len(links), 'signals': len(signals), 'probable': len(probable), 'unnamed': len(unnamed_rows), 'same': len(same_rows),
+            'joined': sum(1 for _, _, why in union.edges if why in ('message', 'thread', 'profile', 'signature', 'name')), 'took_ms': took}
 
 
 # Reading.
@@ -909,7 +1119,7 @@ def node_view(row, links=None):
                     role_by=info.get('role_by'), role_id=info.get('role_id'), hints=info.get('hints', []),
                     seen_only=bool(info.get('seen_only')), relations=info.get('relations', []), org_by=info.get('org_by'),
                     org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'),
-                    profile=info.get('profile'))
+                    profile=info.get('profile'), joined=info.get('joined', []), same=info.get('same', []))
     elif row['kind'] == 'org':
         view.update(role=info.get('role'), role_by=info.get('role_by'), domain=info.get('domain'), profile=info.get('profile'),
                     about=enrichment.summary(info.get('profile')), edited=info.get('edited', []), wrong=bool(info.get('wrong')))
@@ -1079,6 +1289,7 @@ def overview(db, limit=12):
             'whos_who': unconfirmed(db),
             'waiting': waiting(db),
             'warmup': hidden_list(db),
+            'same_person': same_people(db),
             'counts': counts(db)}
 
 
@@ -1102,10 +1313,30 @@ def headline(db, node_id):
     return None
 
 
-def detail(db, node_id, events=12):
+def resolve(db, node_id):
+    """A node by its id, or the person an identifier is now part of (an old link after a merge)."""
     row = db.execute('SELECT * FROM graph_nodes WHERE id=?', (node_id,)).fetchone()
+    if row or not re.fullmatch(r'(?:email|wa|slack|li|x|gh):\S+', str(node_id or '')):
+        return row
+    return db.execute("SELECT n.* FROM graph_nodes n, json_each(n.info,'$.identifiers') j WHERE n.kind='person' AND j.value=? LIMIT 1",
+                      (node_id,)).fetchone()
+
+
+def same_people(db, limit=30):
+    """Same person? The likely pairs the graph found, strongest first, for the review list in People."""
+    out = []
+    for r in db.execute('SELECT s.a,s.b,s.why FROM graph_same s JOIN graph_nodes x ON x.id=s.a JOIN graph_nodes y ON y.id=s.b '
+                        'ORDER BY s.score DESC LIMIT ?', (limit,)):
+        a, b = (node_view(db.execute('SELECT * FROM graph_nodes WHERE id=?', (i,)).fetchone()) for i in (r['a'], r['b']))
+        out.append({'a': a, 'b': b, 'why': r['why']})
+    return out
+
+
+def detail(db, node_id, events=12):
+    row = resolve(db, node_id)
     if not row:
         return None
+    node_id = row['id']
     view = node_view(row, neighbours(db, node_id, 20))
     rows = db.execute('SELECT event_id,probable FROM graph_events WHERE node_id=? ORDER BY at DESC LIMIT ?', (node_id, events)).fetchall()
     view['event_ids'] = [r[0] for r in rows]
@@ -1983,11 +2214,20 @@ def project_moves(db, node_id, limit=8):
             'stages': stage_names(db.execute('SELECT * FROM boards WHERE id=?', (row['board_id'],)).fetchone())}
 
 
-def merge(db, a, b, same, now):
+def merge(db, a, b, same, now, source='agent'):
+    """Merge (same) or Not the same. Not the same on a pair that was joined undoes that join for good: the two are never
+    joined again, directly or through others, until someone merges them."""
     a, b = sorted((str(a), str(b)))
     if a == b or not all(re.fullmatch(r'(?:email|wa|slack|li|x|gh):\S+', i) for i in (a, b)):
         raise ValueError('Merge two different person ids from graph results (like email:… or wa:…)')
-    db.execute('INSERT OR REPLACE INTO graph_merges(a,b,same,created_at) VALUES(?,?,?,?)', (a, b, int(bool(same)), now))
+    gone = forgotten(db)
+    if gone(a) or gone(b):
+        raise ValueError('That person was deleted permanently')
+    said = db.execute('SELECT source FROM graph_merges WHERE a=? AND b=?', (a, b)).fetchone()
+    if said and said['source'] == 'owner' and source != 'owner':
+        raise ValueError('The owner already decided about these two; their word stays')
+    db.execute('INSERT OR REPLACE INTO graph_merges(a,b,same,created_at,source) VALUES(?,?,?,?,?)', (a, b, int(bool(same)), now, source))
+    db.execute('DELETE FROM graph_same WHERE a=? AND b=?', (a, b))
 
 
 # Delete permanently (the owner's right to have someone forgotten, GDPR art. 17): the person and what is tied to them
@@ -2116,6 +2356,8 @@ def delete_person(db, node_id, config, now):
     db.execute(f'DELETE FROM graph_links WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
     db.execute(f'DELETE FROM graph_events WHERE node_id IN ({marks})', ids)
     db.execute(f'DELETE FROM graph_merges WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    if _table(db, 'graph_same'):
+        db.execute(f'DELETE FROM graph_same WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
     db.execute(f'DELETE FROM graph_relations WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
     for table in ('graph_names',):
         db.execute(f'DELETE FROM {table} WHERE node_id IN ({marks})', ids)
