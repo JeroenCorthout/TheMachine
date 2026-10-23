@@ -66,7 +66,7 @@ An explicit provider fails closed: while the server is down, `memory_search` ans
 
 ## Organisation data (optional, enrichment)
 
-Off unless you set it up. With a key for an enrichment service, The Machine looks up the organisations in the graph by domain and keeps a small profile of each: industry, size, location, founded, a short description, LinkedIn and website. It describes the company, never what it is to you; that stays a role.
+Off unless you set it up. With a key for an enrichment service, The Machine looks up the organisations in the graph by domain and keeps a small profile of each: industry, size, location, founded, a short description, LinkedIn, website and logo. It describes the company, never what it is to you; that stays a role.
 
 **Setup.** Put the key in a file only you can read (`chmod 600`), then add to `config.json` and restart:
 
@@ -78,8 +78,8 @@ Check it with `assistant enrich globex.com` (looks one up now) and `assistant en
 
 **What is sent.** Only organisation domains from the graph, never free-mail domains, your own domains, names, addresses or messages. Only organisations whose people you deal with: first those you write with both ways or meet, then those you wrote to; never one where people only wrote in (cold outreach) or were only copied, newsletter and no-reply senders, or campaign sender domains (news., email., e. and the like); a paying customer always. Five per pass every ten minutes and at most 50 a day (`per_day`), each looked up again after 90 days. After an error (rejected key, rate limit, unreachable) it waits an hour, and that domain a day; errors never contain the url or the key. Lookups count against your plan with that service.
 
-**Where it shows.** The Graph tab (industry in the organisation list; a summary, the description and links on its page), `graph` results (`about`, `profile`), preparation context ("at Globex (customer; Manufacturing, 51-200 people, Springfield, founded 1989)") and the roles run. Profiles are kept in `org_profiles`.
+**Where it shows.** The Graph tab (logo and industry in the organisation list; a summary, the description and links on its page), `graph` results (`about`, `profile`), preparation context ("at Globex (customer; Manufacturing, 51-200 people, Springfield, founded 1989)") and the roles run. Profiles are kept in `org_profiles`. The logo is kept only as a plain `https` address and loads straight from the service's image host, with no referrer, lazily and at a fixed size; the initial shows until it loads and whenever it can't.
 
-**When it's wrong.** Edit on an organisation's page changes its name, website, LinkedIn, industry, size, location, founded and description. What you write is kept in `org_edits`, wins over every later look-up, and an emptied field gives the looked-up one back. **Wrong company, clear details** drops a bad match and stops looking that domain up; **Look it up again** (or `assistant enrich <domain>`) undoes it.
+**When it's wrong.** Edit on an organisation's page changes its name, website, LinkedIn, industry, size, location, founded and description. What you write is kept in `org_edits`, wins over every later look-up, and an emptied field gives the looked-up one back. An answer about another company counts as not found: when its website isn't the domain's home page (a blog post, a form, a page on a hosting subdomain) and its name shares nothing with the domain. Services match by the website a company page lists, so a one-person page that links to an article on your partner's site would otherwise get your partner's domain. **Wrong company, clear details** drops a bad match and stops looking that domain up; **Look it up again** (or `assistant enrich <domain>`) undoes it.
 
 **Off again:** remove `enrichment` (or set `"enabled": false`) and restart.

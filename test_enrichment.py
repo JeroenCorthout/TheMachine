@@ -19,6 +19,9 @@ class Service(http.server.BaseHTTPRequestHandler):
         Service.seen.append((self.path, self.headers.get('Authorization')))
         if self.headers.get('Authorization') != 'Bearer ' + KEY:
             self.send_response(401); self.end_headers(); return
+        if 'mismatch.example' in self.path:  # the service matched a page that merely links to this domain
+            body = json.dumps({'name': 'Srsr company', 'website': 'https://mismatch.example/blog/post', 'about_us': 'srsr'}).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(body); return
         if 'globex.com' not in self.path:
             self.send_response(404); self.end_headers(); return
         body = json.dumps({'name': 'Globex', 'industry': 'Manufacturing', 'size': '51-200', 'headquarters': 'Springfield', 'founded': '1989',
@@ -64,11 +67,37 @@ class Enrichment(unittest.TestCase):
         self.assertIsNone(enrichment.settings({'enrichment': {'url': 'https://example.com/no-domain'}}))
         self.assertIsNone(enrichment.settings({}))
 
+    def test_a_logo_is_kept_only_as_a_plain_https_address(self):
+        logo = 'https://media.licdn.com/dms/image/v2/C4D0BAQF/company-logo_200_200/0/1?e=2147483647&v=beta&t=abc'
+        self.assertEqual(enrichment.normalise({'name': 'Attio', 'image_url': logo})['logo'], logo)
+        self.assertEqual(enrichment.normalise({'organization': {'name': 'Initech', 'logo_url': ' https://cdn.example/i.png '}})['logo'], 'https://cdn.example/i.png')
+        for bad in ('http://cdn.example/i.png', 'javascript:alert(1)', 'https://cdn.example/a b.png', 'https://cdn.example/"><script>',
+                    'data:image/png;base64,AAAA', '//cdn.example/i.png', ['https://cdn.example/i.png'], 'https://' + 'a' * 600 + '.example/i.png'):
+            self.assertNotIn('logo', enrichment.normalise({'name': 'Acme', 'logo': bad}), bad)
+        self.assertIsNone(enrichment.normalise({'image_url': logo}))  # a logo alone is not a profile
+
+    def test_an_answer_about_another_company_counts_as_not_found(self):
+        other = enrichment.another_company
+        # Real shapes: a one-person page that lists a blog post on the domain, a site on a hosting subdomain, a booking page.
+        self.assertTrue(other({'name': 'Srsr company', 'website': 'https://expandi.io/blog/manage-multiple-linkedin-accounts/#:~:text=x'}, 'expandi.io'))
+        self.assertTrue(other({'name': 'River-End Trading Est.', 'website': 'https://3rdmhldg.softr.io/subsdiaries'}, 'softr.io'))
+        self.assertTrue(other({'name': 'HERMANN STITZ & CO. KG', 'website': 'https://zeeg.me/hermannstitz'}, 'zeeg.me'))
+        # The company itself: its home page (with tracking or a language), or a page while the name matches the domain.
+        for profile, domain in (({'name': 'Zapier', 'website': 'https://zapier.com/?utm_source=linkedin'}, 'zapier.com'),
+                                ({'name': 'Bloomreach', 'website': 'https://www.bloomreach.com/en'}, 'bloomreach.com'),
+                                ({'name': 'Lyvia', 'website': 'lyviagroup.com'}, 'lyviagroup.com'),
+                                ({'name': 'Apple', 'website': 'http://www.apple.com/careers'}, 'apple.com'),
+                                ({'name': 'Qatalog (Acquired by ClickUp)', 'website': 'https://clickup.com/brain'}, 'clickup.com'),
+                                ({'name': 'Renamed Co', 'website': 'https://www.oldname.com/'}, 'oldname.com'),
+                                ({'name': 'No Site'}, 'nosite.com')):
+            self.assertFalse(other(profile, domain), domain)
+
     def test_fetch_sends_the_key_and_never_shows_it(self):
         cfg = enrichment.settings(self.config)
         self.assertEqual(enrichment.fetch(cfg, 'globex.com')['size'], '51-200')
         self.assertEqual(Service.seen[-1], ('/enrich/companies?domain=globex.com', 'Bearer ' + KEY))
         self.assertIsNone(enrichment.fetch(cfg, 'unknown.example'))
+        self.assertIsNone(enrichment.fetch(cfg, 'mismatch.example'))
         self.key.write_text('wrong')
         with self.assertRaises(enrichment.EnrichmentError) as caught:
             enrichment.fetch(cfg, 'globex.com')
