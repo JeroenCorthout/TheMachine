@@ -426,6 +426,12 @@ button.node:hover{text-decoration:underline;background:none}
 .tap{position:relative;cursor:pointer;padding-right:40px!important}
 .tap::after{content:'›';position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:1.5rem;line-height:1;color:var(--muted)}
 .tap:hover,.tap:focus-visible{border-color:var(--border-strong)}
+/* A promise's page: the person page's layout, with its state, quiet actions and a short history */
+.promise-state{margin:6px 0 2px}.promise-actions{display:flex;flex-wrap:wrap;gap:0 2px;margin:8px 0 4px -10px}.promise-actions .ghost{padding-left:10px;padding-right:10px;margin:0}.promise-due-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.promise-about p{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:4px 0}.promise-card a,.promise-link{color:inherit;text-decoration:underline;text-decoration-color:var(--c-line-strong);text-underline-offset:2px;overflow-wrap:anywhere}
+.promise-history{list-style:none;margin:0;padding:0}.promise-history li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--border);font-size:var(--fs-sm)}.promise-history li:first-child{border-top:0}
+.promise-history time{flex:none;color:var(--faint);font-variant-numeric:tabular-nums}.promise-page h3{overflow-wrap:anywhere}
+@media (min-width:700px){.person-page.promise-page>:not(.name-row){margin-left:0}}
 /* Graph detail: the dashboard's header and tabs stay; a quiet breadcrumb leads back. */
 #people.graph-on-node .people-search{display:none}
 .graph-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin:0 0 var(--sp-3);font-size:var(--fs-sm);color:var(--faint);min-width:0}
@@ -530,7 +536,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 #finished-list>article:first-of-type{margin-top:12px}
 .graph-open{padding:4px 16px}#people-view .graph-open .promise:first-child{border-top:0}
 .role-row,.org-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.org-row{white-space:normal}:is(.role-row,.name-row,.org-row) button{padding:3px 10px;font-size:.82rem}
-.org-form{display:grid;gap:6px;margin:8px 0 0}.org-buttons{display:flex;gap:8px;flex-wrap:wrap}.org-buttons button{padding:3px 10px;font-size:.82rem}.org-form label{display:grid;gap:2px}.org-form :is(input,textarea){width:100%;box-sizing:border-box;font:inherit}/* One compact style for every inline edit field (To you, Add organisation, Rename): a single-line field as tall as its Save, one thin focus ring, a Save that never wraps. */
+.org-form{display:grid;gap:10px;margin:8px 0 0}.org-buttons{display:flex;gap:8px;flex-wrap:wrap}.org-buttons button{padding:3px 0;font-size:.82rem;border:0;color:var(--muted);text-decoration:underline;text-underline-offset:3px}.org-form label,.org-form>p.graph-sub{white-space:normal;overflow:visible}.org-form label{display:grid;gap:4px}.org-form :is(input,textarea){width:100%;box-sizing:border-box;font:inherit;font-size:1rem;color:var(--text)}.org-form textarea{display:block;min-height:7.5em;resize:vertical}.org-form [aria-invalid=true]{border-color:var(--c-red,#b3261e)}.org-form .field-error{color:var(--c-red,#b3261e);font-size:.84rem}.org-form .field-error:empty{display:none}/* Editing an organisation: Cancel and Save sit where Edit was, and that header stays in view while the form scrolls */.org-actions{display:flex;gap:6px;flex:0 0 auto}.org-actions [data-org-save],.org-actions [data-org-cancel]{display:none}.org-editing .org-actions [data-org-edit]{display:none}.org-editing .org-actions :is([data-org-save],[data-org-cancel]){display:inline-flex}.graph-detail.org-editing>.name-row{position:sticky;top:0;z-index:3;margin:calc(-1*var(--org-pt,16px)) calc(-1*var(--org-px,16px)) 0;padding:var(--org-pt,16px) var(--org-px,16px) 10px;background:var(--surface);border-radius:var(--radius) var(--radius) 0 0}.graph-detail.org-editing>.name-row.stuck{border-radius:0;box-shadow:0 1px 0 var(--border)}.graph-detail.org-editing>.name-row.stuck::before{content:'';position:absolute;left:0;right:0;bottom:100%;height:calc(64px + env(safe-area-inset-top));background:var(--bg)}@media(max-width:1023px){.graph-detail.org-editing>.name-row{top:calc(52px + env(safe-area-inset-top))}}.role-form,.name-form,.person-org-form{display:flex;gap:8px;margin:8px 0 0}:is(.role-form,.name-form) input{flex:1;min-width:0}/* One compact style for every inline edit field (To you, Add organisation, Rename): a single-line field as tall as its Save, one thin focus ring, a Save that never wraps. */
 .inline-edit{display:flex;align-items:center;gap:8px;margin:8px 0 14px}.inline-edit[hidden]{display:none}.inline-edit input{flex:1 1 auto;min-width:0;width:auto;height:42px;min-height:0;margin:0;padding:0 12px;box-sizing:border-box;font:inherit;line-height:1.2}.inline-edit input:is(:focus,:focus-visible){outline:0;border-color:var(--mint);box-shadow:0 0 0 2px color-mix(in srgb,var(--mint) 24%,transparent)}.inline-edit button{flex:0 0 auto;width:auto;height:42px;min-height:0;margin:0;padding:0 16px;box-sizing:border-box;white-space:nowrap;line-height:1}
 .browser-link{padding:0;border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer;font:inherit;white-space:nowrap}
 .role-why{font-style:italic}.role-why button.link{font-style:normal;padding:0;border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer;font-size:inherit}
@@ -856,12 +862,16 @@ nav button.active .badge,[data-theme="light"] nav button.active .badge{backgroun
 :is(.fleet-tabs,.sub-tabs) button[aria-selected="true"]{background:var(--c-accent-tint);border-color:transparent;color:var(--text)}
 :is(.fleet-tabs,.sub-tabs) button[aria-selected="true"] .badge{background:color-mix(in srgb,var(--mint) 22%,transparent);color:var(--text)}
 
-/* Needs you: one calm line per item with a small amber dot. */
-#needs-you{padding:var(--sp-3) var(--sp-4);border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow-sm);margin-bottom:var(--sp-4)}
+/* Needs you: one calm line per item with a small amber dot. A notice card (.notice-card, pageNotice()) is the same quiet
+   card for one line at the top of a page: the text, and its button on the right (below it when the line wraps on a phone). */
+:is(#needs-you,.notice-card){padding:var(--sp-3) var(--sp-4);border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow-sm);margin-bottom:var(--sp-4)}
 #needs-you>strong{display:inline-flex;align-items:center;gap:var(--sp-2);color:var(--faint);font:var(--fw-medium) var(--fs-xs)/1.4 var(--sans);letter-spacing:0;text-transform:none;margin:0}
 #needs-you>strong::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
 #needs-you li{padding:var(--sp-1) 0}
 #needs-you .head-link{min-height:30px;padding:0 12px}
+.notice-card{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);color:var(--text);font-size:var(--fs-sm);line-height:1.45}
+.notice-card>span{flex:1 1 16em;min-width:0;overflow-wrap:anywhere}
+.notice-card .head-link{flex:0 0 auto;margin:0 0 0 auto;min-height:30px;padding:0 12px;font:inherit;font-size:.85rem;cursor:pointer}
 
 /* Counts: plain figures on one hairline row. */
 .stats,#suggestion-stats .stats,[data-theme="light"] #suggestion-stats .stats{box-shadow:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);backdrop-filter:none;-webkit-backdrop-filter:none}
@@ -975,7 +985,17 @@ dialog h2,.snooze-heading h2{font:var(--fw-heading) var(--fs-xl)/var(--lh-tight)
   .card .actions:not(.result-actions)>.more-actions{margin-left:auto}
   .card .more-actions>summary{min-height:36px;font-size:var(--fs-sm);padding:7px 12px}
 }
-#needs-you .head-link,.fleet-pane button:not(.primary),.fleet-box button:not(.primary){background:var(--surface-2)}
+#needs-you .head-link,.notice-card .head-link,.fleet-pane button:not(.primary),.fleet-box button:not(.primary){background:var(--surface-2)}
+/* Handoffs on a Work Fleet: one row each, open ones first; accepted and done ones quieter. The time leads the summary, one line until tapped; Open centred on the row. */
+.fleet-ho-list{list-style:none;margin:var(--sp-2) 0 0;padding:0}
+.fleet-ho{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px var(--sp-3);padding:var(--sp-2) 0;border-top:1px solid var(--lines)}
+.fleet-ho:first-child{border-top:0}
+.fleet-ho.quiet{opacity:.7}
+.fleet-ho-top{display:flex;align-items:center;flex-wrap:wrap;gap:4px var(--sp-2);min-width:0}
+.fleet-ho-sum time{color:var(--faint)}
+#fleet-view .fleet-ho-sum{grid-column:1;min-width:0;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--muted);font:inherit;font-size:var(--fs-sm);font-weight:400;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#fleet-view .fleet-ho-sum[aria-expanded="true"]{white-space:normal;overflow-wrap:anywhere}
+.fleet-ho .fleet-brief-open{grid-column:2;grid-row:1/span 2;align-self:center}
 /* Lists inside a box: rows divided by a line, not boxes in a box. */
 .fleet-box .list{border:0;border-radius:0;background:transparent;box-shadow:none}
 .fleet-box .list>article{background:transparent;border:0;border-top:1px solid var(--border);border-radius:0;box-shadow:none;margin:0;padding:12px 0}
@@ -1674,6 +1694,8 @@ const label=v=>({pending:'Needs your decision',accepted:'Accepted',prepared:'Rea
 const tone=v=>({pending:'amber',accepted:'lavender',instructions:'lavender',prepared:'mint',snoozed:'lavender',completed:'mint',rejected:'muted'}[v]||'muted');
 // A blocker waiting on the owner (a sign-in in the kept tab) resumes with Continue; same rule as the service.
 const retryLabel=r=>/\b(?:sign(?:ed)?[ -]?in|log(?:ged)?[ -]?in|signed out|2fa|two-factor|authenticator|passkey|tap continue)\b/i.test(r||'')&&!/try again/i.test(r||'')?'Continue':'Try again';
+// One calm line at the top of a page, in a quiet card; with a button when there is somewhere to go (data: its data-* attributes).
+const pageNotice=(text,button,data={},cls='')=>`<div class="notice-card${cls?' '+cls:''}" role="status"><span>${esc(text)}</span>${button?`<button type="button" class="head-link"${Object.entries(data).map(([k,v])=>` data-${k}="${esc(v)}"`).join('')}>${esc(button)}</button>`:''}</div>`;
 const chip=(text,t)=>`<span class="chip t-${t}"><span class="ct">${esc(text)}</span></span>`;
 // Deadlines in local days: overdue and today stand out; the rest read as a weekday or date.
 function dueChip(s){if(!s.due||closed(s))return '';const today=new Date(localDay(new Date())+'T12:00'),due=new Date(s.due+'T12:00'),days=Math.round((due-today)/864e5);
@@ -2508,7 +2530,7 @@ $('#suggestion-stats').addEventListener('click',e=>{const t=e.target.closest('[d
 $('#suggestion-summary').addEventListener('click',e=>{const b=e.target.closest('[data-scope]');if(!b)return;linkedCardId=null;scopeFilter=b.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render()});
 // Promises from your messages, both ways. A still-open one becomes a card when it's due.
 function promisesList(open){const items=(state.promises||[]).filter(p=>['open','card'].includes(p.state));if(!items.length)return '';
-const row=p=>`<div class="promise"><span class="grow">${p.together?'With':p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: ${esc(p.what)}<small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
+const row=p=>`<div class="promise"><span class="grow">${p.together?'With':p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: <a class="promise-link" href="${promiseHref(p)}">${esc(p.what)}</a><small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
 const group=(direction,title)=>{const rows=items.filter(p=>p.direction===direction);return rows.length?`<h3 class="promise-head">${title}<span class="count">${rows.length}</span></h3>`+rows.map(row).join(''):''};
 return `<details id="promises-list" ${open?'open':''}><summary><span>Promises</span><span class="count">${items.length}</span></summary>${group('mine','You promised')}${group('theirs','Promised to you')}</details>`}
 // Reviews off (a new install, before --activate or the hosted "Turn it on" step): said on every tab, with the way to turn them on; with cards already there, that they came from the one-time first look.
@@ -3229,7 +3251,7 @@ function calParts(it){const hm=v=>humanHM(new Date(v)),late=it.day==='overdue';
   return {time:it.allDay?'All day':hm(m.start),title:m.title,owner:m.shared?m.shared+'’s':'',sub:[when,m.location,m.guests?m.guests+(m.guests===1?' guest':' guests'):''].filter(Boolean).join(' · '),
    said:(it.promises||[]).map(p=>calSaid(p)+': '+p.what),
    href:it.s?'#chat='+it.s.id:'',url:!it.s&&m.url||'',badge:c?chip(c[0],c[1]):'',prep:c?c[0]:'',tone:m.shared?'theirs':it.s?'prep t-'+(c?c[1]:'muted'):'meeting'}}
- if(it.kind==='promise'){const p=it.p;return {time:late?calShort(p.due):'Due',title:p.what,sub:calSaid(p),href:'#promises',tone:late?'late':'promise'}}
+ if(it.kind==='promise'){const p=it.p;return {time:late?calShort(p.due):'Due',title:p.what,sub:calSaid(p),href:promiseHref(p),tone:late?'late':'promise'}}
  const s=it.s;if(it.kind==='checkin')return {time:hm(s.snoozed_until),title:'Check in with '+s.handoff_wait.name,sub:'If no answer · '+s.title,href:'#chat='+s.id,tone:'back'};
  if(it.kind==='back')return {time:hm(s.snoozed_until),title:s.title,sub:'Comes back',href:'#chat='+s.id,tone:'back'};
  return {time:late?calShort(s.due):'Due',title:s.title,sub:calCardWho(s),href:'#chat='+s.id,tone:late?'late':'due'}}
@@ -3263,7 +3285,7 @@ setTimeout(()=>calFetch().then(calBadge),2000);
 // remembered on this device.
 $('#calendar').addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;const href=a.getAttribute('href');e.preventDefault();
  if(href.startsWith('#chat=')){calReturn=true;chatGo(href.slice(6));return}
- if(href==='#promises'){showTab('inbox');requestAnimationFrame(()=>{const l=$('#promises-list');if(l){l.open=true;l.scrollIntoView({block:'start',behavior:'smooth'})}});return}
+ if(href.startsWith('#promise/')){if(location.hash!=='#calendar')history.replaceState(null,'',location.pathname+location.search+'#calendar');location.hash=href;return} // Back returns to the Calendar
  if(href==='#connections')showTab('health')});
 $('#page-head').addEventListener('click',e=>{const b=e.target.closest('[data-cal-mode]');if(!b)return;calMode=b.dataset.calMode;sideStore.set('cal-mode',calMode);calRender()});
 $('nav').addEventListener('click',e=>{if(e.target.closest('button')?.dataset.tab==='calendar')calendarView(true)});
@@ -3272,7 +3294,7 @@ addEventListener('hashchange',()=>{if(calReturn&&!/^#chat=/.test(location.hash)&
 // A title over the main area on a computer: the tagline on Suggestions, else the tab's name
 const PAGE_TITLES={calendar:'Calendar',events:'Events',people:'Graph',fleet:'Fleet',feedback:'Feedback',health:'Connections',settings:'Settings'};
 // The Graph's title is the pane on screen, with Graph as a quiet crumb and the same count as its row in the sidebar
-function graphHead(){const name=GRAPH_SUBS[graphShown];if(!name)return '<h2 class="page-title">Graph</h2>';const c=graphCounts||{},n={people:c.person,orgs:c.org,projects:c.project,roles:rolesWaiting}[graphShown];
+function graphHead(){if(/^promise:/.test(graphNode||''))return '<div><p class="page-crumb">Graph</p><h2 class="page-title">Promise</h2></div>';const name=GRAPH_SUBS[graphShown];if(!name)return '<h2 class="page-title">Graph</h2>';const c=graphCounts||{},n={people:c.person,orgs:c.org,projects:c.project,roles:rolesWaiting}[graphShown];
  const words={people:['person','people'],orgs:['organisation','organisations'],projects:['open project','open projects'],roles:['role to confirm','roles to confirm']}[graphShown];
  return `<div><p class="page-crumb">Graph</p><h2 class="page-title">${esc(name)}</h2>${n&&!graphNode?`<p class="page-sub">${n} ${n===1?words[0]:words[1]}</p>`:''}</div>`}
 function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';
@@ -3439,6 +3461,26 @@ let fleetAt=0,fleetLoading=null;
 function fleetSync(force){if(!state?.fleet?.on)return Promise.resolve();if(fleetLoading)return fleetLoading;if(!force&&Date.now()-fleetAt<20000)return Promise.resolve();
  const before=fleetSig();fleetLoading=request('api/fleet').then(d=>{fleetData=d;fleetAt=Date.now();if(fleetSig()!==before)render();if(!$('#fleet').hidden&&!($('#fleet-view').contains(document.activeElement)&&document.activeElement.matches('input,select,textarea')))fleetView(false,true)}).catch(()=>{fleetAt=Date.now()}).finally(()=>{fleetLoading=null});return fleetLoading}
 const fleetOn=(type,fn)=>{for(const el of [$('#fleet-view'),$('#suggestions')])el.addEventListener(type,fn)};
+// Handoffs in one Work Fleet: the ones you handed to a teammate (asked, from fleet_out, as on the card's own line) and the
+// ones a teammate hands you that wait under Suggestions. Open first; accepted and done ones after, quieter, three shown.
+const HO_Q=/^Can you take this on: ([\s\S]*?)\? Their summary: “([\s\S]*?)”([\s\S]*)$/;
+function fleetHandoffs(f,work,inFleet){const cards=new Set((state?.suggestions||[]).map(s=>s.id));
+ const what=q=>{const m=HO_Q.exec(q||'');return m?[m[1]+(m[2]?`: “${m[2]}”`:''),m[3].trim()].filter(Boolean).join(' '):String(q||'')};
+ const stage=a=>{const [st,...note]=String(a.answer||'').split(': ');const n=note.join(': ');
+  if(['asked','waiting'].includes(a.status))return['Waiting for an answer'+(a.delivered===false?', not delivered yet':''),'amber',false];
+  if(a.status==='expired')return['No answer in time','orange',false];
+  if(a.status==='declined'||st==='declined')return['Declined','orange',false,n];
+  if(st==='done')return['Done','muted',true];
+  if(st.startsWith('accepted'))return[st==='accepted'?'Accepted':'Accepted with a change','mint',true,n];
+  return[st||a.status,'muted',true,n]};
+ const rows=[
+  ...(f.waiting||[]).filter(w=>w.kind==='handoff'&&inFleet(w,work)).map(w=>({who:'From '+w.name,text:what(w.question),st:['Waits for you','amber',false],at:w.at,href:/^q_[a-f0-9]{16}$/.test(w.id)?'#fleet='+w.id:''})),
+  ...(f.asked||[]).filter(a=>a.kind==='handoff'&&inFleet(a,work)).map(a=>{const card=String(a.context||'').slice(8);return{who:'To '+a.name,text:what(a.question),st:stage(a),at:a.answered_at||a.at,href:cards.has(card)?'#card='+card:''}})];
+ if(!rows.length)return'';
+ const open=rows.filter(r=>!r.st[2]),quiet=rows.filter(r=>r.st[2]),shown=3;
+ const row=(r,k)=>{const more=r.st[2]&&k>=shown,text=r.text+(r.st[3]?` · “${r.st[3].replace(/^“|”$/g,'')}”`:'');
+  return`<li class="fleet-ho${r.st[2]?' quiet':''}${more?' fleet-ho-more':''}"${more?' hidden':''}><div class="fleet-ho-top"><strong>${esc(r.who)}</strong>${chip(r.st[0],r.st[1])}</div><button type="button" class="fleet-ho-sum" aria-expanded="false" title="${esc(text)}" data-ho-expand>${time(r.at,true)} · ${esc(text)}</button>${r.href?`<a class="fleet-brief-open" href="${esc(r.href)}">Open</a>`:''}</li>`};
+ return`<div class="fleet-box fleet-handoffs"><h3>Handoffs</h3><ul class="fleet-ho-list">${open.map(row).join('')}${quiet.map(row).join('')}</ul>${quiet.length>shown?`<button type="button" class="quiet fleet-brief-show" data-ho-more>Show ${quiet.length-shown} more</button>`:''}</div>`}
 function fleetIntroOffers(f,work,inFleet){const offers=(f.intro_offers||[]).filter(o=>inFleet(o,work));
  return offers.length?`<div class="list">${offers.map(o=>`<article><p><strong>${esc(o.name)}</strong> knows someone at ${esc(o.about)}.</p><form class="fleet-ask fleet-intro-form" data-fleet="${esc(o.fleet)}" data-member="${esc(o.member_id)}" data-about="${esc(o.about)}"><input name="note" maxlength="300" placeholder="Why, in a line (optional; they see it)" aria-label="Why"><button class="primary">Ask ${esc(o.name)} for an intro</button></form></article>`).join('')}</div>`:''}
 function fleetHandoff(s){const contact=s.handoff_contact?`<p class="note handoff-contact">Contact: ${esc(s.handoff_contact)}</p>`:'';
@@ -3609,13 +3651,13 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
  const panes=[];
  const notices=f.notices||[],asking=notices.filter(n=>n.buttons.length),told=notices.filter(n=>!n.buttons.length&&!/^friend_/.test(n.kind));
  const noticeCard=n=>`<article id="fleet-${esc(n.id)}"><p>${esc(n.text)}</p>${n.detail?`<p class="muted">${esc(n.detail)}</p>`:''}${n.outcome?`<p class="muted">→ ${esc(n.outcome)}</p>`:''}${n.reason?`<p class="note">${esc(n.reason)}</p>`:''}${n.buttons.length?`<div class="actions">${n.buttons.map(b=>`<button${b.choice==='confirm'?' class="primary"':''} data-fleet-notice="${esc(n.id)}" data-choice-n="${b.choice}" data-key="${esc(n.key)}">${esc(b.label)}</button>`).join('')}</div>`:''}<p><small class="mono">${esc(new Date(n.at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small></p></article>`;
- for(const work of works){const asked=f.asked.filter(a=>inFleet(a,work));
+ for(const work of works){const asked=f.asked.filter(a=>inFleet(a,work)&&a.kind!=='handoff');  // handoffs have their own box
   let h=`<div id="fleet-${esc(work.id)}">`+head(work,(work.people||[]).length)+people(work);
   if(work.members.length){
    h+=box('Who knows someone?','Their Machines say how well they know someone there and when they last talked. Names only if they allow it.',
     `<form class="fleet-ask fleet-ask-form" data-fleet="${esc(work.id)}"><input name="about" maxlength="120" placeholder="A company, domain, email address or name" aria-label="Who knows someone at"><button class="primary">Ask ${several?esc(work.name):'the Fleet'}</button></form>`+fleetIntroOffers(f,work,inFleet)
     +(asked.length?`<div class="list">${asked.map(a=>`<article><p><strong>${esc(a.name)}</strong> · ${esc(a.question)}</p><p class="muted">${esc(a.status==='answered'?a.answer:a.status==='waiting'?'Waiting for them to allow it':a.status==='asked'?(a.delivered===false?'Not delivered yet':'Asked'):a.status)}</p></article>`).join('')}</div>`:''));
-   h+=fleetBrief(f,work)+box('Ask anything','',fleetFree(f,work,several))}
+   h+=fleetHandoffs(f,work,inFleet)+fleetBrief(f,work)+box('Ask anything','',fleetFree(f,work,several))}
   else h+=fleetIntroOffers(f,work,inFleet);
   panes.push({id:'fleet-'+work.id,label:work.name,html:h+'</div>',at:work.joined_at})}
  if(family)panes.push({id:'family',label:family.name||'Family',html:head(family,(family.people||[]).length)+familySection(f,family),at:family.joined_at});
@@ -3637,8 +3679,8 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
  panes.push({id:'activity',label:'Activity',html:(told.length?box('Lately','Who joined, asked for a server, had one started, or left.',`<div class="list">${told.map(noticeCard).join('')}</div>`):'')
   +box('Log','Every question asked or answered, both ways.',`<ul class="fleet-log list">${f.log.map(l=>`<li><small class="mono">${esc(new Date(l.at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small> ${l.direction==='in'?'From':'To'} ${esc(l.name||'')}: ${esc(l.what)} · <span class="muted">${esc(l.outcome)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul>`)});
  const current=panes.some(p=>p.id===fleetPane)?fleetPane:panes[0].id;
- let html=f.off?'<p class="note">The Network is off for now. Nothing is asked or answered.</p>':'';
- {const todo=fleetCardsOf(f).length;if(todo)html+=`<p class="note fleet-todo">${todo===1?'One Fleet item waits':todo+' Fleet items wait'} for you under Suggestions. <button type="button" class="link" data-tab-go="inbox">Show</button></p>`}
+ let html=f.off?pageNotice('The Network is off for now. Nothing is asked or answered.'):'';
+ {const todo=fleetCardsOf(f).length;if(todo)html+=pageNotice(`${todo===1?'One Fleet item waits':todo+' Fleet items wait'} for you under Suggestions.`,'Show',{'tab-go':'inbox'},'fleet-todo')}
  html+=`<div class="fleet-tabs" role="tablist" aria-label="Fleet">${panes.map(p=>`<button type="button" role="tab" data-fleet-pane="${esc(p.id)}" aria-selected="${p.id===current}"><span class="ell">${esc(p.label)}</span>${p.badge?` <span class="badge">${p.badge}</span>`:''}</button>`).join('')}</div>`;
  // A slot for suggested connections (people already on the Network you may know), filled by its own feature.
  html+='<div id="fleet-discover" class="fleet-discover"></div>';
@@ -3711,6 +3753,9 @@ fleetOn('change',async e=>{const t=e.target.closest('[data-net-addr]');if(!t)ret
 fleetOn('change',async e=>{const t=e.target.closest('[data-net-toggle]');if(!t)return;t.disabled=true;
  try{await fleetPost('fleet_network',{do:t.dataset.netToggle});await fleetView()}catch(err){t.checked=!t.checked;toast(err.message,true)}finally{t.disabled=false}});
 fleetOn('click',async e=>{const more=e.target.closest('[data-brief-more]');if(more){more.closest('.fleet-brief').querySelectorAll('.fleet-brief-more').forEach(li=>li.hidden=false);more.remove();return}
+ const hoMore=e.target.closest('[data-ho-more]');if(hoMore){hoMore.closest('.fleet-handoffs').querySelectorAll('.fleet-ho-more').forEach(li=>li.hidden=false);hoMore.remove();return}
+ const hoGo=e.target.closest('.fleet-ho a[href^="#"]');if(hoGo&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();location.hash=hoGo.getAttribute('href');return}  // in-page, also under another base path
+ const hoSum=e.target.closest('[data-ho-expand]');if(hoSum){hoSum.setAttribute('aria-expanded',String(hoSum.getAttribute('aria-expanded')!=='true'));return}
  const ask=e.target.closest('[data-brief-ask]');if(ask){const input=document.querySelector(`.fleet-free-form[data-fleet="${CSS.escape(ask.dataset.fleet)}"] input[name=text]`);if(!input)return;input.value=ask.dataset.briefAsk;input.focus();input.scrollIntoView({block:'center',behavior:'smooth'});return}
  const hide=e.target.closest('[data-brief-hide]');if(!hide)return;hide.disabled=true;
  try{await fleetPost('fleet_brief_hide',{fleet:hide.dataset.fleet,key:hide.dataset.briefHide});hide.closest('li').remove();toast('Hidden from this brief.');await fleetView()}catch(err){hide.disabled=false;toast(err.message,true)}});
@@ -3850,8 +3895,20 @@ const orgProfile=n=>{const p=n.kind==='org'&&n.profile;if(!p)return'';const link
  return `${n.about?`<p class="graph-sub">${esc(n.about)}</p>`:''}${p.about?`<p class="graph-sub org-about">${esc(p.about)}</p>`:''}${links.length?`<p class="graph-sub">${links.map(([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noreferrer">${t} ↗</a>`).join(' · ')}</p>`:''}`};
 // The owner's own details for an organisation: they win over the service's, and "Wrong company" drops a bad match for good.
 const ORG_FIELDS=[['name','Name',100],['website','Website',200],['linkedin_url','LinkedIn',200],['industry','Industry',120],['size','Size (people)',40],['location','Location',120],['founded','Founded',4],['about','About',600]];
+// No maxlength or pattern on the fields: a looked-up value can be longer than the owner may type, and the browser
+// would then block Save without a word. Only what the owner changed is checked, by orgCheck, with the error under its field.
 const orgForm=n=>{const p=n.profile||{},v={...p,name:n.name,size:p.size||(p.employees?String(p.employees):'')};
- return `<form class="org-form" data-node-id="${esc(n.id)}" hidden>${ORG_FIELDS.map(([k,t,max])=>`<label class="graph-sub">${t}${k==='about'?`<textarea name="${k}" maxlength="${max}" rows="3">${esc(v[k]||'')}</textarea>`:`<input name="${k}" maxlength="${max}" value="${esc(v[k]??'')}"${k==='name'?' placeholder="Leave empty to use the name from their messages"':''}>`}</label>`).join('')}<p class="graph-sub muted">Your edits stay. Empty a field to use the looked-up value again.</p><p class="org-buttons"><button>Save</button>${n.profile&&!n.wrong?'<button type="button" class="ghost" data-org-wrong>Wrong company, clear details</button>':''}</p></form>`};
+ return `<form class="org-form" id="org-form" data-node-id="${esc(n.id)}" novalidate hidden>${ORG_FIELDS.map(([k,t])=>`<label class="graph-sub">${t}${k==='about'?`<textarea name="${k}" rows="5" aria-describedby="org-err-${k}">${esc(v[k]||'')}</textarea>`:`<input name="${k}" value="${esc(v[k]??'')}" aria-describedby="org-err-${k}"${k==='founded'?' inputmode="numeric"':''}${k==='name'?' placeholder="Leave empty to use the name from their messages"':''}>`}<small class="field-error" id="org-err-${k}"></small></label>`).join('')}<p class="graph-sub muted">Your edits stay. Empty a field to use the looked-up value again.</p>${n.profile&&!n.wrong?'<p class="org-buttons"><button type="button" class="ghost" data-org-wrong>Wrong company, clear details</button></p>':''}</form>`};
+const orgActions='<span class="org-actions"><button class="ghost" data-org-edit>Edit</button><button type="button" class="ghost" data-org-cancel>Cancel</button><button type="submit" form="org-form" class="primary" data-org-save>Save</button></span>';
+// What the server would refuse, for the fields the owner changed only: [field, message] pairs.
+const orgCheck=changed=>ORG_FIELDS.flatMap(([k,,max])=>{const t=changed[k];if(!t)return[];
+ if(k==='founded')return /^(1[5-9]\d\d|20\d\d)$/.test(t)?[]:[[k,'A year, like 2014']];return t.length>max?[[k,`Up to ${max} characters (now ${t.length})`]]:[]});
+const orgOpen=(f,open)=>{const a=f.closest('.graph-detail');f.hidden=!open;if(a){const cs=getComputedStyle(a);a.style.setProperty('--org-pt',cs.paddingTop);a.style.setProperty('--org-px',cs.paddingLeft);a.classList.toggle('org-editing',open)}if(!open){f.reset();orgErrors(f,[])}orgStuck()};
+// The editing header, once stuck under the top bar: square corners and a solid backing behind the bar, so nothing scrolled under it shows.
+const orgStuck=()=>{const h=document.querySelector('#people-view .graph-detail.org-editing>.name-row');if(h)h.classList.toggle('stuck',h.getBoundingClientRect().top<=parseFloat(getComputedStyle(h).top)+1)};
+addEventListener('scroll',orgStuck,{passive:true});
+const orgErrors=(f,errs)=>{for(const [k] of ORG_FIELDS){const el=f.elements[k],m=errs.find(([x])=>x===k);if(m)el.setAttribute('aria-invalid','true');else el.removeAttribute('aria-invalid');f.querySelector('#org-err-'+k).textContent=m?m[1]:''}
+ const first=errs.length&&f.elements[errs[0][0]];if(first){first.focus({preventScroll:true});first.scrollIntoView({block:'center'})}};
 // What an enrichment service says about a work contact: their job title under their name (with the company's name when
 // they have no organisation yet; otherwise the organisation's own row links it), where they are, and LinkedIn.
 const COUNTRY=c=>{try{return /^[A-Z]{2}$/.test(c)?new Intl.DisplayNames([],{type:'region'}).of(c):c}catch{return c}};
@@ -3869,7 +3926,7 @@ const relationsRow=n=>n.relations?.length?`<p class="graph-sub">How they’re re
 const whosWho=(items,total)=>items?.length?`<div class="section-head"><h2>Who’s who</h2><span class="count">${total||items.length}</span><p>Roles your Machine picked up. Confirm or edit; it learns from your edits.</p></div>${items.length>1?`<p class="role-all"><button class="ghost" data-role-all>✓ All ${items.length} are right</button></p>`:''}<div class="graph-list">${items.map(w=>`<article class="whos" data-whos="${esc(w.id)}"><div class="graph-row">${nodeButton(w)}<span class="chip" style="--c:var(--lavender)">${esc(w.role)}</span></div>${w.quote?`<p class="graph-sub">${quoteLine(w.id,w.quote,w.event_id)}</p>`:''}<p class="graph-sub role-row">${confirmButton(w.id,w.role)}<button class="ghost" data-role-edit-for="${esc(w.id)}">Edit</button></p></article>`).join('')}</div>`:'';
 // Domains a review read as an email warm-up tool's traffic: out of the graph, listed here with Undo.
 const warmupList=items=>items?.length?`<details class="warmup"><summary class="graph-sub">Hidden as warm-up (${items.length})</summary><p class="graph-sub muted">Mail from email warm-up tools, kept out of your graph.</p>${items.map(w=>`<div class="graph-sub relation"><span>${esc(w.name||w.domain)}${w.name&&w.name!==w.domain?` <span class="muted">${esc(w.domain)}</span>`:''}</span><button class="ghost" data-warmup-undo="${esc(w.domain)}">Undo</button></div>`).join('')}</details>`:'';
-const openBetween=n=>{const o=n.open||{},row=(label,p)=>`<div class="promise"><span class="grow">${label}: ${esc(p.what)}${p.due?`<small>due ${esc(day(p.due))}</small>`:''}</span><button data-promise="${p.id}" data-close="kept">Done</button><button class="ghost" data-promise="${p.id}" data-close="dropped">Drop</button></div>`;
+const openBetween=n=>{const o=n.open||{},row=(label,p)=>`<div class="promise"><span class="grow">${label}: <a class="promise-link" href="${promiseHref(p)}">${esc(p.what)}</a>${p.due?`<small>due ${esc(day(p.due))}</small>`:''}</span><button data-promise="${p.id}" data-close="kept">Done</button><button class="ghost" data-promise="${p.id}" data-close="dropped">Drop</button></div>`;
  const rows=[...(o.you_promised||[]).map(p=>row('You promised',p)),...(o.they_promised||[]).map(p=>row(n.kind==='person'?'They promised':esc(p.who)+' promised',p)),
   ...(o.cards||[]).map(c=>`<div class="promise"><span class="grow">Card: <a href="#card=${esc(c.id)}">${esc(c.title)}</a>${c.due?`<small>due ${esc(day(c.due))}</small>`:''}</span></div>`)];
  return rows.length?`<div class="section-head"><h2>Open between you</h2><span class="count">${rows.length}</span></div><article class="graph-open">${rows.join('')}</article>`:''};
@@ -3904,12 +3961,42 @@ const graphEvents=n=>{const all=n.recent||[],soon=Date.now();if(!all.length)retu
   const by=!chat&&e.from&&e.kind!=='calendar.event'?(e.from_me?'You':e.from)+': ':'';
   h+=`<article class="graph-event" data-event="${e.id}" tabindex="0" aria-label="${esc(src?src+': ':'')}${esc(head)}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}">${esc(head)}</h4><time datetime="${esc(e.occurred_at)}">${esc(graphTime(d))}</time></div>${e.preview?`<p class="ge-preview">${by?`<b>${esc(by)}</b>`:''}${esc(e.preview)}</p>`:''}${e.probable?'<p class="ge-note">Probably part of it</p>':''}</div></article>`});
  return `<div class="section-head"><h2>Events</h2><span class="count">${runs.length}</span></div><div class="graph-events">${h}</div></div>${runs.length>GRAPH_ROWS?'<button type="button" class="ghost ge-more" data-ge-more>Show more</button>':''}`};
+// A promise's own page (#promise/<id>), laid out like a person's: who promised what to whom and by when, where it
+// stands, the message it came from, who and what it is about, its card as a link, and what happened since.
+const promiseHref=p=>'#promise/'+encodeURIComponent(p.id);
+const promiseFirst=who=>String(who||'').split(/\s+/)[0]||who;
+const PROMISE_SAID={'gmail.message':'an email','slack.message':'Slack','whatsapp.message':'WhatsApp','linkedin.message':'LinkedIn','x.message':'X','intercom.message':'Intercom','calendar.event':'a meeting'};
+function promiseState(p){const late=p.due&&p.due<localDay(new Date());
+ return p.state==='open'?(p.direction==='theirs'&&!p.together?['Waiting on '+promiseFirst(p.who),'var(--lavender)']:[late?'Past its date':'Open',late?'var(--orange)':'var(--mint)']):p.state==='card'?['On a card','var(--amber)']
+  :p.state==='kept'?['Kept','var(--muted)']:p.state==='answered'?['They wrote again','var(--muted)']:['Not needed','var(--muted)']}
+function promiseLine(p,h){const via=PROMISE_SAID[h.detail]||'a message';
+ return {said:p.together?'Planned together in '+via:p.direction==='mine'?'Promised to '+p.who+' in '+via:p.who+' promised it in '+via,noted:'Noted by a review',due:'Date moved to '+day(h.detail),
+  kept:'Marked done',dropped:'Marked not needed',answered:'They wrote again',carded:'A card came for it',together:'Both sides said it: one plan',merged:'The same as another promise'}[h.kind]||''}
+async function promisePage(id){const p=await request('api/promise?id='+encodeURIComponent(id)),[state,color]=promiseState(p),person=p.links.find(l=>l.kind==='person');
+ const who=p.together?'With '+p.who:p.direction==='mine'?'Promised to '+p.who:p.who+' promised',when=p.due?'due '+day(p.due):'no date';
+ const actions=p.state==='open'?`<div class="promise-actions"><button class="ghost" data-promise="${p.id}" data-close="kept">Done</button><button class="ghost" data-promise-due>Change date</button><button class="ghost" data-promise="${p.id}" data-close="dropped">Not needed</button></div><form class="promise-due-form" data-promise-id="${p.id}" hidden><input type="date" name="due" value="${esc(p.due||'')}" aria-label="New date" required><button>Save</button></form>`:'';
+ const note=p.state!=='open'&&p.note&&!/\(you\)$/.test(p.note)?`<p class="graph-sub muted">${esc(p.note)}</p>`:'';
+ const src=p.source?.[0],from=src?graphEvents({recent:p.source,name:p.who,kind:'promise'}).replace(/<h2>Events<\/h2><span class="count">\d+<\/span>/,'<h2>Came from</h2>'):'';
+ const open=src&&/^https:\/\//.test(src.source_url||'')?`<p class="graph-sub"><a href="${esc(src.source_url)}" target="_blank" rel="noreferrer">Open in ${esc(SOURCE_NAME[graphSource(src.kind)]||'its app')} ↗</a></p>`:'';
+ const kinds=[['person','People'],['org','Organisation'],['project','Project']].map(([k,t])=>[t,p.links.filter(l=>l.kind===k)]).filter(([,l])=>l.length);
+ const about=kinds.length?`<div class="section-head"><h2>About</h2></div><div class="promise-about">${kinds.map(([t,l])=>`<p class="graph-sub"><span class="muted">${t}</span> ${l.map(nodeButton).join('')}</p>`).join('')}</div>`:'';
+ const card=p.card?`<div class="section-head"><h2>Card</h2></div><p class="graph-sub promise-card"><a href="#card=${esc(p.card.id)}">${esc(p.card.title)}</a></p>`:'';
+ const hist=p.history.map(h=>[promiseLine(p,h),h.at]).filter(([t])=>t);
+ return `<div class="graph-crumbs" role="navigation" aria-label="Breadcrumb">${person?`<a href="${graphHash(person.id)}" data-node="${esc(person.id)}">${esc(person.name)}</a>`:'<a href="#graph" data-crumb="">Graph</a>'}<span aria-hidden="true">›</span><span aria-current="page">Promise</span></div>`+
+  `<article class="graph-detail person-page promise-page"><div class="name-row"><div class="person-head"><h3>${esc(cap(p.what))}</h3><p class="person-job">${esc(who)} · ${esc(when)}</p></div></div>`+
+  `<p class="graph-sub promise-state"><span class="chip" style="--c:${color}">${esc(state)}</span></p>${note}${actions}${from}${open}${about}${card}`+
+  (hist.length?`<div class="section-head"><h2>History</h2></div><ul class="promise-history">${hist.map(([t,at])=>`<li><span>${esc(t)}</span><time datetime="${esc(at)}">${esc(day(at))}</time></li>`).join('')}</ul>`:'')+'</article>'}
+// Promise links, and card links on Graph pages, stay in the page, also when the page's base is another path.
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#promise/"],#people-view a[href^="#card="]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey||e.defaultPrevented)return;e.preventDefault();const href=a.getAttribute('href');if(location.hash===href)graphRoute();else location.hash=href});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-promise-due]');if(!b)return;const f=$('#people-view .promise-due-form');if(f){f.hidden=!f.hidden;if(!f.hidden)f.elements.due.focus()}});
+document.addEventListener('submit',async e=>{const f=e.target.closest('.promise-due-form');if(!f)return;e.preventDefault();const b=f.querySelector('button');b.disabled=true;
+ try{await graphPost('promise_due',{id:Number(f.dataset.promiseId),due:f.elements.due.value});f.hidden=true;toast('Date moved.');await people(graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}});
 // Graph links: #graph/<node id> opens a person, project or organisation; the browser's back goes to where you were.
 const GRAPH_KIND_PANE={person:['people','People'],project:['projects','Projects'],org:['orgs','Organisations']};
 const graphHash=id=>'#graph/'+encodeURIComponent(id);
 function graphOpen(id){if(location.hash!==graphHash(id))history.pushState(null,'',graphHash(id));people(id)}
 function graphBack(pane){if(pane){graphPane=pane;localStorage.setItem('graph-pane',pane)}if(/^#graph\//.test(location.hash))history.pushState(null,'',location.pathname+location.search+'#graph='+(graphPane||'people'));people('')}
-function graphRoute(){const m=/^#graph\/(.+)$/.exec(location.hash);let id='';try{id=m?decodeURIComponent(m[1]):''}catch{}
+function graphRoute(){const pm=/^#promise\/(\d+)$/.exec(location.hash),m=/^#graph\/(.+)$/.exec(location.hash);let id=pm?'promise:'+pm[1]:'';try{id=id||(m?decodeURIComponent(m[1]):'')}catch{}
  if(id){if($('#people').hidden){graphNode=id;document.querySelector('nav [data-tab="people"]')?.click()}else if(graphNode!==id)people(id);return}
  if(!$('#people').hidden&&graphNode)people('')}
 addEventListener('popstate',()=>{if(!drawerStep)graphRoute()});addEventListener('hashchange',graphRoute);setTimeout(graphRoute);
@@ -3929,10 +4016,11 @@ const GRAPH_PANES=['people','roles','projects','orgs'];
 function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);graphShown=id;graphHashSync();graphSubSync();const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
  for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'))}
 async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=html=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */const scroll=window.scrollY;view.innerHTML=html;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
+ if(node&&/^promise:\d+$/.test(node)){const html=await promisePage(node.slice(8));draw(html);if(version!==graphRequest)return;$('#people').classList.add('graph-on-node');pageHead();if(!quiet)scrollTo({top:0});return}
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
   const sub=n.kind==='person'?personSub({...n,role:null,profile:null})+(n.quiet?' · gone quiet':''):n.kind==='project'?(n.state+' · last signal '+day(n.last_at)+(n.probable_signals?' · '+n.probable_signals+' probably part of it':'')):(n.signals+' people · last contact '+day(n.last_at));
   const [paneId,paneName]=GRAPH_KIND_PANE[n.kind]||GRAPH_KIND_PANE.person;
-  draw(`<div class="graph-crumbs" role="navigation" aria-label="Breadcrumb"><a href="#graph" data-crumb="">Graph</a><span aria-hidden="true">›</span><a href="#graph=${paneId}" data-crumb="${paneId}">${paneName}</a><span aria-hidden="true">›</span><span aria-current="page">${esc(n.name)}</span></div><article class="graph-detail${n.kind==='person'?' person-page':''}"><div class="name-row">${n.kind==='org'?orgPic(n,true):n.kind==='person'?personPic(n,true):''}${n.kind==='person'?`<div class="person-head"><h3>${esc(n.name)}</h3>${personJob(n)}</div>`:`<h3>${esc(n.name)}</h3>`}${n.kind==='org'?'<button class="ghost" data-org-edit>Edit</button>':n.kind==='person'?personMenu:'<button class="ghost" data-name-edit>Rename</button>'}</div>${n.kind==='org'?orgForm(n):`<form class="name-form inline-edit" data-node-id="${esc(n.id)}" hidden><input name="newname" maxlength="${n.kind==='project'?60:100}" value="${esc(n.name)}" placeholder="${n.kind==='project'?'Project name':'Leave empty to use the name from their messages'}" aria-label="Name"><button>Save</button></form>`}${deleteRow(n)}${personProfile(n)}<p class="graph-sub detail-sub">${esc(sub)}</p>${fleetMember(n)}${orgProfile(n)}${n.kind==='org'?orgWrongRow(n):''}${n.ids?.length?`<p class="graph-sub mono">${esc(n.ids.join(' · '))}</p>`:''}${n.kind!=='project'?roleRow(n):''}${personOrgRow(n,n.org&&n.org_name?{id:n.org,name:n.org_name}:null)}${relationsRow(n)}${[['person','People'],['project','Projects'],['org','Organisations']].map(([k,t])=>group(k).length?`<p class="graph-sub">${t}</p><div class="graph-links">${group(k).map(nodeButton).join('')}</div>`:'').join('')}</article>`+fleetAskRow(n)+openBetween(n)+knownAbout(n)+graphEvents(n));
+  draw(`<div class="graph-crumbs" role="navigation" aria-label="Breadcrumb"><a href="#graph" data-crumb="">Graph</a><span aria-hidden="true">›</span><a href="#graph=${paneId}" data-crumb="${paneId}">${paneName}</a><span aria-hidden="true">›</span><span aria-current="page">${esc(n.name)}</span></div><article class="graph-detail${n.kind==='person'?' person-page':''}"><div class="name-row">${n.kind==='org'?orgPic(n,true):n.kind==='person'?personPic(n,true):''}${n.kind==='person'?`<div class="person-head"><h3>${esc(n.name)}</h3>${personJob(n)}</div>`:`<h3>${esc(n.name)}</h3>`}${n.kind==='org'?orgActions:n.kind==='person'?personMenu:'<button class="ghost" data-name-edit>Rename</button>'}</div>${n.kind==='org'?orgForm(n):`<form class="name-form inline-edit" data-node-id="${esc(n.id)}" hidden><input name="newname" maxlength="${n.kind==='project'?60:100}" value="${esc(n.name)}" placeholder="${n.kind==='project'?'Project name':'Leave empty to use the name from their messages'}" aria-label="Name"><button>Save</button></form>`}${deleteRow(n)}${personProfile(n)}<p class="graph-sub detail-sub">${esc(sub)}</p>${fleetMember(n)}${orgProfile(n)}${n.kind==='org'?orgWrongRow(n):''}${n.ids?.length?`<p class="graph-sub mono">${esc(n.ids.join(' · '))}</p>`:''}${n.kind!=='project'?roleRow(n):''}${personOrgRow(n,n.org&&n.org_name?{id:n.org,name:n.org_name}:null)}${relationsRow(n)}${[['person','People'],['project','Projects'],['org','Organisations']].map(([k,t])=>group(k).length?`<p class="graph-sub">${t}</p><div class="graph-links">${group(k).map(nodeButton).join('')}</div>`:'').join('')}</article>`+fleetAskRow(n)+openBetween(n)+knownAbout(n)+graphEvents(n));
   if(version!==graphRequest)return;
   $('#people').classList.add('graph-on-node');if(location.hash!==graphHash(n.id)&&!$('#people').hidden)history.replaceState(null,'',graphHash(n.id));
   for(const p of view.querySelectorAll('.ge-preview'))p.classList.toggle('fade',p.scrollHeight>p.clientHeight+1);
@@ -3959,13 +4047,17 @@ $('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane
  const un=e.target.closest('[data-unrelate]');if(un){un.disabled=true;try{await graphPost('graph_relation',{node_id:un.dataset.unrelate,related_to:un.dataset.relatedTo,relation:''});toast('Removed.');await people(graphNode,true)}catch(err){un.disabled=false;toast(err.message,true)}return}const del=e.target.closest('[data-person-delete],[data-person-delete-no],[data-person-delete-yes]');if(del){const ask=$('#people-view .person-delete-confirm');
   if(del.matches('[data-person-delete]')){del.closest('details').open=false;const nf=$('#people-view .name-form');if(nf)nf.hidden=true;ask.hidden=false;ask.querySelector('[data-person-delete-no]').focus();return}
   if(del.matches('[data-person-delete-no]')){ask.hidden=true;return}
-  del.disabled=true;try{await graphPost('graph_person_delete',{node_id:graphNode});toast('Deleted. Won’t be added again.');graphBack('people')}catch(err){del.disabled=false;toast(err.message,true)}return}const wrong=e.target.closest('[data-org-wrong],[data-org-lookup]');if(wrong){const w=wrong.matches('[data-org-wrong]');if(w&&!confirm('Clear the looked-up details? This domain won’t be looked up again until you ask.'))return;wrong.disabled=true;try{await graphPost('graph_org_wrong',{node_id:graphNode,wrong:w});const of=$('#people-view .org-form');if(of)of.hidden=true;toast(w?'Cleared.':'It will be looked up again soon.');await people(graphNode,true)}catch(err){wrong.disabled=false;toast(err.message,true)}return}
- for(const [b,k] of [['[data-role-edit]','.role-form'],['[data-name-edit]','.name-form'],['[data-org-edit]','.org-form'],['[data-person-org-edit]','.person-org-form']])if(e.target.closest(b)){const f=$('#people-view '+k);f.hidden=!f.hidden;if(!f.hidden){f.elements[0].focus();f.elements[0].select()}return}const crumb=e.target.closest('[data-crumb]');if(crumb){e.preventDefault();graphBack(crumb.dataset.crumb);return}
+  del.disabled=true;try{await graphPost('graph_person_delete',{node_id:graphNode});toast('Deleted. Won’t be added again.');graphBack('people')}catch(err){del.disabled=false;toast(err.message,true)}return}const wrong=e.target.closest('[data-org-wrong],[data-org-lookup]');if(wrong){const w=wrong.matches('[data-org-wrong]');if(w&&!confirm('Clear the looked-up details? This domain won’t be looked up again until you ask.'))return;wrong.disabled=true;try{await graphPost('graph_org_wrong',{node_id:graphNode,wrong:w});const of=$('#people-view .org-form');if(of)orgOpen(of,false);toast(w?'Cleared.':'It will be looked up again soon.');await people(graphNode,true)}catch(err){wrong.disabled=false;toast(err.message,true)}return}
+ if(e.target.closest('[data-org-cancel]')){orgOpen($('#people-view .org-form'),false);return}
+ if(e.target.closest('[data-org-edit]')){const f=$('#people-view .org-form');orgOpen(f,true);f.elements[0].focus({preventScroll:true});return}
+ for(const [b,k] of [['[data-role-edit]','.role-form'],['[data-name-edit]','.name-form'],['[data-person-org-edit]','.person-org-form']])if(e.target.closest(b)){const f=$('#people-view '+k);f.hidden=!f.hidden;if(!f.hidden){f.elements[0].focus();f.elements[0].select()}return}const crumb=e.target.closest('[data-crumb]');if(crumb){e.preventDefault();graphBack(crumb.dataset.crumb);return}
  const unlink=e.target.closest('[data-fact-unlink]');if(unlink){unlink.disabled=true;try{await graphPost('graph_fact_unlink',{fact_id:Number(unlink.dataset.factUnlink),node_id:graphNode});toast('Taken off this page. Still in what I’ve learned.');await people(graphNode,true)}catch(err){unlink.disabled=false;toast(err.message,true)}return}
  const forget=e.target.closest('[data-fact-forget]');if(forget){const text=forget.closest('li')?.querySelector('span')?.textContent||'';if(!confirm(`Forget this everywhere?\n\n“${text}”\n\nIt is deleted from this page and from everything your Machine has learned, for good. To only take it off this page, choose Not about ${forget.dataset.who} instead.`))return;forget.disabled=true;try{await graphPost('forget_fact',{id:Number(forget.dataset.factForget)});toast('Forgotten everywhere.');await people(graphNode,true)}catch(err){forget.disabled=false;toast(err.message,true)}return}
  const b=e.target.closest('[data-node]');if(b&&b.dataset.node)graphOpen(b.dataset.node)};
-$('#people-view').onsubmit=async e=>{const o=e.target.closest('.org-form');if(o){e.preventDefault();const b=o.querySelector('button'),edit=$('#people-view [data-org-edit]');b.disabled=true;if(edit)edit.disabled=true;const changed=Object.fromEntries(ORG_FIELDS.map(([k])=>o.elements[k]).filter(f=>f.value.trim()!==f.defaultValue.trim()).map(f=>[f.name,f.value.trim()]));const {name,...fields}=changed;  /* only what the owner changed becomes theirs */
-  try{await graphPost('graph_org_edit',{node_id:o.dataset.nodeId,fields,...(name!==undefined?{name}:{})});o.hidden=true;toast('Saved.');await people(graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}finally{if(edit?.isConnected)edit.disabled=false}return}
+$('#people-view').onsubmit=async e=>{const o=e.target.closest('.org-form');if(o){e.preventDefault();const b=$('#people-view [data-org-save]');const changed=Object.fromEntries(ORG_FIELDS.map(([k])=>o.elements[k]).filter(f=>f.value.trim()!==f.defaultValue.trim()).map(f=>[f.name,f.value.trim()]));const {name,...fields}=changed;  /* only what the owner changed becomes theirs */
+  const errs=orgCheck(changed);orgErrors(o,errs);if(errs.length)return;if(!Object.keys(changed).length){orgOpen(o,false);return}
+  if(b)b.disabled=true;try{await graphPost('graph_org_edit',{node_id:o.dataset.nodeId,fields,...(name!==undefined?{name}:{})});orgOpen(o,false);toast('Saved.');await people(graphNode,true)}
+  catch(err){const k=ORG_FIELDS.find(([k,t])=>new RegExp('^('+t.split(' ')[0]+'|'+k.replace('_url','').replace('_',' ')+')\\b','i').test(err.message))?.[0];if(k&&k in changed)orgErrors(o,[[k,err.message]]);else toast(err.message,true)}finally{if(b?.isConnected)b.disabled=false}return}
  const n=e.target.closest('.name-form');if(n){e.preventDefault();const b=n.querySelector('button');b.disabled=true;try{const r=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'graph_rename',args:{node_id:n.dataset.nodeId,name:n.newname.value.trim()}})});n.hidden=true;toast(r.merged?'Joined '+r.name+'.':'Renamed.');await people(r.node_id||graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}return}
  const po=e.target.closest('.person-org-form');if(po){e.preventDefault();const b=po.querySelector('button');b.disabled=true;try{await graphPost('graph_person_org',{node_id:po.dataset.nodeId,org:po.org.value.trim()});po.hidden=true;toast(po.org.value.trim()?'Saved.':'Cleared.');await people(graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}return}
  const f=e.target.closest('.role-form');if(!f)return;e.preventDefault();const b=f.querySelector('button');b.disabled=true;try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'graph_role',args:{node_id:f.dataset.nodeId,role:f.role.value.trim()}})});f.hidden=true;toast(f.role.value.trim()?'Saved.':'Cleared.');await people(graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}};

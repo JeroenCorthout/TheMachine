@@ -61,7 +61,8 @@ SCHEMA = '''CREATE TABLE IF NOT EXISTS agent_jobs(id TEXT PRIMARY KEY,suggestion
   status TEXT NOT NULL,brief TEXT NOT NULL,asks TEXT,session_id TEXT,url TEXT,progress TEXT,summary TEXT,diff TEXT,files TEXT,
   error TEXT,error_kind TEXT,turns INTEGER NOT NULL DEFAULT 1,outcome TEXT,token_hash TEXT,created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,started_at TEXT,finished_at TEXT,draft_updated INTEGER,answers TEXT);
-CREATE INDEX IF NOT EXISTS agent_jobs_card ON agent_jobs(suggestion_id,created_at);'''
+CREATE INDEX IF NOT EXISTS agent_jobs_card ON agent_jobs(suggestion_id,created_at);
+CREATE TABLE IF NOT EXISTS agent_result_receipts(ticket_hash TEXT PRIMARY KEY,report INTEGER NOT NULL,acked INTEGER NOT NULL DEFAULT 0);'''
 
 
 def now():
@@ -1266,6 +1267,16 @@ class AgentJobs:
             if 'answers' not in have:  # each turn's answer, so the card's chat shows every reply (older jobs only kept the latest)
                 db.execute('ALTER TABLE agent_jobs ADD COLUMN answers TEXT')
 
+            if 'draft_revision' not in have:
+                db.execute('ALTER TABLE agent_jobs ADD COLUMN draft_revision TEXT')
+
+    def draft_revision(self, db, suggestion_id):
+        row = db.execute('SELECT next_action FROM suggestions WHERE id=?', (str(suggestion_id),)).fetchone()
+        current = json.loads(row['next_action'] or '{}') if row else {}
+        actions = current.get('actions') if current.get('kind') == 'menu' else [current]
+        drafts = [a for a in actions or [] if a.get('kind') in ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')]
+        return drafts[0].get('revision') if len(drafts) == 1 else None
+
     # -- what the dashboard shows
     def tools(self):
         return tools(self.config)
@@ -1350,6 +1361,7 @@ class AgentJobs:
             db.execute("UPDATE agent_jobs SET outcome='again',updated_at=? WHERE suggestion_id=? AND outcome IS NULL", (at, str(suggestion_id)))
             db.execute('INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,asks,turns,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
                        (job_id, str(suggestion_id), tool['id'], tool['place'], 'sent', brief, '[]', 1, at, at))
+            db.execute('UPDATE agent_jobs SET draft_revision=? WHERE id=?', (self.draft_revision(db, suggestion_id), job_id))
         try:
             self.prepare_folder(job_id, brief, parts)
         except OSError as error:
@@ -1380,6 +1392,7 @@ class AgentJobs:
             asks = json.loads(row['asks'] or '[]') + [{'at': now(), 'text': text}]
             db.execute("UPDATE agent_jobs SET status='sent',asks=?,turns=turns+1,progress=NULL,error=NULL,error_kind=NULL,outcome=NULL,"
                        'updated_at=?,started_at=NULL,finished_at=NULL WHERE id=?', (json.dumps(asks[-20:], ensure_ascii=False), now(), row['id']))
+            db.execute('UPDATE agent_jobs SET draft_revision=? WHERE id=?', (self.draft_revision(db, row['suggestion_id']), row['id']))
         self.launch(row['id'], text, resume=row['session_id'])
         return self.get(row['id'])
 
@@ -1396,8 +1409,9 @@ class AgentJobs:
         resume = row['session_id'] if row['place'] == 'local' or asks else None
         prompt = (asks[-1]['text'] if asks else CARRY_ON) if resume else row['brief']
         with self.connect() as db:
-            db.execute("UPDATE agent_jobs SET status='sent',progress=NULL,error=NULL,error_kind=NULL,outcome=NULL,updated_at=?,started_at=NULL,finished_at=NULL WHERE id=?",
+            db.execute("UPDATE agent_jobs SET status='sent',turns=turns+1,progress=NULL,error=NULL,error_kind=NULL,outcome=NULL,updated_at=?,started_at=NULL,finished_at=NULL WHERE id=?",
                        (now(), row['id']))
+            db.execute('UPDATE agent_jobs SET draft_revision=? WHERE id=?', (self.draft_revision(db, row['suggestion_id']), row['id']))
         self.launch(row['id'], prompt, resume=resume, fresh=None if asks else row['brief'])
         return self.get(row['id'])
 
@@ -1529,8 +1543,10 @@ class AgentJobs:
             try:
                 runner = self.runner(row)
                 with self.connect() as db:
-                    db.execute("UPDATE agent_jobs SET status=?,started_at=COALESCE(started_at,?),updated_at=? WHERE id=? AND status='sent'",
-                               ('waiting' if row['place'] == 'remote' else 'running', now(), now(), job_id))
+                    claimed = db.execute("UPDATE agent_jobs SET status=?,started_at=COALESCE(started_at,?),updated_at=? WHERE id=? AND turns=? AND status='sent'",
+                                         ('waiting' if row['place'] == 'remote' else 'running', now(), now(), job_id, row['turns'])).rowcount
+                if not claimed:
+                    return
                 turn_no = row['turns']
                 transcript = self.folder(job_id) / f'turn-{turn_no}.jsonl'
                 try:
@@ -1543,23 +1559,23 @@ class AgentJobs:
                     self.progress(job_id, 'Its thread was gone, so it starts again from the brief')
                     session, summary = self.run_turn(runner, row, fresh, None, transcript)
             except Stopped as stop:
-                self.finish(job_id, 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind)
+                self.finish(job_id, 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind, turn=row['turns'])
                 return
             except Exception as error:  # noqa: BLE001 - a job never takes the service down
                 LOG.error('agent job error=%s', type(error).__name__)
-                self.finish(job_id, 'failed', error='Something went wrong running it', error_kind='internal')
+                self.finish(job_id, 'failed', error='Something went wrong running it', error_kind='internal', turn=row['turns'])
                 return
             if summary is None:
                 return  # a remote job: its result comes back through the connector
-            self.result(job_id, session, summary)
+            self.result(job_id, session, summary, turn=row['turns'])
 
     def run_turn(self, runner, row, prompt, resume, transcript):
         job_id = row['id']
         own = (settings(self.config) or {}).get(row['tool']) or {}
-        on_progress = lambda line: self.progress(job_id, line)
+        on_progress = lambda line: self.progress(job_id, line, turn=row['turns'])
 
         def on_session(sid, runner=runner):
-            self.session(job_id, sid, app_link(runner, sid))
+            self.session(job_id, sid, app_link(runner, sid), turn=row['turns'])
         try:
             return runner.run(self.named(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress, on_session, self.procs)
         except (Untrusted, NoAppServer) as why:
@@ -1569,7 +1585,7 @@ class AgentJobs:
             with self.connect() as db:
                 db.execute('UPDATE agent_jobs SET url=NULL WHERE id=?', (job_id,))
             return plain.run(self.named(row), prompt, resume, self.work(job_id), transcript, self.timeout, on_progress,
-                             lambda sid: self.session(job_id, sid), self.procs)
+                             lambda sid: self.session(job_id, sid, turn=row['turns']), self.procs)
 
     def named(self, row):
         job = dict(row)
@@ -1580,14 +1596,14 @@ class AgentJobs:
         job['card_title'] = ((found or {}).get('card') or {}).get('title') or ''
         return job
 
-    def progress(self, job_id, line):
+    def progress(self, job_id, line, turn=None):
         with self.connect() as db:
             db.execute("UPDATE agent_jobs SET progress=?,status=CASE WHEN status='waiting' THEN 'running' ELSE status END,updated_at=? "
-                       "WHERE id=? AND status IN ('running','waiting')", (str(line)[:200], now(), job_id))
+                       "WHERE id=? AND status IN ('running','waiting') AND (? IS NULL OR turns=?)", (str(line)[:200], now(), job_id, turn, turn))
 
-    def session(self, job_id, session_id, link=None):
+    def session(self, job_id, session_id, link=None, turn=None):
         with self.connect() as db:
-            db.execute('UPDATE agent_jobs SET session_id=?,url=COALESCE(?,url),updated_at=? WHERE id=?', (str(session_id)[:120], link, now(), job_id))
+            db.execute('UPDATE agent_jobs SET session_id=?,url=COALESCE(?,url),updated_at=? WHERE id=? AND (? IS NULL OR turns=?)', (str(session_id)[:120], link, now(), job_id, turn, turn))
 
     def changes(self, job_id):
         """What the job made or changed in its folder since it was handed off: (files, diff)."""
@@ -1613,16 +1629,21 @@ class AgentJobs:
             diff = diff[:DIFF_MAX] + '\n… (cut here; the full changes are in the job folder)\n'
         return files[:FILES_MAX], diff
 
-    def result(self, job_id, session, summary, files=None, diff=None):
+    def result(self, job_id, session, summary, files=None, diff=None, remote_draft=None, receipt=None, turn=None):
+        statuses = (*ACTIVE, 'result') if receipt else ACTIVE
+        with self.connect() as db:
+            owner = db.execute(f"SELECT * FROM agent_jobs WHERE id=? AND (? IS NULL OR turns=?) AND status IN ({','.join('?' * len(statuses))}) AND outcome IS NULL", (job_id, turn, turn, *statuses)).fetchone()
+        if not owner:
+            return False
         if files is None:
             files, diff = self.changes(job_id)
-        updated = self.take_draft(job_id, files)
+        updated = self.take_draft(job_id, files, owner, text=remote_draft)
         summary, at = str(summary or 'Done, without a summary.')[:SUMMARY_MAX], now()
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute("SELECT answers,turns FROM agent_jobs WHERE id=? AND status IN ('running','waiting','sent')", (job_id,)).fetchone()
+            row = db.execute(f"SELECT answers,turns FROM agent_jobs WHERE id=? AND turns=? AND status IN ({','.join('?' * len(statuses))}) AND outcome IS NULL", (job_id, owner['turns'], *statuses)).fetchone()
             if not row:
-                return
+                return False
             try:
                 answers = json.loads(row['answers'] or '[]')
             except ValueError:
@@ -1630,22 +1651,27 @@ class AgentJobs:
             answers = (answers if isinstance(answers, list) else []) + [{'at': at, 'turn': row['turns'], 'summary': summary,
                                                                           'files': [f['path'] for f in files]}]
             db.execute("UPDATE agent_jobs SET status='result',session_id=COALESCE(?,session_id),summary=?,files=?,diff=?,progress=NULL,"
-                       "error=NULL,error_kind=NULL,draft_updated=?,updated_at=?,finished_at=?,answers=? WHERE id=? AND status IN ('running','waiting','sent')",
+                       "error=NULL,error_kind=NULL,draft_updated=?,updated_at=?,finished_at=?,answers=? WHERE id=?",
                        (session, summary, json.dumps(files), diff or None, 1 if updated else None, at, at,
                         json.dumps(answers[-20:], ensure_ascii=False), job_id))
 
-    def take_draft(self, job_id, files):
+            if receipt:
+                db.execute('INSERT INTO agent_result_receipts(ticket_hash,report,acked) VALUES(?,?,0) ON CONFLICT(ticket_hash) DO UPDATE SET report=excluded.report,acked=0', receipt)
+        return True
+
+    def take_draft(self, job_id, files, owner, text=None):
         """A message the job rewrote (draft.md, made or changed this turn) becomes the card's draft. The owner still
         reads it there and sends it with the card's own Send."""
-        if not self.revise or DRAFT_FILE not in [f['path'] for f in files]:
+        if not self.revise or (text is None and DRAFT_FILE not in [f['path'] for f in files]):
             return False
         found = self.work(job_id) / DRAFT_FILE
-        try:
-            if found.is_symlink() or found.stat().st_size > 50_000:
+        if text is None:
+            try:
+                if found.is_symlink() or found.stat().st_size > 50_000:
+                    return False
+                text = found.read_text(errors='replace').strip()
+            except OSError:
                 return False
-            text = found.read_text(errors='replace').strip()
-        except OSError:
-            return False
         taken = self.folder(job_id) / 'draft.taken'  # only a draft.md that changed since the last turn took it
         digest = hashlib.sha256(text.encode()).hexdigest()
         try:
@@ -1657,7 +1683,7 @@ class AgentJobs:
         with self.connect() as db:
             row = db.execute('SELECT suggestion_id FROM agent_jobs WHERE id=?', (job_id,)).fetchone()
         try:
-            done = bool(row and self.revise(row['suggestion_id'], text))
+            done = bool(row and self.revise(row['suggestion_id'], text, dict(owner)))
             if done:
                 taken.write_text(digest + '\n')
             return done
@@ -1665,11 +1691,11 @@ class AgentJobs:
             LOG.warning('agent job draft error=%s', type(error).__name__)
             return False
 
-    def finish(self, job_id, status, error=None, error_kind=None, only_if=None):
+    def finish(self, job_id, status, error=None, error_kind=None, only_if=None, turn=None):
         with self.connect() as db:
             where = f" AND status IN ({','.join('?' * len(only_if))})" if only_if else ''
-            db.execute(f'UPDATE agent_jobs SET status=?,error=?,error_kind=?,progress=NULL,updated_at=?,finished_at=? WHERE id=?{where}',
-                       (status, error, error_kind, now(), now(), job_id, *(only_if or ())))
+            db.execute(f'UPDATE agent_jobs SET status=?,error=?,error_kind=?,progress=NULL,updated_at=?,finished_at=? WHERE id=?{where} AND (? IS NULL OR turns=?)',
+                       (status, error, error_kind, now(), now(), job_id, *(only_if or ()), turn, turn))
 
     def recover(self):
         """After a restart: a local job that was running has stopped with the service; one still waiting for a slot
@@ -1677,7 +1703,7 @@ class AgentJobs:
         with self.connect() as db:
             running = db.execute("SELECT * FROM agent_jobs WHERE status='running' AND place='local'").fetchall()
             waiting = db.execute("SELECT * FROM agent_jobs WHERE status='sent'").fetchall()
-            going = db.execute("SELECT * FROM agent_jobs WHERE status IN ('running','waiting') AND place!='local'").fetchall()
+            going = db.execute("SELECT * FROM agent_jobs WHERE (status IN ('running','waiting') AND place!='local') OR token_hash IN (SELECT ticket_hash FROM agent_result_receipts WHERE acked=0)").fetchall()
         for row in running:
             if row['tool'] == 'claude' and (row['url'] or '').startswith('https://claude.ai/code') and row['session_id']:
                 # A Claude Code background session runs on without The Machine: follow it again.
@@ -1719,29 +1745,29 @@ class AgentJobs:
                 started = dt.datetime.fromisoformat(row['started_at']).timestamp() if row['started_at'] else time.time()
                 left = max(60, self.timeout - (time.time() - started))
                 transcript = self.folder(job_id) / f'turn-{row["turns"]}.jsonl'
-                session, summary = runner.rejoin(self.named(row), live, transcript, left, lambda line: self.progress(job_id, line), self.procs)
+                session, summary = runner.rejoin(self.named(row), live, transcript, left, lambda line: self.progress(job_id, line, turn=row['turns']), self.procs)
             except Stopped as stop:
-                self.finish(job_id, 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind)
+                self.finish(job_id, 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind, turn=row['turns'])
                 return
             except Exception as error:  # noqa: BLE001 - a job never takes the service down
                 LOG.error('agent job rejoin error=%s', type(error).__name__)
-                self.finish(job_id, 'failed', error='Something went wrong following it after a restart', error_kind='internal')
+                self.finish(job_id, 'failed', error='Something went wrong following it after a restart', error_kind='internal', turn=row['turns'])
                 return
-            self.result(job_id, session, summary)
+            self.result(job_id, session, summary, turn=row['turns'])
 
     def rewatch(self, runner, row, short):
         try:
             since = dt.datetime.fromisoformat(row['started_at']).timestamp() if row['started_at'] else time.time()
-            session, summary = runner.watch(row, short, since, self.timeout, lambda line: self.progress(row['id'], line),
-                                            lambda sid: self.session(row['id'], sid), self.procs)
+            session, summary = runner.watch(row, short, since, self.timeout, lambda line: self.progress(row['id'], line, turn=row['turns']),
+                                            lambda sid: self.session(row['id'], sid, turn=row['turns']), self.procs)
         except Stopped as stop:
-            self.finish(row['id'], 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind)
+            self.finish(row['id'], 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind, turn=row['turns'])
             return
         except Exception as error:  # noqa: BLE001
             LOG.error('agent job error=%s', type(error).__name__)
-            self.finish(row['id'], 'failed', error='Something went wrong following it', error_kind='internal')
+            self.finish(row['id'], 'failed', error='Something went wrong following it', error_kind='internal', turn=row['turns'])
             return
-        self.result(row['id'], session, summary)
+        self.result(row['id'], session, summary, turn=row['turns'])
 
     # -- remote results (agent_remote.py): what a remote Claude session reported through The Machine's connector
     def network(self, body):
@@ -1754,20 +1780,17 @@ class AgentJobs:
         diff, and a finished message for the card's draft."""
         with self.connect() as db:
             row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
-        if not row or row['status'] not in ('waiting', 'running'):
+        if not row or row['status'] not in ('waiting', 'running', 'result') or found.get('ticket_hash') != row['token_hash']:
+            return False
+        with self.connect() as db:
+            previous = db.execute('SELECT report FROM agent_result_receipts WHERE ticket_hash=?', (row['token_hash'],)).fetchone()
+        if previous and int(found.get('report') or 1) <= previous['report']:
             return False
         summary = str(found.get('summary') or '').strip() or 'Done, without a summary.'
         links = '\n'.join(u for u in (found.get('links') or []) if isinstance(u, str) and u.startswith('https://'))[:4000]
         diff = str(found.get('diff') or '')[:DIFF_MAX]
         files = sorted(set(re.findall(r'^\+\+\+ b/(.+)$', diff, re.M)))[:FILES_MAX]
-        self.result(row['id'], None, (summary + ('\n\n' + links if links else ''))[:SUMMARY_MAX],
-                    files=[{'path': f, 'size': 0} for f in files], diff=diff)
-        draft = str(found.get('draft') or '').strip()
-        if draft and self.revise:
-            try:
-                if self.revise(row['suggestion_id'], draft):
-                    with self.connect() as db:
-                        db.execute('UPDATE agent_jobs SET draft_updated=1 WHERE id=?', (row['id'],))
-            except Exception as error:  # noqa: BLE001 - the result still shows; the draft stays as it was
-                LOG.warning('agent job draft error=%s', type(error).__name__)
-        return True
+        return self.result(row['id'], None, (summary + ('\n\n' + links if links else ''))[:SUMMARY_MAX],
+                           files=[{'path': f, 'size': 0} for f in files], diff=diff,
+                           remote_draft=str(found.get('draft') or '').strip(),
+                           receipt=(row['token_hash'], int(found.get('report') or 1)), turn=row['turns'])

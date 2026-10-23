@@ -330,7 +330,7 @@ class AgentJobs(unittest.TestCase):
         card = lambda sid: {'card': {'title': 'Sum up the quarterly numbers', 'body': 'Sam asks for a summary.'}, 'drafts': self.drafts,
                             'links': ['https://mail.example/t1'], 'files': [], 'messages': '## Quarterly numbers\nCan you sum up the numbers?'} if sid == self.sid else None
         return agent_jobs.AgentJobs(self.store.connect, self.config, Path(self.tmp.name) / 'agent-jobs', card=card,
-                                    revise=lambda sid, text: self.revised.append((sid, text)) or True, network=self.network)
+                                    revise=lambda sid, text, job=None: self.revised.append((sid, text)) or True, network=self.network)
 
     def network(self, body):
         """The Network's /api/fleet/agent-results, as the control plane answers it."""
@@ -340,8 +340,9 @@ class AgentJobs(unittest.TestCase):
             return {'ok': True, 'mcp_url': 'https://app.example.test/mcp'}
         if body['action'] == 'fetch':
             return {'results': [r for r in self.reported if r['ticket_hash'] in body['tickets']]}
-        self.reported = [r for r in self.reported if r['ticket_hash'] not in body['tickets']]
-        return {'ok': True}
+        receipts = body.get('receipts') or [{'ticket_hash': h, 'report': 1} for h in body.get('tickets') or []]
+        self.reported = [r for r in self.reported if not any(r['ticket_hash'] == a['ticket_hash'] and int(r.get('report') or 1) == a['report'] for a in receipts)]
+        return {'ok': True, 'acked': receipts}
 
     drafts = []
 
@@ -462,7 +463,107 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual(job['links'], ['https://example.com/pr/1'])
         self.assertTrue(job['draft_updated'])
         self.assertEqual(self.revised, [(self.sid, 'Hi Sam, here they are.')])
-        self.assertEqual(self.sent[-1], {'action': 'ack', 'tickets': [digest]})
+        self.assertEqual(self.sent[-1], {'action': 'ack', 'receipts': [{'ticket_hash': digest, 'report': 1}]})
+
+    def test_a_cancelled_result_cannot_replace_the_card_draft(self):
+        jobs = self.jobs()
+        with patch.object(jobs, 'launch', lambda *a, **k: None):
+            job = jobs.start(self.sid, 'claude', 'Rewrite draft')
+        work = jobs.work(job['id'])
+        (work / 'draft.md').write_text('An old result')
+        jobs.finish(job['id'], 'cancelled', only_if=agent_jobs.ACTIVE)
+        jobs.result(job['id'], 'old-session', 'Finished late', files=[{'path': 'draft.md', 'size': 13}], diff='')
+        self.assertEqual(self.revised, [])
+        self.assertEqual(jobs.get(job['id'])['status'], 'cancelled')
+
+    def test_an_ack_failure_is_retried_after_recreating_the_jobs(self):
+        import agent_remote
+        jobs = self.jobs(claude={'place': 'remote', 'session': 'session_01AbCdEfGh1234'})
+        with patch.object(agent_remote, 'watch', lambda jobs: None):
+            job = wait(jobs, jobs.start(self.sid, 'claude', 'Summarize')['id'], done=('waiting', 'failed'))
+            end = time.time() + 10
+            while not jobs.get(job['id'])['url'] and time.time() < end:
+                time.sleep(.05)
+        with jobs.connect() as db:
+            digest = db.execute('SELECT token_hash FROM agent_jobs WHERE id=?', (job['id'],)).fetchone()[0]
+        self.reported.append({'ticket_hash': digest, 'report': 1, 'summary': 'Ready', 'draft': 'The draft'})
+        real = jobs._network
+        def fail_ack(body):
+            if body['action'] == 'ack':
+                raise OSError('Connection lost')
+            return real(body)
+        jobs._network = fail_ack
+        self.assertEqual(agent_remote.fetch(jobs), 1)
+        self.assertEqual(jobs.get(job['id'])['status'], 'result')
+        restarted = self.jobs()
+        self.assertEqual(agent_remote.fetch(restarted), 0)
+        self.assertEqual(self.reported, [])
+        self.assertEqual(self.revised, [(self.sid, 'The draft')])
+        with restarted.connect() as db:
+            self.assertEqual(db.execute('SELECT acked FROM agent_result_receipts').fetchone()[0], 1)
+
+    def test_cancel_or_an_owner_edit_between_checks_cannot_replace_the_draft(self):
+        app = object.__new__(a.App)
+        app.store, app.config = self.store, self.config
+        action = {'kind': 'email', 'to': ['sam@client.example'], 'body': 'Approved original', 'subject': 'Hi', 'revision': 'r1'}
+        with self.store.connect() as db:
+            db.execute("UPDATE suggestions SET status='prepared',next_action=? WHERE id=?", (json.dumps(action), self.sid))
+        jobs = self.jobs()
+        jobs.revise = app.agent_revise
+        with patch.object(jobs, 'launch', lambda *a, **k: None):
+            job = jobs.start(self.sid, 'claude', 'Rewrite the draft')
+        with jobs.connect() as db:
+            claimed = dict(db.execute('SELECT * FROM agent_jobs WHERE id=?', (job['id'],)).fetchone())
+        # Cancellation after the result's first check is validated in the same transaction as the edit.
+        jobs.finish(job['id'], 'cancelled', only_if=agent_jobs.ACTIVE)
+        with self.assertRaisesRegex(ValueError, 'stopped or the draft changed'):
+            app.agent_revise(self.sid, 'Stale', claimed)
+        with jobs.connect() as db:
+            db.execute("UPDATE agent_jobs SET status='running' WHERE id=?", (job['id'],))
+        self.store.revise_draft(self.sid, 'r1', 'dashboard', body='Owner revised it')
+        with self.assertRaisesRegex(ValueError, 'stopped or the draft changed'):
+            app.agent_revise(self.sid, 'Stale', claimed)
+        with self.store.connect() as db:
+            self.assertEqual(json.loads(db.execute('SELECT next_action FROM suggestions WHERE id=?', (self.sid,)).fetchone()[0])['body'], 'Owner revised it')
+
+    def test_a_replacement_during_ack_wait_updates_the_result_once(self):
+        import agent_remote
+        jobs = self.jobs(claude={'place': 'remote', 'session': 'session_01AbCdEfGh1234'})
+        with patch.object(jobs, 'launch', lambda *a, **k: None):
+            job = jobs.start(self.sid, 'claude', 'Summarize')
+        digest = 'a' * 64
+        with jobs.connect() as db:
+            db.execute("UPDATE agent_jobs SET status='waiting',token_hash=? WHERE id=?", (digest, job['id']))
+        self.reported.append({'ticket_hash': digest, 'report': 1, 'summary': 'First', 'draft': 'First draft'})
+        network = jobs._network
+        def replaced(body):
+            if body['action'] == 'ack':
+                self.reported[:] = [{'ticket_hash': digest, 'report': 2, 'summary': 'Corrected', 'draft': 'Corrected draft'}]
+                return {'ok': True, 'acked': []}
+            return network(body)
+        jobs._network = replaced
+        self.assertEqual(agent_remote.fetch(jobs), 1)
+        jobs._network = network
+        self.assertEqual(agent_remote.fetch(jobs), 1)
+        self.assertEqual(jobs.get(job['id'])['summary'], 'Corrected')
+        self.assertEqual(self.revised, [(self.sid, 'First draft'), (self.sid, 'Corrected draft')])
+        self.assertEqual(agent_remote.fetch(jobs), 0)
+
+    def test_a_previous_turn_cannot_complete_or_fail_the_retry(self):
+        jobs = self.jobs()
+        with patch.object(jobs, 'launch', lambda *a, **k: None):
+            job = jobs.start(self.sid, 'claude', 'Summarize')
+            jobs.finish(job['id'], 'cancelled', only_if=agent_jobs.ACTIVE)
+            retried = jobs.retry(job['id'])
+        self.assertEqual(retried['turns'], 2)
+        jobs.result(job['id'], 'stale', 'Old completion', files=[], diff='', turn=1)
+        jobs.finish(job['id'], 'failed', error='Old error', turn=1)
+        jobs.progress(job['id'], 'Old progress', turn=1)
+        jobs.session(job['id'], 'stale-session', turn=1)
+        self.assertEqual(jobs.get(job['id'])['status'], 'sent')
+        self.assertIsNone(jobs.get(job['id'])['progress'])
+        with jobs.connect() as db:
+            self.assertIsNone(db.execute('SELECT session_id FROM agent_jobs WHERE id=?', (job['id'],)).fetchone()[0])
 
     def test_codex_cloud_runs_there_and_its_diff_comes_back(self):
         import agent_remote

@@ -69,3 +69,9 @@ Coding agents**.
 `config_dir` points the jobs' Claude Code at another config folder, such as another account, and only for jobs.
 `"detach": false` keeps Codex's app server a child of The Machine, so a restart stops the job.
 `"claude": false` or `"codex": false` hides that action. `"agents": false` turns both off.
+
+## Result recovery
+
+Remote results carry a numbered receipt. The app commits the result and receipt before acknowledging that exact version; a failed acknowledgment is retried after restart without applying the draft twice. A newer report is not erased by an older acknowledgment. The Network keeps encrypted-at-rest results for at most seven days (not end-to-end encryption); control-plane recovery backups expire within 30 days.
+
+A coding job may replace the draft only while that same turn is still active and the draft still has the revision handed to it. Cancellation, a newer turn or the owner's edit wins. Otherwise the result remains available without replacing the owner's draft. Normal Send and execution permissions are unchanged.
