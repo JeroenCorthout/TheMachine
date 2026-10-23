@@ -126,7 +126,9 @@ class Graph(unittest.TestCase):
     def test_slack_names_are_looked_up_a_few_at_a_time_once_a_month(self):
         calls = []
         slack = object.__new__(a.Slack); slack.account = {'user_id': 'U0OWNER'}
-        slack.get = lambda method, params: calls.append(params['user']) or {'user': {'profile': {'real_name': 'Name ' + params['user'], 'email': params['user'].lower() + '@acme.com'}}}
+        slack.get = lambda method, params: calls.append(params['user']) or {'user': {'id': params['user'], 'profile': {
+            'real_name': 'Name ' + params['user'], 'email': params['user'].lower() + '@acme.com',
+            'is_custom_image': params['user'] == 'U0A', 'image_192': f"https://avatars.slack-edge.com/{params['user']}_192.png"}}}
         channels = [{'name': 'DM U0A'}, {'name': 'DM U0B'}, {'name': 'general'}, {'name': 'My notes'}]
         events = [{'metadata': {'user_id': 'U0C', 'channel_name': 'general'}}, {'metadata': {'user_id': 'U0OWNER', 'channel_name': 'general'}}]
         a.remember_slack_names(self.store, slack, events, channels, per_page=2)
@@ -135,6 +137,8 @@ class Graph(unittest.TestCase):
         self.assertEqual(calls, ['U0A', 'U0B', 'U0C'])
         with self.store.connect() as db:
             self.assertEqual(db.execute("SELECT name,email FROM identity_names WHERE identifier='slack:U0A'").fetchone()[:], ('Name U0A', 'u0a@acme.com'))
+            # Their own Slack picture is kept for their photo (Slack's generated one isn't), on this Machine only.
+            self.assertEqual([tuple(r) for r in db.execute('SELECT identifier,url,chosen FROM contact_photo_links')], [('slack:U0A', 'https://avatars.slack-edge.com/U0A_192.png', 1)])
 
     def test_projects_from_review_and_cards_spread_to_threads_and_people(self):
         self.add(mail(3, 'Ann <ann@client.com>', 'sam@acme.com', thread='deal'), mail(2, 'Sam <sam@acme.com>', 'ann@client.com, Bob <bob@client.com>', ('SENT',), thread='deal'),

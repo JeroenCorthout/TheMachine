@@ -957,6 +957,47 @@ def gog_read(config, account, api, version, method, params, scope):
         raise SourceError('invalid_response')
     return data
 
+# Contact photos from the owner's Google contacts and Workspace directory, with the scopes the gog sign-in already has
+# (a hosted sign-in through the broker has no Contacts scope, so it is never asked). Read only, once a day per account.
+GOOGLE_PHOTO_LISTS = (
+    ('people.connections.list', {'resourceName': 'people/me', 'pageSize': 1000, 'personFields': 'emailAddresses,phoneNumbers,photos'},
+     'https://www.googleapis.com/auth/contacts', 'connections'),
+    ('people.listDirectoryPeople', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos', 'sources': 'DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE'},
+     'https://www.googleapis.com/auth/directory.readonly', 'people'),
+    ('otherContacts.list', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos'},
+     'https://www.googleapis.com/auth/contacts.other.readonly', 'otherContacts'))
+GOOGLE_PHOTO_PAGES = 20
+
+
+def google_photo_offers(config, account, read=None):
+    """(identifiers, link, chosen) for each of the account's contacts with a real photo. A list the sign-in can't read
+    is skipped."""
+    read = read or gog_read
+    offers = []
+    for method, params, scope, key in GOOGLE_PHOTO_LISTS:
+        token = None
+        for _ in range(GOOGLE_PHOTO_PAGES):
+            try:
+                page = read(config, account, 'people', 'v1', method, {**params, **({'pageToken': token} if token else {})}, scope)
+            except SourceError:
+                break
+            offers += [o for o in (enrichment.google_photo(p) for p in page.get(key) or [] if isinstance(p, dict)) if o]
+            token = page.get('nextPageToken')
+            if not token:
+                break
+    return offers
+
+
+def google_photo_accounts(config):
+    """The owner's own Google sign-ins through gog, once per address (never one shared from a Fleet)."""
+    seen = {}
+    for account in config.get('accounts', []):
+        if account.get('service', 'gmail') in ('gmail', 'calendar') and account.get('transport') == 'gog' and account.get('email') \
+                and not account.get('shared'):
+            seen.setdefault(account['email'].lower(), account)
+    return list(seen.values())
+
+
 # Outlook mail and calendar: they flow through the same sync, cards and sends as Gmail and Google Calendar, and their
 # messages are stored with the same 'gmail.message' kind (it means "an email" everywhere in the app).
 MICROSOFT_SERVICES = ('outlook', 'outlook_calendar')
@@ -6609,6 +6650,10 @@ def remember_slack_names(store, source, events, channels=(), per_page=3):
         profile = user.get('profile') or {}
         name = None if user.get('is_bot') else (profile.get('real_name') or profile.get('display_name') or user.get('real_name'))
         store.remember_name(identifier, name and str(name)[:200], None if user.get('is_bot') else str(profile.get('email') or '').lower()[:320] or None)
+        offer = enrichment.slack_photo({**user, 'id': user.get('id') or identifier.split(':', 1)[1]})
+        if offer:
+            with store.connect() as db:
+                enrichment.offer_photos(db, [offer], 'slack', now(), known_only=False)
 
 
 GATEWAY_SIGNALS = (
@@ -13509,6 +13554,15 @@ class App:
                     self.graph_dirty.set()  # show the new profiles
                 found = enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None)), stop=self.stop.is_set)
                 photos = enrichment.photos_step(self.store.connect, now())  # straight after the lookups (hosted ones too, through the agent)
+                for account in google_photo_accounts(self.config):
+                    with self.store.connect() as db:
+                        due = enrichment.contact_run_due(db, 'google:' + account['email'].lower(), now())
+                    if due and not self.stop.is_set():
+                        offers = google_photo_offers(self.config, account)
+                        with self.store.connect() as db:
+                            enrichment.offer_photos(db, offers, 'google', now())
+                            enrichment.contact_run_done(db, 'google:' + account['email'].lower(), now())
+                photos += enrichment.contact_photos_step(self.store.connect, now())
                 if found or photos:
                     LOG.info('enrichment people found=%s photos=%s', found, photos)
                     self.graph_dirty.set()
