@@ -92,6 +92,32 @@ A hosting layer can keep the key off the disk: `message-content.key` is then a l
 so the disk and its backups never hold it, and deleting the Machine deletes the key, which leaves those backups'
 messages unreadable. Until the key arrives the service waits, and says so; it never makes a new one.
 
+### The key in your keyring (Linux desktop)
+
+On a Linux desktop the key can live in your keyring (the Secret Service: GNOME Keyring, KWallet, KeePassXC) instead
+of the file, so a copy of the data folder holds no key. It is opt-in:
+
+```
+assistant message-key status       # where the key is kept, and whether the keyring looks ready
+assistant message-key to-keyring   # move it there
+assistant message-key to-file      # move it back to message-content.key (--keep-in-keyring leaves a copy there)
+```
+
+Or set `"message_key_store": "keyring"` in config.json: the service then moves it at a start, once the keyring checks
+out. It needs `secret-tool` (in libsecret; on Ubuntu `apt install libsecret-tools`) and `busctl` (systemd).
+
+The move tests the keyring first (stores, reads back and removes a throwaway secret), stores the key, reads it back,
+checks that it opens your sealed messages and saved sign-ins, and only then overwrites and removes the file.
+`message-content.key` becomes a link to a file in memory (`$XDG_RUNTIME_DIR`, emptied at every reboot), and
+`message-content.keyring` next to the database says which keyring item holds the key (nothing secret). At each
+start the service reads the key from the keyring once and keeps it in memory. A locked keyring is never asked to
+unlock: while it is locked or not running yet (at boot, before you sign in), the service waits, says so in its log
+and on the dashboard's address, and starts by itself once it can read the key. It never makes a new key.
+
+Moving to another computer works as before: an export opens everything and holds no key. A keyring without a
+password (some desktops with automatic login make one) keeps its secrets unencrypted on the disk: the key is then
+out of the data folder, but not encrypted at rest. `assistant message-key status` says so.
+
 What stays readable, for support and to improve The Machine: feedback, facts and rules, skills, profile and notes,
 card states and times, errors, sync health and logs. `python3 learnings.py --database ... --workspace ...` exports
 exactly that, without the key.

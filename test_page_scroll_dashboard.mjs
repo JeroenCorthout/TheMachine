@@ -19,7 +19,7 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
  res.statusCode=url.pathname.startsWith('/brand/')?404:200;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const base='http://127.0.0.1:'+server.address().port+'/';
-const TABS=['inbox','events','people','fleet','feedback','health'];
+const TABS=['inbox','calendar','events','people','fleet','feedback','health'];
 const errors=[];let browser;
 try{
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});

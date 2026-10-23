@@ -99,7 +99,7 @@ Follow [Getting started](docs/getting-started.md). The installer can help set up
 
 ## Sources
 
-[Supported sources](docs/sources.md). Intercom is in the private installation, not a built-in OSS connector; add one through the connector interface. Collection is read-only by default, with an opt-in CRM account-join exception.
+[Supported sources](docs/sources.md). Collection is read-only by default, with an opt-in CRM account-join exception.
 
 ## Reviews
 

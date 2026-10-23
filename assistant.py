@@ -2927,6 +2927,33 @@ class Store:
                 row['metadata']['app_name'] = android_app_name(row['metadata'].get('package_name', 'Unknown app'))
         return rows
 
+    def calendar(self, account_ids, start, end):
+        """Meetings that overlap [start, end), for the dashboard's Calendar: read-only, slim rows, soonest first."""
+        start, end = (dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')) for v in (start, end))
+        if start.tzinfo is None or end.tzinfo is None or not dt.timedelta(0) < end - start <= dt.timedelta(days=15):
+            raise ValueError('Use a window of at most 15 days, with time zones')
+        start, end = start.astimezone(dt.timezone.utc).isoformat(), end.astimezone(dt.timezone.utc).isoformat()
+        if not account_ids:
+            return []
+        with self.connect() as db:
+            rows = db.execute("SELECT id,account_id,title,occurred_at,metadata FROM events WHERE kind='calendar.event' AND deleted=0 "
+                              'AND account_id IN (' + ','.join('?' for _ in account_ids) + ') AND occurred_at<? '
+                              "AND coalesce(json_extract(metadata,'$.end_at'),occurred_at)>? ORDER BY occurred_at,id LIMIT 300",
+                              (*account_ids, end, start)).fetchall()
+        result = []
+        for r in rows:
+            m = json.loads(r['metadata'])
+            attendees = [a for a in m.get('attendees') or [] if isinstance(a, dict)]
+            me = next((a for a in attendees if a.get('self')), {})
+            if me.get('responseStatus') == 'declined':
+                continue  # a meeting the owner said no to isn't on their day
+            url = m.get('source_url')
+            result.append({'id': r['id'], 'account_id': r['account_id'], 'title': str(r['title'])[:300], 'start': r['occurred_at'],
+                           'end': m.get('end_at') or r['occurred_at'], 'all_day': bool(m.get('all_day')),
+                           'location': str(m.get('location') or '')[:200], 'guests': sum(1 for a in attendees if not a.get('self')),
+                           'url': url if isinstance(url, str) and urllib.parse.urlsplit(url).scheme == 'https' else None})
+        return result
+
     def review_context(self, owner_session, owner_run=None):
         # No source content here: this is a small durable recovery hint, not recall.
         with self.connect() as db:
@@ -13198,6 +13225,13 @@ class App:
                         self.output(400, {'error': 'Select accounts and use a valid search'})
                 elif path.path == '/api/account':
                     self.output(200, app.account_view())
+                elif path.path == '/api/calendar':  # the Calendar tab: meetings in a window, read-only
+                    args = urllib.parse.parse_qs(path.query)
+                    try:
+                        self.output(200, {'meetings': app.store.calendar([a['id'] for a in app.config['accounts']],
+                                                                         args.get('from', [''])[0], args.get('to', [''])[0])})
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(400, {'error': 'Ask for a window of at most 15 days'})
                 elif path.path == '/api/fleet':
                     if not getattr(app, 'fleet', None):
                         self.output(200, {'on': False})
@@ -13481,7 +13515,10 @@ def main():
         service.trim_log()
         with lock.open('w') as handle:
             portable.lock(handle, blocking=False)
-            message_seal.wait_for_key(config['database'], say=LOG.warning, protect=message_seal.wanted(config))  # a hosted key comes after a restart
+            # a hosted key comes after a restart, a key in the keyring once it can be read: meanwhile the dashboard says so
+            message_seal.wait_for_key(config['database'], say=LOG.warning, protect=message_seal.wanted(config),
+                                      waiting=KeyWaitingPage(config))
+            message_key_keeper(config)
             App(config, args.config).serve()
     elif args.command == 'status':
         app = App(config)
@@ -13491,6 +13528,88 @@ def main():
         for account in config['accounts']:
             print(account['id'], sync_source(app.store, config, account))
 
+
+
+class KeyWaitingPage:
+    """While the service waits for the message key from the keyring (message_seal.wait_for_key), the dashboard's
+    address answers with why and that it starts by itself, instead of not answering at all. Nothing private: no data
+    is open yet. Called with the reason while it waits, with None when it is over (the app then takes the port)."""
+
+    def __init__(self, config):
+        self.config, self.server, self.reason = config, None, ''
+
+    def __call__(self, reason):
+        if reason is None:
+            if self.server:
+                self.server.shutdown()
+                self.server.server_close()
+                self.server = None
+            return
+        self.reason = reason
+        if self.server:
+            return
+        page = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                text = ('The Machine is waiting for its message key from your keyring: ' + page.reason + '. '
+                        'It starts by itself once the keyring can be read. Unlock the keyring or sign in to the desktop. '
+                        'Details: assistant message-key status')
+                if self.path.startswith('/api/') or self.path == '/health':
+                    body, kind = json.dumps({'ok': False, 'waiting': 'message-key', 'error': text}).encode(), 'application/json'
+                else:
+                    body = ('<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width">'
+                            '<meta http-equiv=refresh content=15><title>The Machine</title>'
+                            '<p style="font:16px system-ui;max-width:32em;margin:3em auto;padding:0 1em">' + html.escape(text) + '</p>').encode()
+                    kind = 'text/html'
+                self.send_response(503)
+                self.send_header('Content-Type', kind + '; charset=utf-8')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Retry-After', '15')
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_POST = do_GET
+
+        try:
+            self.server = http.server.ThreadingHTTPServer(('127.0.0.1', self.config.get('port', 8787)), Handler)
+        except OSError:
+            return  # the port is taken: the log says why it waits
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, name='key-waiting-page', daemon=True).start()
+
+
+def message_key_keeper(config, every=60):
+    """A key in the keyring (message_keyring.py): "message_key_store": "keyring" moves a key file there once the
+    keyring checks out; while the service runs, the runtime file the Gateway's plugin reads is put back from memory
+    if it goes (the keyring itself is not asked again)."""
+    database = Path(config['database']).expanduser() if config.get('database') else None
+    if not database:
+        return
+    import message_keyring
+    if config.get('message_key_store') == 'keyring' and not message_seal.in_keyring(database) \
+            and message_seal.key_path(database).is_file() and not message_seal.held_elsewhere(database):
+        try:
+            message_keyring.to_keyring(database, say=LOG.info)
+        except (message_keyring.Unavailable, message_seal.SealError, OSError) as error:
+            LOG.warning('message key stays in its file: %s', error)
+    if message_seal.in_keyring(database):
+        try:
+            message_keyring.settle(database)
+        except (OSError, ValueError):
+            pass
+
+        def keep():
+            while True:
+                time.sleep(every)
+                try:
+                    message_seal.load_key(database)
+                except (OSError, ValueError):
+                    pass
+        threading.Thread(target=keep, name='message-key-keeper', daemon=True).start()
 
 if __name__ == '__main__':
     os.umask(0o077)

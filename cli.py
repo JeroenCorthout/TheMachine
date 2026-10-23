@@ -749,6 +749,30 @@ def cmd_service(config, args):
     print({'start': 'Started.', 'stop': 'Stopped. Start it again with: assistant service start', 'restart': 'Restarted.'}[args.action])
 
 
+def cmd_message_key(config, args):
+    """Where the message key is kept: its file next to the database, or the desktop's keyring (message_keyring.py)."""
+    import message_keyring
+    database = Path(config.get('database') or '').expanduser()
+    if not config.get('database'):
+        raise CliError('config.json has no database')
+    try:
+        if args.action == 'status':
+            found = message_keyring.status(database)
+            if args.json:
+                out_json(found)
+            else:
+                for name, value in found.items():
+                    print(f'{name}: {value}')
+        elif args.action == 'to-keyring':
+            message_keyring.to_keyring(database)
+        else:
+            message_keyring.to_file(database, keep_in_keyring=args.keep_in_keyring)
+    except message_keyring.Unavailable as error:
+        raise CliError(f'nothing changed: {error}') from None
+    except assistant.message_seal.SealError as error:
+        raise CliError(f'nothing changed: {error}') from None
+
+
 def cmd_support_bundle(config, args):
     path = support.bundle(args.config, out=args.out, doctor=onboarding.doctor)
     print(f'Saved {path}\nIt holds versions, doctor, the service and Gateway logs and config.json without keys, tokens,\n'
@@ -864,6 +888,9 @@ def parser():
     c.add_argument('action', choices=('status', 'start', 'stop', 'restart', 'logs'))
     c.add_argument('-n', '--lines', type=int, default=50, help='with logs: how many lines')
     c.add_argument('-f', '--follow', action='store_true', help='with logs: keep printing new lines')
+    c = add('message-key', 'Where the message key is kept: status, to-keyring (the desktop keyring, Linux) or to-file (back next to the database)', cmd_message_key)
+    c.add_argument('action', choices=('status', 'to-keyring', 'to-file'))
+    c.add_argument('--keep-in-keyring', action='store_true', help='with to-file: leave a copy in the keyring')
     c = add('support-bundle', 'Save versions, doctor and recent logs in one file to send when asking for help; no keys or tokens', cmd_support_bundle)
     c.add_argument('--out', help='folder to save it in (default: here; on Windows WSL your Windows Desktop)')
     c = add('raw', 'Call any non-owner service action with JSON args', cmd_raw)

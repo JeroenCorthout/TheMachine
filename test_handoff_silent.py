@@ -186,19 +186,21 @@ class Silent(unittest.TestCase):
         self.assertNotIn('silent', json.dumps(self.relay.sent('/answer')))
         self.assertIn('Send Sam the pricing', self.fleet.waiting_handoffs_text())
 
-    def test_a_stranger_is_never_named_to_the_teammate(self):
+    def test_the_teammate_hears_who_by_first_name_only_and_never_what_was_said(self):
         ask = self.waiting()
         done = self.fleet.handoff_on_it(ask, self.sent_email(to='Jo Bloggs <jo@elsewhere.example>'))
-        self.assertNotIn('with', self.answered()['answer'])
-        self.assertNotIn('Jo', json.dumps(self.answered()))
-        self.assertEqual(done['how'], 'emailed Jo')  # the owner's own note may say who
+        self.assertEqual(self.answered()['answer']['with'], 'Jo')  # also someone the teammate doesn't know
+        self.assertNotIn('Bloggs', json.dumps(self.answered()))
+        self.assertNotIn('elsewhere.example', json.dumps(self.answered()))  # no address
+        self.assertNotIn('40k', json.dumps(self.answered()))  # no content
+        self.assertEqual(done['how'], 'emailed Jo')
 
     def test_a_slack_message_and_a_joined_call_count_a_declined_call_does_not(self):
         ask = self.waiting()
         slack = {'account_id': 'work', 'source_id': 's-own', 'kind': 'slack.message', 'occurred_at': later(), 'title': '', 'body': 'On it',
                  'deleted': False, 'metadata': {'user_id': 'UOWNER', 'chat_name': 'Pat Example'}}
         self.fleet.handoff_on_it(ask, self.event(slack))
-        self.assertEqual({k: self.answered()['answer'].get(k) for k in ('where', 'with')}, {'where': 'Slack', 'with': None})  # a chat name alone: someone else can share it, so no name goes
+        self.assertEqual({k: self.answered()['answer'].get(k) for k in ('where', 'with')}, {'where': 'Slack', 'with': 'Pat'})  # the chat's name
         call = lambda status, sid: {'account_id': 'work', 'source_id': sid, 'kind': 'calendar.event', 'occurred_at': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
                                     'title': 'Pricing call', 'body': '', 'deleted': False,
                                     'metadata': {'attendees': [{'email': 'owner@acme.example', 'self': True, 'responseStatus': status},

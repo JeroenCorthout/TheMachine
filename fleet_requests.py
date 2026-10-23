@@ -64,9 +64,9 @@ DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 OPEN = ('pending', 'accepted', 'prepared', 'instructions', 'snoozed')
 SPLIT_SHOWN_DAYS = 7
 # Silent acceptance: the owner acts on a waiting handoff (a message they sent, a call they joined) before they tap
-# Accept. The review judges that by meaning (handoff_on_it); the teammate hears "on it", where and when, and the name of
-# who they talked to only when the teammate knows them already (the handoff's contact or someone in the Fleet). It
-# travels as an accept with a `silent` mark, so an older Machine reads a plain accept.
+# Accept. The review judges that by meaning (handoff_on_it); the teammate hears "on it", where and when, and the first
+# name of who they talked to ("talked to Sam on Slack"), never what was said. It travels as an accept with a `silent`
+# mark, so an older Machine reads a plain accept.
 ON_IT = {'gmail.message': 'email', 'outlook.message': 'email', 'slack.message': 'Slack', 'whatsapp.message': 'WhatsApp',
          'linkedin.message': 'LinkedIn', 'teams.message': 'Teams', 'calendar.event': 'a call', 'outlook_calendar.event': 'a call'}
 WHERE = set(ON_IT.values())
@@ -752,7 +752,7 @@ class Requests:
             raise ValueError('That was before the handoff came; only what the owner did after it counts')
         question = json.loads(row['question'])
         where = ON_IT[event['kind']]
-        who, address = self.other_party(event)
+        who, _ = self.other_party(event)
         # Claimed first, in one step: an Accept or Decline that got there first wins, and one coming after finds it answered.
         with self.connect() as db:
             if not db.execute("UPDATE fleet_in SET status='answered',decided_at=?,choice='silent' WHERE id=? AND status='waiting'",
@@ -762,9 +762,8 @@ class Requests:
         try:  # the card first (it can't be made without a work account), then the teammate is told
             joined = bool(self.same_card(row['fleet'], question))  # it joins a card the owner already had: Not mine leaves that card
             card_id = self.request_card(row, question)
-            shared = who if who and self.known_to(row, question, who, address) else ''
             answer = {'stage': 'accepted', 'silent': True, 'where': where,
-                      'at': dt.datetime.fromisoformat(event['occurred_at']).isoformat(timespec='minutes'), **({'with': shared} if shared else {})}
+                      'at': dt.datetime.fromisoformat(event['occurred_at']).isoformat(timespec='minutes'), **({'with': who} if who else {})}
             self.relay.call('POST', '/answer', {'id': row['id'], 'status': 'answered', 'answer': answer})
         except Exception:
             with self.connect() as db:  # nothing told: it waits for the owner again
@@ -788,7 +787,7 @@ class Requests:
 
     def other_party(self, event):
         """Who the owner talked to in this message or call, as (first name, address): its first recipient, the chat, or
-        the first other person invited. Their own data; only shared on when the teammate knows them already."""
+        the first other person invited. Only the first name goes on to the teammate."""
         m = json.loads(event['metadata'] or '{}') if isinstance(event['metadata'], str) else event['metadata'] or {}
         mine = self.my_emails()
         if event['kind'].endswith('calendar.event'):
@@ -802,16 +801,6 @@ class Requests:
         name, address = people[0] if people else ('', '')
         name = fleet.clean(name, 60) or (address.split('@')[0] if address else '')
         return (name.split()[0] if name else ''), address
-
-    def known_to(self, row, question, who, address):
-        """Whether the teammate already knows who the owner talked to: the handoff's own contact, or someone in the Fleet,
-        by their address. A name alone never counts (another person can share it): when in doubt, no name goes."""
-        if not address:
-            return False
-        if address == str(question.get('contact') or '').lower():
-            return True
-        members = (self.fleets().get(row['fleet']) or {}).get('members', [])
-        return any(address in {str(e).lower() for e in m.get('emails') or []} for m in members)
 
     @staticmethod
     def marked_line(how):

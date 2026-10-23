@@ -948,8 +948,11 @@ def next_steps(config, healthy, started, paths=None):
         lines.append('  - Let your agent draft how you write and what matters to you from your own messages: assistant profile (you see it first)')
     if config.get('message_protection') is not False and config.get('database'):
         key = message_seal.key_path(Path(config['database']).expanduser())
-        lines.append(f'  - Messages are encrypted in the database with the key {key}. Back it up with the database:'
-                     ' without it they are lost')
+        if message_seal.in_keyring(Path(config['database']).expanduser()):
+            lines.append('  - Messages are encrypted in the database with a key in your keyring (assistant message-key status)')
+        else:
+            lines.append(f'  - Messages are encrypted in the database with the key {key}. Back it up with the database:'
+                         ' without it they are lost')
     lines += ['  - Keep `Do it` in mind: it lets the agent act with your accounts. Read README "Security model".',
               '  - After editing config.json: ' + service.hint('restart')]
     if not config.get('delivery_enabled') or not config.get('review_worker', {}).get('enabled'):
