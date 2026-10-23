@@ -63,6 +63,7 @@ FEATURES = {
     'moving': ('moving.py', 'def '),
     'support-bundle': ('cli.py', "'support-bundle'"),
     'keyboard': ('dashboard.html', 'Search and commands'),
+    'share-learnings': ('team_learnings.py', 'def '),
 }
 # Features that exist in the code but have no article yet, each with the reason. Keep this short.
 PENDING = {

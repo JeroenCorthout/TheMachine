@@ -23,4 +23,5 @@ A tab with nothing to show is hidden.
 - **Coding agents**: see [Hand to Claude Code or Codex](hand-to-agent.md).
 - **Open the Machine’s browser ↗**: the browser your Machine uses for sites like LinkedIn.
 - **Fleet rules**: see [Sharing rules](sharing-rules.md).
+- **The Machine team**: **Offer to share learnings**. See [Share learnings with the team](share-learnings.md).
 - **Account**: **Open account** and **Sign out**, on a hosted Machine.

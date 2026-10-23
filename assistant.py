@@ -53,6 +53,7 @@ import work_removal
 import skills
 import task_invites
 import task_pages
+import team_learnings
 import google_api
 import ms_graph
 import signatures
@@ -478,6 +479,10 @@ OWNER_ACTIONS |= SKILL_ACTIONS
 # Hand to Claude Code / Hand to Codex (agent_jobs.py): the owner's own, from their dashboard only.
 AGENT_ACTIONS = {'agent_draft', 'agent_send', 'agent_follow_up', 'agent_retry', 'agent_cancel', 'agent_outcome', 'set_agents'}
 OWNER_ACTIONS |= AGENT_ACTIONS
+# Learnings for The Machine team (team_learnings.py): sharing, Not now, Never ask and the Settings switch are the owner's
+# own, from their dashboard only. Nothing is sent without their Send on exactly what they saw.
+LEARNING_ACTIONS = {'learnings_share', 'learnings_later', 'learnings_never', 'set_learnings_offer'}
+OWNER_ACTIONS |= LEARNING_ACTIONS
 UPLOAD_ACTIONS, UPLOAD_REQUEST_BYTES = {'skill_import_upload', 'skill_import_report', 'skills_found'}, 9 * 1024 * 1024
 # A merged fix to The Machine can be undone this long; one it merged by itself undoes itself when
 # its code version records an error within AUTO_UNDO_NEW, or the fault it fixed comes back.
@@ -2497,6 +2502,9 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS merge_effects(action_id TEXT NOT NULL,operation TEXT NOT NULL,receipt TEXT NOT NULL,status TEXT NOT NULL,'
                        'updated_at TEXT NOT NULL,PRIMARY KEY(action_id,operation))')
             db.execute(task_pages.SCHEMA)  # task pages offered or shared from handoffs by email (task_pages.py)
+            for statement in team_learnings.SCHEMA.split(';'):  # learnings for The Machine team (team_learnings.py)
+                if statement.strip():
+                    db.execute(statement)
             # Promises the owner made and promises made to them, from reviewed messages. Each is
             # checked when due: still open, it becomes a card (status carded, suggestion_id).
             db.execute('CREATE TABLE IF NOT EXISTS promises(id INTEGER PRIMARY KEY,direction TEXT NOT NULL,who TEXT NOT NULL,what TEXT NOT NULL,due TEXT,'
@@ -4386,6 +4394,8 @@ class Store:
             pages = max(1, -(-len(threads) // size))
             page = min(max(int(page or 1), 1), pages)
             return {'page': page, 'pages': pages, 'threads': threads[(page - 1) * size:page * size]}
+        if evidence.get('learnings'):  # a learnings run (team_learnings.py)
+            return team_learnings.evidence_page(evidence, page)
         if 'people' in evidence:  # a roles or organisations run
             people, size = evidence['people'], int(evidence.get('page_size') or ROLES_PAGE)
             pages = max(1, -(-len(people) // size))
@@ -4541,6 +4551,9 @@ class Store:
             return self.save_voice_study(profile, run_id)
         if kind and kind['kind'] == 'share':
             return self.save_share_history(profile, run_id)
+        if kind and kind['kind'] == 'learnings':
+            with self.connect() as db:
+                return team_learnings.save_draft(db, run_id, profile, {'accounts': self.accounts})
         if kind and kind['kind'] != 'profile':
             raise ValueError('This roles run has no draft: set roles with graph node_id and role')
         counts = collections.Counter({('Email' if k == 'email' else k): v
@@ -5215,6 +5228,20 @@ class Store:
                      (stamp - dt.timedelta(days=VOICE_STUDY_DAYS if last['status'] == 'ok' else 1)).isoformat()):
             return None
         return self.voice_study_start()
+
+    def learnings_due(self, current=None):
+        """About once a week, when the owner wants to be offered: one turn distils what was learned into a few general
+        learnings for The Machine team (team_learnings.py). Nothing is sent: the owner is asked first."""
+        current = current or dt.datetime.fromisoformat(now())
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute("SELECT 1 FROM profile_runs WHERE status IN ('starting','running')").fetchone() or not team_learnings.due(db, current):
+                return None
+            evidence = team_learnings.evidence(db, lambda: self.quality(team_learnings.SINCE_DAYS), current)
+            run_id, started = uuid.uuid4().hex, now()
+            db.execute("INSERT INTO profile_runs(run_id,status,started_at,updated_at,evidence,kind) VALUES(?,'starting',?,?,?,'learnings')",
+                       (run_id, started, started, json.dumps(evidence)))
+        return run_id
 
     def apply_voice_study(self, run_id):
         """A finished study's blocks become the voices, except blocks the owner wrote themselves."""
@@ -9917,6 +9944,11 @@ def weekly_recap_message(store, config, current=None, usage=None):
         changed.append(f"• Drafts: {learned['sent_as_written']} of {sent} went out as written.")
     if changed:
         lines += ['', '**What changed**', *changed]
+    with store.connect() as db:
+        share = team_learnings.waiting(db)
+    if share:  # only a pointer: they go out from the Feedback page, after the owner read them
+        lines += ['', '**For The Machine team**', f"• {share} {'learning' if share == 1 else 'learnings'} to share, if you like: "
+                  + (f'[read them]({root}#feedback)' if root else 'read them under Feedback') + '. Nothing goes without your OK.']
     alive = recap_graph_lines(store, since) + recap_share_lines(store, config)
     if alive:
         lines += ['', '**People and projects**', *alive]
@@ -10745,6 +10777,7 @@ class App:
             result['agents_settings'] = self.agents_view()
             result['signatures'] = self.signature_view()
             result['lookups'] = self.lookups_view()
+            result['team_learnings'] = self.learnings_view()
             # Read only the existing heartbeat's runtime facts, never conversation
             # content or scheduler configuration. Missing evidence stays unknown.
             try:
@@ -11225,6 +11258,19 @@ class App:
             if not owner_dashboard:
                 raise ValueError('Only the owner deletes someone permanently, on their page in the dashboard')
             return self.delete_person(str(args.get('node_id') or ''))
+        if name in LEARNING_ACTIONS:
+            if not owner_dashboard:
+                raise ValueError('Only the owner shares learnings, from the dashboard')
+            if name == 'learnings_share':
+                return {**self.learnings_share(args), 'team_learnings': self.learnings_view()}
+            with self.store.connect() as db:
+                if name == 'learnings_later':
+                    team_learnings.later(db, str(args.get('id') or ''))
+                elif name == 'learnings_never':
+                    team_learnings.never(db, str(args.get('id') or '') or None)
+                else:
+                    team_learnings.set_offer(db, args.get('on') is not False)
+            return {'team_learnings': self.learnings_view()}
         if name == 'set_people_lookup':
             if not owner_dashboard:
                 raise ValueError('Only the owner turns Look up work contacts on or off, in Settings')
@@ -12255,6 +12301,8 @@ class App:
         seeded, learned = self.store.seed_voices(), self.store.learn_sent_elsewhere()
         if (self.config.get('review_worker') or {}).get('enabled'):  # read how they write from their own messages, now and then
             self.store.voice_study_due()
+            if self.fleet:  # learnings go to the team over the Network: without it there is nobody to offer them to
+                self.store.learnings_due()
         self.apply_skill_clusters()  # a Create skill tapped on Telegram
         if seeded or learned:
             LOG.info('style learned voices=%s replies=%s', seeded, learned)
@@ -13715,6 +13763,7 @@ class App:
                                   orgs_prompt(run['run_id'], first['pages']) if run.get('kind') == 'orgs' else
                                   share_history_prompt(run['run_id'], first['pages']) if run.get('kind') == 'share' else
                                   voices_prompt(run['run_id'], first['counts'], first['pages']) if run.get('kind') == 'voices' else
+                                  team_learnings.prompt(run['run_id'], json.loads(run['evidence'])) if run.get('kind') == 'learnings' else
                                   profile_prompt(run['run_id'], first['counts'], run.get('room') or PROFILE_ROOM))
             with self.store.connect() as db:
                 db.execute('UPDATE profile_runs SET attempts=attempts+1,updated_at=? WHERE run_id=?', (now(), run['run_id']))
@@ -13731,6 +13780,10 @@ class App:
                 db.execute('UPDATE profile_runs SET status=?,error=?,finished_at=?,updated_at=? WHERE run_id=?', (status, error, now(), now(), run['run_id']))
                 if run.get('kind') == 'skills':
                     self.skills_find_done(run, status)
+        if run.get('kind') == 'learnings':  # asks the owner only once the run is ok
+            with self.store.connect() as db:
+                if team_learnings.finish(db, run['run_id']):
+                    LOG.info('learnings ready to ask about')
         if run.get('kind') == 'voices':  # applies only once the run is ok
             written = self.store.apply_voice_study(run['run_id'])
             if written:
@@ -14285,6 +14338,20 @@ class App:
             on = True
         return {'people_available': available, 'people': on}
 
+    def learnings_view(self):
+        """Feedback, Share learnings with The Machine team, and its Settings switch (team_learnings.py)."""
+        try:
+            with self.store.connect() as db:
+                return team_learnings.view(db, network=bool(getattr(self, 'fleet', None)))
+        except sqlite3.Error:
+            return None
+
+    def learnings_share(self, args):
+        if not getattr(self, 'fleet', None):
+            raise ValueError('Sharing needs The Machine Network. Nothing was sent.')
+        return team_learnings.share(self.store.connect, self.config, str(args.get('id') or ''), args.get('items'), args.get('named') is True,
+                                    self.fleet.relay.call, code_version())
+
     def graph_fleet_marks(self, db):
         """Who in the graph is in the owner's Fleets, Family or Friends: from the Network directory this Machine keeps,
         never by asking their Machine (graph.fleet_marks). Nothing without a Fleet."""
@@ -14734,7 +14801,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

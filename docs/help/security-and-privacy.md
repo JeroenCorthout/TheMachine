@@ -12,6 +12,7 @@ order: 1
 - We don't read your email: messages are stored encrypted, and our support tools can't open them.
 - Nothing is sent without your OK: it reads and drafts; you decide what goes out. See [Do it](do-it.md).
 - Not used to train AI: we have no AI of our own. Your provider works under your account and their terms.
+- Learnings for the team only with your OK: now and then it asks to send a few general tips, nothing personal. See [Share learnings](share-learnings.md).
 - Take it with you, or delete it: export everything in one file, or delete your server and its backups with one button.
 
 ## Sign-in

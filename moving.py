@@ -40,7 +40,7 @@ OPENSSL = ['openssl', 'enc', '-aes-256-cbc', '-pbkdf2', '-iter', '600000', '-md'
 WORKSPACE_SKIP = {'tools'}
 SKIP_SUFFIXES = ('.bak', '.lock', '.tmp', '-wal', '-shm', '-journal')
 # Files in the data folder that are keys even when config.json does not point at them
-SECRET_NAMES = {'network-keys.json', 'owner-token', 'api-token', 'vapid.json', 'gog-password', 'browser-logins.sealed', 'browser-logins.enc',
+SECRET_NAMES = {'network-keys.json', 'learnings-keys.json', 'owner-token', 'api-token', 'vapid.json', 'gog-password', 'browser-logins.sealed', 'browser-logins.enc',
                 'browser-logins.key'}
 # Folders that only hold keys (a copied gog keyring, OpenClaw's credentials), and copies of OpenClaw's own settings
 SECRET_DIRS = {'keyring', 'credentials', '.ssh', '.gnupg'}

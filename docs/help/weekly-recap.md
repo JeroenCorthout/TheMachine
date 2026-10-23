@@ -11,6 +11,7 @@ order: 1
 - Your week with The Machine, and how many cards were worth it, compared with the week before.
 - Cards: new, done, dismissed and snoozed, and how quickly you answered.
 - Promises: yours kept and open, others' that came through or are still waiting.
+- Learnings to share with The Machine team, if any wait for you. See [Share learnings with the team](share-learnings.md).
 - People and projects, like who has gone quiet.
 - What I noticed: drafts sent as written or edited, cards dismissed within minutes, cards snoozed more than once.
 - Behind the scenes: what it reviewed, and what that cost.
