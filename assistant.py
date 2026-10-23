@@ -13462,11 +13462,12 @@ class App:
         wait = 120
         while not self.stop.wait(wait):
             try:
-                if enrichment.photos_step(self.store.connect, now()):  # the photos lookups brought in (hosted ones too, through the agent)
-                    self.graph_dirty.set()
                 if enrichment.step(self.store.connect, self.config, now()):
                     self.graph_dirty.set()  # show the new profiles
-                if enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None))):
+                found = enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None)), stop=self.stop.is_set)
+                photos = enrichment.photos_step(self.store.connect, now())  # straight after the lookups (hosted ones too, through the agent)
+                if found or photos:
+                    LOG.info('enrichment people found=%s photos=%s', found, photos)
                     self.graph_dirty.set()
                 wait = 600
             except enrichment.EnrichmentError as error:

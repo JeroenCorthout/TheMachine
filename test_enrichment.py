@@ -362,10 +362,11 @@ class Enrichment(unittest.TestCase):
             enrichment.save_person(db, 'email:lee@globex.com', 'found', {'title': 'Head of Sales', 'photo': expired}, now)
             enrichment.save_person(db, 'email:rae@initech.example', 'found', {'title': 'CTO', 'photo': 'https://media.example/gone.jpg'}, now)
             self.assertNotIn('photo"', db.execute("SELECT profile FROM person_profiles WHERE identifier='email:lee@globex.com'").fetchone()[0])
-        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=lambda url: asked.append(url)), 0)  # Rae's: a 404
-        self.assertEqual(asked, ['https://media.example/gone.jpg'])  # the expired one is never asked for
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=lambda url: asked.append(url)), 0)  # Rae's: a 404, no Gravatars
+        self.assertEqual(sorted(asked), sorted(['https://media.example/gone.jpg', enrichment.gravatar('email:lee@globex.com'), enrichment.gravatar('email:rae@initech.example')]))
+        self.assertNotIn(expired, asked)  # the expired one is never asked for
         self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=lambda url: asked.append(url)), 0)
-        self.assertEqual(len(asked), 1)  # one try per link
+        self.assertEqual(len(asked), 3)  # one try per lookup
         self.build()
         self.assertNotIn('photo', self.node('email:lee@globex.com')['profile'])  # initials show
         with self.store.connect() as db:
@@ -459,8 +460,63 @@ class Enrichment(unittest.TestCase):
                                [(f'email:p{n}@x.example', 'none', None, now) for n in range(2990)])
             enrichment.people_step(self.store.connect, self.people_config(), now, paired=True)  # 10 left of today's 3,000
             enrichment.people_step(self.store.connect, self.people_config(people_per_day=100), now, paired=True)  # the owner's own cap wins
-        self.assertEqual(asked, [5, 25, 10, 0])
+        self.assertEqual(asked, [5, 200, 10, 0])
         self.assertEqual(enrichment.PAIRED_PEOPLE_PER_DAY, 3000)
+
+    def test_without_a_working_link_their_gravatar_is_saved_once_per_lookup(self):
+        PNG = b'\x89PNG\r\n\x1a\n' + b'2' * 40
+        now, asked = tg.NOW.isoformat(), []
+        lee, kim, bo = 'email:lee@globex.com', 'email:kim@initech.example', 'email:bo@hooli.example'
+        self.assertEqual(enrichment.gravatar(lee), 'https://gravatar.com/avatar/' + __import__('hashlib').sha256(b'lee@globex.com').hexdigest() + '?s=160&d=404')
+        self.assertIsNone(enrichment.gravatar('slack:U123'))
+        with self.store.connect() as db:
+            enrichment.save_person(db, lee, 'found', {'title': 'Head of Sales'}, now)  # no photo from the lookup
+            enrichment.save_person(db, kim, 'none', {'why': 'unknown'}, now)          # not known to the service at all
+            enrichment.save_person(db, bo, 'found', {'title': 'CTO', 'photo': 'https://static.licdn.com/aero-v1/sc/h/ghost'}, now)
+        grav = {enrichment.gravatar(lee): (PNG, 'image/png'), enrichment.gravatar(kim): (PNG, 'image/png')}
+        fetch = lambda url: asked.append(url) or grav.get(url)
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=fetch), 2)
+        self.assertNotIn('https://static.licdn.com/aero-v1/sc/h/ghost', asked)  # LinkedIn's stock silhouette is no photo
+        self.assertEqual(len(asked), 3)
+        self.assertEqual(enrichment.photos_step(self.store.connect, now, fetch=fetch), 0)
+        self.assertEqual(len(asked), 3)  # once per lookup: Bo's Gravatar isn't asked again until he's looked up again
+        later = (tg.NOW + tg.dt.timedelta(days=90)).isoformat()
+        with self.store.connect() as db:
+            self.assertEqual({r[0] for r in db.execute('SELECT identifier FROM person_photos')}, {lee, kim})
+            enrichment.save_person(db, bo, 'found', {'title': 'CTO'}, later)
+            db.execute("INSERT INTO enrich_prefs(key,value) VALUES('people','off') ON CONFLICT(key) DO UPDATE SET value='off'")
+        self.assertEqual(enrichment.photos_step(self.store.connect, later, fetch=fetch), 0)  # Look up work contacts off: no Gravatar either
+        self.assertEqual(len(asked), 3)
+        with self.store.connect() as db:
+            db.execute("UPDATE enrich_prefs SET value='on' WHERE key='people'")
+        enrichment.photos_step(self.store.connect, later, fetch=fetch)
+        self.assertEqual(asked[-1], enrichment.gravatar(bo))
+
+    def test_people_are_asked_by_their_company_domain_and_a_miss_says_why(self):
+        self.assertEqual([enrichment.registrable(d) for d in ('eu.umbrella.example', 'team.globex.com', 'globex.co.uk', 'mail.globex.co.uk', 'globex.com')],
+                         ['umbrella.example', 'globex.com', 'globex.co.uk', 'globex.co.uk', 'globex.com'])
+        self.assertTrue(enrichment.same_company('globex.nl', 'globex.com'))      # the same company at another top-level domain
+        self.assertTrue(enrichment.same_company('https://www.globex.com/', 'globex.com'))
+        self.assertFalse(enrichment.same_company('initech.com', 'globex.com'))
+        self.assertFalse(enrichment.same_company('ab.nl', 'ab.com'))             # too short a name to tell
+        info = {'identifiers': ['email:lee@eu.globex.com']}
+        self.assertEqual(enrichment.work_contact(info, 'Lee Parker'), ('lee@eu.globex.com', 'globex.com'))
+        why = []
+        self.assertIsNone(enrichment.normalise_person({'name': 'Lee Parker', 'title': 'CTO', 'company': {'domain': 'initech.com'}}, 'Lee Parker', 'globex.com', why=why))
+        self.assertIsNone(enrichment.normalise_person({'name': 'Rae Quinn', 'title': 'CTO'}, 'Lee Parker', 'globex.com', why=why))
+        self.assertIsNone(enrichment.normalise_person(None, 'Lee Parker', 'globex.com', why=why))
+        self.assertIsNone(enrichment.normalise_person({'name': 'Lee Parker'}, 'Lee Parker', 'globex.com', why=why))
+        self.assertEqual(why, ['another company', 'another person', 'unknown', 'nothing to show'])
+        self.assertEqual(enrichment.normalise_person({'name': 'Lee Parker', 'title': 'CTO', 'company': {'domain': 'globex.nl'}}, 'Lee Parker', 'globex.com')['company_domain'], 'globex.com')
+        self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee Parker <lee@globex.com>', ('SENT',)),
+                 tg.mail(3, 'Kim Ray <kim@initech.example>', 'sam@acme.com'))
+        self.build()
+        enrichment.people_step(self.store.connect, self.people_config(), tg.NOW.isoformat())
+        with self.store.connect() as db:
+            self.assertEqual(tuple(db.execute("SELECT status,profile FROM person_profiles WHERE identifier='email:kim@initech.example'").fetchone()), ('none', '{"why": "unknown"}'))
+        self.build()
+        self.assertNotIn('profile', {k for k, v in self.node('email:kim@initech.example').items() if v})  # a miss shows nothing
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -317,7 +317,7 @@ PEOPLE_PER_PASS = 5
 PEOPLE_PER_DAY = 50
 # A self-hosted Machine paired with the Network gets what a hosted one gets: 3,000 a day, 25 a pass (every ten minutes).
 PAIRED_PEOPLE_PER_DAY = 3000
-PAIRED_PEOPLE_PER_PASS = 25
+PAIRED_PEOPLE_PER_PASS = 200  # a pass every ten minutes: a backfill of a few thousand people takes hours, not a day
 PERSON_FIELDS = {
     'title': ['position', 'job_title', 'title', 'employment.title', 'experience.0.position', 'experience.0.title'],
     'company': ['company.name', 'job_company_name', 'employment.name', 'organization.name', 'experience.0.company.name'],
@@ -364,7 +364,28 @@ def same_domain(a, b):
     return bool(a and b) and (a == b or a.endswith('.' + b) or b.endswith('.' + a))
 
 
-def normalise_person(data, asked_name, domain, fields=None):
+SECOND_LEVEL = {'co', 'com', 'net', 'org', 'ac', 'gov', 'edu', 'ltd', 'plc', 'or', 'ne', 'gv'}
+
+
+def registrable(domain):
+    """The company's own domain for an address's domain: eu.example.com and team.example.com are example.com
+    (example.co.uk keeps its three parts)."""
+    labels = str(domain or '').strip('.').lower().split('.')
+    keep = 3 if len(labels) >= 3 and labels[-2] in SECOND_LEVEL and len(labels[-1]) == 2 else 2
+    return '.'.join(labels[-keep:])
+
+
+def same_company(a, b):
+    """Whether a looked-up company domain is the address's company: the same domain or a subdomain of it, or the same
+    name at another top-level domain (example.nl for example.com)."""
+    if same_domain(a, b):
+        return True
+    a, b = (registrable(re.sub(r'^(?:https?://)?(?:www\.)?', '', str(x or '').strip().lower()).split('/')[0]) for x in (a, b))
+    name = a.split('.')[0]
+    return len(name) >= 3 and name == b.split('.')[0]
+
+
+def normalise_person(data, asked_name, domain, fields=None, why=None):
     """The small person profile the dashboard shows, from whatever shape the service returns; None when it found
     nothing, or when the answer is about someone else: a name whose first and last names do not match, or a company at another domain."""
     if isinstance(data, list):
@@ -373,10 +394,13 @@ def normalise_person(data, asked_name, domain, fields=None):
         if isinstance(data, dict) and isinstance(data.get(wrapper), dict):
             data = data[wrapper]
             break
+    why = why if why is not None else []
     if not isinstance(data, dict) or data.get('success') is False:
+        why.append('unknown')
         return None
     name = next((v for v in (value(data, p) for p in PERSON_NAME) if isinstance(v, str) and v.strip()), '')
     if name and asked_name and not same_person_name(name, asked_name):
+        why.append('another person')
         return None
     profile = {}
     for field, paths in PERSON_FIELDS.items():
@@ -386,8 +410,8 @@ def normalise_person(data, asked_name, domain, fields=None):
                 continue
             found = ' '.join(str(found).split())
             if field == 'photo':
-                if not LOGO.fullmatch(found):
-                    continue  # only a plain https address; the dashboard loads it as an image, nothing else
+                if not LOGO.fullmatch(found) or placeholder(found):
+                    continue  # only a plain https address to a real photo; the Machine saves it as an image, nothing else
             elif field == 'linkedin_url':
                 if not found.startswith('http'):
                     found = 'https://www.linkedin.com/in/' + found.strip('/').rsplit('/', 1)[-1]
@@ -401,14 +425,25 @@ def normalise_person(data, asked_name, domain, fields=None):
             profile[field] = found
             break
     if profile.get('company_domain'):
-        if not same_domain(profile['company_domain'], domain):
+        if not same_company(profile['company_domain'], domain):
+            why.append('another company')
             return None  # someone of the same name at another company
         profile['company_domain'] = domain
-    return profile if profile.get('title') or profile.get('company') or profile.get('photo') else None
+    if profile.get('title') or profile.get('company') or profile.get('photo'):
+        return profile
+    why.append('nothing to show')
+    return None
 
 
-def fetch_person(cfg, person, timeout=15):
-    """The profile for one person ({email, name, domain}), None when the service doesn't know them."""
+def placeholder(url):
+    """LinkedIn's stock silhouette for someone without a photo (served from its static host, not its media one)."""
+    return (urllib.parse.urlsplit(url).hostname or '').lower() == 'static.licdn.com'
+
+
+def fetch_person(cfg, person, timeout=15, why=None):
+    """The profile for one person ({email, name, domain}), None when the service doesn't know them (why says what
+    it said: unknown, another person, another company or nothing to show)."""
+    why = why if why is not None else []
     template = cfg['people_url']
     secret = key(cfg)
     if not secret and ('{key}' in template or '{key}' in json.dumps(cfg.get('headers') or {})):
@@ -420,9 +455,10 @@ def fetch_person(cfg, person, timeout=15):
         url = url.replace('{' + k + '}', urllib.parse.quote(str(v)))
     body = answer(cfg, url, secret, timeout)
     if body is None:
+        why.append('unknown')
         return None
     try:
-        return normalise_person(json.loads(body or b'null'), person['name'], person['domain'], cfg.get('people_fields'))
+        return normalise_person(json.loads(body or b'null'), person['name'], person['domain'], cfg.get('people_fields'), why)
     except ValueError:
         raise EnrichmentError('the answer was not JSON') from None
 
@@ -445,7 +481,10 @@ def work_contact(info, name):
         if domain in graph.FREEMAIL or FREEMAIL.match(domain) or MARKETING.match(domain) or graph.bulk(address) or graph.ROLE.match(address):
             continue
         addresses.append((domain != preferred, address, domain))
-    return min(addresses)[1:] if addresses else None
+    if not addresses:
+        return None
+    address, domain = min(addresses)[1:]
+    return address, registrable(domain)  # their company's own domain, not a mail subdomain
 
 
 def people_due(db, now, limit):
@@ -527,7 +566,7 @@ def people_available(config):
     return bool(cfg and cfg.get('people_url') and cfg.get('people') is not False)
 
 
-def people_step(connect, config, now, per_pass=None, paired=False):
+def people_step(connect, config, now, per_pass=None, paired=False, stop=None):
     """Look up a few work contacts with the Machine's own service. Returns how many got a profile; stops at the first
     service error. Paired with the Network: hosted's budget (PAIRED_PEOPLE_PER_DAY, PAIRED_PEOPLE_PER_PASS) unless
     people_per_day says otherwise."""
@@ -541,28 +580,40 @@ def people_step(connect, config, now, per_pass=None, paired=False):
         due = people_due(db, now, max(0, min(per_pass, per_day - used)))
     found = 0
     for person in due:
+        if stop and stop():
+            break
+        why = []
         try:
-            profile = fetch_person(cfg, person)
+            profile = fetch_person(cfg, person, why=why)
         except EnrichmentError:
             with connect() as db:
                 save_person(db, person['identifier'], 'error', None, now)
             raise
         with connect() as db:
-            save_person(db, person['identifier'], 'found' if profile else 'none', profile, now)
+            save_person(db, person['identifier'], 'found' if profile else 'none', profile or ({'why': why[0]} if why else None), now)
         found += bool(profile)
     return found
 
 
-# Photos: a lookup's photo link is saved once on this Machine (person_photos), small and only as an image, so it shows
-# from here and never expires. One try per link, straight after the lookup that brought it: no extra calls beyond the
-# daily lookups, no retries. A link that has already expired is skipped and the person looked up again in 30 days.
+# Photos: a person's photo is saved once on this Machine (person_photos), small and only as an image, so it shows from
+# here and never expires. Right after a lookup: the photo link it brought, while that still works; otherwise their
+# Gravatar, asked by a hash of their work address (gravatar.com never sees the address itself). One try per lookup, no
+# retries beyond that, so never more outside calls than the day's lookups. Nobody with a photo: looked up again in 30 days.
 PHOTO_BYTES = 200_000
 PHOTO_RETRY_DAYS = 30
-PHOTOS_PER_PASS = 30  # keeps up with 3,000 lookups a day
+PHOTOS_PER_PASS = 250  # keeps up with a pass's lookups
+GRAVATAR = 'https://gravatar.com/avatar/{hash}?s=160&d=404'
 
 
 def photo_key(identifier):
     return hashlib.sha256(identifier.encode()).hexdigest()[:32]
+
+
+def gravatar(identifier):
+    """The Gravatar address for a work address (by its SHA-256, as Gravatar asks), None for anything else."""
+    if not str(identifier).startswith('email:') or '@' not in identifier:
+        return None
+    return GRAVATAR.format(hash=hashlib.sha256(identifier.split(':', 1)[1].strip().lower().encode()).hexdigest())
 
 
 def link_expired(url, now):
@@ -636,29 +687,43 @@ def download_photo(url, timeout=10):
 
 
 def photos_step(connect, now, limit=PHOTOS_PER_PASS, fetch=None):
-    """Saves the photos that lookups brought in, once each. Returns how many were saved."""
+    """Saves a photo for the people looked up since their last try, once each: the lookup's own link while it still
+    works, else their Gravatar. Returns how many were saved."""
     fetch = fetch or download_photo
     with connect() as db:
-        rows = db.execute("SELECT identifier,json_extract(profile,'$.photo') FROM person_profiles "
-                          "WHERE status='found' AND json_extract(profile,'$.photo') IS NOT NULL ORDER BY fetched_at DESC LIMIT ?", (limit,)).fetchall()
+        db.execute('CREATE TABLE IF NOT EXISTS person_photo_tries(identifier TEXT PRIMARY KEY,tried_at TEXT NOT NULL)')
+        if not people_on(db):
+            return 0
+        rows = db.execute("SELECT p.identifier,p.status,p.fetched_at,CASE WHEN p.status='found' THEN json_extract(p.profile,'$.photo') END FROM person_profiles p "
+                          "LEFT JOIN person_photo_tries t ON t.identifier=p.identifier "
+                          "WHERE p.status IN ('found','none') AND (t.tried_at IS NULL OR t.tried_at<p.fetched_at) "
+                          "AND NOT EXISTS(SELECT 1 FROM person_photos s WHERE s.identifier=p.identifier) ORDER BY p.fetched_at DESC LIMIT ?", (limit,)).fetchall()
     saved = 0
-    for identifier, url in rows:
-        got = None if link_expired(url, now) else fetch(url)
+    for identifier, status, fetched_at, url in rows:
+        got = fetch(url) if url and not link_expired(url, now) and not placeholder(url) else None
+        if not got and gravatar(identifier):
+            got = fetch(gravatar(identifier))
         with connect() as db:
-            row = db.execute('SELECT profile FROM person_profiles WHERE identifier=?', (identifier,)).fetchone()
-            try:
-                profile = json.loads(row[0]) if row and row[0] else None
-            except ValueError:
-                profile = None
-            if not profile or profile.get('photo') != url:
+            row = db.execute('SELECT status,profile,fetched_at FROM person_profiles WHERE identifier=?', (identifier,)).fetchone()
+            if not row or row[2] != fetched_at:
                 continue  # looked up again meanwhile
-            profile.pop('photo')
+            db.execute('INSERT INTO person_photo_tries(identifier,tried_at) VALUES(?,?) ON CONFLICT(identifier) DO UPDATE SET tried_at=excluded.tried_at', (identifier, now))
             if got:
                 db.execute('INSERT INTO person_photos(identifier,key,type,data,saved_at) VALUES(?,?,?,?,?) ON CONFLICT(identifier) DO UPDATE SET '
                            'type=excluded.type,data=excluded.data,saved_at=excluded.saved_at', (identifier, photo_key(identifier), got[1], got[0], now))
-                profile.pop('photo_gone', None)
                 saved += 1
-            elif not db.execute('SELECT 1 FROM person_photos WHERE identifier=?', (identifier,)).fetchone():
+            if row[0] != 'found':
+                continue
+            try:
+                profile = json.loads(row[1]) if row[1] else None
+            except ValueError:
+                profile = None
+            if not profile:
+                continue
+            had = profile.pop('photo', None)
+            if got:
+                profile.pop('photo_gone', None)
+            elif had:
                 profile['photo_gone'] = True
             db.execute('UPDATE person_profiles SET profile=? WHERE identifier=?', (json.dumps(profile), identifier))
     return saved
