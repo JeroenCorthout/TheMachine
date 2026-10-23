@@ -16,7 +16,7 @@ const taskActions=(item:any)=>{
  const emailReady=choices.some((a:any)=>['email','email_demo','linkedin','slack','x','whatsapp','merge','finish'].includes(a.kind));
  return choices.filter((a:any)=>a.kind!=='prepare'||(!emailReady&&!/^Draft (shorter|longer|another|alternative|follow-up)\b/i.test(a.label||'')));
 };
-const OWNER_ACTIONS = new Set(['decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'fleet_decide', 'fleet_notice_decide']);
+const OWNER_ACTIONS = new Set(['decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'fleet_decide', 'fleet_notice_decide', 'recap_decide']);
 // The service lays out its Fleet question message; callbacks get the same wire format as card buttons.
 const fleetButtons=(rows:any[])=>rows.map(row=>row.map((b:any)=>b.url?{text:b.text,url:b.url}:{text:b.text,callback_data:buildCallback(b.value)}));
 // A Fleet tap's result, shown in the tapped message itself. An unchanged message can't be edited: then the reason, if
@@ -255,6 +255,21 @@ export default definePluginEntry({
           // buttons kept. Only when it can't be edited (unchanged) does the reason come as a reply.
           if (result?.message) await showResult(ctx, result.message, result.reason);
           else if (result?.reason) await ctx.respond.reply({ text: result.reason });
+          return { handled: true };
+        }
+        // A choice on the weekly recap (Filter, Keep, Undo; Drop, Do it now). The service takes it only from the recap message
+        // that offered it, changes only the owner's own filters or cards, and edits that message to show what was done.
+        const recapTap = /^assistant:recap:(r_[a-f0-9]{12}):(filter|keep|undo|drop|now)$/.exec(ctx.callback.data);
+        if (recapTap) {
+          let result;
+          try { result = await call('recap_decide', { id: recapTap[1], choice: recapTap[2], source: 'telegram',
+            message_id: String(ctx.callback.messageId), decision_id: `telegram:${ctx.callbackId}` }); }
+          catch (error:any) {
+            if (error.status !== 400) { await notReached(ctx); return { handled: true }; }
+            await ctx.respond.reply({ text: error.message || 'That did nothing. Please use the dashboard.' }).catch(()=>{});
+            return { handled: true };
+          }
+          if (result?.reason) await ctx.respond.reply({ text: result.reason }).catch(()=>{});
           return { handled: true };
         }
         const match = /^assistant:([a-f0-9]{16}):(accept|reject|snooze|other|complete|undo|unmerge|retry|back|snooze_(?:2h|tomorrow|3d|1w)|dismiss_(?:irrelevant|handled|wrong|other|none)|(?:send|confirm|next)_[a-f0-9]{12}|confirm_[a-f0-9]{12}_[0-5])$/.exec(ctx.callback.data);

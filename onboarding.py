@@ -228,7 +228,8 @@ class WebUI:
 
 def catalog(config):
     """The sources this install can add, with what each asks for and how many are connected already. `broker`:
-    a hosted machine's control plane signs it in (its account page), not this install."""
+    a hosted machine's control plane signs it in (its account page), not this install. `account_page`: the part of
+    that page where a hosted machine connects it (a sign-in there), while it can also be set up here."""
     have = {}
     for account in config.get('accounts', []):
         have[account.get('service', 'gmail')] = have.get(account.get('service', 'gmail'), 0) + 1
@@ -239,7 +240,8 @@ def catalog(config):
         service = SERVICES.get(name, name)
         setup = setup_of(service) or {}
         found.append({'name': name, 'service': service, 'label': label(service), 'note': setup.get('note'), 'what': setup.get('what'),
-                      'connected': have.get(service, 0), 'broker': service in brokered or bool(setup.get('broker'))})
+                      'connected': have.get(service, 0), 'broker': service in brokered or bool(setup.get('broker')),
+                      **({'account_page': setup['account_page']} if isinstance(setup.get('account_page'), str) else {})})
     return found
 
 
@@ -826,6 +828,8 @@ def new_account(config, service, account_id=None, ui=None):
     options = boundaries(config, service)
     if service in ('android', 'whatsapp', 'gateway') and not same:
         pass  # keep the example's device boundary
+    elif setup_of(service).get('boundary') == 'workspace':
+        account['boundary'] = 'work'  # its check names the company after the workspace it connects (work:<name>)
     elif same or options:
         # Work (which company) or personal: the owner's own choice, which a Work Fleet's removal follows
         choice = ui.choose('Which part of your life is this account', [(b, scope_label(b)) for b in options]
@@ -1565,6 +1569,33 @@ def disconnect(config_path, account_id):
     config['accounts'] = [a for a in config['accounts'] if a.get('id') != account_id]
     save(config_path, config)
     return account
+
+
+def enable_replies(config_path, account_id, token):
+    """Intercom replies for one account, from the owner's own Sign in with Intercom: the token goes in its own
+    credential file (<account>-reply, mode 600), apart from the read token, with the admin it belongs to (GET /me),
+    who is the only one replies go out as. Refused for an account from a Fleet grant: a shared token only reads.
+    Returns (admin id, name)."""
+    config = load(config_path)
+    account = next((a for a in config.get('accounts', []) if a.get('id') == account_id and a.get('service') == 'intercom'), None)
+    if not account:
+        raise SetupError('That Intercom account is not connected here')
+    a = assistant()
+    plugin = a.load_connector('intercom')
+    if plugin.received(account):
+        raise SetupError('A token shared through your Fleet only reads', 'sign in with Intercom yourself to reply')
+    try:
+        admin, name = plugin.reply_profile(config, account, token, a.CONNECTOR_HELPERS)
+    except a.SourceError as error:
+        raise SetupError(f'Intercom replies are not on: {error}', 'sign in with Intercom again, in the same workspace')
+    name_ = f'{account_id}-reply'
+    if name_ == account.get('credential'):
+        raise SetupError('The reply token needs its own credential file')
+    path = Path(config.setdefault('credentials', {}).setdefault(name_, str(data_dir(config) / f'{name_}.env'))).expanduser()
+    write_private(path, token.strip() + '\n')
+    account.update(reply_credential=name_, reply_admin_id=admin, reply_admin_name=name)
+    save(config_path, config)
+    return admin, name
 
 
 # ---------------------------------------------------------------- service, first sync

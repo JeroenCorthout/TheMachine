@@ -2799,6 +2799,26 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                 stop.wait(backoff)
 
     # -- for the dashboard and preparations
+    ACCOUNT_KEYS = ('email', 'plan', 'next_invoice', 'server', 'connections', 'fleets', 'actions', 'links')
+    ACCOUNT_SECONDS = 60
+
+    def account(self):
+        """The owner's account in short (Settings, Account): what the control plane says for this Machine's token,
+        read at most once a minute. Only the fields the tab shows, and links only to the account's own host. A
+        self-hosted Machine's buttons are plain links there (the account asks to sign in): this token never opens a
+        signed-in page of the account."""
+        import time
+        kept = getattr(self, '_account', None)
+        if kept and time.monotonic() - kept[0] < self.ACCOUNT_SECONDS:
+            return kept[1]
+        found = self.relay.call('GET', '/account', None, timeout=15) or {}
+        home = urllib.parse.urlsplit(account_url(self.config) or '')
+        links = {k: v for k, v in (found.get('links') or {}).items() if isinstance(v, str)
+                 and urllib.parse.urlsplit(v).scheme == 'https' and urllib.parse.urlsplit(v).netloc == home.netloc}
+        view = {**{k: found.get(k) for k in self.ACCOUNT_KEYS}, 'links': links, 'hop': False}
+        self._account = (time.monotonic(), view)
+        return view
+
     def view(self):
         fleets = self.fleets()
         delivered = self.meta('network_delivery', {}) or {}

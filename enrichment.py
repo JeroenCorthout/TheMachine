@@ -13,9 +13,14 @@ Work contacts are looked up too, on their own budget, with `people_url` (see peo
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import http.client
+import ipaddress
 import json
 import os
 import re
+import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -310,6 +315,9 @@ def lookup(connect, config, domain, now):
 # only), a LinkedIn address and city and country. Kept on this Machine only (person_profiles).
 PEOPLE_PER_PASS = 5
 PEOPLE_PER_DAY = 50
+# A self-hosted Machine paired with the Network gets what a hosted one gets: 3,000 a day, 25 a pass (every ten minutes).
+PAIRED_PEOPLE_PER_DAY = 3000
+PAIRED_PEOPLE_PER_PASS = 25
 PERSON_FIELDS = {
     'title': ['position', 'job_title', 'title', 'employment.title', 'experience.0.position', 'experience.0.title'],
     'company': ['company.name', 'job_company_name', 'employment.name', 'organization.name', 'experience.0.company.name'],
@@ -441,7 +449,14 @@ def people_due(db, now, limit):
     current = dt.datetime.fromisoformat(now)
     fresh = (current - dt.timedelta(days=REFRESH_DAYS)).isoformat()
     retry = (current - dt.timedelta(hours=RETRY_HOURS)).isoformat()
-    looked = {r[0]: (r[1], r[2]) for r in db.execute('SELECT identifier,status,fetched_at FROM person_profiles')}
+    again = (current - dt.timedelta(days=PHOTO_RETRY_DAYS)).isoformat()
+    since = backfill_since(db, now)
+    try:
+        saved = {r[0] for r in db.execute('SELECT identifier FROM person_photos')}
+    except Exception:  # before the app made the table
+        saved = set()
+    left = False
+    looked = {r[0]: (r[1], r[2], r[3]) for r in db.execute('SELECT identifier,status,fetched_at,profile FROM person_profiles')}
     ranked = []
     for node, name, strength, raw in db.execute("SELECT id,name,strength,info FROM graph_nodes WHERE kind='person'"):
         try:
@@ -452,16 +467,44 @@ def people_due(db, now, limit):
         if not found:
             continue
         identifier = 'email:' + found[0]
-        status, at = looked.get(identifier, (None, None))
-        if status and not ((status != 'error' and at < fresh) or (status == 'error' and at < retry)):
+        status, at, profile = looked.get(identifier, (None, None, None))
+        if status and not due_again(status, at, profile, identifier in saved, fresh, retry, again, since):
             continue
+        left = left or bool(since and status and status != 'error' and at < since)
         both = info.get('met') or (info.get('wrote') and info.get('heard'))
         ranked.append((-(3 if both else 1), -(strength or 0), identifier, {'identifier': identifier, 'email': found[0], 'name': ' '.join(str(name).split()), 'domain': found[1]}))
+    if since and not left:
+        db.execute("UPDATE enrich_prefs SET value=? WHERE key='people_backfill'", ('done ' + now,))
     return [item for *_, item in sorted(ranked, key=lambda r: r[:3])[:limit]]
 
 
+def due_again(status, at, profile, has_photo, fresh, retry, again, since):
+    """Whether someone looked up before is due again: after 90 days (a day after an error), after 30 when the photo
+    link had already expired and none is saved here, and once in the one-time backfill (looked up before it began)."""
+    if status == 'error':
+        return at < retry
+    if at < fresh or (since and at < since):
+        return True
+    return status == 'found' and not has_photo and '"photo_gone": true' in (profile or '') and at < again
+
+
+def backfill_since(db, now):
+    """The one-time backfill: every work contact already looked up is looked up once more, closest first, within the
+    daily limit (a large graph spreads over days). It starts the first time this code runs and is marked done in
+    enrich_prefs (by people_due) once nobody looked up before it is left, so it never repeats. Returns its start while
+    it runs. Someone with no match goes back to the normal interval."""
+    row = db.execute("SELECT value FROM enrich_prefs WHERE key='people_backfill'").fetchone()
+    if row is None:
+        db.execute("INSERT OR IGNORE INTO enrich_prefs(key,value) VALUES('people_backfill',?)", (now,))
+        return now
+    return None if row[0].startswith('done') else row[0]
+
+
 def save_person(db, identifier, status, profile, now):
-    """Stores a person look-up; an error keeps what was there."""
+    """Stores a person look-up; an error keeps what was there. A photo link that has already expired is not kept
+    (photo_gone: looked up again after 30 days)."""
+    if profile and profile.get('photo') and link_expired(profile['photo'], now):
+        profile = {**{k: v for k, v in profile.items() if k != 'photo'}, 'photo_gone': True}
     db.execute('INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,?,?,?) '
                "ON CONFLICT(identifier) DO UPDATE SET status=excluded.status,profile=CASE WHEN excluded.status='error' THEN person_profiles.profile ELSE excluded.profile END,fetched_at=excluded.fetched_at",
                (identifier, status, json.dumps(profile) if profile else None, now))
@@ -477,15 +520,18 @@ def people_available(config):
     return bool(cfg and cfg.get('people_url') and cfg.get('people') is not False)
 
 
-def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
+def people_step(connect, config, now, per_pass=None, paired=False):
     """Look up a few work contacts with the Machine's own service. Returns how many got a profile; stops at the first
-    service error."""
+    service error. Paired with the Network: hosted's budget (PAIRED_PEOPLE_PER_DAY, PAIRED_PEOPLE_PER_PASS) unless
+    people_per_day says otherwise."""
     cfg = settings(config)
     if not cfg or not cfg.get('people_url') or cfg.get('people') is False:
         return 0
+    per_pass = per_pass or (PAIRED_PEOPLE_PER_PASS if paired else PEOPLE_PER_PASS)
+    per_day = int(cfg.get('people_per_day') or (PAIRED_PEOPLE_PER_DAY if paired else PEOPLE_PER_DAY))
     with connect() as db:
         used = db.execute("SELECT count(*) FROM person_profiles WHERE substr(fetched_at,1,10)=?", (now[:10],)).fetchone()[0]
-        due = people_due(db, now, max(0, min(per_pass, int(cfg.get('people_per_day') or PEOPLE_PER_DAY) - used)))
+        due = people_due(db, now, max(0, min(per_pass, per_day - used)))
     found = 0
     for person in due:
         try:
@@ -498,6 +544,125 @@ def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
             save_person(db, person['identifier'], 'found' if profile else 'none', profile, now)
         found += bool(profile)
     return found
+
+
+# Photos: a lookup's photo link is saved once on this Machine (person_photos), small and only as an image, so it shows
+# from here and never expires. One try per link, straight after the lookup that brought it: no extra calls beyond the
+# daily lookups, no retries. A link that has already expired is skipped and the person looked up again in 30 days.
+PHOTO_BYTES = 200_000
+PHOTO_RETRY_DAYS = 30
+PHOTOS_PER_PASS = 30  # keeps up with 3,000 lookups a day
+
+
+def photo_key(identifier):
+    return hashlib.sha256(identifier.encode()).hexdigest()[:32]
+
+
+def link_expired(url, now):
+    """Whether a signed image link says it has expired: LinkedIn's e=<epoch>, Expires=<epoch>, or S3's
+    X-Amz-Date with X-Amz-Expires."""
+    try:
+        query = {k.lower(): v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).items()}
+        at = dt.datetime.fromisoformat(now).timestamp()
+        for name in ('e', 'expires'):
+            value = query.get(name, '')
+            if value.isdigit() and len(value) in (10, 13):
+                return int(value) / (1000 if len(value) == 13 else 1) <= at
+        if query.get('x-amz-date') and query.get('x-amz-expires', '').isdigit():
+            start = dt.datetime.strptime(query['x-amz-date'], '%Y%m%dT%H%M%SZ').replace(tzinfo=dt.timezone.utc)
+            return start.timestamp() + int(query['x-amz-expires']) <= at
+    except (ValueError, TypeError, OverflowError):
+        return False
+    return False
+
+
+def image_type(data):
+    if data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    return None
+
+
+class _Pinned(http.client.HTTPSConnection):
+    """HTTPS to the address checked beforehand (a public one), with the host's own name for TLS."""
+    def __init__(self, host, address, **kwargs):
+        super().__init__(host, **kwargs)
+        self.address = address
+
+    def connect(self):
+        sock = socket.create_connection((self.address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def download_photo(url, timeout=10):
+    """(bytes, type) of a photo, or None: https only, to a public address, no redirects, at most PHOTO_BYTES, and only
+    a JPEG, PNG or WebP image (by its own bytes, not only its header)."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != 'https' or not parts.hostname or not LOGO.fullmatch(url):
+        return None
+    try:
+        port = parts.port or 443
+        addresses = {info[4][0] for info in socket.getaddrinfo(parts.hostname, port, type=socket.SOCK_STREAM)}
+        if not addresses or not all(ipaddress.ip_address(a.split('%')[0]).is_global for a in addresses):
+            return None
+        connection = _Pinned(parts.hostname, sorted(addresses)[0], port=port, timeout=timeout, context=ssl.create_default_context())
+    except (OSError, ValueError):
+        return None
+    try:
+        connection.request('GET', (parts.path or '/') + ('?' + parts.query if parts.query else ''),
+                           headers={'Accept': 'image/jpeg,image/png,image/webp', 'User-Agent': 'the-machine/1 (+https://themachine.computer)'})
+        response = connection.getresponse()
+        if response.status != 200 or not (response.getheader('Content-Type') or '').lower().startswith('image/'):
+            return None
+        if int(response.getheader('Content-Length') or 0) > PHOTO_BYTES:
+            return None
+        data = response.read(PHOTO_BYTES + 1)
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+    finally:
+        connection.close()
+    kind = image_type(data)
+    return (data, kind) if kind and len(data) <= PHOTO_BYTES else None
+
+
+def photos_step(connect, now, limit=PHOTOS_PER_PASS, fetch=None):
+    """Saves the photos that lookups brought in, once each. Returns how many were saved."""
+    fetch = fetch or download_photo
+    with connect() as db:
+        rows = db.execute("SELECT identifier,json_extract(profile,'$.photo') FROM person_profiles "
+                          "WHERE status='found' AND json_extract(profile,'$.photo') IS NOT NULL ORDER BY fetched_at DESC LIMIT ?", (limit,)).fetchall()
+    saved = 0
+    for identifier, url in rows:
+        got = None if link_expired(url, now) else fetch(url)
+        with connect() as db:
+            row = db.execute('SELECT profile FROM person_profiles WHERE identifier=?', (identifier,)).fetchone()
+            try:
+                profile = json.loads(row[0]) if row and row[0] else None
+            except ValueError:
+                profile = None
+            if not profile or profile.get('photo') != url:
+                continue  # looked up again meanwhile
+            profile.pop('photo')
+            if got:
+                db.execute('INSERT INTO person_photos(identifier,key,type,data,saved_at) VALUES(?,?,?,?,?) ON CONFLICT(identifier) DO UPDATE SET '
+                           'type=excluded.type,data=excluded.data,saved_at=excluded.saved_at', (identifier, photo_key(identifier), got[1], got[0], now))
+                profile.pop('photo_gone', None)
+                saved += 1
+            elif not db.execute('SELECT 1 FROM person_photos WHERE identifier=?', (identifier,)).fetchone():
+                profile['photo_gone'] = True
+            db.execute('UPDATE person_profiles SET profile=? WHERE identifier=?', (json.dumps(profile), identifier))
+    return saved
+
+
+def photo(db, key):
+    """(bytes, type) of a saved photo by its key, for the dashboard."""
+    if not re.fullmatch(r'[0-9a-f]{32}', str(key or '')):
+        return None
+    row = db.execute('SELECT data,type FROM person_photos WHERE key=?', (key,)).fetchone()
+    return (bytes(row[0]), row[1]) if row and row[1] in ('image/jpeg', 'image/png', 'image/webp') else None
 
 
 def people_status(db):
