@@ -26,7 +26,7 @@ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','applica
  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(req.url==='/api/status'){res.end(JSON.stringify(state));return}
  if(req.url==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
-  if(call.action==='fleet_handoff_draft'){res.end(JSON.stringify({suggestion_id:'c1',title:'Send Sam the pricing',summary:'Sam asked for pricing.',contact:'sam@client.example',due:null,
+  if(call.action==='fleet_handoff_draft'){res.end(JSON.stringify({suggestion_id:'c1',title:'Send Sam the pricing',summary:'Sam asked for pricing.',contact:'sam@client.example',due:null,sources:[{label:'email from Sam Lee, Thu 22 Oct'}],
    fleets:[{id:FL,name:'Acme',members:[{member_id:'p',name:'Pat'}]}]}));return}
   if(call.action==='fleet_handoff')card.fleet_handoff={name:'Pat',stage:'asked'};
   if(['fleet_decide','fleet_split_adjust'].includes(call.action)){view.waiting=view.waiting.filter(x=>x.id!==call.args.id);state.fleet.waiting=view.waiting.length+1}
@@ -44,10 +44,14 @@ try{
  const form=page.locator('.fleet-handoff-form');await form.waitFor();
  assert.equal(await form.locator('textarea').inputValue(),'Sam asked for pricing.');
  await form.locator('textarea').fill('Sam wants pricing for 40 seats.');
+ const includes=form.locator('input[name=sources]');  // the card's sources go along unless the owner leaves them out
+ assert.equal(await includes.isChecked(),true);
+ assert.equal((await form.locator('label:has(input[name=sources])').innerText()).trim(),'Includes: email from Sam Lee, Thu 22 Oct');
+ await includes.uncheck();
  await form.locator('button.primary').click();
  await page.getByText('Handed off to Pat, waiting for an answer').waitFor();
  assert.equal(await page.getByText('is on it').count(),0);  // a claim without a teammate's name says nothing
- assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats.',contact:'sam@client.example'}});
+ assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats.',contact:'sam@client.example',sources:false}});
  // Requests wait as cards under Suggestions (tagged Fleet, Work) with Accept, their words shown as text; the Suggestions
  // badge counts them and the Fleet tab has no badge.
  const intro=page.locator('#suggestions #fleet-q_'+'1'.repeat(16));await intro.waitFor();

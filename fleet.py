@@ -1551,6 +1551,8 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         # notify, only within them. search(accounts, query, limit) -> [(event_id, similarity)]: the app's own search.
         self.hours = {}
         self.search = None
+        # card_task(card row) -> what whoever takes a card on is asked to do (the app's card_task): a handoff leads with it.
+        self.card_task = None
         # notify_brief(text, url) tells the owner their brief is ready (phone, Telegram) and returns the Telegram id.
         self.last['briefs'] = 0.0
         self.notify_brief = None
