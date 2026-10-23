@@ -26,6 +26,11 @@ A hosting layer may keep the key off the disk instead (`held_elsewhere`): `messa
 in memory (under /run) that the host puts there at every start. Backups of the disk then don't hold the key, and a
 missing key is waited for (`wait_for_key`), never made anew: a new key would leave the messages unreadable.
 
+A self-hosted Machine on a Linux desktop can keep it in the desktop's keyring instead (message_keyring.py,
+`assistant message-key to-keyring`): `message-content.keyring` next to the database says so, and the key file is then
+a link to memory too, which the app fills from the keyring at each start (waiting while the keyring is locked or not
+running yet) and keeps in memory once read.
+
 Sealing: a fresh 16-byte nonce; the keystream is SHAKE256(key, nonce); a 16-byte BLAKE2b MAC over all of it
 (encrypt-then-MAC); keys for sealing, MAC and the index are derived from the stored key with BLAKE2b. Standard
 library only, as in network_crypto.py."""
@@ -49,6 +54,7 @@ MAGIC = b'\x00\xffMC1\x00'
 FILE_MAGIC = b'\x00\xffMF1\x00'  # a sealed file: an email attachment kept on disk (mail_attachments.py)
 NONCE, TAG = 16, 16
 KEY_NAME = 'message-content.key'
+KEYRING_NAME = 'message-content.keyring'  # the key is in the desktop's keyring (message_keyring.py)
 SEALED_KEY = 'mc1_sealed'
 # Metadata keys the app queries in SQL (json_extract, instr): routing and identity, never what a message says
 PLAIN_METADATA = frozenset({'thread_id', 'from', 'to', 'labels', 'notification_key_hash', 'user_id', 'from_me',
@@ -115,7 +121,9 @@ def problems(database):
     path = Path(database).expanduser()
     sealed, has_key = state(path)
     key, out = key_path(path), []
-    if sealed and not has_key and held_elsewhere(path):
+    if in_keyring(path):
+        out += _keyring_problems(path, sealed, has_key)
+    elif sealed and not has_key and held_elsewhere(path):
         out.append(('message-key-waiting', 'Your messages are encrypted and their key is kept off this server\'s disk by your hosting. '
                     'It has not arrived yet, so the app waits for it.', 'it comes once this Machine reaches its hosting; check the connection'))
     elif sealed and not has_key:
@@ -131,6 +139,33 @@ def problems(database):
         out.append(('message-protection-failed', 'Encrypting or opening your messages did not finish; an encrypted copy of the database before it is kept.',
                     'assistant service logs; it is put back or removed at the next start'))
     return out
+
+
+def _keyring_problems(path, sealed, has_key):
+    import message_keyring
+    key, out = key_path(path), []
+    mark = message_keyring.marker(path)
+    if not key.is_symlink():
+        if key.is_file():
+            out.append(('message-key-keyring-unfinished', f'Moving the message key between {key} and your keyring did not finish. '
+                        'The file still holds it, so nothing is lost.', 'assistant message-key to-keyring (or to-file)'))
+        elif sealed:
+            out.append(('message-key-missing', f'Your messages are encrypted and their key is in your keyring, but {key} is gone.',
+                        'assistant message-key to-file'))
+    elif not has_key and not (mark and message_keyring.cached(path, mark)):
+        error = message_keyring.last_error(path)
+        out.append(('message-key-keyring-waiting', 'Your messages are encrypted and their key is in your keyring, which can\'t be read '
+                    f'right now ({error or "not answering"}). The app waits for it and starts by itself once it can.',
+                    'unlock your keyring or sign in to the desktop; details: assistant message-key status'))
+    if key.with_name(message_keyring.MOVING).exists():
+        out.append(('message-key-leftover', f'A copy of the message key from the move to your keyring is still in {key.with_name(message_keyring.MOVING)}.',
+                    'assistant message-key to-keyring (it finishes the move)'))
+    return out
+
+
+def in_keyring(database):
+    """The key is kept in the desktop's keyring (message_keyring.py); the key file is then a link to memory."""
+    return key_path(database).with_name(KEYRING_NAME).exists()
 
 
 def state(database):
@@ -157,9 +192,18 @@ def held_elsewhere(database):
 
 def load_key(database, create=False):
     path = key_path(database)
+    keyring = None
+    if path.with_name(KEYRING_NAME).exists():  # even one that can't be read means: never a new key here
+        import message_keyring
+        keyring = message_keyring.marker(database) or {}
     try:
         raw = path.read_bytes().strip()
     except FileNotFoundError:
+        if keyring is not None:  # in the keyring: what this process read before, else the keyring itself
+            key = message_keyring.cached(database, keyring) if keyring else None
+            if key or not create:
+                return key
+            raise SealError(f'{path} is kept in your keyring, which can\'t be read right now') from None
         if not create:
             return None
         if path.is_symlink():  # the host's key has not arrived: never a new one here, it would orphan what it sealed
@@ -174,22 +218,44 @@ def load_key(database, create=False):
     key = base64.b64decode(raw)
     if len(key) != 32:
         raise SealError(f'{path} is not a message key')
+    if keyring and path.is_symlink():  # the copy in memory the app filled from the keyring: only this Machine's key
+        if not hmac.compare_digest(message_keyring.check_value(key), str(keyring.get('check', ''))):
+            raise SealError(f'{path} does not hold this Machine\'s message key')
+        message_keyring.remember(keyring, key)
     return key
 
 
-def wait_for_key(database, say=print, every=5, limit=None, protect=False):
-    """At the service's start: a database whose key the host keeps (`held_elsewhere`) waits until the key is there when
-    it is sealed (or is to be, `protect`), saying so once a minute, rather than starting without it. True when the key
-    is there (or not needed)."""
-    path, waited = Path(database).expanduser(), 0
-    while held_elsewhere(path) and not key_path(path).is_file() and (protect or state(path)[0]):
-        if limit is not None and waited >= limit:
-            return False
-        if waited % 60 == 0:
-            say(f'Waiting for the message key from the hosting ({key_path(path)}); the messages stay encrypted until it comes')
-        time.sleep(every)
-        waited += every
-    return True
+def wait_for_key(database, say=print, every=5, limit=None, protect=False, waiting=None):
+    """At the service's start: a database whose key the host keeps (`held_elsewhere`) or the desktop's keyring keeps
+    (`in_keyring`) waits until the key is there when it is sealed (or is to be, `protect`), saying so once a minute,
+    rather than starting without it: never a new key, which would orphan what is sealed. A key in the keyring is read
+    from it at each try (a locked keyring is never asked to unlock); `waiting(reason)` hears why while it waits, and
+    `waiting(None)` once it is over. True when the key is there (or not needed)."""
+    path, waited, told = Path(database).expanduser(), 0, False
+    try:
+        while held_elsewhere(path) and not key_path(path).is_file() and (protect or state(path)[0]):
+            reason = None
+            if in_keyring(path):
+                import message_keyring
+                mark = message_keyring.marker(path)
+                if mark and message_keyring.cached(path, mark, force=True):
+                    return True  # read, kept in memory and put in the runtime file
+                reason = str(message_keyring.last_error(path) or 'its marker can\'t be read')
+                if waiting:
+                    waiting(reason)
+                    told = True
+            if limit is not None and waited >= limit:
+                return False
+            if waited % 60 == 0:
+                say(f'Waiting for the message key from your keyring ({reason}); the messages stay encrypted until it can be read. '
+                    'Unlock the keyring or sign in to the desktop; details: assistant message-key status' if reason else
+                    f'Waiting for the message key from the hosting ({key_path(path)}); the messages stay encrypted until it comes')
+            time.sleep(every)
+            waited += every
+        return True
+    finally:
+        if told:
+            waiting(None)
 
 
 class Sealer:
