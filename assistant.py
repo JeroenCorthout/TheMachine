@@ -8881,7 +8881,7 @@ class App:
             views = []
         messages = '\n\n'.join(f"## {v['title'] or v['kind']}\nFrom: {v['from']}\nWhen: {v['occurred_at']}" + (f"\nLink: {v['url']}" if v.get('url') else '')
                                  + '\n\n' + str(v['body'] or '')[:6000] for v in views)
-        return {'card': card, 'drafts': drafts, 'links': links, 'files': files, 'messages': messages}
+        return {'card': card, 'drafts': drafts, 'links': links, 'files': files, 'messages': messages, 'message_kinds': [v['kind'] for v in views]}
 
     def agent_revise(self, suggestion_id, text):
         """A message Claude Code or Codex rewrote (its draft.md) becomes the card's draft under a new revision, when the
@@ -8903,7 +8903,7 @@ class App:
         if name == 'agent_draft':
             return self.agents.draft(args['suggestion_id'])
         if name == 'agent_send':
-            return self.agents.start(args['suggestion_id'], args['tool'], args.get('brief'))
+            return self.agents.start(args['suggestion_id'], args['tool'], args.get('brief'), args.get('note'))
         if name == 'agent_follow_up':
             return self.agents.follow_up(args['job_id'], args.get('text'))
         if name == 'agent_retry':
@@ -10936,18 +10936,24 @@ class App:
                 raise ValueError('Unknown suggestion')
             job = db.execute('SELECT job_id,session_job_id,status FROM preparations WHERE suggestion_id=?', (suggestion_id,)).fetchone()
             owner, results = self.card_chat_service(db, suggestion_id)
+        # The cursor also carries a digest of what the service itself adds (sends, taps, results): when that moved
+        # ("Sending to Sam…" became "Sent to Sam"), the whole chat comes back even if the conversation didn't.
+        digest = hashlib.sha256(json.dumps([owner, results], sort_keys=True, default=str).encode()).hexdigest()[:16]
+        gateway_cursor, _, seen = (cursor or '').rpartition('|') if cursor and '|' in cursor else (cursor, '', None)
+        if seen is not None and seen != digest:
+            gateway_cursor = None
         active = bool(job) and job['status'] in ('queued', 'starting', 'running')
         result = {'session': bool(job), 'active': active, 'status': job['status'] if job else None}
         if not job:
             return {**result, 'items': chat_items([], owner, results), 'cursor': None}
         found = self.card_chat_gateway({'session_key': 'agent:main:assistant-review-preparation-' + (job['session_job_id'] or job['job_id']),
-                                        'cursor': cursor, 'limit': CHAT_HISTORY_LIMIT})
+                                        'cursor': gateway_cursor, 'limit': CHAT_HISTORY_LIMIT})
         if not isinstance(found, dict) or found.get('error') or not isinstance(found.get('messages', []), list):
             return {**result, 'items': chat_items([], owner, results), 'cursor': None, 'unavailable': True}
         flight = found.get('inFlightRun') if isinstance(found.get('inFlightRun'), dict) else None
         result['live'] = {'text': chat_text(flight.get('text'), chars=8000)} if flight and active else None
-        result['cursor'] = found.get('deltaCursor') if isinstance(found.get('deltaCursor'), str) else None
-        if found.get('kind') == 'delta':
+        result['cursor'] = found['deltaCursor'] + '|' + digest if isinstance(found.get('deltaCursor'), str) else None
+        if found.get('kind') == 'delta' and gateway_cursor:
             return {**result, 'unchanged': True}
         return {**result, 'items': chat_items(found.get('messages'), owner, results), 'more': bool(found.get('hasMore'))}
 
@@ -11021,6 +11027,8 @@ class App:
                 continue
             draft = chat_draft(payload)
             if draft:
+                if len(draft['to']) == 1 and _address(draft['to'][0]) and str(payload.get('to_name') or '').strip():
+                    names.setdefault(_address(draft['to'][0]), chat_person(str(payload['to_name']).strip()))  # "Sent to Sam", not the address
                 to = ', '.join(chat_name(t, names, about) for t in draft['to'][:3]) or (about.split() or ['them'])[0]
                 to += CHAT_ON.get(draft['kind'], '')
                 text = {'sent': f'Sent to {to}', 'cancelled': 'Send cancelled', 'failed': f'Didn’t go out to {to}'}.get(r['status'], f'Sending to {to}…')

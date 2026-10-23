@@ -133,6 +133,31 @@ def brief_for(card, drafts=(), links=(), files=(), messages=()):
     return '\n'.join(lines).strip()[:BRIEF_MAX]
 
 
+def gets_for(parts):
+    """What a job gets from the card, as small chips for the hand-off sheet: counts and file names, never links."""
+    out, kinds = [], [str(k) for k in parts.get('message_kinds') or ()]
+    count = len(kinds) or (str(parts.get('messages') or '').count('\n## ') + 1 if parts.get('messages') else 0)
+    if count:
+        mail = kinds and all(k in ('email', 'gmail', 'outlook') or k.startswith(('gmail.', 'outlook.')) for k in kinds)
+        out.append({'kind': 'mail' if mail else 'chat', 'label': f"{count} {'email' if mail else 'message'}{'' if count == 1 else 's'}"})
+    for d in list(parts.get('drafts') or ())[:3]:
+        to = str(d.get('to_name') or '').split()
+        out.append({'kind': 'draft', 'label': 'Draft to ' + to[0] if to else 'The draft'})
+    out += [{'kind': 'file', 'label': Path(f).name} for f in list(parts.get('files') or ())[:5]]
+    if parts.get('messages'):
+        out.append({'kind': 'file', 'label': 'messages.md'})
+    links = len(dict.fromkeys(parts.get('links') or ()))
+    if links:
+        out.append({'kind': 'link', 'label': f"{links} link{'' if links == 1 else 's'}"})
+    return out
+
+
+def with_note(brief, note):
+    """The owner's own note for the job goes first, so it reads before the card's context."""
+    note = str(note or '').strip()
+    return f'A note from me: {note}\n\n{brief}' if note else brief
+
+
 def kill(proc):
     """Stop a job's process and everything it started (its own process group)."""
     if proc.poll() is not None:
@@ -842,12 +867,16 @@ class AgentJobs:
         parts = self.card(str(suggestion_id)) if self.card else None
         if not parts:
             raise ValueError('No such card')
-        return {'suggestion_id': str(suggestion_id), 'tools': self.tools(),
+        title = str(parts['card'].get('title') or 'this task').strip().rstrip('.')
+        return {'suggestion_id': str(suggestion_id), 'tools': self.tools(), 'gets': gets_for(parts),
+                'line': f'Picks up “{title[:160]}” and reports back here. Sends nothing itself.',
                 'brief': brief_for(parts['card'], parts.get('drafts') or (), parts.get('links') or (), parts.get('files') or (), parts.get('messages') or '')}
 
-    def start(self, suggestion_id, tool_id, brief):
+    def start(self, suggestion_id, tool_id, brief, note=None):
         tool = self.tool(tool_id)
-        brief = str(brief or '').strip()
+        if len(str(note or '')) > ASK_MAX:
+            raise ValueError('The note is too long')
+        brief = with_note(str(brief or '').strip(), note) if str(brief or '').strip() else ''
         if not brief:
             raise ValueError('Write what the job is')
         if len(brief) > BRIEF_MAX:

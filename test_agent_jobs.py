@@ -253,6 +253,14 @@ class AgentJobs(unittest.TestCase):
         self.assertIn('https://mail.example/t1', draft['brief'])
         self.assertIn('card/messages.md', draft['brief'])
         self.assertIn('Done looks like', draft['brief'])
+        # The hand-off sheet: one plain line and small chips for what it gets, never a link itself
+        self.assertEqual(draft['line'], 'Picks up “Sum up the quarterly numbers” and reports back here. Sends nothing itself.')
+        self.assertEqual([g['label'] for g in draft['gets']], ['1 message', 'messages.md', '1 link'])
+        self.assertFalse(any('http' in g['label'] for g in draft['gets']))
+        self.assertEqual(agent_jobs.gets_for({'message_kinds': ['email'] * 5, 'messages': 'x', 'drafts': [{'to_name': 'Robin Lee', 'body': 'Hi'}]}),
+                         [{'kind': 'mail', 'label': '5 emails'}, {'kind': 'draft', 'label': 'Draft to Robin'}, {'kind': 'file', 'label': 'messages.md'}])
+        self.assertEqual(agent_jobs.with_note('The job', ' Keep it short '), 'A note from me: Keep it short\n\nThe job')
+        self.assertEqual(agent_jobs.with_note('The job', ''), 'The job')
         with self.assertRaises(ValueError):
             self.jobs().draft('nope')
 
