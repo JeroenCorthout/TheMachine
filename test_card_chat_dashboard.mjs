@@ -89,10 +89,11 @@ try{
  assert.ok(!(await page.locator('#suggestion-stats').isVisible()));
  assert.equal(await page.locator('.chat-menu-list [data-choice="snooze"]').count(),1);
  assert.equal(await page.locator('.chat-menu-list [data-choice="change"]').count(),0);
- // The task list beside it, with this task marked
- assert.equal(await page.locator('.chat-side a[aria-current="page"]').textContent(),'Reply to the venue');
- assert.ok((await page.locator('.chat-side a').allTextContents()).includes('Old finished task'));
- assert.ok(await page.locator('.chat-side').evaluate(n=>{n.style.maxHeight='90px';const ok=[...n.querySelectorAll('a')].every(a=>a.getBoundingClientRect().height>=24);n.style.maxHeight='';return ok}),'list rows keep their height when the list scrolls');
+ // The task list in the sidebar on a computer, with this task marked; Done starts folded and opens
+ assert.equal(await page.locator('.side-cards a[aria-current="page"]').textContent(),'Reply to the venue');
+ assert.equal(await page.locator('[data-side-fold="done"]').getAttribute('aria-expanded'),'false');await page.locator('[data-side-fold="done"]').click();
+ assert.ok((await page.locator('.side-cards a').allTextContents()).includes('Old finished task'));
+ assert.ok(await page.locator('#side-cards').evaluate(n=>{n.style.maxHeight='90px';const ok=[...n.querySelectorAll('a')].every(a=>a.getBoundingClientRect().height>=24);n.style.maxHeight='';return ok}),'list rows keep their height when the list scrolls');
  // The conversation, by time: who wrote what first, day lines, 24 h times in Belgium
  await page.locator('#chat-log .chat-msg.machine .bubble ul').waitFor();
  assert.equal(await page.locator('#chat-log>*').first().getAttribute('class'),'chat-day');
@@ -184,7 +185,7 @@ try{
   assert.ok(Math.abs(after.y-before.y)<1&&after.text===before.text&&after.open===before.open,'the thread kept its place: '+JSON.stringify({before,after}));
   await page.setViewportSize({width:1280,height:900})}
  // On a computer the page stays put: the list and the thread scroll on their own, and a scroll past the end stays inside
- const box=await page.evaluate(()=>{const l=getComputedStyle(document.querySelector('#chat-log')),d=getComputedStyle(document.querySelector('.chat-side'));
+ const box=await page.evaluate(()=>{const l=getComputedStyle(document.querySelector('#chat-log')),d=getComputedStyle(document.querySelector('#side-cards'));
   return {page:document.documentElement.scrollHeight<=innerHeight+1,log:l.overflowY,logOver:l.overscrollBehaviorY,side:d.overflowY,sideOver:d.overscrollBehaviorY}});
  assert.deepEqual(box,{page:true,log:'auto',logOver:'contain',side:'auto',sideOver:'contain'});
  await shot('desktop');
@@ -198,13 +199,13 @@ try{
  assert.equal(await page.locator('#chat-input').inputValue(),'');
  assert.ok(actions.some(a=>a.action==='card_chat'&&a.args.cursor),'polls with the cursor');
  // A pending task with no session yet: the card itself is the first message, with its choices
- await page.locator('.chat-side a',{hasText:'Renew the passport'}).click();
+ await page.locator('.side-cards a',{hasText:'Renew the passport'}).click();
  await page.locator('h2.chat-title',{hasText:'Renew the passport'}).waitFor();
  await page.locator('#chat-log .chat-card').waitFor();
  assert.match(await page.locator('#chat-log .chat-card .bubble').textContent(),/It runs out in May/);
  assert.ok((await page.locator('#chat-log .chat-card .chat-options button').count())>=2);
  // A card that waits on a call ends with it in one line; its offer becomes a suggestion
- await page.locator('.chat-side a',{hasText:'Alex needs your call'}).click();
+ await page.locator('.side-cards a',{hasText:'Alex needs your call'}).click();
  await page.locator('h2.chat-title',{hasText:'Alex needs your call'}).waitFor();
  await page.locator('#chat-log .chat-card').waitFor();
  // The call it needs is the card's result: the raised card under its message
@@ -212,7 +213,7 @@ try{
  assert.doesNotMatch(await page.locator('#chat-log .chat-card .bubble').textContent(),/I can check/);
  assert.equal(await page.locator('#chat-picks [data-chat-say]').count(),0);
  // A draft result shows the draft: copy-only leads with Copy draft (and says why); the result file is a chip, never a bare title
- await page.locator('.chat-side a',{hasText:'60 mailboxes'}).click();await page.locator('#chat-log .chat-result.current').waitFor();
+ await page.locator('.side-cards a',{hasText:'60 mailboxes'}).click();await page.locator('#chat-log .chat-result.current').waitFor();
  await page.locator('#chat-log .chat-result.current',{hasText:'Each person who uses the CRM needs their own seat'}).waitFor();
  assert.equal(await page.locator('#chat-log .chat-result.current .chat-result-title').textContent(),'Internal answer for Andrea · Intercom note');
  // Only the draft shows, as a quote-free text: no heading, no raw ">", no sources section (that is behind Open)
@@ -221,7 +222,7 @@ try{
  assert.equal(await page.locator('#chat-log .chat-result.current .chat-why').count(),1);
  assert.equal(await page.locator('#chat-log .chat-result.current .chat-options button.primary').textContent(),'Copy draft');
  assert.equal(await page.locator('#chat-log .bubble',{hasText:/^\s*Draft and sources\s*$/}).count(),0);
- await page.locator('.chat-side a',{hasText:'Nudge Andrea'}).click();await page.locator('#chat-log .chat-draft.current').waitFor();
+ await page.locator('.side-cards a',{hasText:'Nudge Andrea'}).click();await page.locator('#chat-log .chat-draft.current').waitFor();
  assert.match(await page.locator('#chat-log .chat-draft.current').textContent(),/did you get a chance to try it\?/);
  assert.match(await page.locator('#chat-log .chat-draft.current .chat-draft-foot button.primary').textContent(),/send to Andrea/i);
  // The header: back, the title's first line and ⋯ on one centre line (the title's x-height centre on the chevron's)
@@ -236,11 +237,11 @@ try{
  // Emoji shortcodes render; unknown ones and times stay as typed
  assert.equal(await page.evaluate(()=>chatEmoji('Oki doki :face_with_hand_over_mouth: :tada: :not_a_code: 10:30:45')),'Oki doki 🤭 🎉 :not_a_code: 10:30:45');
  // Only the draft that went out says Sent; the cancelled one before it, with the same text, says Not sent
- await page.locator('.chat-side a',{hasText:'Waiting on Andrea'}).click();await page.locator('#chat-log .chat-draft .went-tag').first().waitFor();
+ await page.locator('.side-cards a',{hasText:'Waiting on Andrea'}).click();await page.locator('#chat-log .chat-draft .went-tag').first().waitFor();
  assert.deepEqual(await page.locator('#chat-log .chat-draft .went-tag').allTextContents(),['Not sent','Sent']);
  assert.equal(await page.locator('#chat-log',{hasText:'#DM'}).count(),0);
  // Hand to Codex from the chat: a compact sheet in the message box's place, not in the thread; Cancel brings the box back
- await page.locator('.chat-side a',{hasText:'Reply to the venue'}).click();await page.locator('h2.chat-title',{hasText:'Reply to the venue'}).waitFor();
+ await page.locator('.side-cards a',{hasText:'Reply to the venue'}).click();await page.locator('h2.chat-title',{hasText:'Reply to the venue'}).waitFor();
  await page.locator('#chat-menu summary').click();await page.locator('#chat-menu [data-agent-hand="codex"]').click();
  const sheet=page.locator('.chat-compose .agent-sheet');await sheet.waitFor();
  assert.equal(await page.locator('#chat-log .agent-sheet,.chat-panel .agent-sheet').count(),0);
@@ -255,7 +256,7 @@ try{
  assert.equal(actions.filter(a=>a.action==='agent_send').length,0);
  // A send from the chat says what it is doing: Sending… with the bar (no next step offered yet), then who it went to,
  // how and when, with Mark done as the next step; a failed one says so with Try again. Fake send only.
- await page.locator('.chat-side a',{hasText:'Reply to Robin'}).click();await page.locator('#chat-log .chat-draft.current').waitFor();
+ await page.locator('.side-cards a',{hasText:'Reply to Robin'}).click();await page.locator('#chat-log .chat-draft.current').waitFor();
  await page.locator('#chat-log .chat-draft-foot [data-smart]').click();await page.locator('#send-dialog[open]').waitFor();
  await page.locator('#send-confirm').click();await page.locator('#chat-log .chat-sendstate',{hasText:'Sending…'}).waitFor();
  assert.equal(await page.locator('#chat-log .chat-draft .send-progress').count(),1);
@@ -281,14 +282,14 @@ try{
  assert.deepEqual(lead.c6c6c6c6c6c6c6c6,{primary:['Copy draft'],why:true,copyLink:0});
  assert.match(lead.c7c7c7c7c7c7c7c7.primary.join('|'),/send to Andrea/i);assert.equal(lead.c7c7c7c7c7c7c7c7.why,false);
  // A snoozed task: the status line with Unsnooze as a text button; a message still goes (it brings the task back)
- await page.locator('.chat-side a',{hasText:'Pay the deposit'}).click();
+ await page.locator('.side-cards a',{hasText:'Pay the deposit'}).click();
  await page.locator('h2.chat-title',{hasText:'Pay the deposit'}).waitFor();
  assert.match(await page.locator('.chat-status').textContent(),/^Snoozed until .+·Unsnooze$/);
  assert.equal(await page.locator('.chat-status button.chat-inline[data-choice="accept"]').textContent(),'Unsnooze');
  assert.equal(await page.locator('#chat-log .chat-options').count(),0);
  assert.equal(await page.locator('#chat-input').count(),1);
  // A done task keeps the message box: a message reopens it first, then goes as a Change
- await page.locator('.chat-side a',{hasText:'Old finished task'}).click();
+ await page.locator('.side-cards a',{hasText:'Old finished task'}).click();
  await page.locator('h2.chat-title',{hasText:'Old finished task'}).waitFor();
  assert.match(await page.locator('.chat-status').textContent(),/^Done·Reopen$/);
  const before=actions.length;
@@ -301,7 +302,7 @@ try{
  await page.locator('.chat-back').click();
  await page.locator('#suggestions .chat-layout').waitFor({state:'detached'});
  assert.ok(await page.locator('#task-c3c3c3c3c3c3c3c3').count()===1);
- assert.ok(await page.locator('#suggestion-stats').isVisible());
+ assert.ok(await page.locator('#page-head').isVisible(),'the overview and its title come back');
  // The "Asked" note opens the chat too
  // (a tap right after a scroll is the one that stops a fling, never an open: scroll first, then tap)
  await page.locator('#task-c1c1c1c1c1c1c1c1 .saved-feedback').scrollIntoViewIfNeeded();await page.waitForTimeout(400);
@@ -331,7 +332,7 @@ try{
  await page.setViewportSize({width:390,height:800});
  await page.evaluate(()=>{location.hash='#chat=c1c1c1c1c1c1c1c1'});
  await page.locator('h2.chat-title',{hasText:'Reply to the venue'}).waitFor();await page.waitForTimeout(1500);
- assert.ok(!(await page.locator('main>header').isVisible()));
+ assert.ok(!(await page.locator('#app-side').isVisible()));
  assert.ok(!(await page.locator('.chat-side').evaluate(n=>n.getBoundingClientRect().right>0)));
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'nothing wider than the phone');
  await page.evaluate(()=>scrollTo(0,0));await shot('phone-top');

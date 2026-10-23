@@ -10,7 +10,7 @@ let sb=document.querySelector('meta[name=apple-mobile-web-app-status-bar-style]'
 // On a hosted dashboard (<name>.app.example) the cookie goes on the app's domain, so the app's pages follow; else on this host only.
 window.chooseTheme=t=>{localStorage.setItem('theme',t);const h=location.hostname,parent=h.split('.').slice(1).join('.'),base=`theme=${t}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol==='https:'?'; Secure':''}`;
 if(parent.includes('.')&&!/^[\d.]+$/.test(h))document.cookie=base+'; Domain='+parent;if(!document.cookie.includes('theme='+t))document.cookie=base;pick()};
-window.applyTheme=pick;pick();sys.addEventListener('change',pick);document.addEventListener('visibilitychange',()=>{if(!document.hidden){pick();window.showTheme?.()}})})();</script>
+try{if(localStorage.getItem('side')==='collapsed')root.dataset.side='collapsed'}catch{}window.applyTheme=pick;pick();sys.addEventListener('change',pick);document.addEventListener('visibilitychange',()=>{if(!document.hidden){pick();window.showTheme?.()}})})();</script>
 <link rel="icon" type="image/png" sizes="32x32" href="brand/favicon-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="brand/favicon-512.png">
 <link rel="apple-touch-icon" href="brand/favicon-512.png">
@@ -1123,7 +1123,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 }
 @media(max-width:860px){
   .chat-layout{grid-template-columns:minmax(0,1fr)}
-  body.chat-open:has(#inbox:not([hidden])) main>header,body.chat-open:has(#inbox:not([hidden])) main>nav,body.chat-open:has(#inbox:not([hidden])) .site-footer{display:none}
+  body.chat-open:has(#inbox:not([hidden])) .site-footer{display:none}
   body.chat-open:has(#inbox:not([hidden])) main{padding:0 20px}
   .chat-main{min-height:100dvh}
   .chat-head{margin:0 -20px;padding:calc(10px + env(safe-area-inset-top)) 11px 12px 8px}
@@ -1141,6 +1141,89 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 main{padding-top:calc(28px + env(safe-area-inset-top));padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
 @media(max-width:560px){main{padding-top:calc(18px + env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}}
 @media(max-width:860px){body.chat-open:has(#inbox:not([hidden])) main{padding:0 max(20px,env(safe-area-inset-right)) 0 max(20px,env(safe-area-inset-left))}}
+/* App sidebar. On a phone and a tablet it is the old top: the brand, the status pills and the tab row, in the page's
+   column. From 1024px it is a fixed column on the left, like a chat app: the brand, a card filter, the tabs as quiet
+   rows with icons, the cards as a list, and Browser, Settings and the status at the bottom. It folds to icons. */
+.app-side{width:100%;max-width:calc(var(--measure) + 48px);margin:0 auto;padding:calc(28px + env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) 0 max(24px,env(safe-area-inset-left))}
+body main{padding-top:0}
+.side-toggle,.side-search,.side-cards,.page-head,nav .ni{display:none}
+@media(max-width:560px){.app-side{padding:calc(18px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left))}}
+/* A tablet with a chat open: the top stays, the chat fills the rest of the window */
+@media(min-width:861px) and (max-width:1023px){body.chat-open:has(#inbox:not([hidden])) main{height:auto;flex:1 1 0}body.chat-open:has(#inbox:not([hidden])) .app-side{flex:none}}
+@media(max-width:860px){body.chat-open:has(#inbox:not([hidden])) .app-side{display:none}}
+@media(min-width:1024px){
+  :root{--side-w:260px;--side-bg:color-mix(in srgb,var(--c-sunken) 55%,var(--c-bg));--side-ink:var(--c-text-2);--side-quiet:var(--c-text-3)}
+  :root[data-side="collapsed"]{--side-w:60px}
+  body{display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:1fr auto;min-height:100dvh}
+  .app-side{grid-column:1;grid-row:1/3;position:sticky;top:0;align-self:start;z-index:20;display:flex;flex-direction:column;width:auto;max-width:none;height:100dvh;margin:0;padding:12px 10px 10px;border-right:1px solid var(--c-line);background:var(--side-bg);overflow:hidden}
+  body main{grid-column:2;grid-row:1;width:100%;max-width:calc(var(--measure) + 112px);margin:0 auto;padding:44px 56px 64px}
+  .site-footer{grid-column:2;grid-row:2;width:100%;max-width:calc(var(--measure) + 112px);padding-left:56px;padding-right:56px;background-size:calc(100% - 112px) 1px}
+  .app-side>header{display:contents}
+  .app-side .brand{order:0;flex:none;display:flex;align-items:center;gap:10px;min-height:36px;padding:0 0 0 8px}
+  .app-side .avatar{width:28px;height:28px}
+  .app-side h1{font:var(--fw-heading) 19px/1.2 var(--serif);letter-spacing:-.01em;white-space:nowrap}
+  .app-side #tagline{display:none}
+  .side-toggle{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0 0 0 auto;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
+  .side-toggle:hover{background:var(--c-hover);color:var(--text)}
+  .side-toggle svg,.side-search svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .side-search{order:1;flex:none;display:flex;align-items:center;gap:8px;height:34px;margin:12px 0 8px;padding:0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:color-mix(in srgb,var(--c-bg) 70%,transparent);color:var(--side-quiet);cursor:text}
+  .side-search:focus-within{border-color:var(--c-line-strong)}
+  .side-search input,.side-search input:focus{flex:1;min-width:0;height:100%;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;outline:none;color:var(--text);font:400 var(--fs-sm)/1 var(--sans)}
+  .side-search input::placeholder{color:var(--side-quiet);opacity:1}
+  .app-side nav,[data-theme="light"] .app-side nav{order:2;flex:none;flex-direction:column;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:none;overflow:visible}
+  .app-side nav button,.app-side .head-side>.settings-link{position:relative;flex:none;display:flex;justify-content:flex-start;align-items:center;gap:10px;width:100%;min-height:34px;margin:0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
+  .app-side nav button[hidden]{display:none}
+  .app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:var(--c-hover);color:var(--text)}
+  .app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text);box-shadow:none}
+  .app-side nav .ni,.app-side .head-side>.settings-link svg{display:block;flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .app-side nav .badge,.app-side nav button.active .badge,[data-theme="light"] .app-side nav button.active .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans)}
+  .app-side nav .badge.warn,.app-side nav button.active .badge.warn{color:var(--c-orange)}
+  .side-cards{order:3;display:block;flex:1 1 0;min-height:0;margin:14px 0 0;padding:0 0 16px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+  .side-cards::-webkit-scrollbar{display:none}
+  .side-label{display:flex;align-items:center;gap:2px;margin:0 0 2px;padding:0 4px 0 10px;min-height:26px;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);color:var(--side-quiet)}
+  .side-label>span{margin-right:auto}
+  .side-label button{min-height:0;margin:0;padding:3px 7px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);font:inherit;cursor:pointer}
+  .side-label button:hover{color:var(--text)}
+  .side-label button[aria-pressed="true"]{color:var(--text);background:var(--c-hover)}
+  .side-head{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;margin:6px 0 0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);text-align:left;cursor:pointer}
+  .side-head:hover{color:var(--text)}
+  .side-head .count{margin-left:auto;font-variant-numeric:tabular-nums}
+  .side-head svg{width:12px;height:12px;flex:none;margin-left:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
+  .side-head[aria-expanded="false"] svg{transform:rotate(-90deg)}
+  .side-cards a{display:block;padding:5px 10px;border-radius:var(--r-sm);color:var(--side-ink);font:400 13px/1.45 var(--sans);text-decoration:none;white-space:nowrap;overflow:hidden}
+  .side-group.quiet a{color:var(--side-quiet)}
+  .side-cards a:hover{background:var(--c-hover);color:var(--text)}
+  .side-cards a[aria-current]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
+  .side-cards a.fade{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
+  .side-empty{margin:6px 10px;font-size:var(--fs-xs);color:var(--side-quiet)}
+  .app-side .head-side{order:4;flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:stretch;gap:1px;margin:0;padding:8px 0 0;border-top:1px solid var(--c-line)}
+  .app-side .head-side>.settings-link[hidden]{display:none}
+  .app-side .head-side>.settings-link .lbl{display:inline}
+  .app-side .head-side>.live,[data-theme="light"] .app-side .head-side>.live{display:flex;justify-content:flex-start;gap:10px;min-height:30px;margin:0;padding:0 10px 0 16px;border:0;background:none;color:var(--side-quiet);font:400 var(--fs-xs)/1 var(--sans);cursor:pointer}
+  .app-side .head-side>.live::before{flex:none}
+  .page-head{display:flex;align-items:center;gap:14px;margin:0 0 32px}.page-head[hidden]{display:none}
+  .page-title{margin:0;font:var(--fw-display) 30px/1.2 var(--serif);letter-spacing:-.015em;color:var(--text);text-wrap:balance}
+  .page-head.greet .page-title{font-size:28px}
+  .page-avatar{width:40px;height:40px;flex:none;object-fit:contain}
+  .page-sub{margin:4px 0 0;color:var(--side-quiet);font-size:var(--fs-sm)}
+  #inbox #suggestion-summary,#inbox #suggestion-stats{display:none}
+  /* A chat open: the list is in the sidebar, so the chat gets the whole main area */
+  body.chat-open:has(#inbox:not([hidden])) main{max-width:880px;padding:8px 40px 0}
+  .chat-layout{grid-template-columns:minmax(0,1fr)}.chat-layout>.chat-side{display:none}
+  /* Folded to icons: the labels, the filter text and the list step out; the order and the places stay */
+  :root[data-side="collapsed"] .app-side{padding:12px 8px 10px}
+  :root[data-side="collapsed"] .app-side .brand{justify-content:center;padding:0}
+  :root[data-side="collapsed"] .app-side .brand>:not(.side-toggle){display:none}
+  :root[data-side="collapsed"] .side-toggle{margin:0}
+  :root[data-side="collapsed"] .side-search{justify-content:center;padding:0;border-color:transparent;background:none;cursor:pointer}
+  :root[data-side="collapsed"] .side-search:hover{background:var(--c-hover);color:var(--text)}
+  :root[data-side="collapsed"] .side-search input{display:none}
+  :root[data-side="collapsed"] .app-side nav button,:root[data-side="collapsed"] .app-side .head-side>.settings-link,:root[data-side="collapsed"] .app-side .head-side>.live{justify-content:center;padding:0}
+  :root[data-side="collapsed"] .app-side .nl,:root[data-side="collapsed"] .app-side .head-side .lbl,:root[data-side="collapsed"] #updated{display:none}
+  :root[data-side="collapsed"] .app-side nav .badge:not(:empty){position:absolute;top:6px;right:8px;width:7px;height:7px;padding:0;border-radius:50%;background:var(--c-accent);font-size:0}
+  :root[data-side="collapsed"] .app-side nav .badge.warn:not(:empty){background:var(--c-orange)}
+  :root[data-side="collapsed"] .side-cards{visibility:hidden}
+}
 @media(prefers-reduced-motion:reduce){*{transition-duration:0s!important;animation-duration:0s!important}}
 /* Saved sign-ins (Connections, Sign-ins): one calm row per site, a letter tile, the username, a faint "Password saved"
    line and a quiet Forget; the explainer sits under the heading. */
@@ -1158,8 +1241,8 @@ main{padding-top:calc(28px + env(safe-area-inset-top));padding-left:max(24px,env
 .saved-logins.empty>div{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:0;border:0}
 .saved-logins.empty span{font-size:var(--fs-sm)}
 </style>
-<main><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><div class="toast" id="toast" role="status" aria-live="polite"></div>
-<div id="needs-you" role="status" hidden></div><nav aria-label="Sections"><button class="active" data-tab="inbox">Suggestions <span class="badge" id="badge-inbox"></span></button><button data-tab="events">Events</button><button data-tab="people">Graph <span class="badge" id="badge-people"></span></button><button data-tab="fleet" id="tab-fleet" hidden>Fleet <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback">Feedback</button><button data-tab="health">Connections <span class="badge warn" id="badge-health"></span></button></nav>
+<aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19.5V12M10 19.5V6.5M15 19.5v-9M20 19.5V4.5"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="needs-you" role="status" hidden></div><div class="page-head" id="page-head" hidden></div>
 <dialog id="send-dialog" aria-labelledby="send-title"><form method="dialog"><div class="snooze-heading"><h2 id="send-title">Send this email?</h2><button aria-label="Cancel send">×</button></div></form><fieldset id="send-recipients" hidden><legend>Who should get this?</legend><div></div></fieldset><dl id="send-head" class="send-head"></dl><div id="send-preview" class="send-body"></div><div id="send-editor" hidden><label id="send-subject-label">Subject<input id="send-subject" maxlength="250"></label><label>Message<textarea id="send-body"></textarea></label></div><div id="send-files" class="attachments" hidden></div><p id="send-fine" class="fine" hidden></p><p id="send-error" role="status"></p><div class="actions send-act"><button id="send-confirm" class="primary">Send now</button><button id="send-edit" class="ghost">Edit</button><button id="send-cancel">Cancel</button></div></dialog><p id="notice" role="status"></p><section id="inbox"><div id="suggestion-summary"></div><div id="suggestion-stats" aria-live="polite"></div><div id="first-look" class="first-look" role="status" hidden></div><div id="suggestions"></div></section>
 <section id="events" hidden><div class="search"><select id="account" aria-label="Account"><option value="all">All accounts</option></select><input id="query" type="search" placeholder="Search by meaning or words" aria-label="Search"><button id="search" class="primary">Search</button></div><div id="results"></div></section>
 <section id="people" hidden><div class="search people-search"><input id="people-query" type="search" placeholder="Find someone or a project" aria-label="Find a person, company or project"><button id="people-find" class="primary">Find</button></div><div id="people-view"></div></section>
@@ -2115,7 +2198,8 @@ $('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:s
 if(!chatOpen())$('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
 // Snoozed cards are out of the way by choice: folded by default, open state kept across refreshes.
 +(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed this week</span><span class="count">${recent.length}</span></summary>${recent.map(suggestionCard).join('')||'<p class="muted">Nothing finished or dismissed this week.</p>'}${older?`<p class="muted">${older} older ${older===1?'item is':'items are'} under Feedback.</p>`:''}</details>`;
-{const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)chatMount(c.id,chatView(c,[[ready,'Ready'],[needs.filter(x=>typeof x!=='string'),'To decide'],[preparing,'Preparing'],[later,'Later'],[recent,'Done']]))}
+sideCounts={ready:ready.length,needs:needs.length,preparing:preparing.length};sideCards([[ready,'Ready','ready'],[needs.filter(x=>typeof x!=='string'),'To decide','needs'],[preparing,'Preparing','preparing'],[later,'Later','later'],[recent,'Done','done']]);
+{const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)chatMount(c.id,chatView(c,[[ready,'Ready'],[needs.filter(x=>typeof x!=='string'),'To decide'],[preparing,'Preparing'],[later,'Later'],[recent,'Done']]))}pageHead();
 for(const[id,v]of Object.entries(drafts)){const t=document.getElementById(id);if(t&&t.value!==v){t.value=v;t.classList.add('filled')}}
 for(const id of moreOpen){const menu=document.getElementById(id)?.querySelector('.more-actions');if(menu)menu.open=true}
 fleetSync();
@@ -2468,13 +2552,13 @@ function chatKeepPlace(fn){const log=$('#chat-log');if(!log)return fn();const l=
  if(end&&chat?.items?.length){chatToEnd();return}if(l)l.scrollTop=keep;const n=at>=0?$('#chat-log').children[at]:null;if(!n)return;
  const d=n.getBoundingClientRect().top-y;if(Math.abs(d)>.5){if(l)l.scrollTop+=d;else scrollBy(0,d)}}
 // Long names fade out at the edge instead of wrapping; the full name is in their tooltip.
-function chatFades(){document.querySelectorAll('.chat-side a,.chat-title').forEach(n=>{const cut=n.scrollHeight>n.clientHeight+1;n.classList.toggle('fade',n.scrollWidth>n.clientWidth+1||cut);
+function chatFades(){document.querySelectorAll('.chat-side a,.chat-title,.side-cards a').forEach(n=>{const cut=n.scrollHeight>n.clientHeight+1;n.classList.toggle('fade',n.scrollWidth>n.clientWidth+1||cut);
  // A title cut after its second line ends where its last whole word does, often well before the edge: fade out there
  if(!cut||!n.firstChild||n.firstChild.nodeType!==3){n.style.removeProperty('--fade-x');return}
  const box=n.getBoundingClientRect(),r=document.createRange(),txt=n.firstChild;let lo=0,hi=txt.length;
  while(lo<hi){const m=(lo+hi+1)>>1;r.setStart(txt,m-1);r.setEnd(txt,m);const q=r.getBoundingClientRect();if(q.bottom<=box.bottom+1)lo=m;else hi=m-1}
  while(lo>1&&/\s/.test(txt.data[lo-1]))lo--;r.setStart(txt,Math.max(0,lo-1));r.setEnd(txt,lo);n.style.setProperty('--fade-x',Math.round(r.getBoundingClientRect().right-box.left)+'px')})}
-addEventListener('resize',()=>{if(chatId)chatFades()});
+addEventListener('resize',()=>chatFades());
 // A scrolled box shows its thin thumb while it moves
 document.addEventListener('scroll',e=>{const b=e.target;if(!b.classList?.matches?.('.chat-log,.chat-side')&&!b.matches?.('.chat-log,.chat-side'))return;b.classList.add('scrolling');clearTimeout(b._scrolling);b._scrolling=setTimeout(()=>b.classList.remove('scrolling'),900)},{capture:true,passive:true});
 // A result file shown in the thread (a copy-only draft): read once, then kept while the page is open
@@ -2591,6 +2675,39 @@ function navFade(){const n=$('nav'),max=n.scrollWidth-n.clientWidth;n.classList.
 $('nav').addEventListener('scroll',navFade,{passive:true});addEventListener('resize',navFade);navFade();
 const navShow=t=>{const n=$('nav');if(n.scrollWidth>n.clientWidth)n.scrollTo({left:Math.max(0,t.offsetLeft-(n.clientWidth-t.offsetWidth)/2),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})};
 $('nav').onclick=e=>{const t=e.target.closest('button');if(!t?.dataset.tab)return;navShow(t);for(const b of document.querySelectorAll('nav button')){b.classList.toggle('active',b===t);b.setAttribute('aria-current',b===t?'page':'false')}for(const s of document.querySelectorAll('main>section'))s.hidden=s.id!==t.dataset.tab;if(t.dataset.tab==='people')people(graphNode,!!$('#people-view').innerHTML);if(t.dataset.tab==='health')savedLogins();if(t.dataset.tab==='fleet')fleetShown=fleetView(true);requestAnimationFrame(()=>document.querySelectorAll('.fleet-tabs,.sub-tabs').forEach(tabsShow))};
+// The desktop sidebar (from 1024px): the cards as a quiet list under the tabs, by section, each section folds (Done
+// starts folded) and the fold is remembered; a filter on the titles; the whole sidebar folds to icons.
+const sideStore={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
+const sideFolded=(()=>{try{const v=JSON.parse(sideStore.get('side-folded'));if(Array.isArray(v))return new Set(v)}catch{}return new Set(['done'])})();
+const CHEVRON='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+let sideGroups=[],sideCounts={},sideHTML='';
+function sideCards(groups){if(groups)sideGroups=groups;const q=$('#side-find').value.trim().toLowerCase(),box=$('#side-cards');
+ const parts=sideGroups.map(([items,title,key])=>{const list=q?items.filter(x=>String(x.title||'').toLowerCase().includes(q)):items;if(!list.length)return'';const open=!!q||!sideFolded.has(key);
+  return `<div class="side-group${key==='done'||key==='later'?' quiet':''}"><button type="button" class="side-head" data-side-fold="${key}" aria-expanded="${open}">${CHEVRON}<span>${title}</span><span class="count">${list.length}</span></button>${open?list.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===chatId?' aria-current="page"':''}>${esc(x.title)}</a>`).join(''):''}</div>`}).join('');
+ const html=`<div class="side-label"><span>Cards</span>${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${parts||`<p class="side-empty">${q?'No cards match.':'No cards yet.'}</p>`}`;
+ if(html!==sideHTML){sideHTML=html;box.innerHTML=html;requestAnimationFrame(chatFades)}}
+$('#side-find').addEventListener('input',()=>sideCards());
+$('#side-find').addEventListener('keydown',e=>{if(e.key==='Escape'){e.target.value='';sideCards()}if(e.key==='Enter'){const a=$('#side-cards a');if(a)a.click()}});
+$('#side-cards').addEventListener('click',e=>{const f=e.target.closest('[data-side-fold]');
+ if(f){const k=f.dataset.sideFold;sideFolded.has(k)?sideFolded.delete(k):sideFolded.add(k);sideStore.set('side-folded',JSON.stringify([...sideFolded]));sideCards();return}
+ const sc=e.target.closest('[data-scope]');if(sc){linkedCardId=null;scopeFilter=sc.dataset.scope;sideStore.set('scope-filter',scopeFilter);render();return}
+ const a=e.target.closest('a[href^="#chat="]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const id=a.getAttribute('href').slice(6);
+ if(id===chatId){showTab('inbox');return}chatGo(id)});
+// Suggestions in the sidebar while a chat is open goes back to the overview
+$('nav').addEventListener('click',e=>{if(!e.isTrusted||!chatId||$('#inbox').hidden||!e.target.closest('[data-tab="inbox"]'))return;history.replaceState(null,'',location.pathname+location.search);chatPushed=false;openChatLink();scrollTo(0,0)});
+function sideSet(folded,save=true){document.documentElement.dataset.side=folded?'collapsed':'open';if(save)sideStore.set('side',folded?'collapsed':'open');
+ const b=$('#side-toggle'),label=folded?'Expand the sidebar':'Collapse the sidebar';b.setAttribute('aria-expanded',String(!folded));b.setAttribute('aria-label',label);b.title=label;requestAnimationFrame(chatFades)}
+sideSet(document.documentElement.dataset.side==='collapsed',false);
+$('#side-toggle').onclick=()=>sideSet(document.documentElement.dataset.side!=='collapsed');
+$('#side-search').addEventListener('click',()=>{if(document.documentElement.dataset.side==='collapsed'&&matchMedia('(min-width:1024px)').matches){sideSet(false);$('#side-find').focus()}});
+// A title over the main area on a computer: the tagline on Suggestions, else the tab's name
+const PAGE_TITLES={events:'Events',people:'Graph',fleet:'Fleet',feedback:'Feedback',health:'Connections',settings:'Settings'};
+function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';
+ if(tab==='inbox'&&chatId){h.hidden=true;return}
+ const c=sideCounts,sub=[[c.ready,'ready for you'],[c.needs,'to decide'],[c.preparing,'preparing']].filter(([k])=>k).map(([k,t])=>k+' '+t).join(' · ');
+ const html=tab==='inbox'?`<img class="page-avatar" src="brand/avatar.png" alt="" width="40" height="40"><div><h2 class="page-title">${esc($('#tagline').textContent)}</h2>${sub?`<p class="page-sub">${esc(sub)}</p>`:''}</div>`:`<h2 class="page-title">${PAGE_TITLES[tab]||''}</h2>`;
+ h.classList.toggle('greet',tab==='inbox');if(h.innerHTML!==html)h.innerHTML=html;h.hidden=false}
+{const o=new MutationObserver(()=>pageHead());document.querySelectorAll('main>section').forEach(x=>o.observe(x,{attributes:true,attributeFilter:['hidden']}));o.observe($('#tagline'),{childList:true,characterData:true,subtree:true})}
 $('#suggestions').oninput=e=>{if(e.target.tagName==='TEXTAREA')e.target.classList.toggle('filled',!!e.target.value)};
 async function saveDecision(id,choice,feedback='',answer=false){
 const saved=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'decide',args:{suggestion_id:id,choice,feedback,decision_id:crypto.randomUUID()}})});
