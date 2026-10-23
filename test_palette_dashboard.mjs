@@ -151,10 +151,16 @@ try{
   const why=await page.evaluate(()=>[document.querySelector('dialog[open]')?.id,document.activeElement?.tagName+'#'+document.activeElement?.id]);
   await page.keyboard.press('?');await page.locator('#keys-sheet').waitFor({timeout:3000}).catch(()=>{throw Error('no sheet: '+JSON.stringify(why))});assert.match(await page.locator('#keys-sheet').textContent(),/Search and commands⌘K/);
   await context.close()}
- // Phone: the menu has Search and commands; the palette fits 390
+ // Phone (390): no Search and commands row in the menu, no card search in it either; the top bar's search icon opens
+ // the palette, and everything it held stays reachable (the menu still has New card and every page)
  {const {context,page}=await open(390,844);
-  await page.locator('#drawer-open').tap();await page.locator('#side-cmd').waitFor();await page.waitForTimeout(400);await page.locator('#side-cmd').tap();await pal(page).waitFor();
-  assert.notEqual(await page.evaluate(()=>document.documentElement.dataset.drawer),'open','the drawer closes');
+  await page.locator('#drawer-open').tap();await page.waitForTimeout(400);
+  assert.equal(await page.locator('#side-cmd').count(),0,'no Search and commands row');assert.ok(!(await page.locator('#app-side').innerText()).includes('Search and commands'));
+  assert.ok(!(await page.locator('#side-find').isVisible()),'no card search in the menu');assert.ok(await page.locator('#side-new').isVisible(),'New card stays in the menu');
+  await page.keyboard.press('Escape');await page.waitForTimeout(400);
+  await page.locator('#find-open').tap();await pal(page).waitFor();
+  assert.equal(await page.locator('#pal-q').getAttribute('placeholder'),'Search or type a command');
+  const all=await labels(page);for(const l of ['New card','Calendar','People','Settings','Keyboard shortcuts'])assert.ok(all.includes(l),'reachable from the palette: '+l);
   const b=await pal(page).boundingBox();assert.ok(b.x>=0&&b.x+b.width<=390.5,'fits');
   await page.locator('#pal-q').fill('cal');assert.equal((await labels(page))[0],'Calendar');await page.locator('#pal-list .pal-item').first().tap();assert.equal(await tab(page),'calendar');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
