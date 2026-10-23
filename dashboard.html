@@ -1727,6 +1727,47 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 .device-done{color:var(--c-accent);font-size:var(--fs-sm);font-weight:var(--fw-medium)}
 .settings-list small.device-blocked{color:var(--c-text-2)}
 .settings-list small .ios-share{width:15px;height:15px}
+/* Command palette (Ctrl/⌘K, /) and the shortcut sheet (?): one calm field over the page, results in groups. */
+#palette,#palette[open]{width:min(620px,calc(100vw - 24px));max-height:min(560px,calc(100dvh - 48px));margin:12vh auto auto;padding:0;overflow:hidden;display:flex;flex-direction:column}
+#palette:not([open]){display:none}
+#palette::backdrop,#keys-sheet::backdrop{background:#15171b80;backdrop-filter:none}
+[data-theme="light"] #palette::backdrop,[data-theme="light"] #keys-sheet::backdrop{background:#3d375226}
+.pal-field{display:flex;align-items:center;gap:10px;flex:none;padding:0 16px;border-bottom:1px solid var(--c-line)}
+.pal-field svg{flex:none;width:18px;height:18px;fill:none;stroke:var(--c-text-3);stroke-width:1.6;stroke-linecap:round}
+.pal-field input,.pal-field input:focus{flex:1;min-width:0;height:52px;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;outline:none;color:var(--c-text);font:400 var(--fs-md)/1 var(--sans)}
+.pal-field input::placeholder{color:var(--c-text-3);opacity:1}
+.pal-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding:6px;overscroll-behavior:contain}
+.pal-group{padding:10px 10px 4px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans)}
+.pal-item{display:flex;align-items:center;gap:10px;min-height:38px;padding:6px 10px;border-radius:var(--r-sm);color:var(--c-text-2);font:400 var(--fs-sm)/1.3 var(--sans);cursor:pointer}
+.pal-item[aria-selected="true"]{background:var(--c-hover);color:var(--c-text);box-shadow:inset 0 0 0 1px var(--c-line)}
+.pal-item .pal-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pal-item small{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-3);font-size:var(--fs-xs)}
+.pal-keys{display:flex;gap:4px;flex:none;margin-left:auto}
+.pal-empty{padding:18px 10px;color:var(--c-text-3);font:400 var(--fs-sm)/1.4 var(--sans)}
+.pal-foot{display:flex;gap:14px;flex:none;padding:8px 16px;border-top:1px solid var(--c-line);color:var(--c-text-3);font:400 var(--fs-xs)/1.4 var(--sans)}
+kbd.kb,.pal-keys kbd,.keys-sheet kbd,.pal-foot kbd,.side-search kbd{display:inline-block;min-width:18px;padding:1px 5px;border:1px solid var(--c-line);border-radius:5px;background:none;color:var(--c-text-3);font:500 11px/1.4 var(--sans);text-align:center}
+.side-search .kb-open{flex:none;margin:0;padding:0;min-height:0;border:0;background:none;box-shadow:none;cursor:pointer;line-height:1}
+:root[data-side="collapsed"] .side-search .kb-open{display:none}
+.more-menu [data-kb-label]{display:flex;align-items:center;gap:10px}
+.more-menu [data-kb-label]::after{content:attr(data-kb-label);margin-left:auto;min-width:18px;padding:1px 5px;border:1px solid var(--c-line);border-radius:5px;color:var(--c-text-3);font:500 11px/1.4 var(--sans);text-align:center}
+@media(hover:none){.more-menu [data-kb-label]::after{display:none}}
+#keys-sheet{width:min(640px,calc(100vw - 24px))}
+.keys-sheet{columns:2 240px;column-gap:28px}.keys-sheet>div{break-inside:avoid}
+.keys-sheet h3{margin:14px 0 6px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans)}
+.keys-sheet div>p{display:flex;align-items:center;gap:10px;margin:0;padding:5px 0;color:var(--c-text-2);font:400 var(--fs-sm)/1.3 var(--sans)}
+.keys-sheet div>p>span:first-child{flex:1;min-width:0}.keys-sheet .keys{display:flex;align-items:center;gap:4px}.keys-sheet .then{color:var(--c-text-3);font-size:var(--fs-xs)}
+article.kb-on,article.kb-on:focus{outline:2px solid color-mix(in srgb,var(--c-accent) 70%,transparent);outline-offset:3px}
+.side-cmd{display:none}
+@media(max-width:1023px){
+  .nc-drawer .side-cmd{order:1;flex:none;display:flex;align-items:center;gap:12px;width:100%;min-height:44px;margin:0 0 6px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-md)/1.2 var(--sans);text-align:left;cursor:pointer}
+  .side-cmd svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+  .side-search .kb-open{display:none}
+}
+@media(max-width:560px){
+  #palette,#palette[open]{width:100%;max-width:100%;max-height:calc(100dvh - 24px);margin:0 auto auto;border-radius:0 0 var(--r-xl,20px) var(--r-xl,20px)}
+  .pal-field input,.pal-field input:focus{font-size:16px}  /* no zoom on focus on an iPhone */
+  .pal-item{min-height:44px}.pal-keys,.pal-foot{display:none}
+}
 </style>
 <div class="topbar" id="topbar"><button type="button" class="topbar-menu" id="drawer-open" aria-label="Open the menu" aria-controls="app-side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><span class="dot" id="drawer-dot" hidden></span></button><a class="topbar-title" href="#" id="topbar-title" aria-label="The Machine, to the top"><img src="brand/avatar.png" data-blink="brand/avatar-blink.png" alt="" width="22" height="22"><span>The Machine</span></a><button type="button" class="topbar-menu" id="find-open" aria-label="Find a card" title="Find a card" aria-controls="find-results" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg></button><form class="topbar-find" id="topbar-find" role="search" hidden><label class="find-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="find-q" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off" enterkeyhint="go"></label><button type="button" class="find-cancel" id="find-cancel">Cancel</button></form></div><div class="find-results" id="find-results" role="region" aria-label="Cards found" hidden></div><div class="drawer-scrim" id="drawer-scrim"></div>
 <aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" data-blink="brand/avatar-blink.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg class="ic-panel" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg><svg class="ic-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="calendar"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></svg><span class="nl">Calendar</span> <span class="badge" id="badge-calendar"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><div class="side-row"><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button type="button" class="side-fold" id="graph-fold" aria-expanded="true" aria-controls="graph-sub" aria-label="Hide People, Organisations and Projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div><div class="side-sub" id="graph-sub" role="group" aria-label="Graph"><a href="#graph=people" data-graph-sub="people"><span class="sq sq-people"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.2"/><path d="M5.5 19.5c.8-3.4 3.4-5.2 6.5-5.2s5.7 1.8 6.5 5.2"/></svg></span><span class="nl">People</span><span class="badge" id="count-people"></span></a><a href="#graph=orgs" data-graph-sub="orgs"><span class="sq sq-orgs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V5.5h8V20M14 9.5h4V20M4 20h16M9 9h2M9 12.5h2M9 16h2"/></svg></span><span class="nl">Organisations</span><span class="badge" id="count-orgs"></span></a><a href="#graph=projects" data-graph-sub="projects"><span class="sq sq-projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5V18a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 18V9.5A1.5 1.5 0 0 0 18.5 8H12l-2-2.5H5.5A1.5 1.5 0 0 0 4 7z"/></svg></span><span class="nl">Projects</span><span class="badge" id="count-projects"></span></a><a href="#graph=roles" data-graph-sub="roles" hidden><span class="sq sq-roles"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="6" width="15" height="12" rx="2"/><circle cx="9.5" cy="11" r="1.8"/><path d="M7 15.2c.6-1.2 1.5-1.8 2.5-1.8s1.9.6 2.5 1.8M14.5 10h2.5M14.5 13h2.5"/></svg></span><span class="nl">Who’s who</span><span class="badge" id="count-roles"></span></a></div><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20.5V16.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M12 13.2l-2.4-2.3a1.5 1.5 0 0 1 2.1-2.1l.3.3.3-.3a1.5 1.5 0 0 1 2.1 2.1z"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -3344,8 +3385,8 @@ const SIDE_MAC=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent),S
 const sideTip=document.createElement('div');sideTip.id='side-tip';sideTip.setAttribute('role','tooltip');sideTip.hidden=true;document.body.append(sideTip);
 let sideTipTimer=0,sideTipFor=null;
 function sideTipText(el){if(el.id==='side-toggle')return el.getAttribute('aria-label')+' · '+SIDE_KEY;if(el.id==='side-search')return 'Find a card';if(el.id==='live')return $('#updated').textContent.trim()||'Refresh';
- if(el.matches('.app-side .head-side>.settings-link'))return el.querySelector('.lbl')?.textContent.trim()||el.getAttribute('aria-label')||'';
- return el.getAttribute('aria-label')||''}
+ if(el.matches('.app-side .head-side>.settings-link'))return (el.querySelector('.lbl')?.textContent.trim()||el.getAttribute('aria-label')||'')+(el.dataset.keys?' · '+el.dataset.keys:'');
+ return (el.getAttribute('aria-label')||'')+(el.dataset.keys?' · '+el.dataset.keys:'')}
 function sideLabels(){for(const b of document.querySelectorAll('.app-side nav [data-tab]')){const name=b.querySelector('.nl')?.textContent.trim()||'',n=+(b.querySelector('.badge')?.textContent||0),t=b.dataset.tab,c=sideCounts||{};
   const more=t==='inbox'?[[c.ready,'ready'],[c.needs,'to decide']].filter(([k])=>k).map(([k,w])=>k+' '+w).join(' · ')||(n?n+' waiting':''):!n?'':t==='health'?n+(n===1?' needs':' need')+' a look':t==='people'?n+' waiting':t==='calendar'?n+' today':String(n);
   const label=more?name+' · '+more:name;if(b.getAttribute('aria-label')!==label)b.setAttribute('aria-label',label)}
@@ -4696,7 +4737,7 @@ async function ncCreate(){const text=$('#nc-text').value.trim();if(!text||nc.bus
  try{const made=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_new',args:{text,scope:nc.scope,due:nc.due?ncISO(nc.due):null,about:nc.about.map(a=>a.id),attach:nc.attach.map(a=>a.id)}})});
   $('#new-card').close();toast('Added');if(chatId)chatGo(made.id);else{showTab('inbox');history.replaceState(null,'',location.pathname+location.search+'#card='+made.id)}await refresh()}
  catch(e){$('#nc-error').textContent=e.message||'Couldn’t add the card'}finally{nc.busy=false;const b=$('#nc-add');if(b)b.disabled=!$('#nc-text')?.value.trim()}}
-// Entry points: a row under Find a card on a computer, "+" in the top bar on a phone, C, and Ctrl/Cmd+K then "new".
+// Entry points: a row under Find a card on a computer, "+" in the top bar on a phone, C, and the palette (Ctrl/⌘K) then "new".
 {const row=document.createElement('button');row.type='button';row.className='side-new';row.id='side-new';row.dataset.newCard='';row.title='New card (C)';row.setAttribute('aria-label','New card');
  row.innerHTML=`${NC_PLUS}<span>New card</span><kbd>C</kbd>`;$('#side-search').after(row);
  const plus=document.createElement('button');plus.type='button';plus.className='head-link settings-link new-card-link';plus.id='new-card-top';plus.dataset.newCard='';plus.title='New card';plus.setAttribute('aria-label','New card');
@@ -4705,9 +4746,7 @@ async function ncCreate(){const text=$('#nc-text').value.trim();if(!text||nc.bus
  else{plus.innerHTML=`${NC_PLUS}<span class="lbl">New card</span>`;$('#open-settings').before(plus)}}
 document.addEventListener('click',e=>{if(e.target.closest('[data-new-card]')){e.preventDefault();if(typeof drawerClose==='function')drawerClose();ncOpen();nc.byPointer=e.detail>0}});
 const ncTyping=t=>t?.closest?.('input,textarea,select,[contenteditable=""],[contenteditable="true"],dialog[open]');
-document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.isComposing)return;
- if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&e.key.toLowerCase()==='k'){e.preventDefault();const f=$('#side-find');if(f&&f.offsetParent){if(document.documentElement.dataset.side==='collapsed')sideSet(false);f.focus();f.select()}else ncOpen();return}
- if(e.key.toLowerCase()==='c'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!ncTyping(e.target)&&!document.querySelector('dialog[open]')){e.preventDefault();ncOpen()}});
+// C, Ctrl/⌘K and the other keys: the action registry and the palette at the end of this script.
 const ncAsked=()=>{const q=$('#side-find').value.trim().toLowerCase();return q.length>=2&&(q==='+'||'new card'.startsWith(q))};
 $('#side-find').addEventListener('input',()=>$('#side-new').classList.toggle('hit',ncAsked()));
 $('#side-find').addEventListener('keydown',e=>{if(e.key==='Enter'&&ncAsked()){e.preventDefault();e.stopImmediatePropagation();e.target.value='';sideCards();$('#side-new').classList.remove('hit');ncOpen()}},true);
@@ -4786,4 +4825,184 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-rename]');
  const ct=e.target.closest('.chat-title');if(ct&&chatId){e.preventDefault();renameAt(chatId,ct);return}
  const tl=e.target.closest('.card h3 .title-link');if(tl&&fine()&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){const id=tl.closest('article')?.id.replace(/^task-/,'');if(cardOf(id)){e.preventDefault();e.stopPropagation();renameAt(id,tl)}}},true);
 document.addEventListener('mouseover',e=>{const t=e.target.closest('.card h3 .title-link');if(t&&fine()&&!t.classList.contains('chat-title'))t.title='Click to rename'});
+// Command palette and keyboard shortcuts. One registry for both: a page or feature adds its actions with actionAdd()
+// ({id, group, label, keywords, keys, run, when}, or each(ctx) for one action per item), and the palette (Ctrl/⌘K, or /)
+// and the single-key shortcuts read it, so a new feature gets both. `when` reads the same thing the page shows (a hidden
+// tab, a button a card doesn't have), so the palette only lists what the page itself offers. Hard rule: nothing that
+// sends, approves or posts outside the Machine runs from here. Such an action is `review:true`: it only opens the review
+// (the Send dialog, the brief sheet), where the content is read and confirmed there, and it never gets a key.
+const KB_MAC=SIDE_MAC,KB_PAL=KB_MAC?'⌘K':'Ctrl K',ACTIONS=[];
+function actionAdd(...list){for(const a of list){const i=ACTIONS.findIndex(x=>x.id===a.id);if(i>=0)ACTIONS[i]=a;else ACTIONS.push(a)}}
+const kbPart=k=>k==='mod'?(KB_MAC?'⌘':'Ctrl'):k==='enter'?'Enter':k==='esc'?'Esc':k.length===1?k.toUpperCase():k;
+const kbKeys=keys=>keys?keys.split(' ').map((k,i,all)=>(k.startsWith('mod+')?`<kbd>${KB_MAC?'⌘':'Ctrl'}</kbd><kbd>${esc(kbPart(k.slice(4)))}</kbd>`:`<kbd>${esc(kbPart(k))}</kbd>`)+(i<all.length-1&&all[0]==='g'?'<span class="then">then</span>':'')).join(''):'';
+const kbText=keys=>keys?keys.split(' ').map(k=>k.startsWith('mod+')?(KB_MAC?'⌘':'Ctrl+')+kbPart(k.slice(4)):kbPart(k)).join(keys.startsWith('g ')?' then ':' '):'';
+const kbAria=keys=>keys?keys.split(' ').map(k=>k.startsWith('mod+')?(KB_MAC?'Meta+':'Control+')+k.slice(4).toUpperCase():k===','?'Comma':k.length===1?k.toUpperCase():k).join(' '):'';
+const kbHas=el=>!!el&&!el.hidden;
+// What the shortcuts act on: the open chat's card, else the card picked with J/K (or holding focus) in the list.
+let kbSel=null;
+// A redraw replaces the card: the pick follows it by id.
+function kbLive(){if(!kbSel||kbSel.isConnected||!kbSel.id)return;const el=document.getElementById(kbSel.id);if(!el){kbSel=null;return}const had=document.activeElement===document.body;kbSel=el;el.classList.add('kb-on');if(!el.hasAttribute('tabindex'))el.tabIndex=-1;if(had)el.focus({preventScroll:true})}
+function kbCtx(){kbLive();const open=chatId&&!$('#inbox').hidden?cardOf(chatId):null;let card=open;
+ if(!card){const el=document.activeElement?.closest?.('#suggestions article.card')||(kbSel?.isConnected?kbSel:null);const id=el?.id?.startsWith('task-')?el.id.slice(5):'';card=id?cardOf(id)||null:null}
+ return {card,id:card?.id||'',chat:!!open}}
+const kbBtn=(c,sel)=>c.id?document.querySelector(`#suggestions [data-id="${CSS.escape(c.id)}"]${sel}`):null;
+function actsFor(ctx){const out=[];for(const a of ACTIONS){try{if(a.each){for(const x of a.each(ctx)||[])out.push({group:a.group,...x})}else if(!a.when||a.when(ctx))out.push(a)}catch{}}return out}
+const actLabel=(a,ctx)=>typeof a.label==='function'?a.label(ctx):a.label;
+function actRun(a,ctx){if(typeof drawerClose==='function')drawerClose();try{const r=a.run(ctx);if(r?.catch)r.catch(e=>toast(e.message,true))}catch(e){toast(e.message||'That didn’t work',true)}}
+// Go to
+const kbNav=sel=>()=>{const el=$(sel);if(!el)return;if(chatId&&el.dataset.tab==='inbox'&&!$('#inbox').hidden){history.replaceState(null,'',location.pathname+location.search);chatPushed=false;openChatLink();scrollTo(0,0);return}el.click()};
+actionAdd(
+ {id:'go-suggestions',group:'Go to',label:'Suggestions',keywords:'cards home inbox',keys:'g s',run:kbNav('nav [data-tab="inbox"]')},
+ {id:'go-calendar',group:'Go to',label:'Calendar',keywords:'meetings today agenda',keys:'g c',run:kbNav('nav [data-tab="calendar"]')},
+ {id:'go-events',group:'Go to',label:'Events',keywords:'signals search messages mail',keys:'g e',run:kbNav('nav [data-tab="events"]')},
+ {id:'go-people',group:'Go to',label:'People',keywords:'graph contacts',keys:'g p',run:kbNav('.side-sub a[data-graph-sub="people"]')},
+ {id:'go-orgs',group:'Go to',label:'Organisations',keywords:'graph companies organizations',keys:'g o',run:kbNav('.side-sub a[data-graph-sub="orgs"]')},
+ {id:'go-projects',group:'Go to',label:'Projects',keywords:'graph',keys:'g j',run:kbNav('.side-sub a[data-graph-sub="projects"]')},
+ {id:'go-roles',group:'Go to',label:'Who’s who',keywords:'graph roles',keys:'g w',when:()=>kbHas($('.side-sub a[data-graph-sub="roles"]')),run:kbNav('.side-sub a[data-graph-sub="roles"]')},
+ {id:'go-fleet',group:'Go to',label:'Fleet',keywords:'team teammates',keys:'g f',when:()=>kbHas($('#tab-fleet')),run:kbNav('#tab-fleet')},
+ {id:'go-feedback',group:'Go to',label:'Feedback',keywords:'quality learned decided',keys:'g b',run:kbNav('nav [data-tab="feedback"]')},
+ {id:'go-connections',group:'Go to',label:'Connections',keywords:'sources health accounts',keys:'g n',run:kbNav('nav [data-tab="health"]')},
+ {id:'go-settings',group:'Go to',label:'Settings',keywords:'preferences',keys:'g ,',run:()=>showSettings()},
+ {id:'go-settings-tabs',group:'Go to',each:()=>SETTINGS_TABS.filter(([t])=>{const b=document.querySelector(`[data-settings-tab="${t}"]`);return b&&!b.hidden}).map(([t,l])=>({id:'go-settings-'+t,label:'Settings: '+l,keywords:'settings '+t,run:()=>showSettings(t)}))},
+ {id:'go-connections-reviews',group:'Go to',label:'Connections: Reviews',keywords:'signal reviews runs delivery',run:()=>showTab('health','reviews')});
+// Actions
+actionAdd(
+ {id:'new-card',group:'Actions',label:'New card',keywords:'add task todo create',keys:'c',run:()=>ncOpen()},
+ {id:'add-connection',group:'Actions',label:'Add a connection',keywords:'connect source account gmail slack',run:()=>{showTab('health','add');$('#connect-add')?.scrollIntoView({block:'start'})}},
+ {id:'open-browser',group:'Actions',label:'Open the browser',keywords:'browser /browser chrome',when:()=>kbHas($('#open-browser'))&&!!$('#open-browser').getAttribute('href'),run:()=>$('#open-browser').click()},
+ {id:'theme',group:'Actions',label:()=>document.documentElement.dataset.theme==='light'?'Switch to dark mode':'Switch to light mode',keywords:'theme light dark mode appearance',run:()=>$('#theme-toggle').click()},
+ {id:'sidebar',group:'Actions',label:()=>document.documentElement.dataset.side==='collapsed'?'Expand the sidebar':'Collapse the sidebar',keywords:'sidebar fold icons',keys:'mod+b',bound:true,when:()=>DESK.matches,run:()=>sideSet(document.documentElement.dataset.side!=='collapsed')},
+ {id:'refresh',group:'Actions',label:'Refresh',keywords:'reload update',run:()=>refresh()},
+ {id:'shortcuts',group:'Actions',label:'Keyboard shortcuts',keywords:'keys help hotkeys',keys:'?',run:()=>keysOpen()});
+// This card: only what the card itself offers (its own button is there), on the open chat's card or the picked one.
+const SEND_KINDS=['email','email_demo','linkedin','slack','x','whatsapp','intercom','merge','finish'];
+const SEND_WORD={email:'the email',email_demo:'the email',linkedin:'the LinkedIn message',slack:'the Slack message',x:'the post',whatsapp:'the WhatsApp message',intercom:'the Intercom reply',merge:'the fix',finish:'the last step'};
+const kbChatInput=id=>{if(chatId!==id)chatGo(id);let n=0;const go=()=>{const i=$('#chat-input');if(i){i.focus();return}if(++n<40)setTimeout(go,50)};go()};
+actionAdd(
+ {id:'card-open',group:'This card',label:'Open the chat',keywords:'card chat open',when:c=>c.card&&!c.chat,run:c=>chatGo(c.id)},
+ {id:'card-chat',group:'This card',label:'Write in the chat',keywords:'message reply ask composer',keys:'r',when:c=>!!c.card,run:c=>kbChatInput(c.id)},
+ {id:'card-rename',group:'This card',label:'Rename',keywords:'edit title',keys:'e',when:c=>!!c.card,run:c=>renameAt(c.id,titleEl(c.id))},
+ {id:'card-snooze',group:'This card',label:'Snooze',keywords:'later remind',keys:'s',when:c=>!!kbBtn(c,'[data-choice="snooze"]'),run:c=>openSnooze(c.id)},
+ {id:'card-done',group:'This card',label:'Mark done',keywords:'complete finish',keys:'d',when:c=>!!kbBtn(c,'[data-choice="complete"]'),run:c=>kbBtn(c,'[data-choice="complete"]').click()},
+ {id:'card-change',group:'This card',label:'Change…',keywords:'edit feedback',when:c=>!!kbBtn(c,'[data-choice="change"]'),run:c=>kbBtn(c,'[data-choice="change"]').click()},
+ {id:'card-reject',group:'This card',label:'Not needed…',keywords:'dismiss reject',when:c=>!!kbBtn(c,'[data-choice="reject"]'),run:c=>kbBtn(c,'[data-choice="reject"]').click()},
+ {id:'card-handoff',group:'This card',label:'Hand off…',keywords:'teammate fleet delegate',review:true,when:c=>!!c.id&&!!document.querySelector(`#suggestions [data-fleet-handoff="${CSS.escape(c.id)}"]`),run:c=>document.querySelector(`#suggestions [data-fleet-handoff="${CSS.escape(c.id)}"]`).click()},
+ // Hand to Codex / Claude Code: opens the brief sheet to read and edit; only its own Send there hands it over.
+ {id:'card-agent',group:'This card',review:true,each:c=>c.card&&canAgent(c.card)?agentTools().map(t=>({id:'card-agent-'+t.id,label:'Hand to '+t.name+'…',keywords:'agent codex claude code',review:true,run:()=>agentHand(c.id,t.id)})):[]},
+ {id:'card-agent-open',group:'This card',each:c=>{const j=c.card?.agent_job;return j?.url&&/^(https:\/\/|codex:\/\/threads\/)/.test(j.url)?[{id:'card-agent-open',label:j.app||'Open '+j.name,keywords:'codex claude open thread',run:()=>window.open(agentHref(j),'_blank','noopener,noreferrer')}]:[]}},
+ // Sends: only the Send dialog with the draft to read, its recipients and its own Send now.
+ {id:'card-review-send',group:'This card',review:true,each:c=>c.card?.status==='prepared'?taskActions(c.card).filter(a=>SEND_KINDS.includes(a.kind)&&!a.state?.status).map(a=>({id:'card-review-'+a.kind,label:'Review '+(SEND_WORD[a.kind]||'the draft')+'…',keywords:'send draft review',review:true,run:()=>openSend(c.id,a.revision)})):[]});
+
+// Fuzzy match: the whole query in the label (at the start best, then at a word), else every word in order as letters.
+function palScore(q,text){q=q.trim().toLowerCase();const t=String(text||'').toLowerCase();if(!q)return 1;if(!t)return -1;
+ const at=t.indexOf(q);if(at===0)return 100-t.length/1000;if(at>0)return(/[\s\-:·/(]/.test(t[at-1])?85:70)-at/1000;
+ let total=0;for(const w of q.split(/\s+/)){const i=t.indexOf(w);if(i>=0){total+=i===0||/[\s\-:·/(]/.test(t[i-1])?50:40;continue}
+  let j=0,prev=-2,s=0;for(const ch of w){const k=t.indexOf(ch,j);if(k<0)return -1;s+=k===prev+1?3:k===0||/[\s\-:·/(]/.test(t[k-1])?2:.5;prev=k;j=k+1}total+=Math.min(35,s/(w.length*3)*35)}
+ return total/q.split(/\s+/).length}
+// Keywords count for whole words only ("mode" finds the theme); letters in order only on the label itself.
+const palMatch=(q,a,label)=>{const l=palScore(q,label),w=q.trim().toLowerCase(),k=a.keywords&&w.split(/\s+/).every(x=>a.keywords.toLowerCase().includes(x))?palScore(q,a.keywords)*.6:-1;return Math.max(l,k)};
+// Recent commands, newest first (this browser only).
+const PAL_RECENT='palette-recent';
+const palRecent=()=>{try{const v=JSON.parse(localStorage.getItem(PAL_RECENT)||'[]');return Array.isArray(v)?v.filter(x=>typeof x==='string').slice(0,5):[]}catch{return []}};
+function palRemember(id){try{localStorage.setItem(PAL_RECENT,JSON.stringify([id,...palRecent().filter(x=>x!==id)].slice(0,5)))}catch{}}
+
+const pal={from:null,ctx:null,items:[],sel:0,q:'',seq:0,timer:0,found:null};
+function palDialog(){let d=$('#palette');if(d)return d;d=document.createElement('dialog');d.id='palette';d.setAttribute('aria-label','Search and commands');
+ d.innerHTML=`<div class="pal-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="pal-q" type="text" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list" placeholder="Search or type a command" autocomplete="off" spellcheck="false" enterkeyhint="go"></div><div class="pal-list" id="pal-list" role="listbox" aria-label="Results"></div><div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run</span><span><kbd>Esc</kbd> close</span><span><kbd>?</kbd> shortcuts</span></div>`;
+ document.body.append(d);const q=d.querySelector('#pal-q');
+ q.addEventListener('input',()=>{pal.q=q.value;pal.sel=0;palRender();palFind()});
+ q.addEventListener('keydown',e=>{if(e.isComposing||e.keyCode===229)return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const n=pal.items.length;if(n){pal.sel=(pal.sel+(e.key==='ArrowDown'?1:-1)+n)%n;palPaint()}return}
+  if(e.key==='Enter'){e.preventDefault();palPick(pal.sel);return}
+  if(e.key==='Tab'){e.preventDefault();return}  // focus stays in the field while it is open
+  if(e.key==='Escape'){e.preventDefault();palClose()}});
+ d.addEventListener('cancel',e=>{e.preventDefault();palClose()});
+ d.addEventListener('click',e=>{if(e.target===d){palClose();return}const o=e.target.closest('[data-pal]');if(o)palPick(+o.dataset.pal)});
+ d.addEventListener('mousemove',e=>{const o=e.target.closest('[data-pal]');if(o&&+o.dataset.pal!==pal.sel){pal.sel=+o.dataset.pal;palPaint(false)}});
+ return d}
+function palOpen(){const d=palDialog();if(d.open)return;for(const x of document.querySelectorAll('dialog[open]'))if(x!==d)return;
+ pal.from=document.activeElement;pal.ctx=kbCtx();pal.q='';pal.sel=0;pal.found=null;pal.seq++;if(typeof drawerClose==='function')drawerClose();
+ const q=d.querySelector('#pal-q');q.value='';d.showModal();q.focus();palRender()}
+function palClose(){const d=$('#palette');clearTimeout(pal.timer);pal.seq++;if(d?.open)d.close();const f=pal.from;pal.from=null;if(f?.isConnected&&f!==document.body)f.focus({preventScroll:true})}
+const palToggle=()=>$('#palette')?.open?palClose():palOpen();
+function palRows(){const q=pal.q.trim(),ctx=pal.ctx,recent=palRecent(),groups=[],seen=new Set();
+ const acts=actsFor(ctx).map(a=>({a,label:actLabel(a,ctx)}));
+ if(!q){const rec=recent.map(id=>acts.find(x=>x.a.id===id)).filter(Boolean);rec.forEach(x=>seen.add(x.a.id));if(rec.length)groups.push(['Recent',rec]);
+  for(const g of ['This card','Actions','Go to']){const xs=acts.filter(x=>x.a.group===g&&!seen.has(x.a.id));if(xs.length)groups.push([g,xs])}}
+ else{const scored=acts.map(x=>({...x,s:palMatch(q,x.a,x.label)+(recent.includes(x.a.id)?8-recent.indexOf(x.a.id):0)})).filter(x=>x.s>8).sort((x,y)=>y.s-x.s);
+  for(const g of ['This card','Actions','Go to']){const xs=scored.filter(x=>x.a.group===g).slice(0,8);if(xs.length)groups.push([g,xs])}
+  if(groups.length>1){const best=g=>g[1][0].s;groups.sort((x,y)=>best(y)-best(x))}
+  const cards=(state.suggestions||[]).filter(s=>!closed(s)).map(s=>({s,score:palScore(q,s.title)})).filter(x=>x.score>=40)  /* words, not scattered letters */.sort((x,y)=>y.score-x.score).slice(0,5);
+  if(cards.length)groups.push(['Cards',cards.map(({s})=>({a:{id:'card:'+s.id,run:()=>chatGo(s.id),entity:true},label:s.title,sub:s.scope==='work'?'Work':s.scope==='personal'?'Personal':''}))]);
+  for(const [kind,name] of [['person','People'],['org','Organisations'],['project','Projects']]){const xs=(pal.found||[]).filter(n=>n.kind===kind).slice(0,5);
+   if(xs.length)groups.push([name,xs.map(n=>({a:{id:'graph:'+n.id,run:()=>{location.hash=graphHash(n.id)},entity:true},label:n.name||n.id,sub:kind==='person'?(n.ids||[])[0]||'':kind==='org'&&n.domain!==n.name?n.domain||'':''}))])}}
+ return groups}
+function palRender(){const d=$('#palette');if(!d?.open)return;const groups=palRows(),list=d.querySelector('#pal-list');pal.items=[];let html='';
+ for(const [g,xs] of groups){html+=`<div class="pal-group" role="presentation">${esc(g)}</div>`;
+  for(const x of xs){const i=pal.items.push(x)-1;const keys=x.a.review?'':x.a.keys;
+   html+=`<div class="pal-item" role="option" id="pal-o-${i}" data-pal="${i}" aria-selected="false"><span class="pal-label">${esc(x.label)}</span>${x.sub?`<small>${esc(x.sub)}</small>`:''}${keys?`<span class="pal-keys" aria-label="${esc(kbText(keys))}">${kbKeys(keys)}</span>`:''}</div>`}}
+ if(!pal.items.length)html=`<p class="pal-empty">${pal.q.trim().length>=2&&pal.found===null?'Looking…':'Nothing matches.'}</p>`;
+ list.innerHTML=html;pal.sel=Math.min(pal.sel,Math.max(0,pal.items.length-1));palPaint()}
+function palPaint(scroll=true){const d=$('#palette');if(!d)return;const q=d.querySelector('#pal-q');
+ for(const o of d.querySelectorAll('[data-pal]'))o.setAttribute('aria-selected',String(+o.dataset.pal===pal.sel));
+ const on=d.querySelector(`#pal-o-${pal.sel}`);if(on){q.setAttribute('aria-activedescendant',on.id);if(scroll)on.scrollIntoView({block:'nearest'})}else q.removeAttribute('aria-activedescendant')}
+// People, organisations and projects come from the Graph's own search (api/graph?q=), a moment after typing stops;
+// an answer to an older query is dropped.
+function palFind(){clearTimeout(pal.timer);const q=pal.q.trim(),seq=++pal.seq;if(q.length<2){pal.found=[];return}pal.found=null;
+ pal.timer=setTimeout(async()=>{let found=[];try{const r=await request('api/graph?q='+encodeURIComponent(q));found=Array.isArray(r?.found)?r.found:[]}catch{}
+  if(seq!==pal.seq||!$('#palette')?.open)return;pal.found=found;palRender()},180)}
+function palPick(i){const x=pal.items[i];if(!x)return;const ctx=pal.ctx;palClose();if(!x.a.entity)palRemember(x.a.id);actRun(x.a,ctx)}
+
+// The shortcut sheet (?), from the same registry.
+function keysOpen(){let d=$('#keys-sheet');for(const x of document.querySelectorAll('dialog[open]'))if(x!==d)return;
+ if(!d){d=document.createElement('dialog');d.id='keys-sheet';d.setAttribute('aria-labelledby','keys-title');document.body.append(d);d.addEventListener('click',e=>{if(e.target===d)d.close()})}
+ const row=(keys,label,more='')=>`<p><span>${esc(label)}</span><span class="keys">${kbKeys(keys)}${more}</span></p>`,ctx={card:null,id:'',chat:false};
+ const of=g=>ACTIONS.filter(a=>a.group===g&&a.keys&&!a.review&&!a.each&&(!a.when||(()=>{try{return a.when(ctx)}catch{return false}})()||g==='This card')).map(a=>row(a.keys,actLabel(a,ctx))).join('');
+ d.innerHTML=`<form method="dialog"><div class="snooze-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button aria-label="Close">×</button></div></form><div class="keys-sheet">
+ <div><h3>General</h3>${row('mod+k','Search and commands','<span class="then">or</span><kbd>/</kbd>')}${of('Actions')}${row('esc','Close')}</div>
+ <div><h3>Go to</h3>${of('Go to')}</div>
+ <div><h3>Lists and cards</h3>${row('j','Next')}${row('k','Previous')}${row('enter','Open')}${of('This card')}</div></div>`;
+ d.showModal()}
+
+// J/K: the next or previous item in the page's list (cards, events, the Graph's rows); in a chat, the next card.
+const KB_LISTS={inbox:'#suggestions article.card',events:'#results article',people:'#people-view article,#people-view .person-item',fleet:'#fleet-view article'};
+function kbItems(){const sec=[...document.querySelectorAll('main>section')].find(s=>!s.hidden);if(!sec||!KB_LISTS[sec.id])return [];
+ return [...sec.querySelectorAll(KB_LISTS[sec.id])].filter(x=>x.getClientRects().length&&!x.parentElement.closest('article,.person-item'))}
+function kbPick(el){document.querySelector('.kb-on')?.classList.remove('kb-on');kbSel=el||null;if(!el)return;el.classList.add('kb-on');if(!el.hasAttribute('tabindex'))el.tabIndex=-1;el.focus({preventScroll:true});el.scrollIntoView({block:'nearest'})}
+function kbMove(step){if(chatId&&!$('#inbox').hidden){const rows=[...document.querySelectorAll('#side-cards a[href^="#chat="]')],i=rows.findIndex(a=>a.getAttribute('href')==='#chat='+chatId),n=rows[i+step];
+  if(n)chatGo(n.getAttribute('href').slice(6));return}
+ const xs=kbItems();if(!xs.length)return;const now=kbSel?.isConnected?xs.indexOf(kbSel):-1;
+ const prev=now<0&&kbSel?.id?xs.findIndex(x=>x.id===kbSel.id):now;kbPick(xs[prev<0?(step>0?0:xs.length-1):Math.max(0,Math.min(xs.length-1,prev+step))])}
+function kbEnter(){kbLive();const el=kbSel;if(!el?.isConnected||document.activeElement!==el)return false;
+ if(el.id?.startsWith('task-')){chatGo(el.id.slice(5));return true}const t=el.querySelector('[data-graph-open],a[href],button');if(t){t.click();return true}el.click();return true}
+document.addEventListener('focusin',e=>{if(kbSel&&e.target!==kbSel&&!kbSel.contains(e.target)&&!e.target.closest?.('#palette,#keys-sheet')){kbSel.classList.remove('kb-on');kbSel=null}});
+
+// The keys. Never while typing (a field, a text area, contenteditable), during IME composition, or over another dialog.
+let kbG=0;
+document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.isComposing||e.keyCode===229)return;const key=e.key;
+ const mod=KB_MAC?e.metaKey&&!e.ctrlKey:e.ctrlKey&&!e.metaKey;
+ if(mod&&!e.altKey&&!e.shiftKey&&key.toLowerCase()==='k'){e.preventDefault();palToggle();return}
+ if(e.ctrlKey||e.metaKey||e.altKey||ncTyping(e.target)||document.querySelector('dialog[open]'))return;
+ if(kbG&&Date.now()-kbG<1500){kbG=0;const a=actsFor(kbCtx()).find(a=>a.keys==='g '+key.toLowerCase()&&!a.review);if(a){e.preventDefault();actRun(a,kbCtx())}return}kbG=0;
+ if(key==='g'&&!e.shiftKey){kbG=Date.now();e.preventDefault();return}
+ if(key==='/'){e.preventDefault();palOpen();return}
+ if(key==='?'){e.preventDefault();keysOpen();return}
+ if(key==='j'||key==='k'){e.preventDefault();kbMove(key==='j'?1:-1);return}
+ if(key==='Enter'){if(kbEnter())e.preventDefault();return}
+ if(key==='Escape'&&kbSel){kbPick(null);return}
+ if(e.shiftKey||key.length!==1)return;
+ const ctx=kbCtx(),a=actsFor(ctx).find(a=>a.keys===key.toLowerCase()&&!a.review&&!a.bound);if(a){e.preventDefault();actRun(a,ctx)}});
+
+// Where the keys show: ⌘K / Ctrl K in Find a card, a row in the phone's menu, and the quiet hints in tooltips and menus.
+{const lab=$('#side-search'),b=document.createElement('button');b.type='button';b.className='kb-open';b.id='pal-open';b.title='Search and commands ('+KB_PAL+')';b.setAttribute('aria-label','Search and commands');b.setAttribute('aria-keyshortcuts',kbAria('mod+k'));
+ b.innerHTML=`<kbd>${KB_PAL}</kbd>`;b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();palOpen()});lab.append(b);
+ const row=document.createElement('button');row.type='button';row.className='side-cmd';row.id='side-cmd';row.setAttribute('aria-label','Search and commands');
+ row.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7.5l4 4.5-4 4.5M11.5 17h7.5"/></svg><span>Search and commands</span>';row.onclick=()=>palOpen();($('#side-new')||lab).after(row)}
+const KB_TIPS=[['nav [data-tab="inbox"]','g s'],['nav [data-tab="calendar"]','g c'],['nav [data-tab="events"]','g e'],['.side-sub a[data-graph-sub="people"]','g p'],['.side-sub a[data-graph-sub="orgs"]','g o'],['.side-sub a[data-graph-sub="projects"]','g j'],['.side-sub a[data-graph-sub="roles"]','g w'],['#tab-fleet','g f'],['nav [data-tab="feedback"]','g b'],['nav [data-tab="health"]','g n'],['#open-settings','g ,']];
+for(const [sel,keys] of KB_TIPS){const el=$(sel);if(!el)continue;const name=el.querySelector('.nl,.lbl')?.textContent.trim()||el.getAttribute('aria-label')||'';el.title=name+' ('+kbText(keys)+')';el.dataset.keys=kbText(keys);el.setAttribute('aria-keyshortcuts',kbAria(keys))}
+const KB_CARD=[['[data-choice="snooze"]','s'],['[data-choice="complete"]','d'],['[data-rename]','e']];
+function kbHints(){for(const [sel,keys] of KB_CARD)for(const b of document.querySelectorAll('#suggestions '+sel)){if(b.dataset.kb)continue;b.dataset.kb=keys;b.setAttribute('aria-keyshortcuts',kbAria(keys));
+  b.dataset.kbLabel=kbPart(keys);if(!b.closest('.more-menu')&&!b.title)b.title=b.textContent.trim()+' ('+kbPart(keys)+')'}}  // in a menu: a quiet key after the label (CSS)
+new MutationObserver(()=>{kbHints();kbLive()}).observe($('#suggestions'),{childList:true,subtree:true});kbHints();
+window.machineActions={add:actionAdd,list:()=>actsFor(kbCtx()),open:palOpen};
 </script></html>
