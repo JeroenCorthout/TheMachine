@@ -54,7 +54,7 @@ function askQuestion(item:any){if(['completed','rejected','snoozed'].includes(it
   try{const o=JSON.parse(item.outcome||'{}'),q=String(o.needs||'').trim();return o.state==='needs_you'&&q.endsWith('?')?q:''}catch{return ''}}
 function cardButtons(item: any) {
   const choices = askQuestion(item) ? [['Answer', 'other'], ...(item.preparation_status==='blocked'&&item.preparation_cause!=='retry' ? [[retryLabel(item.preparation_reason),'retry']] : []), ['Mark done', 'complete'], ['Snooze', 'snooze'], ['Not needed', 'reject']] : ['completed', 'rejected'].includes(item.status) ? (item.undo_until && Date.parse(item.undo_until)>Date.now() ? [['Undo','undo']] : []) : item.status === 'snoozed'
-    ? [['Unsnooze', 'accept'], ['Change time', 'snooze'], ['Not needed', 'reject']]
+    ? [[item.handoff_wait ? 'Check in now' : 'Unsnooze', 'accept'], ['Change time', 'snooze'], ['Not needed', 'reject']]  // with a teammate: back to check in
     : ['accepted', 'prepared', 'instructions'].includes(item.status)
       ? item.preparation_status!=='blocked'&&answeredOnly(item)
         ? [['Do it', 'accept'], ['Snooze', 'snooze'], ['Change', 'other'], ['Mark done', 'complete'], ['Not needed', 'reject']]

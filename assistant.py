@@ -241,6 +241,45 @@ def snooze_time(option=None, explicit=None, hours=24, work=False):
     return due.isoformat()
 
 
+def handoff_checkin(urgent=False, due=None):
+    """When a card handed to a teammate comes back to check in if they haven't answered. It follows the card's own
+    urgency and deadline (its `urgent` and `due` fields, as the review set them), never words in its text:
+    urgent or due today (or overdue): about 3 hours later within the owner's hours, else the next morning;
+    a deadline sooner than the usual wait: the morning of the work day before it (the same day if that has passed);
+    otherwise the usual 3 days, on a work day."""
+    current = dt.datetime.fromisoformat(now())
+    local = current.astimezone(local_tz())
+    hour, minute = clock(WORK_HOURS['morning'])
+
+    def soon():
+        later = local + dt.timedelta(hours=3)
+        if later.date() == local.date() and in_hours(later):
+            return later.astimezone(dt.timezone.utc).isoformat()
+        morning = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if morning <= local:
+            morning += dt.timedelta(days=1)
+        return morning.astimezone(dt.timezone.utc).isoformat()
+
+    try:
+        deadline = dt.date.fromisoformat(str(due)[:10]) if due else None
+    except ValueError:
+        deadline = None
+    if urgent or (deadline and deadline <= local.date()):
+        return soon()
+    usual = snooze_time('3d', work=True)
+    if not deadline:
+        return usual
+    day = deadline - dt.timedelta(days=1)
+    for _ in range(7):
+        if is_work_day(day):
+            break
+        day -= dt.timedelta(days=1)
+    before = dt.datetime.combine(day, dt.time(hour, minute), local_tz())
+    if before <= local:
+        return soon()
+    return min(before.astimezone(dt.timezone.utc).isoformat(), usual)
+
+
 def asked_snooze_time(value):
     """When the owner asked, in a Change note, for this card back later: snooze_until as the run read it.
     A date alone means that day in their morning (work_hours.morning); a time without an offset is the
@@ -4683,7 +4722,10 @@ class Store:
                                 (suggestion_id,)).fetchone()
             if (latest['id'] if latest else None) != expected_decision:
                 return {'skipped': True, 'reason': 'newer_card_choice'}
-            return self._decide(db, suggestion_id, 'snooze', feedback, decision_id, 'fleet', snooze_option='3d', work=True)
+            card = db.execute('SELECT urgent,due FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+            # Back to check in if they haven't answered: as soon as the card's own urgency or deadline needs.
+            until = handoff_checkin(bool(card['urgent']), card['due']) if card else None
+            return self._decide(db, suggestion_id, 'snooze', feedback, decision_id, 'fleet', snoozed_until=until, work=True)
 
     def decide_handoff(self, suggestion_id, choice, feedback, decision_id, request_id):
         """Apply an answer only while this exact handoff still owns the card. Owner input wins, atomically."""
@@ -5244,6 +5286,8 @@ class Store:
         if suggestion.get('status')=='prepared':self.browser_view(db,suggestion,extra)
         if self.accounts and suggestion.get('account_ids') is not None:
             extra['scope']=suggestion_scope(suggestion['account_ids'], self.accounts)
+        wait=handoff_wait(db,suggestion)
+        if wait:extra['handoff_wait']=wait
         return extra
 
     def browser_view(self, db, suggestion, extra):
@@ -7456,6 +7500,8 @@ def card(row):
         handed = json.loads(row['awaiting']) if row.get('awaiting') else {}
     except (ValueError, TypeError):
         handed = {}
+    if row['status'] == 'snoozed' and checkin_line(row):  # with a teammate: when it comes back to check in, not a snooze
+        status = checkin_line(row) + '.'
     if handed.get('delegated'):
         if row['status'] == 'snoozed' and row.get('snoozed_until'):
             status = f"Sent to {handed['name']}. Waiting for their reply until " + dt.datetime.fromisoformat(row['snoozed_until']).astimezone(local_tz()).strftime('%a %-d %b') + '; it closes when they answer.'
@@ -7608,6 +7654,36 @@ def ask_question(row, actions):
         return ''
 
 
+def handoff_wait(db, suggestion):
+    """A card under Later because it is with a teammate who hasn't answered its handoff yet: {'name': their first name}.
+    Its time is when it comes back to check in with them, not a snooze of the owner's."""
+    if suggestion.get('status') != 'snoozed':
+        return None
+    try:
+        row = db.execute("SELECT name,status,answer FROM fleet_out WHERE context=? AND kind='handoff' ORDER BY at DESC,rowid DESC LIMIT 1",
+                         ('handoff:' + str(suggestion['id']),)).fetchone()
+    except sqlite3.OperationalError:  # no Fleet on this Machine
+        return None
+    try:
+        stage = (json.loads(row['answer'] or 'null') or {}).get('stage') if row else None
+    except (ValueError, AttributeError):
+        stage = None
+    if not row or (stage or row['status']) not in ('asked', 'waiting'):
+        return None
+    return {'name': (str(row['name'] or '').split() or ['them'])[0]}
+
+
+def checkin_line(row):
+    """'Check in with Pat Mon 09:00 if no answer', for a card waiting on a handoff (handoff_wait)."""
+    wait, until = row.get('handoff_wait') or {}, row.get('snoozed_until')
+    if not wait or not until:
+        return ''
+    local, today = dt.datetime.fromisoformat(until).astimezone(local_tz()), dt.datetime.fromisoformat(now()).astimezone(local_tz()).date()
+    days = (local.date() - today).days
+    when = 'today' if days == 0 else 'tomorrow' if days == 1 else local.strftime('%a') if 1 < days < 7 else local.strftime('%a %-d %b')
+    return f"Check in with {wait['name']} {when} {local:%H:%M} if no answer"
+
+
 def answered_only(row):
     """A result that only answered, explained or planned: the task itself is still to do."""
     try:
@@ -7620,7 +7696,7 @@ def controls(row, root=''):
     if row['status'] in ['completed','rejected']:
         choices = [('Undo','undo')] if row.get('undo_until') and row['undo_until']>now() else []
     elif row['status'] == 'snoozed':
-        choices = [('Unsnooze','accept'),('Change time','snooze'),('Not needed','reject')]
+        choices = [('Check in now' if row.get('handoff_wait') else 'Unsnooze','accept'),('Change time','snooze'),('Not needed','reject')]
     elif row['status'] in ['accepted','prepared','instructions']:
         choices = [('Mark done','complete'),('Snooze','snooze'),('Change','other'),('Not needed','reject')]
         if row.get('preparation_status')=='blocked':choices.insert(0,(retry_label(row.get('preparation_reason')),'retry'))
@@ -8814,7 +8890,8 @@ class App:
             self.fleet.make_card, self.fleet.tell = self.fleet_card, self.fleet_tell  # Fleet requests (fleet_requests.py)
             # A handoff the teammate accepted is theirs now: the owner's card is done, saying to whom (Undo brings it back).
             self.fleet.close_card = lambda card_id, why, key: self.store.decide_handoff(card_id, 'complete', why, key, key.removeprefix('fleet-handoff-'))
-            # Handed off and not answered yet: the card waits under Later (back in 3 work days if their Machine stays quiet);
+            # Handed off and not answered yet: the card waits under Later and comes back to check in if their Machine stays
+            # quiet: within hours when urgent or due today, before a near deadline, else in 3 work days (handoff_checkin);
             # a decline brings it back to Ready, also when the owner closed it after handing it off.
             self.fleet.wait_card = lambda card_id, why, key, expected: self.store.wait_handoff(card_id, why, key, expected)
             self.fleet.wake_card = lambda card_id, key, handed_at: self.store.handoff_back(card_id, key, key.removeprefix('fleet-handoff-back-'), handed_at)
@@ -11005,9 +11082,20 @@ class App:
                 i['from'] = person[0] if len(person) == 1 else ''
         runs = [r['started_at'] for r in db.execute('SELECT started_at FROM preparation_runs WHERE suggestion_id=?', (suggestion_id,))]
         about = max(((i['at'], i['from']) for i in owner if i['kind'] == 'source' and not i['mine'] and i['from']), default=(0, ''))[1]  # the latest who wrote
-        for r in db.execute("SELECT choice,feedback,source,created_at FROM decisions WHERE suggestion_id=? AND source IN ('dashboard','telegram') "
+        waiting = False  # with a teammate: Later means back to check in, not a snooze of the owner's
+        for r in db.execute("SELECT id,choice,feedback,source,created_at FROM decisions WHERE suggestion_id=? AND source IN ('dashboard','telegram','fleet') "
                             'ORDER BY rowid', (suggestion_id,)):
             at, via = chat_ms(r['created_at']), (' in Telegram' if r['source'] == 'telegram' else '')
+            if r['source'] == 'fleet' or r['choice'] != 'snooze':
+                was, waiting = waiting, r['source'] == 'fleet' and r['id'].startswith('fleet-handoff-wait-')
+                if r['source'] == 'fleet':
+                    continue
+                if was and r['choice'] == 'accept':
+                    owner.append({'kind': 'event', 'text': 'Back for a check-in' + via, 'choice': 'checkin', 'mine': True, 'at': at})
+                    continue
+            elif waiting:
+                owner.append({'kind': 'event', 'text': 'Check-in moved' + via, 'choice': 'snooze', 'mine': True, 'at': at})
+                continue
             if r['choice'] == 'other':
                 owner.append({'kind': 'you', 'text': clamp(r['feedback'], 5000), 'via': r['source'], 'at': at})
             elif r['choice'] in CHAT_OWNER_WORDS:  # a send shows as what went out, below

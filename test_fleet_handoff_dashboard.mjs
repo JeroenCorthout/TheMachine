@@ -23,7 +23,7 @@ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','applica
  if(req.url==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
   if(call.action==='fleet_handoff_draft'){res.end(JSON.stringify({suggestion_id:'c1',title:card.title,summary:TEXT,contact:'',due:null,fleets:[{id:FL,name:'Acme',members:[{member_id:'k',name:'Kim'}]}]}));return}
   if(call.action==='fleet_handoff'){  // what the service does: waiting under Later, sends hidden while it is with them
-   Object.assign(card,{status:'snoozed',snoozed_until:new Date(Date.now()+3*864e5).toISOString(),fleet_handoff:{name:'Kim',stage:'asked'},next_actions:[]});state.suggestion_counts={snoozed:1}}
+   Object.assign(card,{status:'snoozed',snoozed_until:new Date(Date.now()+3*864e5).toISOString(),fleet_handoff:{name:'Kim',stage:'asked'},handoff_wait:{name:'Kim'},next_actions:[]});state.suggestion_counts={snoozed:1}}
   res.end(JSON.stringify({status:'answered',ids:{}}));return}
  if(req.url.startsWith('/api/fleet')){res.end(JSON.stringify(view));return}
  res.statusCode=404;res.end('{}')});
@@ -52,6 +52,13 @@ try{
  assert.match(await later.innerText(),/Handed off to Kim: asked/);
  assert.doesNotMatch(await later.innerText(),/Review and send|Hand off to Kim/);
  assert.equal(await page.locator('#task-c1').count(),1);
+ // Later here is when it comes back to check in with them, not a snooze: its line and buttons say so.
+ assert.match(await later.locator('.back-on').innerText(),/^Check in with Kim \S+ \d\d:\d\d if no answer$/);
+ assert.doesNotMatch(await later.innerText(),/Back |Unsnooze|Snoozed/);
+ assert.deepEqual(await later.locator('.actions button').evaluateAll(b=>b.map(x=>x.textContent.trim()).filter(Boolean)).then(t=>t.slice(0,3)),['Check in now','Change time','Not needed']);
+ assert.equal(await later.locator('.actions [data-choice="accept"]').innerText(),'Check in now');
+ const chatLine=await page.evaluate(()=>{const s=state.suggestions[0],d=document.createElement('div');d.innerHTML=chatStatus(s);return d.textContent});
+ assert.match(chatLine,/^Check in with Kim \S+ \d\d:\d\d if no answer·Check in now$/);
  assert.deepEqual(errors,[]);
  console.log('fleet handoff dashboard: ok');
 }finally{await browser.close();server.close()}
