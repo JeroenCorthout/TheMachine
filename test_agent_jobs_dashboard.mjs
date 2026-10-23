@@ -124,11 +124,17 @@ try{
     tools:[...el.querySelectorAll('.agent-tools button')].map(n=>({border:cs(n).borderTopStyle,bg:cs(n).backgroundColor,one:line(n)})),
     wide:el.scrollWidth<=el.clientWidth+1}});
   assert.equal(look.head,'flex',width);assert.ok(look.appRight,JSON.stringify(look));
-  if(look.sameRow)assert.ok(look.gap>=12,JSON.stringify(look));  // name and Open in Codex never run together
+  assert.ok(look.sameRow&&look.gap>=12,JSON.stringify(look));  // one row; name and Open in Codex never run together
   assert.ok(look.chips.length===4&&look.chips.every(x=>x.border==='solid'&&x.one&&x.deco==='none'),JSON.stringify(look.chips));
   assert.ok(look.tools.length===2&&look.tools.every(x=>x.border==='none'&&/rgba\(0, 0, 0, 0\)|transparent/.test(x.bg)&&x.one),JSON.stringify(look.tools));
   assert.ok(look.wide,width)}
- state.suggestions.pop();await page.setViewportSize({width:1280,height:900});await page.goto(base);await c.waitFor();
+ state.suggestions.pop();
+ // The card's header keeps one row too: where "Open in Codex" doesn't fit next to the name it reads "Open".
+ for(const [width,label] of [[1280,'Open in Codex ↗'],[390,'Open ↗']]){await page.setViewportSize({width,height:900});await page.goto(base);await page.reload();
+  const h=c.locator('.agent-result .agent-head');await h.waitFor();await page.waitForTimeout(100);
+  const r=await h.evaluate(el=>{const a=el.querySelector('a.agent-app'),n=el.firstElementChild;return {same:Math.abs(a.getBoundingClientRect().top-n.getBoundingClientRect().top)<4,label:a.innerText.trim(),aria:a.getAttribute('aria-label')}});
+  assert.deepEqual(r,{same:true,label,aria:'Open in Codex'},width)}
+ await page.setViewportSize({width:1280,height:900});await page.goto(base);await c.waitFor();
  // Without the tools on this Machine, no Hand to buttons.
  delete card.agent_job;state.agent_tools=[];await page.evaluate(()=>refresh());
  assert.equal(await c.locator('[data-agent-hand]').count(),0);

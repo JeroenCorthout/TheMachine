@@ -637,6 +637,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 :is(.card,.chat-agent) button.agent-morefiles{display:inline-block;margin:0;padding:1px 10px;min-height:0;border:1px solid var(--border);border-radius:999px;background:none;box-shadow:none;font-size:.84rem;font-weight:400;color:var(--muted);cursor:pointer}:is(.card,.chat-agent) button.agent-morefiles:hover{color:var(--text)}
 .agent-allfiles{margin:8px 0 0}.agent-allfiles>p{margin:0;font-size:.86rem}.agent-allfiles .agent-files{margin-top:4px}
 .chat-allfiles{margin:8px 0 0;font-size:var(--chat-meta)}.chat-allfiles>summary{cursor:pointer;color:var(--chat-quiet);font-weight:600}.chat-allfiles .agent-files{display:flex;flex-wrap:wrap;gap:6px}.chat-allfiles .agent-file{display:inline-block;padding:1px 10px;border:1px solid var(--c-line-strong);border-radius:999px;font-size:.82rem;text-decoration:none;color:var(--text);overflow-wrap:anywhere}
+.agent-app-short,.agent-head.tight .agent-app-long{display:none}.agent-head.tight .agent-app-short{display:inline}
 :is(.card,.chat-agent) .agent-job a.agent-app{font-size:.88rem;font-weight:600;white-space:nowrap}
 :is(.card,.chat-agent) .agent-diff{margin:8px 0 0;font-size:.86rem}:is(.card,.chat-agent) .agent-diff pre{max-height:360px;overflow:auto;margin:6px 0 0;padding:8px;background:var(--surface);border-radius:8px;font:12px/1.45 var(--mono);white-space:pre}
 .card .agent-form:not(.agent-sheet){display:flex;flex-direction:column;gap:10px;padding-top:14px}.card .agent-form:not(.agent-sheet) label{display:flex;flex-direction:column;gap:6px;margin:0;color:var(--muted);font-size:.9rem}
@@ -2770,7 +2771,12 @@ const agentWhere=t=>t.place==='cloud'?'Runs in Codex cloud, not on your computer
 const canAgent=s=>!closed(s)&&s.status!=='snoozed'&&agentTools().length>0&&!AGENT_ACTIVE.includes(s.agent_job?.status)&&!agentOpen(s);
 const agentOpen=s=>{const j=s.agent_job;return!!j&&!closed(s)&&!j.outcome&&['result','failed'].includes(j.status)};
 const agentCancel=j=>`<div class="actions"><button class="ghost" data-agent-cancel="${esc(j.id)}">Cancel</button></div>`;
-const agentLink=j=>j.url&&/^(https:\/\/|codex:\/\/threads\/)/.test(j.url)?`<a class="agent-app" href="${esc(j.url)}" target="_blank" rel="noreferrer">${esc(j.app||'Open')} ↗</a>`:'';
+const agentLink=j=>j.url&&/^(https:\/\/|codex:\/\/threads\/)/.test(j.url)?`<a class="agent-app" href="${esc(j.url)}" target="_blank" rel="noreferrer" aria-label="${esc(j.app||'Open')}"><span class="agent-app-long">${esc(j.app||'Open')}</span><span class="agent-app-short">Open</span> ↗</a>`:'';
+// A result's header keeps one row: when "Open in Codex" no longer fits next to the tool's name it reads "Open" (the
+// name is already on the left). Measured per header as its width changes, not at a fixed screen width.
+const agentHeadFit=new ResizeObserver(rows=>{for(const {target:h,contentRect:r} of rows){if(h._fitW===r.width)continue;h._fitW=r.width;
+ const a=h.querySelector('a.agent-app'),n=h.firstElementChild;if(!a||a===n)continue;h.classList.remove('tight');if(a.offsetTop>n.offsetTop+2)h.classList.add('tight')}});
+new MutationObserver(()=>{for(const h of document.querySelectorAll('.agent-result .agent-head:not([data-fit])')){h.dataset.fit='';agentHeadFit.observe(h)}}).observe(document.body,{childList:true,subtree:true});
 // A job's follow-up goes to the same session: the card's Change asks the agent while its result is open.
 const agentAsk=s=>agentOpen(s)&&s.agent_job.can_follow_up;
 const agentFile=(j,f)=>`<a class="agent-file" href="api/agent-file?job=${encodeURIComponent(j.id)}&path=${encodeURIComponent(f.path)}" target="_blank" rel="noreferrer">${esc(f.path.split('/').pop())}</a>`;
