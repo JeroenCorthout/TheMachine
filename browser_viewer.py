@@ -43,14 +43,30 @@ CDP_URL = 'http://127.0.0.1:9222'
 NEEDS = {'Xtigervnc': 'tigervnc-standalone-server', 'websockify': 'websockify', 'matchbox-window-manager': 'matchbox-window-manager'}
 
 
+# The short address (a folder's index.html, e.g. a hosted Machine's /browser/): with no query of its own, it sets what
+# the long vnc.html?autoconnect=1&... link puts in its query, the same way noVNC keeps settings itself (localStorage,
+# which every noVNC release reads), so the address stays short. A phone gets the phone's size, others a scaled view.
+SHORT_SETTINGS = ('<script>try{if(!location.search&&!location.hash){const phone=/Mobile|Android|iPhone|iPad/.test(navigator.userAgent);'
+                  "for(const[k,v]of Object.entries({autoconnect:'true',reconnect:'true',resize:phone?'remote':'scale',path:'websockify'}))"
+                  'localStorage.setItem(k,v)}}catch(e){}</script>')
+
+
+def index_page(page):
+    """vnc.html as index.html: the short-address settings first in its head, before noVNC reads any."""
+    head = page.find('<head')
+    end = page.find('>', head) + 1 if head >= 0 else 0
+    return page[:end] + SHORT_SETTINGS + page[end:]
+
+
 def build_web(web=WEB, novnc=NOVNC):
-    """noVNC as packaged, plus the clipboard bridge: its files linked, its page loading the bridge too."""
+    """noVNC as packaged, plus the clipboard bridge: its files linked, its page loading the bridge too, and that page
+    again as index.html for the folder's short address."""
     web, novnc = Path(web), Path(novnc)
     web.mkdir(parents=True, exist_ok=True)
     page = (novnc / 'vnc.html').read_text()
     page = page.replace('</head>', '    <script type="module" src="machine-clipboard.js"></script>\n</head>', 1)
     page = page.replace('</head>', '    <script type="module" src="machine-view.js"></script>\n</head>', 1)
-    for name, text in (('vnc.html', page), ('machine-clipboard.js', (UNITS / 'machine-clipboard.js').read_text()),
+    for name, text in (('vnc.html', page), ('index.html', index_page(page)), ('machine-clipboard.js', (UNITS / 'machine-clipboard.js').read_text()),
                        ('machine-view.js', (UNITS / 'machine-view.js').read_text())):
         target = web / name
         if not target.exists() or target.is_symlink() or target.read_text() != text:
@@ -59,7 +75,7 @@ def build_web(web=WEB, novnc=NOVNC):
             target.chmod(0o644)
     for item in novnc.iterdir():
         link = web / item.name
-        if item.name != 'vnc.html' and not link.is_symlink() and not link.exists():
+        if item.name not in ('vnc.html', 'index.html') and not link.is_symlink() and not link.exists():
             link.symlink_to(item)
 
 
