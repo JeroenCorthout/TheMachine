@@ -56,9 +56,9 @@ COPIES = 'older copies (.bak, .before-, dated .pre-)'
 REBUILDABLE = {'.git', 'node_modules', '.venv', '.venvs', 'venv', '__pycache__', '.cache', '.pytest_cache', '.mypy_cache',
                '.ruff_cache', '.tox'}
 # Tokens that only work for a hosted server; they are never exported
-HOSTED_ONLY = {'google-broker', 'microsoft-broker'}
+HOSTED_ONLY = {'google-broker', 'microsoft-broker', 'zoom-broker'}
 # Settings a hosted server added that mean nothing elsewhere
-HOSTED_KEYS = ('google_broker', 'microsoft_broker', 'manage_url', 'needs_you_file')
+HOSTED_KEYS = ('google_broker', 'microsoft_broker', 'zoom_broker', 'manage_url', 'needs_you_file')
 
 
 class MoveError(Exception):

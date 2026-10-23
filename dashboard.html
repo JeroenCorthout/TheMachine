@@ -325,6 +325,7 @@ details.tech{margin:6px 0 0;font-size:.82rem}details.tech>summary{cursor:pointer
 .split-parts{display:grid;gap:10px}.split-part{display:grid;grid-template-columns:minmax(120px,200px) 1fr;align-items:center;gap:12px;margin:0}
 .split-who{font-weight:600;color:var(--text);overflow-wrap:anywhere}.split-who small{display:block;font-weight:400;font-size:.78rem}
 .split-part input{width:100%;min-width:0}
+.split-note{margin:0 0 12px;font-size:.88rem;color:var(--muted)}.split-part.suggested input{border-color:var(--c-accent);box-shadow:inset 3px 0 0 var(--c-accent)}
 .fleet-settings{display:grid;gap:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:16px 20px}.fleet-settings>p{margin:0}
 .fleet-option{display:flex;align-items:flex-start;gap:10px;margin:0}.fleet-option input{margin-top:4px}.fleet-option small{display:block}
 @media (max-width:620px){.split-part{grid-template-columns:1fr;gap:4px}}
@@ -1635,7 +1636,7 @@ const text=days<0?'Overdue':days===0?'Due today':days===1?'Due tomorrow':'Due '+
 return `<span class="chip t-${days<=0?'orange':days===1?'amber':'muted'}" title="Due ${esc(due.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))}">${esc(text)}</span>`}
 const closed=s=>['completed','rejected'].includes(s.status);
 const ICONS={x:'<path d="M4 4l16 16M20 4L4 20"/>',plugin:'<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>',gateway:'<rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M8 7h.01M8 17h.01"/>',gmail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>',calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',slack:'<path d="M10 3 8 21M16 3l-2 18M4 9h16M3.5 15h16"/>',salesflare:'<path d="M4 20V8l8-4 8 4v12"/><path d="M9 20v-5h6v5M9 11h.01M15 11h.01"/>',android:'<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18h2"/>',whatsapp:'<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1.2-4.2A8 8 0 1 1 20 12z"/>',linkedin:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 10v7M8 7h.01M12 17v-7M12 13a3 3 0 0 1 6 0v4"/>',github:'<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 8.2v7.6M18 10.2c0 4-6 3-10.5 6.3"/>',stripe:'<rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>'};
-ICONS.outlook=ICONS.gmail;ICONS.outlook_calendar=ICONS.calendar;
+ICONS.outlook=ICONS.gmail;ICONS.outlook_calendar=ICONS.calendar;ICONS.zoom='<rect x="3" y="6.5" width="12.5" height="11" rx="2"/><path d="m15.5 10.5 5-3v9l-5-3"/>';
 const icon=s=>`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24">${ICONS[s]||ICONS.plugin}</svg></span>`;
 const kindService=k=>({'calendar.event':'calendar','slack.message':'slack','android.notification':'android','whatsapp.message':'whatsapp','salesflare.email':'salesflare','salesflare.meeting':'salesflare','gateway.alert':'gateway'}[k]||(/^[a-z][a-z0-9_]*\./.test(k)&&k!=='gmail.message'?k.split('.')[0]:'gmail'));
 const changing=new Set(),dismissing=new Set();
@@ -2197,7 +2198,7 @@ function renderHealthTabs(){const cs=state.connectors||[],bad=g=>cs.filter(c=>he
 // Connections, Add: every source this install can add, set up right here with the same steps as `assistant connect`;
 // its questions show one at a time. On a hosted machine Google and Microsoft are signed in on the account page.
 let connectList=null,connectListAt=0,connectRun=null,connectTimer=0;
-const BROKER_LINK={gmail:'#google',calendar:'#google',outlook:'#microsoft',outlook_calendar:'#microsoft'};
+const BROKER_LINK={gmail:'#google',calendar:'#google',outlook:'#microsoft',outlook_calendar:'#microsoft',zoom:'#source-zoom'};
 const connectPost=(action,args={})=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
 async function connectAdd(force){if(connectRun)return;if(!force&&connectList&&Date.now()-connectListAt<60000)return;connectListAt=Date.now();
  try{connectList=await connectPost('connect_sources')}catch(e){$('#connect-add').innerHTML=`<p class="error">${esc(e.message)}</p>`;return}renderConnectAdd()}
@@ -3296,8 +3297,8 @@ function fleetCardsOf(f){if(!f?.on)return[];const works=(f.fleets||[]).filter(x=
    `<div class="actions">${always?decide(w,'always','Always share','primary')+decide(w,'once','Share once'):decide(w,'once','Share once','primary')+decide(w,'always','Always share')}${decide(w,'decline','Decline')}${fleetMore([decide(w,'never','Never share')])}</div>`))}}
  for(const sp of (f.splits||[]).filter(x=>x.status==='proposed'))
   out.push(card('split-'+sp.id,{...sp,at:null},`${esc(sp.title||'A meeting')} <small class="muted">${esc(splitDay(sp.day||''))}</small>`,
-   `<p class="fleet-from">Follow-ups of a meeting with Fleet teammates. Split who does what; nothing goes until you send it.</p><details class="split-why"><summary>Why you?</summary>One Machine proposes the split, so nobody follows up twice: the organizer’s, or else the one longest in the Fleet.</details>`,
-   `<form class="fleet-split-form" data-split="${esc(sp.id)}"><div class="split-parts">${sp.parts.map(p=>`<label class="split-part"><span class="split-who">${splitWho(p)}</span><input id="split-${esc(sp.id)}-${esc(p.member_id)}" name="${esc(p.member_id)}" maxlength="200" value="${esc(p.what||'')}" placeholder="${p.mine?'Your follow-up':'Their follow-up (leave empty for none)'}"></label>`).join('')}</div><div class="actions"><button class="primary">Send the split</button><button type="button" class="ghost" data-split-dismiss="${esc(sp.id)}">Not needed</button></div></form>`));
+   `<p class="fleet-from">Follow-ups of a meeting with Fleet teammates. Split who does what; nothing goes until you send it.</p><details class="split-why"><summary>Why you?</summary>One Machine proposes the split, so nobody follows up twice: the organizer’s, or else the one longest in the Fleet.</details>${sp.notes?`<p class="split-note">Filled in from the ${esc(sp.notes)} notes. Check it before you send.</p>`:''}`,
+   `<form class="fleet-split-form" data-split="${esc(sp.id)}"><div class="split-parts">${sp.parts.map(p=>`<label class="split-part${p.from_notes?' suggested':''}"><span class="split-who">${splitWho(p)}</span><input id="split-${esc(sp.id)}-${esc(p.member_id)}" name="${esc(p.member_id)}" maxlength="200" value="${esc(p.what||'')}" placeholder="${p.mine?'Your follow-up':'Their follow-up (leave empty for none)'}"></label>`).join('')}</div><div class="actions"><button class="primary">Send the split</button><button type="button" class="ghost" data-split-dismiss="${esc(sp.id)}">Not needed</button></div></form>`));
  out.push(...networkCards(f));
  return out}
 // Finding people you know on the Network (discovery.py): a permission card once, then a card per person only with a concrete reason
