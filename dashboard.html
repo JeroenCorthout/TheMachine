@@ -1366,6 +1366,9 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 .cal-go{width:12px;text-align:center;font-size:var(--fs-md)}
 .k-meeting{--tone:transparent}.k-meeting .cal-dot,.k-prep .cal-dot{box-shadow:inset 0 0 0 1.5px var(--c-text-3)}.k-prep .cal-dot{background:transparent;box-shadow:inset 0 0 0 1.5px var(--tone)}
 .cal-prep{display:none}
+.k-theirs{--tone:transparent}.k-theirs .cal-dot{background:transparent;box-shadow:inset 0 0 0 1.5px var(--c-line-strong)}.k-theirs .cal-title{color:var(--c-text-2);font-weight:inherit}
+.cal-owner{display:inline-block;margin-right:2px;padding:0 6px;border-radius:999px;background:var(--c-sunken);box-shadow:inset 0 0 0 1px var(--c-line);color:var(--c-text-3);font-size:var(--fs-xs);font-weight:600;line-height:1.6;vertical-align:1px}
+.cal-said{color:var(--c-text-2)}.cal-said::before{content:'';display:inline-block;width:6px;height:6px;margin:0 6px 1px 0;border-radius:50%;background:var(--mint);vertical-align:middle}
 .k-due{--tone:var(--amber)}.k-late{--tone:var(--orange)}.k-back{--tone:var(--lavender)}.k-promise{--tone:var(--mint)}
 .cal-item.past .cal-time,.cal-item.past .cal-main,.cal-chip.past{opacity:.55}
 .cal-free{margin:0;padding:12px 0 4px;color:var(--c-text-3);font-size:var(--fs-sm)}
@@ -1388,6 +1391,7 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
   .cal-col.today .cal-col-head span{color:var(--text)}
   .cal-chip{display:block;padding:6px 8px 7px;border-radius:var(--r-xs);background:var(--c-sunken);color:var(--text);text-decoration:none;font:var(--fw-medium) var(--fs-xs)/1.35 var(--sans);box-shadow:inset 3px 0 0 var(--tone)}
   .cal-chip.k-meeting{box-shadow:inset 3px 0 0 var(--c-line-strong)}
+  .cal-chip.k-theirs{background:transparent;box-shadow:inset 0 0 0 1px var(--c-line);color:var(--c-text-2)}
   a.cal-chip:hover{background:color-mix(in srgb,var(--text) 8%,var(--c-sunken))}
   .cal-chip .t{display:block;color:var(--c-text-3);font-variant-numeric:tabular-nums}
   .cal-chip .n{display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
@@ -2442,7 +2446,7 @@ $('#suggestion-stats').addEventListener('click',e=>{const t=e.target.closest('[d
 $('#suggestion-summary').addEventListener('click',e=>{const b=e.target.closest('[data-scope]');if(!b)return;linkedCardId=null;scopeFilter=b.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render()});
 // Promises from your messages, both ways. A still-open one becomes a card when it's due.
 function promisesList(open){const items=(state.promises||[]).filter(p=>['open','card'].includes(p.state));if(!items.length)return '';
-const row=p=>`<div class="promise"><span class="grow">${p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: ${esc(p.what)}<small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
+const row=p=>`<div class="promise"><span class="grow">${p.together?'With':p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: ${esc(p.what)}<small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
 const group=(direction,title)=>{const rows=items.filter(p=>p.direction===direction);return rows.length?`<h3 class="promise-head">${title}<span class="count">${rows.length}</span></h3>`+rows.map(row).join(''):''};
 return `<details id="promises-list" ${open?'open':''}><summary><span>Promises</span><span class="count">${items.length}</span></summary>${group('mine','You promised')}${group('theirs','Promised to you')}</details>`}
 // Reviews off (a new install, before --activate or the hosted "Turn it on" step): said on every tab, with the way to turn them on; with cards already there, that they came from the one-time first look.
@@ -3117,29 +3121,49 @@ async function calendarView(force){calRender();await calFetch(force);calRender()
 // Everything with a date this week, by local day ('overdue' for due dates already past)
 function calItems(){const days=[...Array(CAL_DAYS)].map((_,i)=>localDay(calDay(i))),week=new Set(days),today=days[0],now=Date.now(),out=[],seen=new Set();
  const open=(state.suggestions||[]).filter(s=>!closed(s)),cardFor=id=>open.find(s=>eventIds(s).map(Number).includes(Number(id)));
- for(const m of calMeetings||[]){const s=cardFor(m.id),a=new Date(m.start),b=new Date(m.end);if(isNaN(a))continue;
-  if(m.all_day){for(let i=0;i<CAL_DAYS;i++)if(a<calDay(i+1)&&(isNaN(b)?a:b)>calDay(i))out.push({day:days[i],kind:'meeting',allDay:true,at:0,m,s});if(s)seen.add(s.id);continue}
+ // Someone else's event on a calendar shared with the owner shows, marked as theirs, and never carries a card
+ for(const m of calMeetings||[]){const s=m.shared?null:cardFor(m.id),a=new Date(m.start),b0=new Date(m.end);if(isNaN(a))continue;const b=isNaN(b0)||b0<=a?new Date(a.getTime()+1):b0;
+  // All day, or a day or more (a trip): on every day it covers, as All day with its dates, never as times
+  if(m.all_day||b-a>=864e5){const first=localDay(a),last=localDay(new Date(b-1)),span=first!==last?[first,last]:null;
+   for(let i=0;i<CAL_DAYS;i++)if(a<calDay(i+1)&&b>calDay(i))out.push({day:days[i],kind:'meeting',allDay:true,at:0,m,s,span,promises:[]});if(s)seen.add(s.id);continue}
   const day=localDay(a)<today?today:localDay(a);if(!week.has(day))continue;if(s)seen.add(s.id);
-  out.push({day,kind:'meeting',at:a.getTime(),m,s,past:(isNaN(b)?a:b).getTime()<now})}
+  out.push({day,kind:'meeting',at:a.getTime(),m,s,past:b.getTime()<now,promises:[]})}
  for(const s of open){if(seen.has(s.id))continue;
   if(s.status==='snoozed'&&s.snoozed_until){const d=new Date(s.snoozed_until),day=localDay(d);if(week.has(day))out.push({day,kind:s.handoff_wait?'checkin':'back',at:d.getTime(),s});continue}
   if(s.due&&(s.due<today||week.has(s.due)))out.push({day:s.due<today?'overdue':s.due,kind:'due',at:-1,s})}
- for(const p of state.promises||[])if(p.state==='open'&&p.due&&(p.due<today||week.has(p.due)))out.push({day:p.due<today?'overdue':p.due,kind:'promise',at:-1,p});
+ // One row per promise: said by both sides it is a plan made together, shown as the owner's ("With …"); one about a
+ // meeting that day with the same person rides on that meeting's row
+ const said=new Map();for(const p of state.promises||[]){if(p.state!=='open'||!p.due||!(p.due<today||week.has(p.due)))continue;
+  const k=[p.who,p.what].map(v=>calNorm(v).split(/\s+/).join(' ')).join('\n'),was=said.get(k);
+  if(!was){said.set(k,{...p});continue}if(was.direction!==p.direction)was.together=true;if(p.direction==='mine')Object.assign(was,{...p,together:was.together||p.together})}
+ for(const p of said.values()){const on=p.due>=today&&out.find(it=>it.kind==='meeting'&&!it.m.shared&&it.day===p.due&&calWith(p,it.m));
+  if(on)on.promises.push(p);else out.push({day:p.due<today?'overdue':p.due,kind:'promise',at:-1,p})}
  out.sort((x,y)=>(x.allDay?-2:x.at)-(y.allDay?-2:y.at));return {days,items:out}}
+const calNorm=v=>String(v||'').normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().trim();
+const calWords=v=>calNorm(v).split(/[^\p{L}\p{N}]+/u).filter(w=>w.length>1);
+// The promise's person is in the meeting: named in its title, or a guest (by name or address)
+function calWith(p,m){const who=calWords(p.who);if(!who.length)return false;const full=who.join(' ');
+ return [m.title,...(m.people||[])].some(t=>{const w=calWords(t);return w.join(' ').includes(full)||w.includes(who[0])&&who[0].length>2})}
+const calSaid=p=>p.together?'With '+p.who:p.direction==='mine'?'Promised to '+p.who:p.who+' promised';
 const CAL_CARD={prepared:['Prep ready','mint'],accepted:['Preparing','lavender'],instructions:['Preparing','lavender'],pending:['Card','amber'],snoozed:['Card','muted']};
 const calShort=k=>new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric'}).replace(/,/g,'');
 function calParts(it){const hm=v=>humanHM(new Date(v)),late=it.day==='overdue';
- if(it.kind==='meeting'){const m=it.m,c=it.s&&CAL_CARD[it.s.status];
-  return {time:it.allDay?'All day':hm(m.start),title:m.title,sub:[it.allDay?'':hm(m.start)+' to '+hm(m.end),m.location,m.guests?m.guests+(m.guests===1?' guest':' guests'):''].filter(Boolean).join(' · '),
-   href:it.s?'#chat='+it.s.id:'',url:!it.s&&m.url||'',badge:c?chip(c[0],c[1]):'',prep:c?c[0]:'',tone:it.s?'prep t-'+(c?c[1]:'muted'):'meeting'}}
- if(it.kind==='promise'){const p=it.p;return {time:late?calShort(p.due):'Due',title:p.what,sub:p.direction==='mine'?'Promised to '+p.who:p.who+' promised',href:'#promises',tone:late?'late':'promise'}}
+ if(it.kind==='meeting'){const m=it.m,c=it.s&&CAL_CARD[it.s.status],a=new Date(m.start),b=new Date(m.end),
+   when=it.allDay?(it.span?calShort(it.span[0])+' to '+calShort(it.span[1]):''):!(b>a)?'':hm(a)+' to '+(localDay(b)!==localDay(a)?calShort(localDay(b))+' ':'')+hm(b);
+  return {time:it.allDay?'All day':hm(m.start),title:m.title,owner:m.shared?m.shared+'’s':'',sub:[when,m.location,m.guests?m.guests+(m.guests===1?' guest':' guests'):''].filter(Boolean).join(' · '),
+   said:(it.promises||[]).map(p=>calSaid(p)+': '+p.what),
+   href:it.s?'#chat='+it.s.id:'',url:!it.s&&m.url||'',badge:c?chip(c[0],c[1]):'',prep:c?c[0]:'',tone:m.shared?'theirs':it.s?'prep t-'+(c?c[1]:'muted'):'meeting'}}
+ if(it.kind==='promise'){const p=it.p;return {time:late?calShort(p.due):'Due',title:p.what,sub:calSaid(p),href:'#promises',tone:late?'late':'promise'}}
  const s=it.s;if(it.kind==='checkin')return {time:hm(s.snoozed_until),title:'Check in with '+s.handoff_wait.name,sub:'If no answer · '+s.title,href:'#chat='+s.id,tone:'back'};
  if(it.kind==='back')return {time:hm(s.snoozed_until),title:s.title,sub:'Comes back',href:'#chat='+s.id,tone:'back'};
- return {time:late?calShort(s.due):'Due',title:s.title,sub:label(s.status),href:'#chat='+s.id,tone:late?'late':'due'}}
+ return {time:late?calShort(s.due):'Due',title:s.title,sub:calCardWho(s),href:'#chat='+s.id,tone:late?'late':'due'}}
+// Who a due card is with, never its status: the person it waits on, or the promise it came from
+function calCardWho(s){let w={};try{w=JSON.parse(s.awaiting||'{}')||{}}catch{}const name=s.handoff_wait?.name||w.name;if(name)return 'Waiting on '+name;
+ const p=(state.promises||[]).find(p=>p.suggestion_id===s.id);return p?calSaid(p):''}
 function calRow(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'';
- return `<${tag} class="cal-item k-${x.tone}${it.past?' past':''}"${attrs}><span class="cal-time">${esc(x.time)}</span><span class="cal-dot" aria-hidden="true"></span><span class="cal-main"><span class="cal-title">${esc(x.title)}</span>${x.sub||x.prep?`<span class="cal-sub">${x.prep?`<span class="cal-prep">${esc(x.prep)} · </span>`:''}${esc(x.sub)}</span>`:''}</span><span class="cal-end">${x.badge||''}${x.url?'<span class="cal-go" aria-label="Opens in its calendar">↗</span>':x.href?'<span class="cal-go" aria-hidden="true">›</span>':''}</span></${tag}>`}
+ return `<${tag} class="cal-item k-${x.tone}${it.past?' past':''}"${attrs}><span class="cal-time">${esc(x.time)}</span><span class="cal-dot" aria-hidden="true"></span><span class="cal-main"><span class="cal-title">${x.owner?`<span class="cal-owner">${esc(x.owner)}</span> `:''}${esc(x.title)}</span>${x.sub||x.prep?`<span class="cal-sub">${x.prep?`<span class="cal-prep">${esc(x.prep)}${x.sub?' · ':''}</span>`:''}${esc(x.sub)}</span>`:''}${(x.said||[]).map(t=>`<span class="cal-sub cal-said">${esc(t)}</span>`).join('')}</span><span class="cal-end">${x.badge||''}${x.url?'<span class="cal-go" aria-label="Opens in its calendar">↗</span>':x.href?'<span class="cal-go" aria-hidden="true">›</span>':''}</span></${tag}>`}
 function calChip(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'';
- return `<${tag} class="cal-chip k-${x.tone}${it.past?' past':''}"${attrs} title="${esc(x.title+(x.sub?' · '+x.sub:''))}"><span class="t">${esc(x.time)}</span><span class="n">${esc(x.title)}</span></${tag}>`}
+ return `<${tag} class="cal-chip k-${x.tone}${it.past?' past':''}"${attrs} title="${esc([x.owner,x.title].filter(Boolean).join(' ')+(x.sub?' · '+x.sub:'')+(x.said||[]).map(t=>' · '+t).join(''))}"><span class="t">${esc(x.owner||x.time)}</span><span class="n">${esc(x.title)}</span></${tag}>`}
 const calName=(k,i)=>i===0?'Today':i===1?'Tomorrow':new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'long'});
 const calDate=k=>new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}).replace(/,/g,'');
 function calHead(){const a=calDay(0),b=calDay(CAL_DAYS-1),range=calDate(localDay(a))+' to '+calDate(localDay(b));
