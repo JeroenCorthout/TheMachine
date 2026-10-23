@@ -35,7 +35,7 @@
 | `microsoft_graph` | — | `client_id` and `tenant` (`common`) of your own Entra app, for Outlook accounts with `"transport": "graph"` |
 | `salesflare_server` | — | `api_base` and `app_base` a new Salesflare account starts on instead of Salesflare's own (a hosted machine's control plane sets it for a team on staging). Only https addresses on salesflare.com subdomains count. An address typed when a key is rejected must be https too |
 | `heartbeat_job_id` | `""` | Optional OpenClaw cron job ID of your main heartbeat, for its health line |
-| `manage_url` | `""` | Optional https page where this install is set up (a hosted machine); the dashboard links to it from Settings (the **Account ↗** tab and General) and Add a connection |
+| `manage_url` | `""` | Optional https page where this install is set up (a hosted machine); the dashboard's Settings, **Account** tab reads the account there and opens its pages, and Add a connection links to it |
 | `needs_you_file` | unset | Optional JSON list of `{id, text, url, action}` notes from a hosting layer; the dashboard shows them under Needs you, with sources that are not fully set up and connections that need signing in again |
 | `browser_url` | unset | Optional page that shows the assistant's browser (a hosted machine's viewer, or `./install.sh --browser-viewer`'s); a card waiting on the browser links to it |
 | `browser_cdp_url` | `http://127.0.0.1:9222` | That browser's DevTools address on this machine; **Open the browser** brings the tab a task uses to the front through it (also when it opens a viewer), and a Preparing card's live look at its tab is taken through it |
