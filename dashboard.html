@@ -1896,7 +1896,8 @@ const expandedBodies=new Set();
 // Another open card named by its exact title links to it.
 // Only in plain text: never inside a tag or an existing link.
 const cardLinks=(html,s)=>(state.suggestions||[]).filter(o=>o.id!==s.id&&!closed(o)&&o.title.length>=12).sort((a,b)=>b.title.length-a.title.length).reduce((h,o)=>{const t=esc(o.title);return h.includes(t)?h.split(/(<a\b[\s\S]*?<\/a>|<[^>]*>)/).map((part,i)=>i%2?part:part.split(t).join(`<a class="card-link" href="#card=${esc(o.id)}">${t}</a>`)).join(''):h},html);
-function cardBody(s,section){let text=resultBody(s),lead='';const m=text.match(/^\*\*([^*\n]+)\*\*\s*\n([\s\S]+)$/);if(m){lead=m[1];text=m[2].trim()}
+// A confirmed step that didn't go through says so in one line instead of the earlier result (step_stopped in assistant.py).
+function cardBody(s,section){let text=s.step_stopped||resultBody(s),lead='';const m=text.match(/^\*\*([^*\n]+)\*\*\s*\n([\s\S]+)$/);if(m){lead=m[1];text=m[2].trim()}
 const html=(lead?`<p class="lead-line">${esc(lead)}</p>`:'')+cardLinks(text.split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean).map(p=>`<p>${format(p).replace(/\n/g,'<br>')}</p>`).join(''),s);
 const proposal=s.skill_proposal?`<details class="skill-notes"><summary>Read skill instructions and ${s.skill_proposal.notes.length} notes</summary><p><strong>${esc(s.skill_proposal.name)}</strong></p><div>${format(s.skill_proposal.body).replace(/\n/g,'<br>')}</div><ul>${s.skill_proposal.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul></details>`:'';
 // Short by default: the status line says where it stands; the rest folds behind Show more.

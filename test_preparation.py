@@ -145,6 +145,26 @@ class Preparation(unittest.TestCase):
         self.store.wake_snoozed()
         self.assertEqual(self.step_state(sid),'local_preparation')  # the end of the snooze carries on with it
 
+    def card_line(self,sid):
+        with self.store.connect() as db:
+            row=dict(db.execute('SELECT * FROM suggestions WHERE id=?',(sid,)).fetchone())
+            return row,{**row,**self.store.suggestion_result(row,db)}
+
+    def test_a_card_whose_confirmed_step_stopped_says_what_is_true_not_the_earlier_result(self):
+        """The card kept its earlier "In the cart" result after the order step stopped, as if it were ready. Now one line
+        says it isn't done, why, and when it carries on, on the dashboard (step_stopped) and in Telegram (card)."""
+        sid,job=self.confirmed_finish()
+        _,row=self.card_line(sid);self.assertNotIn('step_stopped',row)  # running: nothing to say yet
+        self.app.action('preparation_blocked',{'suggestion_id':sid,'job_id':job,'reason':'Browser access is still failing, so I could not place the order.','questions':[]})
+        _,row=self.card_line(sid)
+        self.assertEqual(row['step_stopped'],'Not done yet: Order the cable (browser access is still failing). Try again carries it on.')
+        self.assertIn(row['step_stopped'],a.card(row));self.assertNotIn('In the cart',a.card(row))
+        self.store.decide(sid,'snooze','','later','dashboard',snoozed_until=(a.dt.datetime.now(a.local_tz())+a.dt.timedelta(days=3)).replace(hour=9,minute=0).isoformat())
+        _,row=self.card_line(sid)
+        self.assertRegex(row['step_stopped'],r'^Not done yet: Order the cable \(browser access is still failing\)\. It carries on when the card comes back, \w{3} \d+ \w{3}, 09:00\.$')
+        self.store.decide(sid,'complete','','done','dashboard')
+        _,row=self.card_line(sid);self.assertNotIn('step_stopped',row)  # closed: the card says Done
+
     def test_a_step_left_running_from_before_is_paused_by_the_next_preparation_step(self):
         sid,job=self.confirmed_finish()
         with self.store.connect() as db:  # how a cancelled preparation left it before paused existed

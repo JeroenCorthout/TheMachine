@@ -5989,6 +5989,9 @@ class Store:
             # The draft Telegram shows in full on the card, so its Send there confirms directly (card_draft).
             shown=card_draft({**suggestion,**extra})
             if shown and shown['full']:extra['card_send']=shown['action']['revision']
+        if suggestion.get('status') not in ('completed','rejected'):
+            stopped=stopped_step(db,suggestion)
+            if stopped:extra['step_stopped']=stopped
         prompt=db.execute('SELECT status,error FROM feedback_prompts WHERE request_id=?',(suggestion.get('feedback_request_id'),)).fetchone()
         if prompt:extra['change_prompt']=dict(prompt)
         job=db.execute('SELECT job_id,status,reason FROM preparations WHERE suggestion_id=?',(suggestion['id'],)).fetchone()
@@ -8381,7 +8384,8 @@ def card(row):
             pass
     source = ' · '.join(x for x in (due, row.get('source_line'), tag) if x)
     source = ('\n\n' + source) if source else ''
-    return ('**' + title + '**\n\n' + row['body'] + source + ('\n\n' + status if status else '')).strip()
+    body = row.get('step_stopped') or row['body']  # a confirmed step that didn't go through: never the earlier "ready" text
+    return ('**' + title + '**\n\n' + body + source + ('\n\n' + status if status else '')).strip()
 
 
 CARD_DRAFT_KINDS = ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')
@@ -8400,6 +8404,36 @@ def pause_idle_steps(db, suggestion_id=None, stamp=None):
     return db.execute("""UPDATE action_jobs SET status='paused',updated_at=? WHERE status='local_preparation' AND (? IS NULL OR suggestion_id=?)
         AND NOT EXISTS(SELECT 1 FROM preparations p WHERE p.suggestion_id=action_jobs.suggestion_id AND p.status IN ('queued','starting','running'))""",
         (stamp or now(), suggestion_id, suggestion_id)).rowcount
+
+
+def stopped_step(db, suggestion):
+    """One true line for a card whose confirmed step stopped without going through (paused: its run was blocked, timed
+    out, or a snooze or close cancelled it). It replaces the card's earlier result text, which still reads as if the step
+    were ready or done: what didn't happen, why in a few words, and when it carries on. None otherwise."""
+    rows = db.execute("SELECT payload FROM action_jobs WHERE suggestion_id=? AND status='paused' ORDER BY updated_at DESC", (suggestion['id'],)).fetchall()
+    if not rows:
+        return None
+    step = json.loads(rows[0]['payload'])
+    label = ' '.join(str(step.get('label') or '').split())[:80] or 'The next step'
+    prep = db.execute('SELECT status,reason,error FROM preparations WHERE suggestion_id=?', (suggestion['id'],)).fetchone()
+    why = ''
+    if prep and prep['error'] in ('completion_unconfirmed', 'ai_run_timed_out'):
+        why = 'it ran too long'
+    elif prep and prep['error']:
+        why = 'the run failed'
+    elif prep and prep['reason']:
+        why = re.split(r'[.;:!?]|,? so |,? but | because ', str(prep['reason']).strip(), maxsplit=1)[0].strip()
+        why = why[:1].lower() + why[1:] if why[1:2] and why[1:2].islower() else why
+        why = why if len(why) <= 70 else ''
+    line = ('Not done yet: ' if step.get('kind') == 'finish' else 'Not prepared yet: ') + label + (f' ({why}).' if why else '.')
+    if suggestion.get('status') == 'snoozed' and suggestion.get('snoozed_until'):
+        back = dt.datetime.fromisoformat(suggestion['snoozed_until']).astimezone(local_tz())
+        today = dt.datetime.now(local_tz()).date()
+        at = back.strftime('%H:%M') if back.date() == today else back.strftime('%H:%M tomorrow') if (back.date() - today).days == 1 else back.strftime('%a %-d %b, %H:%M')
+        line += f' It carries on when the card comes back, {at}.'
+    elif prep and prep['status'] == 'blocked':
+        line += ' Try again carries it on.'
+    return line
 
 
 def active_work(db):
