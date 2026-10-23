@@ -78,7 +78,8 @@ try{
  assert.ok((await page.locator('#chat-log .chat-day').count())>=2);
  for(const t of await page.locator('#chat-log .chat-time').allTextContents())assert.match(t,/^\d\d:\d\d$/);
  // The owner's own taps are quiet lines on the right, the same one in a row folded with a count; others' in the middle; their time shows on hover
- assert.match(await page.locator('#chat-log .chat-event.mine').first().textContent(),/^Snoozed 3 times\d\d:\d\d/);
+ assert.match(await page.locator('#chat-log .chat-event.mine').first().textContent(),/^You snoozed it 3 times\d\d:\d\d/);
+ assert.ok((await page.locator('#chat-log .chat-event.mine').allTextContents()).some(t=>/^You chose Do it\d\d:\d\d$/.test(t)));
  await page.locator('#chat-log .chat-event.mine summary').click();
  assert.equal(await page.locator('#chat-log .chat-event.mine li').count(),3);
  assert.match(await page.locator('#chat-log .chat-event:not(.mine)').textContent(),/^Didn’t go out to Sam\d\d:\d\d$/);

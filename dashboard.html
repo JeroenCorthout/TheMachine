@@ -1,10 +1,12 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><base href="__BASE__"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html><html lang="en"><meta charset="utf-8"><base href="__BASE__"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>The Machine · Suggestions</title>
 <meta name="theme-color" content="#1b1c1f">
 <script>// Theme: light or dark as picked here or in the hosted app (the "theme" cookie, shared under the app's domain), else the device's own setting.
 (()=>{const root=document.documentElement,sys=matchMedia('(prefers-color-scheme: light)');
 const saved=()=>{const c=document.cookie.match(/(?:^|;\s*)theme=(light|dark)(?:;|$)/);if(c)return c[1];const l=localStorage.getItem('theme');return l==='light'||l==='dark'?l:'auto'};
-const pick=()=>{const m=saved(),t=m==='auto'?(sys.matches?'light':'dark'):m;root.dataset.theme=t;root.dataset.themeMode=m;document.querySelector('meta[name=theme-color]')?.setAttribute('content',t==='light'?'#f8f7f3':'#1b1c1f')};
+const pick=()=>{const m=saved(),t=m==='auto'?(sys.matches?'light':'dark'):m;root.dataset.theme=t;root.dataset.themeMode=m;document.querySelector('meta[name=theme-color]')?.setAttribute('content',t==='light'?'#f8f7f3':'#1b1c1f');
+// On an iPhone home-screen app the page is drawn under the status bar in dark (white text), and iOS's light bar is used in light.
+let sb=document.querySelector('meta[name=apple-mobile-web-app-status-bar-style]');if(!sb){sb=document.createElement('meta');sb.name='apple-mobile-web-app-status-bar-style';document.head.appendChild(sb)}sb.content=t==='light'?'default':'black-translucent'};
 // On a hosted dashboard (<name>.app.example) the cookie goes on the app's domain, so the app's pages follow; else on this host only.
 window.chooseTheme=t=>{localStorage.setItem('theme',t);const h=location.hostname,parent=h.split('.').slice(1).join('.'),base=`theme=${t}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol==='https:'?'; Secure':''}`;
 if(parent.includes('.')&&!/^[\d.]+$/.test(h))document.cookie=base+'; Domain='+parent;if(!document.cookie.includes('theme='+t))document.cookie=base;pick()};
@@ -415,7 +417,7 @@ header{padding-bottom:18px}.avatar{width:52px;height:52px}h1{font-size:1.4rem}
 .live{align-self:flex-start;margin-top:6px;padding:4px 10px 4px 9px;font-size:.72rem;background:transparent}
 .head-link{align-self:flex-start;margin-top:6px;padding:4px 10px;font-size:.72rem}
 .summary-row{margin:0 0 12px}
-#suggestion-stats{position:sticky;top:0;z-index:5;margin:0 -4px;padding:6px 4px 8px;background:var(--bg)}
+#suggestion-stats{position:sticky;top:env(safe-area-inset-top);z-index:5;margin:0 -4px;padding:6px 4px 8px;background:var(--bg)}
 #suggestion-stats .stats{box-shadow:none;background:#23272ef2;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .section-head[data-fold],#later-list{scroll-margin-top:90px}
 .scope-filter button{padding:6px 12px;font-size:.78rem}
@@ -501,7 +503,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .refresh-tap{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s,opacity .15s}
 .refresh-tap:active{transform:scale(.94)}.refresh-tap.busy{opacity:.6}
-.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,12px);max-width:calc(100vw - 32px);padding:10px 16px;border-radius:999px;background:#bccba8;color:#1d1f24;font-weight:600;box-shadow:0 6px 24px #0006;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translate(-50%,12px);max-width:calc(100vw - 32px);padding:10px 16px;border-radius:999px;background:#bccba8;color:#1d1f24;font-weight:600;box-shadow:0 6px 24px #0006;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
 .toast.show{pointer-events:auto;opacity:1;transform:translate(-50%,0)}.toast.error{background:#e8a87c}
 .source{margin:.4rem 0 0;font-size:.8rem;color:var(--muted)}
 .connection-status{font-size:.85rem;color:var(--muted);margin:10px 0}.change-editor{margin:16px 0}.change-editor label{display:block;margin-bottom:8px}.result-actions{margin:14px 0}.result-draft{margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}.result-draft p{margin:2px 0}.result-draft .draft-text{white-space:pre-wrap;margin:10px 0}.toast button{border:0;background:transparent;color:inherit;font-weight:700;text-decoration:underline;padding:2px 8px}#result-dialog{width:min(680px,calc(100vw - 32px));max-height:85dvh;padding:20px;overflow:auto}#send-dialog{width:min(680px,calc(100vw - 32px));max-height:85dvh;overflow:auto;padding:20px}#send-recipients{border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin:0 0 12px}#send-recipients legend{padding:0 6px;color:var(--cream)}#send-recipients label{display:flex;align-items:center;justify-content:flex-start;gap:10px;padding:6px 0;overflow-wrap:anywhere;text-align:left}#send-recipients input{width:18px;height:18px;min-height:0;flex:none;margin:0;padding:0;accent-color:var(--mint)}.draft-files{margin:0 0 14px}.draft-files h3{font-size:.95rem;margin:0}#result-files .draft-files{flex-basis:100%;margin:4px 0 0}#send-editor label{display:block;color:var(--muted);font-size:.85rem;margin:0 0 10px}#send-editor input{display:block;width:100%;margin-top:4px}#send-editor textarea,#send-editor textarea:focus{height:auto;min-height:280px;margin-top:4px;font:inherit;line-height:1.55;resize:vertical}#result-content{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.65}#result-files{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}#result-files button{max-width:100%;overflow-wrap:anywhere}#result-files a{color:var(--mint)}
@@ -1017,7 +1019,7 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
 .typing{display:inline-flex;gap:4px;padding:4px 0}.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:typing 1.2s infinite}.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 @keyframes typing{0%,60%,100%{opacity:.3}30%{opacity:1}}
 /* The bottom: a status line, at most two suggestions and a roomy message box, in the same column as the thread */
-.chat-compose{position:sticky;bottom:0;z-index:5;align-self:center;width:min(100%,var(--chat-col));padding:14px 0 calc(14px + env(safe-area-inset-bottom));background:var(--bg)}
+.chat-compose{position:sticky;bottom:0;z-index:5;align-self:center;width:min(100%,var(--chat-col));padding:14px 0 calc(max(12px,env(safe-area-inset-bottom)) + 8px);background:var(--bg)}
 .chat-compose::before{content:'';position:absolute;left:0;right:0;bottom:100%;height:20px;background:linear-gradient(color-mix(in srgb,var(--bg) 0%,transparent),var(--bg) 80%);pointer-events:none}
 .chat-status{display:flex;gap:6px;align-items:baseline;justify-content:center;font-size:var(--chat-meta);color:var(--chat-quiet);line-height:1.5}.chat-status:empty{display:none}.chat-status:not(:empty){margin:0 0 12px}
 .chat-picks{display:flex;flex-wrap:nowrap;gap:8px;margin:0 0 12px;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}.chat-picks::-webkit-scrollbar{display:none}.chat-picks:empty,.chat-picks[hidden]{display:none}
@@ -1051,11 +1053,15 @@ body.chat-open main{max-width:calc(var(--measure) + 440px);padding-bottom:0;marg
   .chat-layout [data-chat-drawer]{display:flex}
   .chat-msg.you{max-width:86%}
   .chat-result{padding:14px 16px 12px}
-  .chat-compose{padding:16px 0 calc(16px + env(safe-area-inset-bottom))}
+  .chat-compose{padding:14px 0 calc(max(12px,env(safe-area-inset-bottom)) + 8px)}
   .chat-side{position:fixed;inset:0 auto 0 0;z-index:30;width:min(300px,85vw);max-height:none;padding:calc(16px + env(safe-area-inset-top)) 16px 16px;background:var(--bg);box-shadow:var(--shadow-pop);transform:translateX(-105%);transition:transform .2s;overscroll-behavior:contain}
   .chat-layout.drawer .chat-side{transform:none}
   .chat-layout.drawer::before{content:'';position:fixed;inset:0;z-index:29;background:#0006}
 }
+/* An iPhone draws the page under the status bar (viewport-fit=cover): the top padding takes the inset once */
+main{padding-top:calc(28px + env(safe-area-inset-top));padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
+@media(max-width:560px){main{padding-top:calc(18px + env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}}
+@media(max-width:860px){body.chat-open main{padding:0 max(20px,env(safe-area-inset-right)) 0 max(20px,env(safe-area-inset-left))}}
 @media(prefers-reduced-motion:reduce){*{transition-duration:0s!important;animation-duration:0s!important}}
 </style>
 <main><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div></div><div class="head-side"><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -2192,6 +2198,8 @@ const chatOpenSet=new Set();  // what is unfolded (steps, long messages, drafts,
 const chatFold=(key,cls,summary,body)=>`<details class="${cls}" data-fold-key="${esc(key)}"${chatOpenSet.has(key)?' open':''}><summary>${summary}</summary>${body}</details>`;
 const chatLong=(t,lines=4)=>String(t||'').split('\n').length>lines||String(t||'').length>lines*70;
 const CHAT_VIA={email:'Email',gmail:'Email',slack:'Slack',linkedin:'LinkedIn',whatsapp:'WhatsApp',telegram:'Telegram',x:'X',calendar:'Calendar',intercom:'Intercom',github:'GitHub',android:'Phone'};
+// The owner's own taps read as what they did, not a bare button name
+const CHAT_TAPS={'Do it':'You chose Do it','Snoozed':'You snoozed it','Unsnoozed':'You unsnoozed it','Marked done':'You marked it done'};
 const chatVia=v=>CHAT_VIA[v]||(v&&v!=='signal'?v[0].toUpperCase()+v.slice(1):'');
 // Whose side an item is on: the owner's messages and taps on the right, the Machine and the people it is about on the left.
 const chatSide=i=>i.kind==='you'||i.kind==='event'&&i.mine||i.kind==='source'&&i.mine?'you':i.kind==='event'?'mid':'them';
@@ -2243,10 +2251,11 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
    // A shortened answer (its housekeeping left out) has More too, which shows the whole answer
    const whole=i.full&&chatOpenSet.has(k)?i.full:i.text,text=clamp(k,chatMarkdown(whole),chatLong(i.text)||!!i.full);
    // Plain text like any reply: whose answer it is, small above; its files and "<agent> sent nothing" on one line under it
-   const nothing=i.nothing_sent?`<small class="chat-noted">${esc(i.name)} sent nothing</small>`:'';
+   // (left out once the owner sent the card's message after it)
+   const nothing=i.nothing_sent&&!rows.slice(n+1).some(j=>j.kind==='event'&&j.sent)?`<small class="chat-noted">${esc(i.name)} sent nothing</small>`:'';
    push(i,`<div class="chat-msg machine chat-agent-msg"><div class="chat-agent-name">${esc(i.name)}</div><div class="bubble">${text}</div>${files||nothing?`<div class="chat-files">${files}${nothing}</div>`:''}${tm(i.at)}</div>`)}
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
-  else if(i.kind==='event'){const c=i.times.length,line=c>1?`${esc(i.text)} ${c} times`:esc(i.text);
+  else if(i.kind==='event'){const c=i.times.length,t=i.mine&&CHAT_TAPS[i.text]||i.text,line=c>1?`${esc(t)} ${c} times`:esc(t);
    push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+tm(i.at)}</div>`)}
   else if(i.kind==='you'){const to=i.to||'',show=to&&to!==lastTo;lastTo=to;
    push(i,`<div class="chat-msg you">${show?`<div class="chat-to">to ${esc(to)}</div>`:''}<div class="bubble">${chatMarkdown(i.text)}</div>${tm(i.at)}</div>`)}
