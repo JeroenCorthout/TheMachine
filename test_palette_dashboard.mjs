@@ -110,7 +110,7 @@ try{
   await page.evaluate(()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'c',isComposing:true,bubbles:true})));assert.ok(!(await page.locator('#new-card').isVisible()),'not while composing');
   // The ? sheet: grouped, platform-aware
   await page.locator('body').click({position:{x:700,y:5}});await page.keyboard.press('?');const sheet=page.locator('#keys-sheet');await sheet.waitFor();
-  assert.deepEqual(await sheet.locator('h3').allTextContents(),['General','Go to','Lists and cards']);
+  assert.deepEqual(await sheet.locator('h3').allTextContents(),['General','Go to','Calendar','Lists and cards']);
   const st=await sheet.textContent();assert.match(st,/Search and commandsCtrlKor\//);assert.match(st,/SettingsGthen,/);assert.match(st,/New cardC/);assert.match(st,/SnoozeS/);assert.ok(!st.includes('⌘'));
   await page.keyboard.press('Escape');await sheet.waitFor({state:'hidden'});
   // Hints: tooltips on the sidebar, a quiet key in the card's More menu
