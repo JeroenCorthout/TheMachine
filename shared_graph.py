@@ -9,10 +9,14 @@ What goes, per thread, judged by the review by meaning (share_threads), with the
 Records (people, organisations, projects with their board) go when they are Work, unless Keep private (share_private).
 
 How it goes: every blob is encrypted with a fresh key, signed by this Machine, and that key is sealed
-(network_crypto.seal) for each member a confirmed admin vouched for (fleet_trust.members). The Network keeps the
-blobs (a replica for when a Machine is off) and can't read, change or replay them. Addresses inside records are keyed
-hashes with the Fleet graph key, which only the members' Machines have; a confirmed admin's Machine makes it, seals
-it the same way, and makes a new one when someone leaves."""
+(network_crypto.seal) for each member a confirmed admin vouched for (fleet_trust.members). The records live on the
+Machines: each one keeps what it published and what teammates shared with it (team_blobs, as signed). The Network is
+only the mailbox: it carries the sealed blobs, can't read, change or replay them, and deletes each once every Machine
+it was for took it (this Machine acks what it took), or after KEEP_DAYS. A Machine away longer than that, or one just
+confirmed, asks its teammates (a sealed 'want'), and any of them passes on what it holds, newest first, in batches,
+each blob exactly as its publisher signed it. Addresses inside records are keyed hashes with the Fleet graph key, which
+only the members' Machines have; a confirmed admin's Machine makes it, seals it the same way, and makes a new one when
+someone leaves."""
 from __future__ import annotations
 
 import collections
@@ -31,8 +35,12 @@ import network_crypto as nc
 
 LOG = logging.getLogger('personal-assistant')
 TAG = b'tm-shared-graph/1\n'
-KINDS = ('key', 'snapshot', 'delta', 'mail', 'file', 'ask')
-TAGGED = ('mail', 'file', 'ask')  # one blob per tag: a newer one replaces it, an empty one says it's gone
+KINDS = ('key', 'snapshot', 'delta', 'mail', 'file', 'ask', 'want')
+TAGGED = ('mail', 'file', 'ask', 'want')  # one blob per tag: a newer one replaces it, an empty one says it's gone
+RELAYED = ('snapshot', 'delta', 'mail', 'file')  # what a teammate's Machine passes on to someone who missed it
+KEEP_DAYS = 30              # the Network keeps a blob nobody took this long, then drops it
+WANT_DAYS = 7               # a Machine asks its teammates for what it missed this long
+SERVE_BATCH = 40            # blobs this Machine passes on per round, for one teammate who asked
 VERDICTS = ('client', 'sensitive', 'internal', 'personal')
 HANDS = ('team', 'private')
 ROUND_EVERY = 300           # publish and fetch, at most this often
@@ -64,8 +72,11 @@ CREATE TABLE IF NOT EXISTS team_files(fleet TEXT NOT NULL,member TEXT NOT NULL,t
 CREATE TABLE IF NOT EXISTS team_asks(fleet TEXT NOT NULL,member TEXT NOT NULL,off INTEGER NOT NULL,asked TEXT NOT NULL,seq INTEGER NOT NULL,
   at TEXT NOT NULL,PRIMARY KEY(fleet,member));
 CREATE TABLE IF NOT EXISTS team_pending(id TEXT PRIMARY KEY,item TEXT NOT NULL,at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS team_blobs(id TEXT PRIMARY KEY,fleet TEXT NOT NULL,member TEXT NOT NULL,kind TEXT NOT NULL,dk TEXT NOT NULL,
-  header TEXT NOT NULL,sha TEXT NOT NULL,at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS team_blobs(id TEXT PRIMARY KEY,fleet TEXT NOT NULL,member TEXT NOT NULL,kind TEXT NOT NULL,tag TEXT,
+  seq INTEGER NOT NULL,dk TEXT NOT NULL,header TEXT NOT NULL,sha TEXT NOT NULL,ct TEXT NOT NULL,sig TEXT NOT NULL,at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS team_blobs_by ON team_blobs(fleet,member,kind,tag);
+CREATE TABLE IF NOT EXISTS team_wants(fleet TEXT NOT NULL,member TEXT NOT NULL,body TEXT NOT NULL,seq INTEGER NOT NULL,at TEXT NOT NULL,
+  PRIMARY KEY(fleet,member));
 '''
 
 
@@ -157,16 +168,10 @@ def make(private, header, body, recipients):
             'wraps': wraps}, nc.b64(dk)
 
 
-def rewrap(private, header, data_b64, dk, from_sign, by, recipients):
-    """An admin's Machine seals a blob's key again, for members who joined after its publisher left."""
-    h = digest(header, nc.unb64(data_b64))
-    return {mid: nc.seal({'dk': dk, 'h': h, 'from_key': from_sign}, private, keys, wrap_context(header, by, mid)) for mid, keys in recipients.items()}
-
-
 def open_blob(item, private, me, wrapper_keys, sender_sign):
     """(header, body, dk) of a blob for this Machine, or SealError. wrapper_keys: the public keys of whoever sealed the
-    wrap (the publisher, or an admin re-sealing); sender_sign: the publisher's sign key (base64), or None to take the
-    one the admin vouched for inside the wrap."""
+    wrap (the publisher, or a teammate passing it on); sender_sign: the publisher's sign key (base64), or None to take
+    the one an admin vouched for inside the wrap (someone who left)."""
     header, wrap = item.get('header'), item.get('wrap')
     if not isinstance(header, dict) or header.get('v') != 1 or header.get('kind') not in KINDS or not HEX.fullmatch(str(header.get('id'))):
         raise nc.SealError('not a blob header')
@@ -183,6 +188,26 @@ def open_blob(item, private, me, wrapper_keys, sender_sign):
             raise nc.SealError('empty')
         return header, {}, inner['dk']
     return header, decrypt(dk, header, data), inner['dk']
+
+
+def keep_blob(db, header, ct, sig, dk):
+    """This Machine's own copy of a blob as its publisher signed it, to pass on to a teammate who missed it: the newest
+    of each thread or file, the last snapshot and the deltas since. Keys, asks and wants are never passed on."""
+    kind, fleet, member, seq = header['kind'], header['fleet'], header['from'], int(header['seq'])
+    if kind not in RELAYED:
+        return
+    if kind == 'snapshot':
+        db.execute("DELETE FROM team_blobs WHERE fleet=? AND member=? AND kind IN ('snapshot','delta') AND seq<?", (fleet, member, seq))
+    elif kind in TAGGED:
+        db.execute('DELETE FROM team_blobs WHERE fleet=? AND member=? AND kind=? AND tag=? AND seq<?', (fleet, member, kind, header.get('tag'), seq))
+        if not ct:
+            return  # no longer shared: nothing to pass on
+    db.execute('INSERT OR IGNORE INTO team_blobs(id,fleet,member,kind,tag,seq,dk,header,sha,ct,sig,at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+               (header['id'], fleet, member, kind, header.get('tag'), seq, dk, json.dumps(header), digest(header, nc.unb64(ct)), ct, sig, now()))
+
+
+def _iso_ago(days):
+    return (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
 
 
 # ---------------------------------------------------------------- threads: what the review said and the owner chose
@@ -578,11 +603,17 @@ class SharedGraph:
         if not recipients:
             return None
         header = self._header(group, me, kind, recipients, **extra)
-        blob, _ = make(self._private(), header, body, recipients)
+        blob, dk = make(self._private(), header, body, recipients)
         self.relay.call('POST', '/graph', {'op': 'put', 'fleet': group['id'], 'blob': blob}, timeout=120 if kind == 'file' else 60)
+        self._spent()
+        with self.connect() as db:
+            ensure(db)
+            keep_blob(db, header, blob['ct'], blob['sig'], dk)  # this Machine passes on its own, too
+        return header
+
+    def _spent(self):
         stamp = time.time()
         self.set_meta('graph_puts', [t for t in (self.meta('graph_puts', []) or []) if t > stamp - 86400][-PER_DAY:] + [stamp])
-        return header
 
     def _budget(self):
         """How many more blobs may go now: PER_HOUR and PER_DAY over this Machine's own puts. A long history goes over days."""
@@ -631,8 +662,110 @@ class SharedGraph:
         self._graph_ask_round(group, me, found)
         if self.graph_off(group, trusted) == 'off':
             self.set_meta('graph_off_ok:' + group['id'], (self.meta('graph_off:' + group['id']) or {}).get('at'))
-            return  # an admin agreed: nothing new goes; what was shared before stays with the Fleet
-        self.graph_publish(group, me, found)
+            # an admin agreed: nothing new goes; what was shared before stays with the Fleet
+        else:
+            self.graph_publish(group, me, found)
+        self._graph_want_round(group, me, found)  # catching up: with what is left of this hour's budget
+        try:
+            self._graph_serve(group, me, found, trusted)
+        except Exception as error:  # noqa: BLE001 - the Network's own limit, or away: the rest next round
+            LOG.info('shared graph catch-up paused fleet=%s error=%s', group['id'], type(error).__name__)
+
+    # -- catching up, Machine to Machine
+    def _graph_want_round(self, group, me, found):
+        """This Machine asks its teammates for what it missed: once it is first confirmed, and when it was away longer than
+        the Network keeps anything (KEEP_DAYS). A sealed 'want' says which snapshot it has of each teammate and how far
+        back it got their threads; it goes again as that moves, for WANT_DAYS, then a last empty one ends it. Threads from
+        before its last fetch it has already (since), less a day."""
+        fleet = group['id']
+        others = sorted(set(found) - {me['member_id']})
+        if not others or self._budget() <= 0:
+            return
+        want = self.meta('graph_want:' + fleet) or {}
+        fetched = self.meta('graph_fetched_at')
+        if not self.meta('graph_confirmed:' + fleet) or not fetched or fetched < _iso_ago(KEEP_DAYS - 2):
+            if not want or want.get('at', '') < _iso_ago(1):
+                since = fetched if self.meta('graph_confirmed:' + fleet) and fetched else ''
+                want = {'at': now(), 'got': {}, 'since': since and (dt.datetime.fromisoformat(since) - dt.timedelta(days=1)).isoformat()}
+            self.set_meta('graph_confirmed:' + fleet, now())
+        if not want:
+            return
+        tag = keyed(self.graph_secret(), 'want|' + fleet)
+        if want['at'] < _iso_ago(WANT_DAYS):
+            if not want.get('closed'):
+                self._put(group, me, 'want', None, others, tag=tag)
+                want['closed'] = True
+                self.set_meta('graph_want:' + fleet, want)
+            return
+        with self.connect() as db:
+            ensure(db)
+            snap = {r['member']: r['seq'] for r in db.execute('SELECT member,seq FROM team_sources WHERE fleet=?', (fleet,))}
+        body = {'at': want['at'], 'snap': snap, 'got': want.get('got') or {}, 'since': want.get('since') or ''}
+        sent = hashlib.sha256(canon([body, others])).hexdigest()
+        if want.get('sent') != sent:
+            self._put(group, me, 'want', body, others, tag=tag)
+            want['sent'] = sent
+            self.set_meta('graph_want:' + fleet, want)
+
+    def _graph_serve(self, group, me, found, trusted):
+        """Passes on what a teammate who asked missed, from this Machine's own copies (team_blobs): each publisher's last
+        snapshot and the deltas since first, then their threads and files, the newest first, a batch a round. Each blob
+        goes exactly as its publisher signed it, its key sealed again for the one who asked. What someone who left
+        shared goes only from an admin's Machine, which vouches for the key it was signed with."""
+        fleet = group['id']
+        members = {m.get('member_id') for m in group.get('members', [])}
+        with self.connect() as db:
+            ensure(db)
+            wants = db.execute('SELECT member,body FROM team_wants WHERE fleet=?', (fleet,)).fetchall()
+            signs = {r['member']: r['sign'] for r in db.execute('SELECT member,sign FROM team_sources WHERE fleet=?', (fleet,))}
+        for want in wants:
+            who = want['member']
+            body = json.loads(want['body'])
+            keys = self._public(group, who)
+            if who == me['member_id'] or who not in found or not keys or str(body.get('at') or '') < _iso_ago(WANT_DAYS):
+                continue
+            budget = min(self._budget(), SERVE_BATCH)
+            if budget <= 0:
+                return
+            served = self.meta(f'graph_served:{fleet}:{who}') or {}
+            if served.get('at') != body['at']:
+                served = {'at': body['at'], 'snap': {}, 'low': {}}
+            with self.connect() as db:
+                rows = [dict(r) for r in db.execute('SELECT * FROM team_blobs WHERE fleet=? AND member!=? ORDER BY seq DESC', (fleet, who))]
+            sign_of = lambda p: (nc.public_keys(self._private())['sign'] if p == me['member_id'] else
+                                 (self._public(group, p) or {}).get('sign') if p in found else signs.get(p))
+            allowed = {r['member'] for r in rows if (r['member'] in found or (r['member'] not in members and me['member_id'] in trusted))
+                       and sign_of(r['member'])}
+            out = []
+            for p in sorted(allowed):  # the records: the last snapshot and the deltas since, or only the deltas it lacks
+                snaps = [r for r in rows if r['member'] == p and r['kind'] == 'snapshot']
+                have = max(int((body.get('snap') or {}).get(p) or 0), int(served['snap'].get(p) or 0))
+                if not snaps:
+                    continue
+                deltas = sorted((r for r in rows if r['member'] == p and r['kind'] == 'delta' and r['seq'] > max(have, snaps[0]['seq'])), key=lambda r: r['seq'])
+                chain = ([snaps[0]] if snaps[0]['seq'] > have else []) + deltas
+                if chain:
+                    out.append(('snap', p, chain))
+            low = lambda p: min(int((body.get('got') or {}).get(p) or 1 << 62), int(served['low'].get(p) or 1 << 62))
+            since = str(body.get('since') or '')
+            threads = [r for r in rows if r['member'] in allowed and r['kind'] in ('mail', 'file') and r['seq'] < low(r['member'])
+                       and str(json.loads(r['header']).get('at') or '') >= since]
+            out += [('low', r['member'], [r]) for r in threads]  # the newest first
+            for what, p, chain in out:
+                if len(chain) > budget:
+                    break
+                for r in chain:
+                    header = json.loads(r['header'])
+                    wrap = nc.seal({'dk': r['dk'], 'h': r['sha'], 'from_key': sign_of(p)}, self._private(), keys, wrap_context(header, me['member_id'], who))
+                    self.relay.call('POST', '/graph', {'op': 'relay', 'fleet': fleet, 'blob': {'header': header, 'ct': r['ct'], 'sig': r['sig']},
+                                                       'wraps': {who: wrap}}, timeout=120 if r['kind'] == 'file' else 60)
+                    self._spent()
+                    budget -= 1
+                if what == 'snap':
+                    served['snap'][p] = chain[-1]['seq']
+                else:
+                    served['low'][p] = chain[0]['seq']
+                self.set_meta(f'graph_served:{fleet}:{who}', served)
 
     def _graph_keys_round(self, group, me, found):
         """A confirmed admin's Machine: make the first graph key, seal it for members who don't have it, and make a new
@@ -656,7 +789,7 @@ class SharedGraph:
         """Publishes what changed since the last round: a snapshot when the recipients or the key changed, or daily;
         else a delta. Then each client thread that changed as its own mail blob, with its attachments as file blobs,
         the newest first and within this Machine's budget: share_out keeps what went, so the next round goes on from
-        there (a long history, or everything again for someone who joined, takes a few days)."""
+        there (a long history takes a few days). Someone who joins later gets what went before by catching up."""
         fleet = group['id']
         kv, key = self.graph_key(fleet)
         if not kv:
@@ -671,9 +804,8 @@ class SharedGraph:
             records, threads, stats, files = collect(db, scope, [key, *others], self.graph_secret())
             before = {(r['kind'], r['key']): r['hash'] for r in db.execute('SELECT kind,key,hash FROM share_out WHERE fleet=?', (fleet,))}
         state = self.meta('graph_out:' + fleet, {}) or {}
-        who = hashlib.sha256(canon([kv, to])).hexdigest()[:16]  # sent to other people (or under another key): it goes again
         hashes = {rid: hashlib.sha256(canon(r)).hexdigest() for rid, r in records.items()}
-        thread_hashes = {tag: hashlib.sha256(canon([t, who])).hexdigest() for tag, t in threads.items()}
+        thread_hashes = {tag: hashlib.sha256(canon(t)).hexdigest() for tag, t in threads.items()}  # someone new gets them by catching up
         new_people = state.get('to') != to or state.get('kv') != kv
         snapshot = new_people or not state.get('snapshot_at') or time.time() - state.get('snapshot_at', 0) > SNAPSHOT_EVERY
         changed = [rid for rid, h in hashes.items() if before.get(('record', rid)) != h]
@@ -700,7 +832,7 @@ class SharedGraph:
         self.set_meta('graph_out:' + fleet, state)
         budget = self._budget()
         try:
-            for tag in [k for (kind, k) in before if kind == 'thread' and k not in threads]:  # no longer shared: gone from the replica and the team
+            for tag in [k for (kind, k) in before if kind == 'thread' and k not in threads]:  # no longer shared: gone from the team's Machines
                 if budget <= 0:
                     break
                 budget -= self._unshare(group, me, to, tag, before)
@@ -709,7 +841,7 @@ class SharedGraph:
                     break
                 if before.get(('thread', tag)) == thread_hashes[tag]:
                     continue
-                body, used = self._with_files(group, me, to, tag, body, files.get(tag) or [], who, before, budget - 1)
+                body, used = self._with_files(group, me, to, tag, body, files.get(tag) or [], before, budget - 1)
                 if body is None:
                     break  # the budget is spent halfway through its files: the rest next round
                 self._put(group, me, 'mail', body, to, tag=tag)
@@ -737,10 +869,11 @@ class SharedGraph:
             db.execute("DELETE FROM share_out WHERE fleet=? AND kind='thread' AND key=?", (fleet, tag))
         return used + 1
 
-    def _with_files(self, group, me, to, tag, body, sources, who, before, budget):
+    def _with_files(self, group, me, to, tag, body, sources, before, budget):
         """The thread's messages with their attachments: each file up to MAX_FILE goes as its own sealed blob (once per
         recipients), bigger ones are listed as too large to share. Returns (body, file blobs sent), or (None, n) when
-        the budget ran out first. Read-only from the mailbox, and only for a whole client thread."""
+        the budget ran out first. Read-only from the mailbox, and only for a whole client thread. Each file goes once:
+        someone who joins later gets it by catching up."""
         fetch = getattr(self, 'mail_files', None)
         used = 0
         if not fetch or body.get('private'):
@@ -761,7 +894,7 @@ class SharedGraph:
                     out.append({**entry, 'too_large': True})
                     continue
                 ftag = keyed(self.graph_secret(), f'file|{tag}|{event_id}|{a["id"]}')
-                if before.get(('file', ftag)) != f'{tag}:{who}':
+                if before.get(('file', ftag)) != tag:
                     if used >= budget:
                         return None, used
                     data = fetch(event_id, a['id'])
@@ -771,7 +904,7 @@ class SharedGraph:
                     self._put(group, me, 'file', {'name': entry['name'], 'mime': entry['mime'], 'data': nc.b64(data)}, to, tag=ftag)
                     used += 1
                     with self.connect() as db:
-                        db.execute('INSERT OR REPLACE INTO share_out(fleet,kind,key,hash,at) VALUES(?,?,?,?,?)', (group['id'], 'file', ftag, f'{tag}:{who}', now()))
+                        db.execute('INSERT OR REPLACE INTO share_out(fleet,kind,key,hash,at) VALUES(?,?,?,?,?)', (group['id'], 'file', ftag, tag, now()))
                     entry['size'] = len(data)
                 out.append({**entry, 'file': ftag})
             message['attachments'] = out
@@ -796,6 +929,7 @@ class SharedGraph:
         cursor = int(self.meta('graph_cursor', 0) or 0)
         for _ in range(20):
             found = self.relay.call('GET', f'/graph?after={cursor}&limit=50', timeout=60)
+            taken = []
             for item in found.get('items') or []:
                 try:
                     self.graph_take(item)
@@ -803,29 +937,32 @@ class SharedGraph:
                     with self.connect() as db:
                         db.execute('INSERT OR IGNORE INTO team_pending(id,item,at) VALUES(?,?,?)',
                                    (str((item.get('header') or {}).get('id')) + ':' + str(item.get('by')), json.dumps(item), now()))
-                except (nc.SealError, ValueError, KeyError, TypeError) as error:
-                    LOG.warning('shared graph blob dropped member=%s reason=%s', (item.get('header') or {}).get('from'), error)
+                except (nc.SealError, ValueError, KeyError, TypeError) as error:  # a catch-up from two teammates: one is enough
+                    relayed = item.get('by') not in (None, (item.get('header') or {}).get('from'))
+                    LOG.log(logging.INFO if relayed else logging.WARNING, 'shared graph blob dropped member=%s by=%s reason=%s',
+                            (item.get('header') or {}).get('from'), item.get('by'), error)
                 cursor = max(cursor, int(item.get('cursor') or 0))
+                if HEX.fullmatch(str((item.get('header') or {}).get('id'))):
+                    taken.append(item['header']['id'])
             self.set_meta('graph_cursor', cursor)
+            if taken:  # kept here now (or waiting here): the Network deletes its copy once every Machine took it
+                self.relay.call('POST', '/graph', {'op': 'ack', 'ids': taken}, timeout=60)
             if not found.get('more'):
                 break
+        self.set_meta('graph_fetched_at', now())
 
     def graph_take(self, item):
-        """One blob, taken only when everything checks out (module docstring)."""
+        """One blob, taken only when everything checks out (module docstring): sealed for this Machine by its publisher,
+        or passed on by a confirmed teammate's Machine because this one missed it, still signed by its publisher."""
         header = item.get('header') or {}
         group = next((g for g in (self.directory().get('fleets') or []) if g.get('id') == header.get('fleet') and g.get('kind') == 'work'), None)
         me = group and self._me_in(group)
         if not me:
             raise ValueError('not a Work Fleet of this Machine')
         found, trusted, _ = self.confirmed(group)
+        members = {m.get('member_id') for m in group.get('members', [])}
         sender, by = header.get('from'), item.get('by') or header.get('from')
-        if by != sender:  # re-sealed by an admin, for a publisher who left
-            if by not in trusted or sender in found:
-                raise ValueError('re-sealed by someone who is not a confirmed admin')
-            opened = open_blob(item, self._private(), me['member_id'], self._public(group, by), None)
-        else:
-            if me['member_id'] not in (header.get('to') or []):
-                raise ValueError('not for this Machine')
+        if by == sender and me['member_id'] in (header.get('to') or []):
             with self.connect() as db:
                 ensure(db)
                 source = db.execute('SELECT * FROM team_sources WHERE fleet=? AND member=?', (group['id'], sender)).fetchone()
@@ -833,17 +970,47 @@ class SharedGraph:
                 keys = self._public(group, sender)
             elif source and source['left_at'] and str(header.get('at') or '') < source['left_at'] and source['sign']:
                 keys = self._pinned(sender)
-            elif sender in {m.get('member_id') for m in group.get('members', [])}:
+            elif sender in members:
                 raise Later('not from a confirmed member yet')
             else:
                 raise ValueError('not from a confirmed member')
             if not keys:
                 raise ValueError('no keys for the sender')
             opened = open_blob(item, self._private(), me['member_id'], keys, keys['sign'])
+        else:  # passed on: a catch-up
+            if header.get('kind') not in RELAYED:
+                raise ValueError('only records, threads and files are passed on')
+            if by not in found:
+                if by in members:
+                    raise Later('passed on by a teammate not confirmed yet')
+                raise ValueError('passed on by someone who is not a confirmed member')
+            if sender in found:
+                sign = (self._public(group, sender) or {}).get('sign')
+                if not sign:
+                    raise ValueError('no keys for the sender')
+            elif sender in members:
+                raise Later('not from a confirmed member yet')
+            elif by in trusted:
+                sign = (self._pinned(sender) or {}).get('sign')  # else the key the admin vouches for
+            else:
+                raise ValueError('what someone who left shared is passed on only by a confirmed admin')
+            opened = open_blob(item, self._private(), me['member_id'], self._public(group, by), sign)
+            if header.get('kind') in ('mail', 'file'):
+                self._caught_up(group['id'], sender, int(header['seq']))
         header, body, dk = opened
-        if header['kind'] == 'key' and (sender not in trusted and by == sender):
+        if header['kind'] == 'key' and sender not in trusted:
             raise ValueError('a graph key from someone who is not a confirmed admin')
+        if header['kind'] == 'want' and sender not in found:
+            raise ValueError('a want from someone who is not a confirmed member')
         self._apply(group, header, body, dk, item)
+
+    def _caught_up(self, fleet, sender, seq):
+        """How far back this Machine's want got a teammate's threads: they go on below that."""
+        want = self.meta('graph_want:' + fleet) or {}
+        if want and not want.get('closed'):
+            got = want.setdefault('got', {})
+            got[sender] = min(int(got.get(sender) or seq), seq)
+            self.set_meta('graph_want:' + fleet, want)
 
     def _pinned(self, mid):
         with self.connect() as db:
@@ -864,8 +1031,7 @@ class SharedGraph:
                 row = db.execute('SELECT * FROM team_sources WHERE fleet=? AND member=?', (fleet, sender)).fetchone()
             elif name and name != row['name']:
                 db.execute('UPDATE team_sources SET name=? WHERE fleet=? AND member=?', (name[:80], fleet, sender))
-            db.execute('INSERT OR IGNORE INTO team_blobs(id,fleet,member,kind,dk,header,sha,at) VALUES(?,?,?,?,?,?,?,?)',
-                       (header['id'], fleet, sender, kind, dk, json.dumps(header), digest(header, nc.unb64(item['ct'])), now()))
+            keep_blob(db, header, item['ct'], item['sig'], dk)
             if kind == 'key':
                 kv, key = body.get('kv'), body.get('key')
                 if isinstance(kv, str) and re.fullmatch(r'[a-f0-9]{16}', kv) and isinstance(key, str):
@@ -885,11 +1051,14 @@ class SharedGraph:
                            (seq, seq, json.dumps(self._tags(body)), now(), fleet, sender))
                 db.execute('DELETE FROM team_mail WHERE fleet=? AND member=? AND tag NOT IN (SELECT value FROM json_each(?))',
                            (fleet, sender, json.dumps(self._tags(body))))
+                db.execute("DELETE FROM team_blobs WHERE fleet=? AND member=? AND kind='mail' AND tag NOT IN (SELECT value FROM json_each(?))",
+                           (fleet, sender, json.dumps(self._tags(body))))
                 listed = {a.get('file') for r in db.execute('SELECT body FROM team_mail WHERE fleet=? AND member=?', (fleet, sender))
                           for m in json.loads(r['body']).get('messages') or [] for a in m.get('attachments') or []}
                 for r in db.execute('SELECT tag FROM team_files WHERE fleet=? AND member=?', (fleet, sender)).fetchall():
                     if r['tag'] not in listed:
                         db.execute('DELETE FROM team_files WHERE fleet=? AND member=? AND tag=?', (fleet, sender, r['tag']))
+                        db.execute("DELETE FROM team_blobs WHERE fleet=? AND member=? AND kind='file' AND tag=?", (fleet, sender, r['tag']))
             elif kind == 'delta':
                 if body.get('prev') != row['seq'] or seq <= row['seq']:
                     raise ValueError('a delta out of order: waits for the next snapshot')
@@ -927,6 +1096,20 @@ class SharedGraph:
                     db.execute('INSERT OR REPLACE INTO team_files(fleet,member,tag,seq,name,mime,size,data,at) VALUES(?,?,?,?,?,?,?,?,?)',
                                (fleet, sender, tag, seq, _clean_text(body.get('name'), 120) or 'attachment', _mime(body.get('mime')), len(data),
                                 nc.b64(data), header['at']))
+            elif kind == 'want':  # a teammate's Machine asks for what it missed (_graph_serve)
+                old = db.execute('SELECT seq FROM team_wants WHERE fleet=? AND member=?', (fleet, sender)).fetchone()
+                if old and old['seq'] >= seq:
+                    raise ValueError('an older want')
+                if not body:
+                    db.execute('DELETE FROM team_wants WHERE fleet=? AND member=?', (fleet, sender))
+                    return
+                at = _clean_text(body.get('at'), 40)
+                counts = lambda d: {str(k)[:40]: int(v) for k, v in list(d.items())[:500] if type(v) is int} if isinstance(d, dict) else {}
+                if not at:
+                    raise ValueError('a want without its time')
+                db.execute('INSERT OR REPLACE INTO team_wants(fleet,member,body,seq,at) VALUES(?,?,?,?,?)',
+                           (fleet, sender, json.dumps({'at': at, 'snap': counts(body.get('snap')), 'got': counts(body.get('got')),
+                                                       'since': _clean_text(body.get('since'), 40) or ''}), seq, now()))
             elif kind == 'ask':  # a member asks to stop sharing their Work (or not any more): for the admins' OK
                 old = db.execute('SELECT seq FROM team_asks WHERE fleet=? AND member=?', (fleet, sender)).fetchone()
                 if old and old['seq'] >= seq:
@@ -956,50 +1139,17 @@ class SharedGraph:
             ensure(db)
             for (fleet,) in db.execute('SELECT DISTINCT fleet FROM team_sources').fetchall():
                 if fleet not in ids:
-                    for table in ('team_records', 'team_mail', 'team_files', 'team_asks', 'team_sources', 'team_blobs', 'share_out'):
+                    for table in ('team_records', 'team_mail', 'team_files', 'team_asks', 'team_sources', 'team_blobs', 'team_wants', 'share_out'):
                         db.execute(f'DELETE FROM {table} WHERE fleet=?', (fleet,))
-                    for key in ('graph_keys:', 'graph_out:', 'graph_members:', 'graph_off:', 'graph_off_ok:', 'graph_ask_sent:', 'graph_week:'):
+                    for key in ('graph_keys:', 'graph_out:', 'graph_members:', 'graph_off:', 'graph_off_ok:', 'graph_ask_sent:', 'graph_week:',
+                                'graph_want:', 'graph_confirmed:'):
                         db.execute('DELETE FROM fleet_meta WHERE key=?', (key + fleet,))
+                    db.execute('DELETE FROM fleet_meta WHERE key LIKE ?', ('graph_served:' + fleet + ':%',))
             for group in groups:
                 now_in = {m.get('member_id') for m in group.get('members', [])}
                 for row in db.execute('SELECT member FROM team_sources WHERE fleet=? AND left_at IS NULL', (group['id'],)).fetchall():
                     if row['member'] not in now_in:
                         db.execute('UPDATE team_sources SET left_at=? WHERE fleet=? AND member=?', (now(), group['id'], row['member']))
-        for group in groups:
-            me = self._me_in(group)
-            if me:
-                try:
-                    self._graph_rewrap(group, me)
-                except Exception as error:  # noqa: BLE001
-                    LOG.info('shared graph rewrap error=%s', type(error).__name__)
-
-    def _graph_rewrap(self, group, me):
-        """A confirmed admin's Machine re-seals what someone who left shared, for members who joined since (it stays with
-        the Fleet). Only blobs still current: their latest snapshot and mail."""
-        found, trusted, _ = self.confirmed(group)
-        if me['member_id'] not in trusted:
-            return
-        with self.connect() as db:
-            gone = db.execute('SELECT member,sign,snapshot FROM team_sources WHERE fleet=? AND left_at IS NOT NULL AND sign IS NOT NULL',
-                              (group['id'],)).fetchall()
-            blobs = []
-            for g in gone:
-                for b in db.execute("SELECT * FROM team_blobs WHERE fleet=? AND member=? AND kind IN ('snapshot','mail','file')", (group['id'], g['member'])):
-                    header = json.loads(b['header'])
-                    if b['kind'] == 'snapshot' and header['seq'] != g['snapshot']:
-                        continue
-                    blobs.append((b, header, g['sign']))
-        done = self.meta('graph_rewrapped:' + group['id'], {}) or {}
-        for b, header, sign in blobs:
-            want = sorted(set(found) - {me['member_id']} - set(header.get('to', [])) - set(done.get(b['id'], [])))
-            recipients = {mid: keys for mid in want if (keys := self._public(group, mid))}
-            if not recipients:
-                continue
-            wraps = {mid: nc.seal({'dk': b['dk'], 'h': b['sha'], 'from_key': sign}, self._private(), keys, wrap_context(header, me['member_id'], mid))
-                     for mid, keys in recipients.items()}
-            self.relay.call('POST', '/graph', {'op': 'wrap', 'fleet': group['id'], 'id': b['id'], 'wraps': wraps}, timeout=60)
-            done[b['id']] = sorted(set(done.get(b['id'], [])) | set(recipients))
-        self.set_meta('graph_rewrapped:' + group['id'], done)
 
     # -- the owner's controls
     def graph_unjudged(self, limit=120):

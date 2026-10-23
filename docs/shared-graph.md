@@ -68,9 +68,9 @@ A malicious admin can confirm a fake member. That is the trust root: admins are 
 
 **Someone leaving.** The directory drops them at once and every Machine stops sealing for them. Within a round the
 Fleet graph key rotates, so blobs after the leave are sealed and hashed with a key they never had. What they shared
-stays with the Fleet: their records, timeline and client mail stay on teammates' Machines and in the CP replica, shown
-as "via Sam (left)". Nothing more: no other mail of theirs is kept for the company or sealed to admins, so leaving
-never shares more than was shared before. An admin's Machine re-seals those blobs for people who join later. What they got from the Fleet
+stays with the Fleet: their records, timeline and client mail stay on teammates' Machines, shown as "via Sam (left)".
+Nothing more: no other mail of theirs is kept for the company or sealed to admins, so leaving never shares more than
+was shared before. Someone who joins later gets it from an admin's Machine (catching up, below). What they got from the Fleet
 is removed from their Machine when it sees it's no longer in the Fleet (as `work_removal.py` does for company data).
 What they already read can't be unread.
 
@@ -151,30 +151,44 @@ sends what to whom. `h` is the hash of header and ciphertext, so a wrap can't be
 - **delta**: changed and removed records since the last blob, with `prev` (the previous seq). A receiver that missed
   one waits for the next snapshot.
 - **mail**: one client thread, or one sensitive thread's neutral line, by `tag`. A newer blob with the same tag
-  replaces it on the CP; one with an empty ciphertext removes it (the CP deletes such tombstones after 30 days). A
-  receiver drops mail whose tag isn't in the publisher's latest snapshot.
+  replaces it; one with an empty ciphertext removes it. A receiver drops mail whose tag isn't in the publisher's
+  latest snapshot.
 - **file**: one attachment of a shared client thread, by `tag`, up to 2.5 MB. Only for whole client threads: a
   sensitive or private thread's files are never even read. Gone (an empty blob) when its thread stops being shared.
 - **ask**: a member's ask to stop sharing, or that they withdrew it. Every member gets it sealed; only admins' Machines
   act on it.
+- **want**: a Machine asks its teammates for what it missed (catching up, below).
 
 **History and batches.** At the start a Machine shares all the Work history it has, not only recent mail, through the
 same labels: a history pass (one model turn at a time, a batch of threads per turn) judges older Work threads no
 review saw. Threads go the newest first, at most 100 blobs an hour and 1,800 a day per Machine (under the CP's 120
 and 2,000). `share_out` keeps what went, so a backfill that stopped (a limit, the Machine off) goes on from there
-next round. The same happens when someone joins: everything goes again for them, over a few days for a long history.
+next round. Someone who joins later gets what went before by catching up.
 
 Each Machine publishes every few minutes when something changed and fetches with a cursor. A receiver opens a blob
 only when: the sender is a confirmed member, the signature checks with their pinned key, the wrap opens, its `h`
-matches, the seq is newer than the last one taken from them, and the header's fleet and `to` include it. A blob from
+matches, the seq is newer than the last one taken from them, and the header's fleet and `to` include it (or a confirmed
+teammate passed it on, for a catch-up). A blob from
 someone not confirmed yet (their admin's OK is still on its way) waits in `team_pending` and is tried again on each
 round for 7 days. The CP's inbox reports the newest wrap cursor (`graph=`), so a Machine fetches only when there is
 something new for it.
 
-**The CP replica.** The CP keeps every current blob (latest snapshot, its deltas, current mail, keys) for as long as
-the Fleet exists, including blobs of members who left. A Machine that was off, reinstalled or new catches up from it
-when the publisher is offline. The CP checks what it can without reading: the sender is a Work member, `to` and the
-wraps name current members, `key` blobs come from an admin, sizes and rates are within limits.
+**The Network as a mailbox.** Everything stays on the Machines: each keeps its own copy of the team's Graph. The CP
+only passes blobs on, as the Network does with asks. A receiver acks what it took, and the CP deletes its wrap; a blob
+goes once every Machine it was sealed for took it, and anything nobody took goes after 30 days. There is no storage
+cap, only a limit per blob (4 MB) and on what a Fleet has in flight (500 MB), so a Machine that is off for long can't
+fill the CP: at that limit the oldest of whoever has the most waiting goes first. The CP checks what it can without
+reading: the sender is a Work member, `to` and the wraps name current members, `key` blobs come from an admin, sizes
+and rates are within limits.
+
+**Catching up.** Each Machine keeps the blobs it has as their publishers signed them (`team_blobs`: the last
+snapshot and the deltas since, and the newest of each thread and file), so it can pass them on. A Machine that was
+away longer than 30 days, or one just confirmed, sends a sealed `want`: which records it has of each teammate and how
+far back it got their threads. Any online teammate's Machine answers from its own copies: each publisher's records
+first, then threads and files, the newest first, a batch a round, going on where it stopped. A blob passed on is the
+publisher's original, still checked against their signature; only its key is sealed again, for the one who asked.
+What someone who left shared is passed on only by an admin's Machine. Two teammates answering the same want is fine:
+the CP skips a blob already waiting for that Machine, and the receiver drops what it has.
 
 **Matching and conflicts.** A receiver matches teammates' people by hashed address, organisations by hashed domain,
 projects by board and name. For each field of a matched record the value set by hand wins; otherwise the value from
@@ -197,7 +211,7 @@ it. **Ask <name>** on a tile, person or organisation starts a handoff to that te
 | Sensitive client threads | That they exist | That they exist | No |
 | Internal, Personal, Keep private | No | No | No |
 | Who publishes, when, how much | Yes | Yes | Yes (metadata) |
-| A leaver's shared work | Yes, stays | Yes, stays | Sealed blobs |
+| A leaver's shared work | Yes, stays | Yes, stays | No |
 | A leaver's other work mail | No | No | No |
 | Asks to stop sharing | Their own | Yes, to approve | That a blob of kind ask went |
 
@@ -238,8 +252,5 @@ signs it.
 3. Attachments go with a shared client thread, sealed the same way, up to 2.5 MB each.
 4. History: as far back as the Machine has Work mail, through the same labels, in resumable batches.
 5. No look-first delay: sharing starts once a Machine is confirmed.
-
-## Open
-
-1. The CP keeps up to 500 MB per Fleet. A long history with attachments can fill it; the newest goes first, and older
-   threads wait until there is room.
+6. Everything stays on the Machines. The CP is a mailbox: a blob goes once every Machine took it, or after 30 days.
+   Machines catch each other up.

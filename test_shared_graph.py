@@ -1,6 +1,6 @@
 """The Shared Graph (shared_graph.py, docs/shared-graph.md): a Work Fleet's Machines share their Work records, timelines
 and client threads, sealed Machine to Machine. A fake Network stands in for the control plane, honest or not: it keeps
-the sealed blobs and hands them out, and can't read, change, replay or forge them. No network, no model."""
+the sealed blobs until every Machine they were sealed for took them, and can't read, change, replay or forge them. No network, no model."""
 import copy
 import datetime as dt
 import importlib.util
@@ -28,12 +28,20 @@ def ago(days, hours=0):
 
 
 class FakeNetwork:
-    """Membership, roles, public keys and trust statements, as the control plane keeps them, and the graph replica: sealed
-    blobs, with a wrap per recipient, paged by the wraps' own sequence."""
+    """Membership, roles, public keys and trust statements, as the control plane keeps them, and the Network's mailbox:
+    sealed blobs, with a wrap per recipient, paged by the wraps' own sequence, each gone once its Machine took it."""
     def __init__(self):
         self.people = {'own1': ('Olive', 'owner'), 'adm2': ('Ada', 'admin'), 'mem3': ('Mo', 'member')}
         self.keys, self.trust, self.calls, self.blobs, self.wraps = {}, [], [], {}, []
-        self.extra_members = []
+        self.extra_members, self.gone = [], set()
+
+    def held(self):
+        """The blobs the mailbox still holds: those with a wrap nobody took yet."""
+        return {w[0] for n, w in enumerate(self.wraps, 1) if n not in self.gone}
+
+    def expire(self, member):
+        """30 days on: what waited for this Machine is gone from the mailbox."""
+        self.gone |= {n for n, w in enumerate(self.wraps, 1) if w[1] == member}
 
     def directory(self, me):
         if me not in self.people:
@@ -47,7 +55,7 @@ class FakeNetwork:
     def graph_get(self, me, after):
         items = []
         for wseq, (blob_id, to, wrap, by) in enumerate(self.wraps, 1):
-            if wseq > after and to == me:
+            if wseq > after and to == me and wseq not in self.gone:
                 b = self.blobs[blob_id]
                 items.append({'cursor': wseq, 'header': copy.deepcopy(b['header']), 'ct': b['ct'], 'sig': b['sig'], 'wrap': wrap, 'by': by})
         return {'items': items[:50], 'more': len(items) > 50}
@@ -79,10 +87,18 @@ class FakeRelay:
                 for to, wrap in blob['wraps'].items():
                     if to in self.net.people:  # only members of the Fleet
                         self.net.wraps.append((header['id'], to, wrap, self.me))
-            elif body['op'] == 'wrap':
+            elif body['op'] == 'relay':  # passed on as its publisher signed it, a key sealed again for who missed it
+                blob = body['blob']
+                header = blob['header']
+                assert header['kind'] in ('snapshot', 'delta', 'mail', 'file')
+                self.net.blobs.setdefault(header['id'], {k: blob[k] for k in ('header', 'ct', 'sig')})
+                waiting = {w[1] for n, w in enumerate(self.net.wraps, 1) if w[0] == header['id'] and n not in self.net.gone}
                 for to, wrap in body['wraps'].items():
-                    if to in self.net.people:
-                        self.net.wraps.append((body['id'], to, wrap, self.me))
+                    if to in self.net.people and to != self.me and to not in waiting:
+                        self.net.wraps.append((header['id'], to, wrap, self.me))
+            elif body['op'] == 'ack':
+                ids = set(body['ids'])
+                self.net.gone |= {n for n, w in enumerate(self.net.wraps, 1) if w[1] == self.me and w[0] in ids}
             return {'ok': True}
         if route == '/graph':
             after = int(path.split('after=')[1].split('&')[0])
@@ -179,7 +195,7 @@ class SharedGraph(unittest.TestCase):
             self.assertEqual(full['messages'][0]['body'], BODY)
         sent = json.dumps(self.net.calls) + json.dumps(self.net.blobs)
         for text in (BODY, 'Lee Park', 'lee@client.example', 'client.example', 'Renewal quote', 'renewal', HEALTH):
-            self.assertNotIn(text, sent)  # every call and the whole replica: sealed
+            self.assertNotIn(text, sent)  # every call and all the Network held: sealed
 
     def test_personal_never_shared_not_even_that_it_exists(self):
         self.olive_mail()
@@ -344,7 +360,7 @@ class SharedGraph(unittest.TestCase):
             self.assertEqual(self.mem.team_file(db, tid, listed[0]['file']), (b'%PDF-1.4 ', 'application/pdf', 'quote.pdf'))
             with self.assertRaises(ValueError):
                 self.mem.team_file(db, tid, 'f' * 32)
-        self.assertNotIn(nc.b64(b'%PDF-1.4 '), json.dumps(self.net.blobs))  # the replica has it sealed only
+        self.assertNotIn(nc.b64(b'%PDF-1.4 '), json.dumps(self.net.blobs))  # the Network had it sealed only
         self.assertNotIn('quote.pdf', json.dumps(self.net.blobs))
         files = len(self.mail_puts(self.own, 'file'))
         self.assertEqual(files, 2)  # one per message that has it
@@ -418,6 +434,115 @@ class SharedGraph(unittest.TestCase):
         with self.own.store.connect() as db:
             self.assertTrue(db.execute('SELECT left_at FROM team_sources WHERE member=?', ('mem3',)).fetchone()['left_at'])
             self.assertIn('(left)', self.own.team_overview(db, {})['people'][0]['via'])
+
+    # -- the Network as a mailbox, and catching up Machine to Machine
+    def away(self, box, days):
+        """A Machine that was off for this many days: the Network let go of what waited for it."""
+        self.net.expire(box.member_id)
+        box.set_meta('graph_fetched_at', ago(days))
+        want = box.meta('graph_want:' + FLEET)
+        if want:
+            box.set_meta('graph_want:' + FLEET, {**want, 'at': ago(days)})
+
+    def relays(self, to=None):
+        return [c for c in self.net.calls if c[2] == '/graph' and c[3] and c[3].get('op') == 'relay' and (to is None or to in c[3]['wraps'])]
+
+    def test_a_blob_goes_from_the_network_once_every_machine_took_it(self):
+        self.olive_mail()
+        self.rounds()
+        for box in self.boxes:
+            box.graph_fetch()
+        self.assertEqual(self.net.held(), set())  # each Machine took what was sealed for it: the Network keeps nothing
+        self.assertIn('Renewal quote', json.dumps([json.loads(r['body']) for r in self.team(self.mem, 'team_mail')]))
+        kept = {r['kind'] for r in self.team(self.mem, 'team_blobs')}
+        self.assertTrue({'snapshot', 'mail'} <= kept)  # the Machines keep it, to pass on to a teammate who missed it
+        self.assertFalse(kept & {'key', 'ask', 'want'})
+
+    def test_a_machine_away_longer_than_the_network_keeps_catches_up_from_a_teammate(self):
+        self.boxes.remove(self.mem)  # away
+        self.olive_mail()
+        self.add(self.adm, mail('work', 9, 'Kim Wu <kim@globex.example>', 'adm2@acme.example', 'Pilot', 'Pilot starts Monday.', 1, 't-pilot'))
+        self.judge(self.adm, ('work-9', 'client', 'Kim confirmed the pilot'))
+        self.rounds()
+        self.away(self.mem, 40)  # 30 days on: what waited for it is gone
+        self.assertEqual(self.team(self.mem, 'team_mail'), [])
+        self.boxes.append(self.mem)
+        self.rounds(3)
+        threads = json.dumps([json.loads(r['body']) for r in self.team(self.mem, 'team_mail')])
+        self.assertIn('Renewal quote', threads)
+        self.assertIn('Pilot', threads)
+        names = json.dumps(self.team(self.mem))
+        self.assertIn('Lee Park', names)
+        self.assertIn('Kim Wu', names)
+        self.assertTrue(self.relays('mem3'))  # passed on by teammates' Machines, still signed by their publishers
+        self.assertNotIn(HEALTH, json.dumps(self.net.calls) + json.dumps(self.net.blobs))
+        self.assertFalse([c for c in self.relays() if c[3]['blob']['header']['kind'] not in ('snapshot', 'delta', 'mail', 'file')])
+
+    def test_a_new_member_gets_what_went_before_from_teammates(self):
+        self.olive_mail()
+        self.add(self.mem, mail('work', 8, 'Kim Wu <kim@globex.example>', 'mem3@acme.example', 'Pilot', 'Pilot starts Monday.', 2, 't-pilot'))
+        self.judge(self.mem, ('work-8', 'client', 'Kim confirmed the pilot'))
+        self.rounds()
+        del self.net.people['mem3']  # Mo leaves: what they shared stays with the Fleet
+        self.boxes.remove(self.mem)
+        self.rounds()
+        self.net.people['mem4'] = ('Noor', 'member')
+        noor = self.machine('mem4'); self.boxes.append(noor)
+        self.rounds()
+        self.ok(self.adm, 'member', 'Noor')
+        before = len(self.net.calls)
+        self.rounds(4)
+        threads = json.dumps([json.loads(r['body']) for r in self.team(noor, 'team_mail')])
+        self.assertIn('Renewal quote', threads)
+        self.assertIn('Pilot', threads)  # from someone who left, passed on by an admin's Machine
+        self.assertIn('Lee Park', json.dumps(self.team(noor)))
+        mo = [c for c in self.relays('mem4') if c[3]['blob']['header']['from'] == 'mem3']
+        self.assertTrue(mo)
+        self.assertEqual({c[0] for c in mo} - {'own1', 'adm2'}, set())
+        later = [c[3]['blob']['header'] for c in self.net.calls[before:] if c[2] == '/graph' and c[3] and c[3].get('op') == 'put']
+        self.assertFalse([h for h in later if h['kind'] == 'mail'])  # nobody published their threads again for Noor
+
+    def test_only_an_admin_passes_on_what_someone_who_left_shared(self):
+        self.add(self.mem, mail('work', 8, 'Kim Wu <kim@globex.example>', 'mem3@acme.example', 'Pilot', 'Pilot starts Monday.', 2, 't-pilot'))
+        self.judge(self.mem, ('work-8', 'client', 'Kim confirmed the pilot'))
+        self.rounds()
+        self.net.people['mem4'] = ('Noor', 'member')
+        noor = self.machine('mem4'); self.boxes.append(noor)
+        self.rounds()
+        self.ok(self.adm, 'member', 'Noor')
+        self.rounds(4)
+        self.assertIn('Pilot', json.dumps(self.team(noor, 'team_mail')))
+        del self.net.people['mem3']
+        self.rounds()
+        with noor.store.connect() as db:
+            sg.ensure(db)
+            row = dict(db.execute("SELECT * FROM team_blobs WHERE member='mem3' AND kind='mail'").fetchone())
+        header = json.loads(row['header'])
+        wrap = nc.seal({'dk': row['dk'], 'h': row['sha'], 'from_key': self.net.keys['mem3']['sign']}, noor._private(), self.net.keys['adm2'],
+                       sg.wrap_context(header, 'mem4', 'adm2'))
+        with self.assertRaisesRegex(ValueError, 'admin'):  # Noor is a member, not an admin
+            self.adm.graph_take({'header': header, 'ct': row['ct'], 'sig': row['sig'], 'wrap': wrap, 'by': 'mem4'})
+
+    def test_catching_up_goes_newest_first_a_batch_a_round_and_resumes(self):
+        for n in range(6):
+            self.add(self.own, mail('work', 30 + n, 'Lee Park <lee@client.example>', 'own1@acme.example', f'Order {n}', BODY, 20 - n, f't-order{n}'))
+            self.judge(self.own, (f'work-{30 + n}', 'client', f'Lee placed order {n}'))
+        self.boxes.remove(self.mem)
+        self.rounds(4)
+        self.away(self.mem, 40)
+        self.boxes.append(self.mem)
+        old = sg.SERVE_BATCH
+        sg.SERVE_BATCH = 2
+        self.addCleanup(setattr, sg, 'SERVE_BATCH', old)
+        before = len(self.net.calls)
+        self.rounds(8)
+        subjects = [json.loads(r['body'])['subject'] for r in self.team(self.mem, 'team_mail')]
+        self.assertEqual(sorted(s for s in subjects if s.startswith('Order')), [f'Order {n}' for n in range(6)])
+        mail_relays = [c for c in self.net.calls[before:] if c in self.relays('mem3') and c[3]['blob']['header']['kind'] == 'mail' and c[0] == 'own1']
+        seqs = [c[3]['blob']['header']['seq'] for c in mail_relays]
+        self.assertEqual(seqs, sorted(seqs, reverse=True))  # the newest first
+        self.assertEqual(len(seqs), len(set(seqs)))  # each once: it went on where it stopped
+        self.assertGreater(len({c[3]['blob']['header']['id'] for c in mail_relays}), 2)
 
     # -- a dishonest control plane
     def test_a_changed_blob_or_a_forged_one_is_refused(self):
