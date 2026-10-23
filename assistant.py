@@ -6932,6 +6932,19 @@ def task_page(db, suggestion_id):
             'worked': any(p.get('action') in BROWSER_WORK and (want is None or names & {str(p.get('targetId')), str(p.get('label'))}) for p, _ in steps)}
 
 
+def browser_embed(config, host=''):
+    """The viewer on the dashboard's own address, for the dashboard to show it in its main area on a computer, or
+    None: with `browser_vnc` the dashboard's own /browser; on a hosted Machine (its browser_url is the control plane's
+    handoff) the Machine's /browser/, which its proxy serves from the viewer files once they have the short page."""
+    if config.get('browser_vnc') and config.get('dashboard_host'):
+        return browser_viewer.view_link(dashboard_base(config, host), config.get('browser_novnc') or browser_viewer.WEB)
+    url = urllib.parse.urlsplit(str(config.get('browser_url') or ''))
+    web = Path(config.get('browser_novnc') or browser_viewer.WEB).expanduser()
+    if url.scheme == 'https' and url.path == '/open' and url.query == 'to=browser' and (web / 'index.html').is_file():
+        return '/browser/'
+    return None
+
+
 def browser_view_link(config, suggestion_id):
     """The dashboard address that shows a task's page in the Machine's own browser (View in browser, also from
     Telegram): it brings that tab to the front, or reopens it there, then opens the browser's viewer. None without a
@@ -12768,7 +12781,8 @@ class App:
                     asset = BRAND_ASSETS[path.path]
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
                 elif path.path == '/api/status':
-                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'browser_link': browser_link(app.config)})
+                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'browser_link': browser_link(app.config),
+                                      'browser_embed': browser_embed(app.config, self.headers.get('Host', ''))})
                     try:
                         app.store.note_card_shown()
                     except sqlite3.Error as error:
