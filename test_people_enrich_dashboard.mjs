@@ -77,13 +77,16 @@ try{
   assert.ok(text.includes('Springfield, United States')&&text.includes('LinkedIn ↗'),text);
   assert.equal(await page.locator('.graph-detail a[href="https://www.linkedin.com/in/lee-parker-example"][rel="noreferrer"]').count(),1);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  assert.ok(await page.locator('.graph-detail .detail-sub').evaluate(e=>e.scrollWidth<=e.clientWidth),'the contact line wraps, never cut off');
   if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/person-${width}-${scheme}.png`,fullPage:true});
   assert.deepEqual(errors,[]);
   await context.close();
  }
  // Delete permanently: a confirm step of its own, Cancel backs out, Delete removes them and goes back to People.
  const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2}),page=await context.newPage();
- await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+ await context.route('**/*',route=>{const u=new URL(route.request().url());
+  if(u.hostname==='photos.test')return u.pathname==='/lee.svg'?route.fulfill({status:200,contentType:'image/svg+xml',body:FACE}):route.fulfill({status:404});
+  return u.hostname==='127.0.0.1'?route.continue():route.abort()});
  await page.goto('http://127.0.0.1:'+server.address().port);
  await navClick(page.locator('nav [data-tab="people"]'));
  await navClick(page.locator('.side-sub a[data-graph-sub="people"]'));
