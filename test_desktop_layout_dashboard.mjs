@@ -169,7 +169,7 @@ try{
   for(let i=1;i<=6;i++){const x=from[0]+(to[0]-from[0])*i/6,y=from[1]+(to[1]-from[1])*i/6;el.dispatchEvent(new TouchEvent('touchmove',{bubbles:true,touches:[t(x,y)],changedTouches:[t(x,y)]}))}
   el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,touches:[],changedTouches:[t(...to)]}))},[from,to]);
  const isOpen=page=>page.evaluate(()=>document.documentElement.dataset.drawer==='open');
- const settle=page=>page.waitForTimeout(350);
+ const settle=async page=>{await page.waitForTimeout(60);await page.waitForFunction(()=>['#app-side','#drawer-scrim'].every(q=>!document.querySelector(q).getAnimations().length));await page.waitForTimeout(40)};  // the slide is over, also on a busy machine
  // On a phone the whole drawer scrolls as one column (the nav, the cards, then Browser and Settings), with no scroll area
  // inside it: a finger swipe up from the nav reaches Settings and the last card
  {const {context,page}=await open(390,700);
