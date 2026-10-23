@@ -141,7 +141,7 @@ def plan(config_path, workspace=None, openclaw_home=None, left_out=None):
     items = [('file', config_path, 'config/config.json')]
     for path, relative in _files(data, left_out=left_out):
         resolved = path.resolve()
-        if path == config_path or resolved in hosted or path.name in ('machine-token', message_seal.KEY_NAME):
+        if path == config_path or resolved in hosted or path.name in ('machine-token', message_seal.KEY_NAME, message_seal.KEYRING_NAME, message_seal.KEY_NAME + '.moving'):
             continue
         if path.suffix in ('.sqlite', '.db'):
             items.append(('db', path, f'data/{relative}'))

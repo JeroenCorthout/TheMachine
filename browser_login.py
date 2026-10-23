@@ -522,7 +522,8 @@ class LoginStore:
         if key:
             target, data = self.sealed_path, message_seal.Sealer(key).seal_bytes(json.dumps(logins).encode())
         elif message_seal.held_elsewhere(self.sealed_path):
-            raise ValueError('Saved sign-ins wait for the key your hosting keeps; try again in a minute')
+            raise ValueError('Saved sign-ins wait for the message key ' + ('from your keyring' if message_seal.in_keyring(self.sealed_path) else 'your hosting keeps')
+                             + '; try again in a minute')
         else:
             target, data = self.path, self._openssl(json.dumps(logins).encode(), False)
         temp = target.with_name(target.name + '.tmp')
