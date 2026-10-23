@@ -31,7 +31,7 @@ FIRST = ['Mara', 'Jonah', 'Elif', 'Bram', 'Noor', 'Teodor', 'Ayla', 'Caspian', '
          'Leontine', 'Rafe', 'Zuzana', 'Matteo', 'Hanne', 'Kofi', 'Liesel', 'Anouk', 'Thibault', 'Yara', 'Dorian', 'Mila']
 LAST = ['Ashgrove', 'Brightwater', 'Coldwell', 'Dunmore', 'Everly', 'Fairhaven', 'Greystone', 'Hollowell', 'Ingleby',
         'Juniper', 'Kettering', 'Larkspur', 'Merrow', 'Northcott', 'Oakhurst', 'Pemberley', 'Quillon', 'Redfern',
-        'Stanhope', 'Thistlewood', 'Underhay', 'Valemont', 'Westerby', 'Yarrowby']
+        'Stanhope', 'Thistlewood', 'Underhay', 'Valemont', 'Westerby', 'Yarrowby', 'Ashby', 'Calder', 'Dunleavy', 'Hartwell', 'Marlowe', 'Penrose']
 PROJECTS = ['Northwind rollout', 'Pricing page refresh', 'Q4 partner program', 'Harborline pilot', 'Mobile app beta', 'Hiring: support lead']
 
 ACCOUNTS = [  # the owner's sources, as in a config; ids say what they are, never whose
@@ -58,33 +58,128 @@ KIND_ACCOUNT = {  # profile key -> (account, event kind)
     'crm salesflare.meeting': ('work-crm', 'salesflare.meeting'), 'github github.notification': ('work-github', 'github.notification'),
 }
 
-EMAIL_TOPICS = [
-    ('Pricing for {n} seats', 'Hi {owner},\n\nWe are comparing three tools for our sales team of {n}. Could you send pricing for annual billing, and tell me whether onboarding is included? We would like to decide before the end of the month.\n\nThanks,\n{first}'),
-    ('Re: Demo next week', 'Hi {owner},\n\nThursday at 14:00 works for us. I will bring {other} from operations. Could you show how the reminders work for shared inboxes?\n\nBest,\n{first}'),
-    ('Invoice {inv} overdue', 'Hello,\n\nOur records show invoice {inv} is 14 days overdue. Could you let us know when we can expect payment, or whether something is wrong with it?\n\nKind regards,\n{first}\nAccounts, {company}'),
-    ('Partnership idea', 'Hi {owner},\n\nI run partnerships at {company}. Our customers keep asking for a CRM integration and yours came up three times this month. Open to a 20 minute call to explore?\n\n{first}'),
-    ('Contract redlines', 'Hi {owner},\n\nAttached are our legal team\'s redlines. Two points matter most to us: the liability cap in section 9 and the data retention period. The rest is cosmetic.\n\nCheers,\n{first}'),
-    ('Quick question about the API', 'Hey {owner},\n\nIs there a rate limit on the contacts endpoint? Our sync job hits a 429 around 3,000 requests. Logs: https://status.{domain}/incidents/2026/10/very-long-path-to-check-wrapping-of-unbroken-links-in-cards-and-previews\n\n{first}'),
-    ('Intro: {first} <> {owner}', 'Hi both,\n\nAs promised, connecting you two. {first} leads growth at {company} and is looking at tooling for their account managers. I will let you take it from here.\n\nBest,\n{other}'),
+EMAIL_TOPICS = [  # the crowd's earlier mail: other topics than the open cards, so no card's story shows up twice
+    ('Renewal quote for {company}', 'Hi {owner},\n\nOur plan renews next month. Could you send a renewal quote for {n} seats? Finance wants it in this quarter.\n\nThanks,\n{first}'),
+    ('Security questionnaire', 'Hi {owner},\n\nOur IT team sent the attached security questionnaire. Could you fill it in by Friday? Most of it is about where data is stored.\n\nBest,\n{first}'),
+    ('Receipt for {inv}', 'Hello,\n\nCould you send a copy of the receipt for {inv}? Our bookkeeper needs it with the company address on it.\n\nKind regards,\n{first}\nAccounts, {company}'),
+    ('Webinar recording?', 'Hi {owner},\n\nI missed the webinar on Tuesday. Is there a recording I can share with {other}?\n\n{first}'),
+    ('Exporting contacts to CSV', 'Hey {owner},\n\nHow do I export contacts with their custom fields? The export I tried had only names. Notes: https://wiki.{domain}/crm/exports/2026/10/very-long-path-to-check-wrapping-of-unbroken-links-in-cards-and-previews\n\n{first}'),
+    ('Onboarding for new hires', 'Hi {owner},\n\nWe hired {n} new account managers. Could we book an onboarding session for them in the first week of November?\n\n{first}'),
+    ('Case study draft', 'Hi {owner},\n\nThe case study draft looks good. Two small changes from our side are in the doc. Happy for it to go live after that.\n\n{first}'),
     ('Following up on our call', 'Hi {owner},\n\nThanks for the time today. As discussed: a pilot for 10 users starting the 3rd, success criteria by Friday, and a check-in after two weeks. Did I miss anything?\n\n{first}'),
 ]
-SLACK = [('#sales', 'Can someone take the {company} renewal call tomorrow? I am out.'), ('#support', 'Heads up: {company} reports duplicate reminders since this morning.'),
+SLACK = [('#sales', 'Can someone take the {company} renewal call tomorrow? I am out.'), ('#support', '{company} asks whether the Outlook add-in works on Mac. Anyone tried?'),
          ('#product', 'Draft spec for bulk actions is in the doc, comments welcome before Thursday.'), ('#general', 'Lunch order closes at 11:30 today.'),
          ('Direct message', '{owner}, did you see the email from {first} at {company}? They want an answer today.'),
          ('#sales', 'Won {company} 🎉 47 seats, annual.'), ('#support', 'Who knows the history with {company}? Their admin is asking about an old discount.')]
 INTERCOM = ['How do I export all contacts with their custom fields?', 'We were charged twice this month, can you check?',
             'Is there a way to bulk assign accounts to a teammate?', 'The Outlook add-in shows a blank panel after the update.',
             'Can we get an extension of our trial for two more weeks?', 'Does your API support webhooks for deal stage changes?']
-WHATSAPP = [('Morgan family', 'Who picks up the kids on Wednesday? I have a dentist appointment at 4.'), ('Morgan family', 'Groceries: oat milk, apples, bread, birthday candles 🎂'),
+FOLLOW_UPS = ['For context: we are on the Growth plan, about 15 users.', 'Thanks, that worked.', 'One more question: can teammates see each other’s notes?', 'Great, we will try it this week.']
+LINKEDIN = ['Hi Alex, saw your post about shared inboxes. We are hiring at {company}, any advice on tooling?',
+            'We are 12 in sales now, mostly on Outlook. Does that change anything?', 'Thanks, that helps. I will start a trial next week.']
+WHATSAPP = [('Morgan family', 'Groceries: oat milk, apples, bread, birthday candles 🎂'),
             ('Sam Whitlock', 'Tennis Saturday at 10? Court 3 is free.'), ('Dana Kerrigan', 'Sending you the photos from the weekend tonight'),
-            ('Football parents', 'Match moved to 9:30, bring the orange shirts'), ('Robin Morgan', 'Can you book the car service before Friday?')]
+            ('Football parents', 'Match moved to 9:30, bring the orange shirts'), ('Sam Whitlock', 'Bring the spare racket, mine snapped a string')]
 ANDROID = [('Bank', 'Card payment of €42.10 at Orchard Street Bakery'), ('Parcel', 'Your parcel arrives today between 13:00 and 15:00'),
            ('Calendar', 'Pilot check-in in 15 minutes'), ('Train', 'Your 08:12 train is 6 minutes late'), ('Weather', 'Rain expected from 16:00')]
 
 
-def person(rng, used):
-    while True:
-        name = rng.choice(FIRST) + ' ' + rng.choice(LAST)
+# One story per open card: its own people, its own thread (several messages, both ways) and a draft written for it,
+# so a card's chat, its sources and its Graph pages all tell the same story. (m, me, subject, body): minutes ago,
+# whether the owner wrote it. Bodies use {first} for the person, the rest is spelled out.
+STORIES = [
+    {'key': 'pricing', 'person': ('Mila Underhay', 'Northwind Analytics'), 'project': 'Northwind rollout', 'status': 'prepared', 'urgent': True, 'minutes': 20,
+     'title': 'Reply to Mila about pricing for Northwind Analytics',
+     'body': 'They want annual pricing for 25 seats, maybe 40 next year, and whether onboarding is included. They decide this month.',
+     'thread': [(2900, False, 'Pricing for our sales team', 'Hi Alex,\n\nWe are comparing three tools for our sales team. Could you send pricing for annual billing?\n\nThanks,\nMila'),
+                (1500, True, 'Re: Pricing for our sales team', 'Hi Mila,\n\nHappy to. How many seats are you thinking of, to start and in a year?\n\nAlex'),
+                (45, False, 'Re: Pricing for our sales team', 'Hi Alex,\n\n25 seats to start, probably 40 by next autumn. Is onboarding included at that size? We want to decide before the end of the month.\n\nMila')],
+     'draft': ('email', 'Hi Mila,\n\nFor 25 seats on annual billing it is €29 a seat a month, so €8,700 for the year. Moving to 40 seats later keeps the same price per seat.\n\nOnboarding is included from 10 seats: two live sessions for your team and a call with your admin.\n\nWould Thursday or Friday suit for a short call to walk through it?\n\nBest,\nAlex')},
+    {'key': 'demo', 'person': ('Hanne Ashgrove', 'Brightpath Logistics'), 'status': 'pending', 'minutes': 70,
+     'title': 'Prepare for the Brightpath Logistics demo',
+     'body': 'Thursday 14:00 with Hanne and Elif from operations. They want to see reminders on shared inboxes.',
+     'thread': [(4300, True, 'Demo next week?', 'Hi Hanne,\n\nGood to meet you at the meetup. Would a 45 minute demo next week work?\n\nAlex'),
+                (190, False, 'Re: Demo next week?', 'Hi Alex,\n\nThursday at 14:00 works for us. I will bring Elif from operations. Could you show how reminders work for shared inboxes? That is our main pain.\n\nBest,\nHanne')]},
+    {'key': 'invoice', 'person': ('Caspian Northcott', 'Cobalt & Finch'), 'status': 'prepared', 'urgent': True, 'minutes': 110,
+     'title': 'Answer Cobalt & Finch about invoice INV-4821',
+     'body': 'Their second reminder: INV-4821 is 14 days overdue. Stripe shows the card payment failed on the 9th.',
+     'thread': [(10300, False, 'Invoice INV-4821', 'Hello,\n\nPlease find attached invoice INV-4821 for October, due in 7 days.\n\nKind regards,\nCaspian\nAccounts, Cobalt & Finch'),
+                (240, False, 'Re: Invoice INV-4821 overdue', 'Hello,\n\nOur records show INV-4821 is now 14 days overdue. Could you let us know when we can expect payment, or whether something is wrong with it?\n\nKind regards,\nCaspian')],
+     'draft': ('email', 'Hi Caspian,\n\nSorry about this. The card payment for INV-4821 failed on the 9th because the card on file had expired. I have updated it and paid the invoice this morning, so it should show on your side today.\n\nThanks for the reminder,\nAlex')},
+    {'key': 'api', 'person': ('Jonah Kettering', 'Glasswing Apps'), 'status': 'prepared', 'minutes': 180, 'job': True,
+     'title': "Answer Jonah's API rate limit question",
+     'body': 'Their nightly sync gets 429 errors after about 3,000 requests. A short answer with the limit and a fix.',
+     'thread': [(600, False, 'Rate limit on the contacts endpoint?', 'Hey Alex,\n\nIs there a rate limit on the contacts endpoint? Our nightly sync starts getting 429s after about 3,000 requests.\n\nJonah'),
+                (420, True, 'Re: Rate limit on the contacts endpoint?', 'Hi Jonah,\n\nThere is. Let me check the exact numbers with the team and come back to you today.\n\nAlex'),
+                (300, False, 'Re: Rate limit on the contacts endpoint?', 'Thanks! If it helps, it is one API key, and we page through 100 contacts at a time.\n\nJonah')],
+     'draft': ('email', 'Hi Jonah,\n\nThe contacts endpoint allows 600 requests a minute per API key. Past that it answers 429 with a Retry-After header, so waiting that many seconds and going on is enough.\n\nWith 100 contacts per page your sync stays under the limit with a short pause every 600 pages. Or use the bulk export, which needs one request for everything.\n\nAlex')},
+    {'key': 'recap', 'person': ('Wren Fairhaven', 'Harborline Health'), 'project': 'Harborline pilot', 'status': 'pending', 'minutes': 230,
+     'title': 'Send Wren the pilot recap',
+     'body': 'You promised a written recap of the pilot after Tuesday’s call: 10 users from the 3rd, check-in after two weeks.',
+     'thread': [(1600, True, 'Pilot call Tuesday', 'Hi Wren,\n\nLooking forward to Tuesday. I will send a written recap after the call.\n\nAlex'),
+                (1300, False, 'Re: Pilot call Tuesday', 'Thanks for the time today. A recap would help, I need it for our IT lead before Friday.\n\nWren')],
+     'draft': ('email', 'Hi Wren,\n\nHere is the recap of Tuesday’s call:\n\n- Pilot for 10 users, starting on the 3rd\n- Success means fewer missed follow-ups and one shared view of the pipeline\n- Your IT lead gets the security answers by Friday\n- We check in after two weeks to decide on the rollout\n\nTell me if I missed anything.\n\nAlex')},
+    {'key': 'partner', 'person': ('Dorian Yarrowby', 'Pinecrest Legal'), 'project': 'Q4 partner program', 'status': 'pending', 'minutes': 290,
+     'title': 'Decide on the Pinecrest Legal partnership call',
+     'body': 'Dorian asks for 20 minutes about an integration their clients keep asking for.',
+     'thread': [(3000, False, 'Partnership idea', 'Hi Alex,\n\nI run partnerships at Pinecrest Legal. Our clients keep asking for a CRM integration and yours came up three times this month.\n\nDorian'),
+                (2800, True, 'Re: Partnership idea', 'Hi Dorian,\n\nInteresting. What do you have in mind?\n\nAlex'),
+                (330, False, 'Re: Partnership idea', 'A shared client list and matter updates flowing into your timeline. Open to a 20 minute call next week?\n\nDorian')]},
+    {'key': 'redlines', 'person': ('Anouk Valemont', 'Vantage Rail'), 'status': 'snoozed', 'snooze_hours': 50, 'minutes': 340,
+     'title': 'Review the contract redlines from Vantage Rail',
+     'body': 'Two points matter to them: the liability cap in section 9 and the data retention period.',
+     'thread': [(380, False, 'Contract redlines', 'Hi Alex,\n\nAttached are our legal team’s redlines. Two points matter most to us: the liability cap in section 9 and the data retention period. The rest is cosmetic.\n\nCheers,\nAnouk')]},
+    {'key': 'support', 'slack': True, 'company': 'Tidewater Foods', 'status': 'prepared', 'minutes': 400,
+     'title': 'Reply in #support about duplicate reminders',
+     'body': 'Tidewater Foods gets every reminder twice since this morning’s deploy. Priya and Tomasz are on the thread.',
+     'slack_thread': [(460, 'Priya Okonedo', 'Heads up: Tidewater Foods reports duplicate reminders since this morning.'),
+                      (450, 'Tomasz Varga', 'Seeing it too, only for teams with shared inboxes. Started around 08:00.'),
+                      (440, 'Priya Okonedo', 'Alex, can you tell them what is going on? Their admin is asking.')],
+     'draft': ('slack', 'Looking into it now. It started with the 08:00 deploy and only hits shared inboxes. I will post here and tell Tidewater once it is fixed, within the hour.')},
+    {'key': 'car', 'family': True, 'status': 'pending', 'minutes': 520,
+     'title': 'Book the car service before Friday', 'body': 'Robin asked on WhatsApp; the garage needs a day’s notice.',
+     'chat': ('Robin Morgan', [(560, False, 'Can you book the car service before Friday? The garage needs a day’s notice.'),
+                               (545, True, 'Sure. Same garage as last time?'),
+                               (530, False, 'Yes, Linden Motors. Thursday morning is best, I need the car in the afternoon.')])},
+    {'key': 'kids', 'family': True, 'status': 'prepared', 'minutes': 580,
+     'title': 'Who picks up the kids on Wednesday?', 'body': 'Robin has the dentist at 4 and Jules has practice. Your calendar is free after 15:00.',
+     'group': ('Morgan family', [(700, 'Robin Morgan', 'Who picks up the kids on Wednesday? I have a dentist appointment at 4.'),
+                                 (690, 'Jules Morgan', 'Not me, I have practice until 5.'),
+                                 (650, 'Robin Morgan', 'Alex?')]),
+     'draft': ('whatsapp', 'I can do Wednesday. I will leave work at 15:30 and pick them up at 4.')},
+    {'key': 'intro', 'person': ('Matteo Brightwater', 'Kestrel Energy'), 'status': 'pending', 'minutes': 640,
+     'title': 'Thank Matteo for the intro to Sunniva',
+     'body': 'Matteo connected you with Sunniva at Quarry Lane Studios, who already booked a call.',
+     'thread': [(2000, False, 'Intro: Sunniva <> Alex', 'Hi both,\n\nAs promised, connecting you two. Sunniva leads growth at Quarry Lane Studios and is looking at tooling for their account managers. I will let you take it from here.\n\nBest,\nMatteo')],
+     'others': [('Sunniva Juniper', 'Quarry Lane Studios', (1700, False, 'Re: Intro: Sunniva <> Alex', 'Thanks Matteo! Alex, I booked a slot for next Tuesday. Looking forward to it.\n\nSunniva'))],
+     'draft': ('email', 'Hi Matteo,\n\nThank you for the intro. Sunniva and I talk on Tuesday. I owe you a coffee next time you are in town.\n\nAlex')},
+    {'key': 'quiet', 'person': ('Yara Oakhurst', 'Saltmarsh Media'), 'project': 'Q4 partner program', 'status': 'pending', 'minutes': 700,
+     'title': 'Follow up with Yara: no reply in 6 days', 'body': 'You sent the proposal for a co-marketing webinar last week and heard nothing since.',
+     'thread': [(9000, False, 'Webinar together?', 'Hi Alex,\n\nWould you be up for a joint webinar in November? Our audience asks about follow-up habits a lot.\n\nYara'),
+                (8700, True, 'Re: Webinar together?', 'Hi Yara,\n\nLove it. Proposal attached: 45 minutes on the 19th, you host, we bring the case study.\n\nAlex')],
+     'draft': ('email', 'Hi Yara,\n\nChecking in on the webinar proposal. Does the 19th still work for you? If November is too tight, December is fine too.\n\nAlex')},
+]
+
+# Closed cards, one per earlier email: what the card said, by the email's topic (EMAIL_TOPICS order)
+CLOSED_TITLES = ['Send {company} the renewal quote', 'Fill in the security questionnaire for {company}', 'Send {company} the receipt',
+                 'Send {first} the webinar recording', 'Answer {first} about exports', 'Book onboarding with {company}',
+                 'Approve the {company} case study', 'Confirm the pilot plan with {first}']
+# Promises, each in its story's thread: (direction, story, message, who, what, due in days, status)
+PROMISES = [('mine', 'recap', 0, 'Wren Fairhaven', 'send the pilot recap', 0, 'open'), ('mine', 'api', 1, 'Jonah Kettering', 'come back with the rate limits today', 0, 'open'),
+            ('mine', 'pricing', 1, 'Mila Underhay', 'send annual pricing', 1, 'open'), ('mine', 'demo', 0, 'Hanne Ashgrove', 'show reminders on shared inboxes', 3, 'open'),
+            ('theirs', 'recap', 1, 'Wren Fairhaven', 'get the IT lead’s security questions', 2, 'open'), ('theirs', 'intro', 1, 'Sunniva Juniper', 'book a call', -1, 'kept'),
+            ('theirs', 'partner', 2, 'Dorian Yarrowby', 'send their integration wish list', 5, 'open'), ('theirs', 'invoice', 1, 'Caspian Northcott', 'confirm the payment arrived', 1, 'open')]
+# A card handed to Claude Code, with its result (agent_jobs.py), and sign-ins saved for the browser (browser_login.py)
+JOB = {'story': 'api', 'tool': 'claude', 'files': ['rate-limits.md'],
+       'summary': 'Checked the API docs: the contacts endpoint allows 600 requests a minute per key and answers 429 with Retry-After past that.\n\n'
+                  'Wrote the answer in rate-limits.md, with the bulk export as the faster option.'}
+SAVED_LOGINS = [('billing.cobaltandfinch.example', 'alex@lumenlabs.example'), ('portal.vantagerail.example', 'alex.morgan')]
+
+
+def person(rng, used, avoid=()):
+    while True:  # avoid: the stories' first and last names, so a name in a card is never someone else
+        name = rng.choice([f for f in FIRST if f not in avoid]) + ' ' + rng.choice([n for n in LAST if n not in avoid])
         if name not in used:
             used.add(name)
             return name
@@ -96,15 +191,36 @@ def slug(text):
 
 def build(profile):
     rng = random.Random(SEED)
-    used = set()
+    cast = {}  # the stories' people: their own threads only, never a random email
+    for story in STORIES:
+        for name, company in [story['person']] if 'person' in story else []:
+            cast[name] = company
+        for name, company, _ in story.get('others', []):
+            cast[name] = company
+    cast['Elif Everly'] = 'Brightpath Logistics'
+    used = set(cast)
     companies = [{'name': c, 'domain': slug(c.replace('&', 'and')) + '.example'} for c in COMPANIES]
-    people = []
+    domain = {c['name']: c['domain'] for c in companies}
+    people = [{'name': n, 'email': f"{n.split()[0].lower()}@{domain[c]}", 'company': c, 'domain': domain[c], 'story': True} for n, c in cast.items()]
+    crowd = []
     for company in companies:
         for _ in range(rng.choice((1, 2, 2, 3))):
-            name = person(rng, used)
+            name = person(rng, used, {part for n in cast for part in n.split()})
             first = name.split()[0]
-            people.append({'name': name, 'email': f"{first.lower()}@{company['domain']}", 'company': company['name'], 'domain': company['domain']})
+            crowd.append({'name': name, 'email': f"{first.lower()}@{company['domain']}", 'company': company['name'], 'domain': company['domain']})
+    people += crowd
+    regulars = [p for p in people if p.get('story')] * 5
     events = []
+    topics = {}  # an earlier email's key: (topic, person), for the closed cards
+    said = {}  # (kind, person): messages so far in their conversation
+    last = {}  # (kind, person): when their conversation last moved
+
+    def reply_at(kind, p, minutes, n):
+        """A follow-up comes soon after the message before it, the way a chat goes (the Graph groups those)."""
+        if n:
+            minutes = max(1, last[kind, p['name']] - rng.randint(3, 25))
+        last[kind, p['name']] = minutes
+        return minutes
     days = 7
 
     def add(account, kind, minutes, title, body, meta, key):
@@ -118,11 +234,13 @@ def build(profile):
         total = max(total, 16) if kind == 'calendar.event' else total  # a busy week has meetings
         for i in range(total):
             minutes = int(rng.betavariate(1, 3) * days * 24 * 60) + rng.randint(1, 30)  # busier today than last week
-            p = rng.choice(people)
-            other = rng.choice(people)['name'].split()[0]
+            p = rng.choice(crowd + regulars if kind in ('calendar.event', 'salesflare.meeting') else crowd)  # the stories' people meet too
+            other = rng.choice(crowd)['name'].split()[0]
             key = f'{kind}:{i}'
             if kind in ('gmail.message', 'salesflare.email'):
-                subject, text = rng.choice(EMAIL_TOPICS)
+                topic = rng.randrange(len(EMAIL_TOPICS))
+                subject, text = EMAIL_TOPICS[topic]
+                topics[key] = (topic, p)
                 fill = dict(n=rng.choice((8, 12, 25, 40, 120)), owner='Alex', first=p['name'].split()[0], other=other, company=p['company'],
                             inv=f'INV-{rng.randint(1000, 9999)}', domain=p['domain'])
                 thread = f't{rng.randint(10**11, 10**12)}'
@@ -139,22 +257,28 @@ def build(profile):
             elif kind == 'slack.message':
                 channel, text = rng.choice(SLACK)
                 add(account, kind, minutes, f"{channel}: {TEAM[i % 3]['name']}", text.format(company=p['company'], owner='Alex', first=p['name'].split()[0]),
-                    {'channel_name': channel, 'conversation_type': 'im' if channel == 'Direct message' else 'channel', 'user_id': f'U{1000 + i % 3}',
+                    {'channel_name': channel.lstrip('#'), 'conversation_type': 'im' if channel == 'Direct message' else 'channel', 'user_id': f'U{1000 + i % 3}',
                      'message_ts': f'17610{i:05d}.000100', 'reply_count': rng.choice((0, 0, 1, 4)), 'source_url': f'https://lumenlabs.slack.example/archives/C1/p{i}'}, key)
-            elif kind == 'intercom.conversation':
-                add(account, kind, minutes, f"{p['name']} ({p['company']})", rng.choice(INTERCOM),
+            elif kind == 'intercom.conversation':  # one conversation per person, so the Graph shows it as one row
+                n = said[kind, p['name']] = said.get((kind, p['name']), -1) + 1
+                minutes = reply_at(kind, p, minutes, n)
+                conversation = 9000 + people.index(p)
+                add(account, kind, minutes, f"{p['name']} ({p['company']})", INTERCOM[people.index(p) % len(INTERCOM)] if n == 0 else FOLLOW_UPS[(n - 1) % len(FOLLOW_UPS)],
                     {'from': p['email'], 'state': rng.choice(('open', 'open', 'closed')), 'priority': rng.random() < 0.2,
-                     'conversation_id': str(9000 + i), 'source_url': f'https://inbox.example/conversation/{9000 + i}'}, key)
+                     'conversation_id': str(conversation), 'source_url': f'https://inbox.example/conversation/{conversation}'}, key)
             elif kind == 'whatsapp.message':
                 chat, text = rng.choice(WHATSAPP)
-                add(account, kind, minutes, chat, text, {'chat_name': chat, 'from_me': rng.random() < 0.3, 'group': chat in ('Morgan family', 'Football parents'),
+                add(account, kind, minutes, chat, text, {'chat_name': chat, 'chat_id': slug(chat), 'from_me': rng.random() < 0.3, 'group': chat in ('Morgan family', 'Football parents'),
                      'sender_display': chat if chat not in ('Morgan family', 'Football parents') else 'Robin Morgan', 'message_id': f'wa{i}'}, key)
             elif kind == 'android.notification':
                 app, text = rng.choice(ANDROID)
                 add(account, kind, minutes, app, text, {'app_name': app, 'package_name': 'example.' + app.lower(), 'truncated': False}, key)
             elif kind == 'linkedin.message':
-                add(account, kind, minutes, p['name'], f"Hi Alex, saw your post about shared inboxes. We are hiring at {p['company']}, any advice on tooling?",
-                    {'from': p['name'], 'headline': f"Head of Sales at {p['company']}", 'conversation_id': f'li{i}', 'source_url': f'https://linkedin.example/messaging/{i}'}, key)
+                n = said[kind, p['name']] = said.get((kind, p['name']), -1) + 1
+                minutes = reply_at(kind, p, minutes, n)
+                add(account, kind, minutes, p['name'], LINKEDIN[n % len(LINKEDIN)].format(company=p['company']),
+                    {'from': p['name'], 'headline': f"Head of Sales at {p['company']}", 'conversation_id': 'li-' + slug(p['name']),
+                     'source_url': 'https://linkedin.example/messaging/' + slug(p['name'])}, key)
             elif kind == 'x.mention':
                 add(account, kind, minutes, f"@{slug(p['name'])[:12]}", f"@lumenlabs does the new reminder feature work with shared inboxes? asking for {p['company']}",
                     {'screen_name': slug(p['name'])[:12], 'followers': rng.randint(40, 9000), 'source_url': f'https://x.example/status/{i}'}, key)
@@ -168,63 +292,88 @@ def build(profile):
             elif kind == 'github.notification':
                 add(account, kind, minutes, f"PR #{300 + i}: Fix duplicate reminders", 'Review requested.',
                     {'repo': 'lumenlabs/app', 'number': 300 + i, 'type': 'PullRequest', 'reason': 'review_requested', 'source_url': f'https://github.example/lumenlabs/app/pull/{300 + i}'}, key)
+    person_of = {p['name']: p for p in people}
+    cards, keys = [], {}
+
+    def mail(story, n, m, me, subject, body, p, thread):
+        key = f"story:{story['key']}:{n}"
+        frm, to = (f"{OWNER['name']} <{OWNER['email']}>", p['email']) if me else (f"{p['name']} <{p['email']}>", OWNER['email'])
+        add('work-gmail', 'gmail.message', m, subject, body, {'from': frm, 'to': to, 'labels': ['SENT'] if me else ['INBOX'] + (['UNREAD'] if m < 600 else []),
+            'thread_id': thread, 'message-id': f'<{thread}.{n}@{p["domain"] if not me else OWNER["domain"]}>', 'source_url': f'https://mail.example/#inbox/{thread}'}, key)
+        return key
+
+    for i, story in enumerate(STORIES):
+        out = keys[story['key']] = []
+        if 'person' in story:
+            p = person_of[story['person'][0]]
+            thread = f't-{story["key"]}'
+            for n, (m, me, subject, body) in enumerate(story['thread']):
+                out.append(mail(story, n, m, me, subject, body, p, thread))
+            for name, _, (m, me, subject, body) in story.get('others', []):
+                out.append(mail(story, len(out), m, me, subject, body, person_of[name], thread))
+            account, source, to = 'work-gmail', 'email from ' + p['name'], p
+        elif 'slack_thread' in story:
+            first = story['slack_thread'][0][0]
+            for n, (m, who, text) in enumerate(story['slack_thread']):
+                key = f"story:{story['key']}:{n}"
+                add('work-slack', 'slack.message', m, f'#support: {who}', text, {'channel_name': 'support', 'channel_id': 'C0SUPPORT', 'conversation_type': 'channel',
+                    'user_id': f'U{2000 + n}', 'message_ts': f'1761{m:06d}.000100', 'thread_ts': f'1761{first:06d}.000100', 'reply_count': 2 if n == 0 else 0,
+                    'source_url': f'https://lumenlabs.slack.example/archives/C0SUPPORT/p{first}'}, key)
+                out.append(key)
+            account, source, to = 'work-slack', 'Slack #support', None
+        else:
+            chat, lines = story.get('chat') or story['group']
+            group = 'group' in story
+            for n, line in enumerate(lines):
+                m, who, text = (line[0], None if line[1] else chat, line[2]) if not group else line
+                key = f"story:{story['key']}:{n}"
+                add('home-whatsapp', 'whatsapp.message', m, chat, text, {'chat_name': chat, 'chat_id': slug(chat), 'from_me': who is None, 'group': group,
+                    **({'sender_display': who} if who else {}), 'message_id': f"wa-{story['key']}-{n}"}, key)
+                out.append(key)
+            account, source, to = 'home-whatsapp', 'WhatsApp from Robin Morgan', None
+        card = {'key': 'open' + str(i), 'title': story['title'], 'body': story['body'], 'status': story['status'], 'events': out, 'accounts': [account],
+                'minutes_ago': story['minutes'], 'source': source, 'project': story.get('project'), 'urgent': bool(story.get('urgent')),
+                'snooze_hours': story.get('snooze_hours')}
+        kind, body = story.get('draft') or (None, None)
+        if kind == 'email':
+            last = story['thread'][-1][2]
+            card['next_action'] = {'kind': 'email', 'account_id': 'work-gmail', 'from': OWNER['email'], 'to': [to['email']], 'cc': [], 'bcc': [],
+                                   'subject': last if last.startswith('Re: ') else 'Re: ' + last, 'label': 'Send to ' + to['name'].split()[0], 'to_name': to['name'],
+                                   'body': body, 'revision': f'rev{i:04d}'}
+        elif kind == 'slack':
+            card['next_action'] = {'kind': 'slack', 'account_id': 'work-slack', 'to_name': '#support', 'body': body, 'label': 'Reply in #support', 'revision': f'rev{i:04d}'}
+        elif kind == 'whatsapp':
+            card['next_action'] = {'kind': 'whatsapp', 'account_id': 'home-whatsapp', 'to_name': 'Morgan family', 'chat_id': 'morganfamily', 'body': body,
+                                   'label': 'Send to Morgan family', 'revision': f'rev{i:04d}'}
+        cards.append(card)
+    hanne = person_of['Hanne Ashgrove']
+    add('work-calendar', 'calendar.event', -2900, 'Demo with Brightpath Logistics', 'Video call. Hanne and Elif from operations: reminders on shared inboxes.',
+        {'attendees': [OWNER['email'], hanne['email'], person_of['Elif Everly']['email']], 'organizer': OWNER['email'], 'start_minutes_ago': -2900,
+         'duration_minutes': 45, 'status': 'confirmed', 'location': 'https://meet.example/brightpath-demo', 'source_url': 'https://calendar.example/event/brightpath-demo'}, 'story:demo:meeting')
+    cards[1]['events'].append('story:demo:meeting')
+    add('work-stripe', 'stripe.event', 20160, 'invoice.payment_failed', 'Cobalt & Finch: €1,180.00, card expired',
+        {'customer_name': 'Cobalt & Finch', 'type': 'invoice', 'source_url': 'https://dashboard.stripe.example/invoices/inv-4821'}, 'story:invoice:stripe')
+    cards[2]['events'].append('story:invoice:stripe')
     events.sort(key=lambda e: -e['minutes_ago'])
 
-    def pick(kind, n):
-        return [e['key'] for e in events if e['kind'] == kind][-n:]
-
-    gmail = pick('gmail.message', 30)
-    cards = []
-    open_titles = [
-        ('Reply to {first} about pricing for {company}', 'They asked for annual pricing for their team and whether onboarding is included. They want to decide this month.', 'email', True),
-        ('Prepare for the {company} demo', 'Thursday 14:00. Two attendees; they asked how reminders work for shared inboxes.', 'prepare', False),
-        ('Chase the overdue invoice with {company}', 'Their accounts team says an invoice is 14 days overdue. Check what went wrong before replying.', 'email', True),
-        ('Answer {first}\'s API rate limit question', 'Their sync job hits 429s around 3,000 requests. A short answer with the documented limits and a workaround.', 'email', True),
-        ('Send {first} the pilot recap', 'You promised a written recap of the pilot scope after the call.', 'email', True),
-        ('Decide on the {company} partnership call', 'Their partnerships lead wants 20 minutes to explore an integration.', None, False),
-        ('Review the contract redlines from {company}', 'Two points matter: the liability cap in section 9 and data retention.', None, False),
-        ('Reply in #support about duplicate reminders', 'A teammate flagged duplicate reminders for {company} this morning.', 'slack', True),
-        ('Book the car service before Friday', 'Robin asked on WhatsApp.', None, False),
-        ('Who picks up the kids on Wednesday?', 'Robin has a dentist appointment at 4.', 'whatsapp', True),
-        ('Thank {first} for the intro', 'They connected you with someone at {company}.', 'email', True),
-        ('Follow up with {first}: no reply in 6 days', 'You sent a proposal last week and heard nothing since.', 'email', True),
-    ]
-    for i, (title, body, action, draft) in enumerate(open_titles):
-        p = people[(i * 3) % len(people)]
-        fill = dict(first=p['name'].split()[0], company=p['company'])
-        work = 'Robin' not in body and 'kids' not in title
-        status = 'prepared' if draft and i % 3 == 0 else 'snoozed' if i in (6,) else 'pending'
-        card = {'key': f'open{i}', 'title': title.format(**fill), 'body': body.format(**fill), 'status': status,
-                'events': [gmail[i]] if work else [pick('whatsapp.message', 12)[i % 12]], 'accounts': ['work-gmail'] if work else ['home-whatsapp'],
-                'minutes_ago': 20 + i * 47, 'source': ('email from ' + p['name']) if work else 'WhatsApp from Robin Morgan',
-                'project': PROJECTS[i % len(PROJECTS)] if work and i % 2 == 0 else None, 'urgent': i in (0, 2), 'snooze_hours': 50 if status == 'snoozed' else None}
-        if draft and action == 'email':
-            card['next_action'] = {'kind': 'email', 'account_id': 'work-gmail', 'from': OWNER['email'], 'to': [p['email']], 'cc': [], 'bcc': [],
-                                   'subject': 'Re: ' + card['title'].split(' about ')[-1], 'label': 'Send to ' + p['name'].split()[0], 'to_name': p['name'],
-                                   'body': f"Hi {p['name'].split()[0]},\n\nThanks for your message. Here is what you asked for, in short:\n\n- Annual billing is 20% below monthly\n- Onboarding is included for teams over 10 seats\n- We can start a pilot next week\n\nWould Thursday work for a quick call?\n\nBest,\nAlex",
-                                   'revision': f'rev{i:04d}'}
-        elif draft and action == 'slack':
-            card['next_action'] = {'kind': 'slack', 'account_id': 'work-slack', 'to_name': '#support', 'body': 'Looking into it now; it started with the 08:00 deploy. Update within the hour.',
-                                   'label': 'Reply in #support', 'revision': f'rev{i:04d}'}
-        elif draft and action == 'whatsapp':
-            card['next_action'] = {'kind': 'whatsapp', 'account_id': 'home-whatsapp', 'to_name': 'Robin Morgan', 'chat_id': 'robin', 'body': 'I can do Wednesday, I will leave at 3:30.',
-                                   'label': 'Send to Robin', 'revision': f'rev{i:04d}'}
-        cards.append(card)
     closed = profile['cards_by_status']
-    for i in range(min(40, closed.get('completed', 0) + closed.get('rejected', 0))):
-        p = people[(i * 5 + 1) % len(people)]
+    earlier = [e for e in events if e['key'] in topics]
+    titled = []
+    for e in earlier:
+        topic, p = topics[e['key']]
+        title = CLOSED_TITLES[topic].format(first=p['name'].split()[0], company=p['company'])
+        if title not in [t for t, _ in titled]:
+            titled.append((title, e))
+    for i in range(min(40, closed.get('completed', 0) + closed.get('rejected', 0), len(titled))):
+        title, e = titled[i]
+        topic, p = topics[e['key']]
         status = 'rejected' if i % 4 == 3 else 'completed'
-        cards.append({'key': f'closed{i}', 'title': rng.choice(('Reply to {f}', 'Send {f} the deck', 'Confirm the call with {f}', 'Thank {f}')).format(f=p['name']),
-                      'body': f"From {p['company']}.", 'status': status, 'events': [gmail[i % len(gmail)]], 'accounts': ['work-gmail'],
-                      'minutes_ago': 600 + i * 190, 'source': 'email from ' + p['name'], 'choice': 'complete' if status == 'completed' else 'reject'})
-    promises = []
-    for i in range(6):
-        p = people[(i * 7 + 2) % len(people)]
-        promises.append({'direction': 'mine', 'who': p['name'], 'what': rng.choice(('send the pilot recap', 'share the security answers', 'introduce them to our CTO', 'send pricing')),
-                         'due_days': rng.choice((-1, 0, 1, 3)), 'status': 'open', 'event': gmail[i]})
-        q = people[(i * 7 + 4) % len(people)]
-        promises.append({'direction': 'theirs', 'who': q['name'], 'what': rng.choice(('send the signed contract', 'confirm the seat count', 'share their API logs', 'get budget approval')),
-                         'due_days': rng.choice((-2, 1, 2, 5)), 'status': 'open' if i < 5 else 'kept', 'event': gmail[-i - 1]})
+        cards.append({'key': f'closed{i}', 'title': title,
+                      'body': f"From {p['name']} at {p['company']}.", 'status': status, 'events': [e['key']], 'accounts': [e['account_id']],
+                      'minutes_ago': max(e['minutes_ago'] - 20, 30), 'source': 'email from ' + p['name'], 'choice': 'complete' if status == 'completed' else 'reject'})
+    promises = [{'direction': d, 'who': who, 'what': what, 'due_days': due, 'status': status, 'event': keys[story][n]}
+                for d, story, n, who, what, due, status in PROMISES]
+    job = {**JOB, 'card': 'open' + str(next(i for i, s in enumerate(STORIES) if s['key'] == JOB['story']))}
     network = {
         'owner': {'member_id': 'm_me', 'name': OWNER['name'], 'email': OWNER['email'], 'username': OWNER['username']},
         'work': {'id': 'fl_5a4db0c0ffee0001', 'name': 'Lumen Labs', 'team': TEAM},
@@ -234,7 +383,7 @@ def build(profile):
             {'id': 'fa_sandbox0001', 'fleet': 'work', 'from': 'm_team_priya', 'kind': 'relationships', 'question': {'about': 'meridianrobotics.example'}},
             {'id': 'fa_sandbox0002', 'fleet': 'work', 'from': 'm_team_tomasz', 'kind': 'anything', 'question': {'text': 'Did anyone talk to Tidewater Foods about their renewal this month?'}},
             {'id': 'fa_sandbox0003', 'fleet': 'work', 'from': 'm_team_priya', 'kind': 'handoff',
-             'question': {'title': 'Answer Harborline Health about SSO', 'summary': 'Their IT lead wants SAML before the pilot. I am out Thursday and Friday.', 'contact': people[3]['email']}},
+             'question': {'title': 'Answer Harborline Health about SSO', 'summary': 'Their IT lead wants SAML before the pilot. I am out Thursday and Friday.', 'contact': person_of['Wren Fairhaven']['email']}},
             {'id': 'fa_sandbox0004', 'fleet': 'work', 'from': 'm_team_ines', 'kind': 'intro', 'question': {'about': 'kestrelenergy.example', 'note': 'They are expanding to the Nordics'}},
             {'id': 'fa_sandbox0005', 'fleet': 'family', 'from': 'm_fam_robin', 'kind': 'todo', 'question': {'title': 'Pick up the kids from football', 'due': '2026-10-23', 'note': 'I have the dentist at 4'}},
             {'id': 'fa_sandbox0006', 'fleet': 'family', 'from': 'm_fam_jules', 'kind': 'event', 'question': {'title': 'Sunday lunch at grandma’s', 'start': '2026-10-25T12:30', 'place': 'Grandma’s'}},
@@ -251,7 +400,8 @@ def build(profile):
     }
     return {'note': 'Synthetic. Every name, company and address is invented; see sandbox/fixture.py.', 'seed': SEED,
             'owner': OWNER, 'accounts': ACCOUNTS, 'companies': companies, 'people': people, 'projects': PROJECTS,
-            'events': events, 'cards': cards, 'promises': promises, 'network': network}
+            'events': events, 'cards': cards, 'promises': promises, 'network': network, 'agent_job': job,
+            'saved_logins': [{'site': site, 'username': user} for site, user in SAVED_LOGINS]}
 
 
 if __name__ == '__main__':

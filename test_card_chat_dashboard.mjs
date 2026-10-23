@@ -338,6 +338,17 @@ try{
  assert.ok(!(await page.locator('.chat-side').evaluate(n=>n.getBoundingClientRect().right>0)));
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'nothing wider than the phone');
  await page.evaluate(()=>scrollTo(0,0));await shot('phone-top');
+ // A long title stays on one line on a phone too, fading out at the right edge, with the full text on hover and the back
+ // arrow, the title and ⋯ centred on one row; a tap still renames
+ {const long='A mutual NDA from the vendor is ready for review before the call on Thursday';
+  await page.evaluate(t=>{const h=document.querySelector('.chat-title');h.firstChild.textContent=t;h.title=t;chatFades()},long);
+  for(const width of [390,360]){await page.setViewportSize({width,height:800});await page.waitForTimeout(150);await page.evaluate(()=>chatFades());
+   const m=await page.evaluate(()=>{const q=s=>document.querySelector(s),R=n=>n.getBoundingClientRect(),c=r=>r.top+r.height/2,h=q('.chat-title'),L=parseFloat(getComputedStyle(h).lineHeight);
+    return {lines:Math.round(R(h).height/L),fade:h.classList.contains('fade'),title:h.title,mid:c(R(h)),back:c(R(q('.chat-back'))),menu:c(R(q('.chat-menu>summary')))}});
+   assert.equal(m.lines,1,'one line at '+width);assert.ok(m.fade,'fades out at the right edge at '+width);assert.equal(m.title,long);
+   assert.ok(Math.abs(m.mid-m.back)<=2&&Math.abs(m.back-m.menu)<=1,'one row at '+width+': '+JSON.stringify(m))}
+  await page.setViewportSize({width:390,height:800});await page.locator('.chat-title').click();await page.locator('.rename-box input').waitFor();
+  await page.keyboard.press('Escape');await page.locator('.rename-box').waitFor({state:'detached'})}
  await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));await shot('phone-bottom');
  // The last message clears the bottom, and nothing but the safe area is left under the message box
  const fit=await page.evaluate(()=>{const l=[...document.querySelectorAll('#chat-log>*')].at(-1).getBoundingClientRect().bottom,c=document.querySelector('.chat-compose').getBoundingClientRect();return {clear:l<=c.top,under:document.documentElement.scrollHeight-scrollY-c.bottom}});

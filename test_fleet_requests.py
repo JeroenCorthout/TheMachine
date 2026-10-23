@@ -597,6 +597,63 @@ class Requests(unittest.TestCase):
         self.assertEqual(self.ask('followup', {'meeting': 'not-a-key', 'when': '2026-10-19', 'items': items}, 'q3'), 'declined')
         self.assertEqual(self.ask('followup', {'meeting': key, 'when': '2026-10-19', 'items': items}, 'q4', sender='stranger'), 'declined')
 
+    def notes(self, start, meeting_id='81234567890', source='z1', host='owner@acme.example'):
+        event = {'account_id': 'zoom', 'source_id': source, 'kind': 'zoom.summary', 'occurred_at': start.isoformat(), 'title': 'Deal review',
+                 'body': 'Next steps\n- Pat books the demo.\n- Sam (client) to check the budget.', 'deleted': False,
+                 'metadata': {'meeting_id': meeting_id, 'start_at': start.isoformat(), 'end_at': (start + dt.timedelta(minutes=50)).isoformat(),
+                              'host_email': host, 'next_steps': ['Pat books the demo.']}}
+        self.store.commit_page('zoom', {}, [event])
+        with self.store.connect() as db:
+            return db.execute('SELECT id FROM events WHERE source_id=?', (source,)).fetchone()[0]
+
+    def test_meeting_notes_fill_in_the_split_as_a_suggestion_and_nothing_goes(self):
+        event_id = self.meeting()
+        with self.store.connect() as db:  # the invite carries the Zoom link
+            db.execute("UPDATE events SET body='Join https://us02web.zoom.us/j/81234567890?pwd=x' WHERE id=?", (event_id,))
+        self.store.suggest('k-pricing', 'Send Sam the pricing', 'Sam asked for pricing.', [event_id])
+        self.fleet.followup_round()
+        start = NOW - dt.timedelta(hours=4, minutes=-3)
+        self.notes(start + dt.timedelta(hours=5), source='z-other')  # another meeting with the same recurring ID, later that day
+        notes_id = self.notes(start)
+        (split,) = self.fleet.view()['splits']
+        text = self.fleet.split_notes_text()
+        self.assertIn(f"split_id {split['id']}: “Deal review”", text)
+        self.assertIn(f'Zoom notes event_id {notes_id}. People: me1 = the owner, pat1 = Pat', text)
+        prompt = a.review_prompt('r1', ['work'], splits=text)
+        self.assertIn('call split_from_notes once', prompt)
+        self.assertIn('judged by meaning', prompt)
+        with self.assertRaisesRegex(ValueError, 'notes event listed'):
+            self.app.action('split_from_notes', {'split_id': split['id'], 'event_id': notes_id + 1, 'parts': {'pat1': 'x'}})
+        with self.assertRaisesRegex(ValueError, 'only the member_ids'):
+            self.app.action('split_from_notes', {'split_id': split['id'], 'event_id': notes_id, 'parts': {'sam': 'Check the budget'}})
+        done = self.app.action('split_from_notes', {'split_id': split['id'], 'event_id': str(notes_id),
+                                                    'parts': {'pat1': 'Book the demo', 'me1': 'Send the release notes'}})
+        self.assertEqual(done, {'filled': 1})
+        (split,) = self.fleet.view()['splits']
+        self.assertEqual(split['notes'], 'Zoom')
+        self.assertEqual([(p['what'], p.get('from_notes', False)) for p in split['parts']],
+                         [('Send Sam the pricing', False), ('Book the demo', True)])  # the owner's own part as it was
+        self.assertEqual(self.fleet.split_notes_text(), '')  # read once
+        self.assertEqual(self.relay.sent('/ask'), [])  # a suggestion: nothing goes before Send the split
+        self.fleet.send_split(split['id'], {'me1': 'Send pricing', 'pat1': 'Book the demo on Tuesday'})
+        self.assertEqual(self.relay.sent('/ask')[-1]['question']['items'][1], {'member_id': 'pat1', 'what': 'Book the demo on Tuesday'})
+        with self.assertRaisesRegex(ValueError, 'sent or set aside'):
+            self.app.action('split_from_notes', {'split_id': split['id'], 'event_id': notes_id, 'parts': {}})
+
+    def test_notes_match_their_meeting_by_time_when_no_id_says_so_and_never_a_toss_up(self):
+        import meeting_notes
+        event_id = self.meeting()
+        start = NOW - dt.timedelta(hours=4)
+        notes_id = self.notes(start + dt.timedelta(minutes=4), meeting_id='')
+        with self.store.connect() as db:
+            notes = dict(db.execute('SELECT * FROM events WHERE id=?', (notes_id,)).fetchone())
+            self.assertEqual(meeting_notes.match(db, notes)['id'], event_id)
+        self.meeting(organizer=TEAM, source='cal2', hours_ago=3)  # a second meeting at the same time, the host in both
+        with self.store.connect() as db:
+            self.assertIsNone(meeting_notes.match(db, notes))
+        self.assertEqual(meeting_notes.zoom_ids('Meeting ID: 812 3456 7890', 'https://acme.zoom.us/j/99887766554'),
+                         {'81234567890', '99887766554'})
+
     # -- one Fleet at a time
     def test_requests_stay_in_the_fleet_they_came_from(self):
         other = {'id': 'fl_' + 'b' * 16, 'kind': 'work', 'name': 'Other', 'secret': 't' * 64, 'asks': list(fleet.ASKS['work']), 'members': [

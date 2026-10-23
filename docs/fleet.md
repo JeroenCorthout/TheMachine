@@ -115,7 +115,9 @@ default, Always accept, Never), and nothing happens on your side until you accep
    Machine shows them their part (with the meeting's title from their own calendar) to **Accept**, change
    (**Accept my change**) or **Decline**; accepting makes their card. Cards on that meeting then say who does what,
    so nobody follows up twice. The meeting only travels as a hash keyed with the Fleet's secret: neither its title
-   nor its id leaves your Machine.
+   nor its id leaves your Machine. With [Zoom](sources.md) connected, the meeting's summary fills in the empty parts: the
+   review reads its next steps and gives each to the person it names (a step that is unclear stays empty). The card
+   says it was filled in from the Zoom notes; you check and edit it, and nothing goes until you press Send the split.
 
 A request's text (an intro note, a handoff summary, a follow-up part) is your teammate's own words. It is kept short,
 shown quoted as their words, and never read as an instruction: it reaches no model, tool or Do it by itself. A card

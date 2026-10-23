@@ -11,7 +11,7 @@
 
 ### Calendar
 
-The **Calendar** tab shows the next seven days: meetings from your connected calendars (with their prep card when there is one), cards due or coming back that day, handoff check-ins and promises with a date. Overdue cards and promises come first. A row opens its card's chat, the Promises list, or the meeting in its own calendar. Looking changes nothing. On a computer, **Week** shows the same days as columns.
+The **Calendar** tab shows the next seven days: meetings from your connected calendars (with their prep card when there is one), cards due or coming back that day, handoff check-ins and promises with a date (the same promise once; a plan made together reads "With …", and one about a meeting that day with the same person sits on that meeting's row). An event on someone else's calendar shared with you is marked with their name and muted; one on both calendars shows once, as yours. All-day and multi-day events show as All day with their dates. Overdue cards and promises come first. A row opens its card's chat, the Promises list, or the meeting in its own calendar. Looking changes nothing. On a computer, **Week** shows the same days as columns.
 
 ### Work hours
 
@@ -85,7 +85,7 @@ The service keeps track of its own bugs and can fix them. Small fixes that prove
 | `assistant hours` | Your [work hours](../README.md#work-hours); `--days mon-fri --start 08:00 --end 23:00 --morning 09:00 --digest 08:30 --timezone Europe/Brussels` changes them and restarts the service |
 | `assistant telegram status\|on <id>\|off` | Telegram is optional: turn card delivery there off (cards then reach you through the dashboard app) or back on. `off --remove-bot` also deletes the bot and its token from OpenClaw |
 | `assistant doctor` | Checks the service, OpenClaw bridge, Telegram approval, every source, reviews, dashboard and `USER.md`; every problem comes with its fix. Exits 1 when something is broken |
-| `assistant enrich [domain]` | Organisation data from your enrichment service: status, or look up one domain now |
+| `assistant enrich [domain]` | Organisation and work contact data from your enrichment service: status, or look up one domain now |
 | `assistant export` | Everything The Machine knows and how it is set up, in one encrypted archive, with an export code it shows once (`--keys` adds your keys, with a passphrase you pick instead; `--estimate` only says how big). See [Moving to another computer](../README.md#moving-to-another-computer) |
 | `assistant import <file>` | Put an export back on a fresh install (asks its export code or passphrase) and list what to connect again |
 | `assistant raw <action> '<json>'` | Any other non-owner service action |
