@@ -4921,7 +4921,8 @@ function palDialog(){let d=$('#palette');if(d)return d;d=document.createElement(
 function palOpen(){const d=palDialog();if(d.open)return;for(const x of document.querySelectorAll('dialog[open]'))if(x!==d)return;
  pal.from=document.activeElement;pal.ctx=kbCtx();pal.q='';pal.sel=0;pal.found=null;pal.seq++;if(typeof drawerClose==='function')drawerClose();
  const q=d.querySelector('#pal-q');q.value='';d.showModal();q.focus();palRender()}
-function palClose(){const d=$('#palette');clearTimeout(pal.timer);pal.seq++;if(d?.open)d.close();const f=pal.from;pal.from=null;if(f?.isConnected&&f!==document.body)f.focus({preventScroll:true})}
+function palClose(){const d=$('#palette');clearTimeout(pal.timer);pal.seq++;if(d?.open)d.close();if(d?.contains(document.activeElement))document.activeElement.blur();  /* never left in the closed field, or keys would think you type */
+ const f=pal.from;pal.from=null;if(f?.isConnected&&f!==document.body)f.focus({preventScroll:true})}
 const palToggle=()=>$('#palette')?.open?palClose():palOpen();
 function palRows(){const q=pal.q.trim(),ctx=pal.ctx,recent=palRecent(),groups=[],seen=new Set();
  const acts=actsFor(ctx).map(a=>({a,label:actLabel(a,ctx)}));
