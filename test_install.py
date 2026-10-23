@@ -35,6 +35,35 @@ class HomeScreenApp(unittest.TestCase):
         self.assertIn('id="report-problem" class="footer-link" href="https://github.com/Salesflare/TheMachine/issues/new"', page)
         self.assertIn("$('#report-problem').href=new URL('/support',state.manage_url).href", page)
 
+    def test_footer_offers_the_source_of_the_running_version(self):
+        # AGPL-3.0 section 13: people using the dashboard can get its source.
+        page = (a.ROOT / 'dashboard.html').read_text()
+        self.assertIn('id="source-code" class="footer-link" href="https://github.com/Salesflare/TheMachine"', page)
+        self.assertIn("$('#source-code').href=state.source_url", page)
+
+    def test_source_url_names_the_tag_else_the_commit(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as root:
+            git = lambda *args: subprocess.run(['git', '-C', root, *args], check=True, capture_output=True)
+            git('init', '-q')
+            git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'x')
+            a._SOURCE_URL.clear()
+            self.assertEqual(a.source_url(root), a.SOURCE_REPO + '/tree/' + a.code_version(root))
+            git('tag', 'release-20261101-0900')
+            a._SOURCE_URL.clear()
+            self.assertEqual(a.source_url(root), a.SOURCE_REPO + '/tree/release-20261101-0900')
+        a._SOURCE_URL.clear()
+        self.assertEqual(a.source_url('/nonexistent-dir'), a.SOURCE_REPO)
+        a._SOURCE_URL.clear()
+
+    def test_source_url_right_after_boot(self):
+        # time.monotonic() counts from boot: under 10 minutes of uptime an empty cache must not look fresh.
+        from unittest import mock
+        a._SOURCE_URL.clear()
+        with mock.patch.object(a.time, 'monotonic', return_value=5.0):
+            self.assertEqual(a.source_url('/nonexistent-dir'), a.SOURCE_REPO)
+        a._SOURCE_URL.clear()
+
 
 if __name__ == '__main__':
     unittest.main()
