@@ -426,6 +426,12 @@ button.node:hover{text-decoration:underline;background:none}
 .tap{position:relative;cursor:pointer;padding-right:40px!important}
 .tap::after{content:'›';position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:1.5rem;line-height:1;color:var(--muted)}
 .tap:hover,.tap:focus-visible{border-color:var(--border-strong)}
+/* A promise's page: the person page's layout, with its state, quiet actions and a short history */
+.promise-state{margin:6px 0 2px}.promise-actions{display:flex;flex-wrap:wrap;gap:0 2px;margin:8px 0 4px -10px}.promise-actions .ghost{padding-left:10px;padding-right:10px;margin:0}.promise-due-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.promise-about p{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:4px 0}.promise-card a,.promise-link{color:inherit;text-decoration:underline;text-decoration-color:var(--c-line-strong);text-underline-offset:2px;overflow-wrap:anywhere}
+.promise-history{list-style:none;margin:0;padding:0}.promise-history li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--border);font-size:var(--fs-sm)}.promise-history li:first-child{border-top:0}
+.promise-history time{flex:none;color:var(--faint);font-variant-numeric:tabular-nums}.promise-page h3{overflow-wrap:anywhere}
+@media (min-width:700px){.person-page.promise-page>:not(.name-row){margin-left:0}}
 /* Graph detail: the dashboard's header and tabs stay; a quiet breadcrumb leads back. */
 #people.graph-on-node .people-search{display:none}
 .graph-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin:0 0 var(--sp-3);font-size:var(--fs-sm);color:var(--faint);min-width:0}
@@ -2508,7 +2514,7 @@ $('#suggestion-stats').addEventListener('click',e=>{const t=e.target.closest('[d
 $('#suggestion-summary').addEventListener('click',e=>{const b=e.target.closest('[data-scope]');if(!b)return;linkedCardId=null;scopeFilter=b.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render()});
 // Promises from your messages, both ways. A still-open one becomes a card when it's due.
 function promisesList(open){const items=(state.promises||[]).filter(p=>['open','card'].includes(p.state));if(!items.length)return '';
-const row=p=>`<div class="promise"><span class="grow">${p.together?'With':p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: ${esc(p.what)}<small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
+const row=p=>`<div class="promise"><span class="grow">${p.together?'With':p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: <a class="promise-link" href="${promiseHref(p)}">${esc(p.what)}</a><small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
 const group=(direction,title)=>{const rows=items.filter(p=>p.direction===direction);return rows.length?`<h3 class="promise-head">${title}<span class="count">${rows.length}</span></h3>`+rows.map(row).join(''):''};
 return `<details id="promises-list" ${open?'open':''}><summary><span>Promises</span><span class="count">${items.length}</span></summary>${group('mine','You promised')}${group('theirs','Promised to you')}</details>`}
 // Reviews off (a new install, before --activate or the hosted "Turn it on" step): said on every tab, with the way to turn them on; with cards already there, that they came from the one-time first look.
@@ -3229,7 +3235,7 @@ function calParts(it){const hm=v=>humanHM(new Date(v)),late=it.day==='overdue';
   return {time:it.allDay?'All day':hm(m.start),title:m.title,owner:m.shared?m.shared+'’s':'',sub:[when,m.location,m.guests?m.guests+(m.guests===1?' guest':' guests'):''].filter(Boolean).join(' · '),
    said:(it.promises||[]).map(p=>calSaid(p)+': '+p.what),
    href:it.s?'#chat='+it.s.id:'',url:!it.s&&m.url||'',badge:c?chip(c[0],c[1]):'',prep:c?c[0]:'',tone:m.shared?'theirs':it.s?'prep t-'+(c?c[1]:'muted'):'meeting'}}
- if(it.kind==='promise'){const p=it.p;return {time:late?calShort(p.due):'Due',title:p.what,sub:calSaid(p),href:'#promises',tone:late?'late':'promise'}}
+ if(it.kind==='promise'){const p=it.p;return {time:late?calShort(p.due):'Due',title:p.what,sub:calSaid(p),href:promiseHref(p),tone:late?'late':'promise'}}
  const s=it.s;if(it.kind==='checkin')return {time:hm(s.snoozed_until),title:'Check in with '+s.handoff_wait.name,sub:'If no answer · '+s.title,href:'#chat='+s.id,tone:'back'};
  if(it.kind==='back')return {time:hm(s.snoozed_until),title:s.title,sub:'Comes back',href:'#chat='+s.id,tone:'back'};
  return {time:late?calShort(s.due):'Due',title:s.title,sub:calCardWho(s),href:'#chat='+s.id,tone:late?'late':'due'}}
@@ -3263,7 +3269,7 @@ setTimeout(()=>calFetch().then(calBadge),2000);
 // remembered on this device.
 $('#calendar').addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;const href=a.getAttribute('href');e.preventDefault();
  if(href.startsWith('#chat=')){calReturn=true;chatGo(href.slice(6));return}
- if(href==='#promises'){showTab('inbox');requestAnimationFrame(()=>{const l=$('#promises-list');if(l){l.open=true;l.scrollIntoView({block:'start',behavior:'smooth'})}});return}
+ if(href.startsWith('#promise/')){if(location.hash!=='#calendar')history.replaceState(null,'',location.pathname+location.search+'#calendar');location.hash=href;return} // Back returns to the Calendar
  if(href==='#connections')showTab('health')});
 $('#page-head').addEventListener('click',e=>{const b=e.target.closest('[data-cal-mode]');if(!b)return;calMode=b.dataset.calMode;sideStore.set('cal-mode',calMode);calRender()});
 $('nav').addEventListener('click',e=>{if(e.target.closest('button')?.dataset.tab==='calendar')calendarView(true)});
@@ -3272,7 +3278,7 @@ addEventListener('hashchange',()=>{if(calReturn&&!/^#chat=/.test(location.hash)&
 // A title over the main area on a computer: the tagline on Suggestions, else the tab's name
 const PAGE_TITLES={calendar:'Calendar',events:'Events',people:'Graph',fleet:'Fleet',feedback:'Feedback',health:'Connections',settings:'Settings'};
 // The Graph's title is the pane on screen, with Graph as a quiet crumb and the same count as its row in the sidebar
-function graphHead(){const name=GRAPH_SUBS[graphShown];if(!name)return '<h2 class="page-title">Graph</h2>';const c=graphCounts||{},n={people:c.person,orgs:c.org,projects:c.project,roles:rolesWaiting}[graphShown];
+function graphHead(){if(/^promise:/.test(graphNode||''))return '<div><p class="page-crumb">Graph</p><h2 class="page-title">Promise</h2></div>';const name=GRAPH_SUBS[graphShown];if(!name)return '<h2 class="page-title">Graph</h2>';const c=graphCounts||{},n={people:c.person,orgs:c.org,projects:c.project,roles:rolesWaiting}[graphShown];
  const words={people:['person','people'],orgs:['organisation','organisations'],projects:['open project','open projects'],roles:['role to confirm','roles to confirm']}[graphShown];
  return `<div><p class="page-crumb">Graph</p><h2 class="page-title">${esc(name)}</h2>${n&&!graphNode?`<p class="page-sub">${n} ${n===1?words[0]:words[1]}</p>`:''}</div>`}
 function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('main>section')].find(x=>!x.hidden)?.id||'inbox';
@@ -3869,7 +3875,7 @@ const relationsRow=n=>n.relations?.length?`<p class="graph-sub">How they’re re
 const whosWho=(items,total)=>items?.length?`<div class="section-head"><h2>Who’s who</h2><span class="count">${total||items.length}</span><p>Roles your Machine picked up. Confirm or edit; it learns from your edits.</p></div>${items.length>1?`<p class="role-all"><button class="ghost" data-role-all>✓ All ${items.length} are right</button></p>`:''}<div class="graph-list">${items.map(w=>`<article class="whos" data-whos="${esc(w.id)}"><div class="graph-row">${nodeButton(w)}<span class="chip" style="--c:var(--lavender)">${esc(w.role)}</span></div>${w.quote?`<p class="graph-sub">${quoteLine(w.id,w.quote,w.event_id)}</p>`:''}<p class="graph-sub role-row">${confirmButton(w.id,w.role)}<button class="ghost" data-role-edit-for="${esc(w.id)}">Edit</button></p></article>`).join('')}</div>`:'';
 // Domains a review read as an email warm-up tool's traffic: out of the graph, listed here with Undo.
 const warmupList=items=>items?.length?`<details class="warmup"><summary class="graph-sub">Hidden as warm-up (${items.length})</summary><p class="graph-sub muted">Mail from email warm-up tools, kept out of your graph.</p>${items.map(w=>`<div class="graph-sub relation"><span>${esc(w.name||w.domain)}${w.name&&w.name!==w.domain?` <span class="muted">${esc(w.domain)}</span>`:''}</span><button class="ghost" data-warmup-undo="${esc(w.domain)}">Undo</button></div>`).join('')}</details>`:'';
-const openBetween=n=>{const o=n.open||{},row=(label,p)=>`<div class="promise"><span class="grow">${label}: ${esc(p.what)}${p.due?`<small>due ${esc(day(p.due))}</small>`:''}</span><button data-promise="${p.id}" data-close="kept">Done</button><button class="ghost" data-promise="${p.id}" data-close="dropped">Drop</button></div>`;
+const openBetween=n=>{const o=n.open||{},row=(label,p)=>`<div class="promise"><span class="grow">${label}: <a class="promise-link" href="${promiseHref(p)}">${esc(p.what)}</a>${p.due?`<small>due ${esc(day(p.due))}</small>`:''}</span><button data-promise="${p.id}" data-close="kept">Done</button><button class="ghost" data-promise="${p.id}" data-close="dropped">Drop</button></div>`;
  const rows=[...(o.you_promised||[]).map(p=>row('You promised',p)),...(o.they_promised||[]).map(p=>row(n.kind==='person'?'They promised':esc(p.who)+' promised',p)),
   ...(o.cards||[]).map(c=>`<div class="promise"><span class="grow">Card: <a href="#card=${esc(c.id)}">${esc(c.title)}</a>${c.due?`<small>due ${esc(day(c.due))}</small>`:''}</span></div>`)];
  return rows.length?`<div class="section-head"><h2>Open between you</h2><span class="count">${rows.length}</span></div><article class="graph-open">${rows.join('')}</article>`:''};
@@ -3904,12 +3910,42 @@ const graphEvents=n=>{const all=n.recent||[],soon=Date.now();if(!all.length)retu
   const by=!chat&&e.from&&e.kind!=='calendar.event'?(e.from_me?'You':e.from)+': ':'';
   h+=`<article class="graph-event" data-event="${e.id}" tabindex="0" aria-label="${esc(src?src+': ':'')}${esc(head)}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}">${esc(head)}</h4><time datetime="${esc(e.occurred_at)}">${esc(graphTime(d))}</time></div>${e.preview?`<p class="ge-preview">${by?`<b>${esc(by)}</b>`:''}${esc(e.preview)}</p>`:''}${e.probable?'<p class="ge-note">Probably part of it</p>':''}</div></article>`});
  return `<div class="section-head"><h2>Events</h2><span class="count">${runs.length}</span></div><div class="graph-events">${h}</div></div>${runs.length>GRAPH_ROWS?'<button type="button" class="ghost ge-more" data-ge-more>Show more</button>':''}`};
+// A promise's own page (#promise/<id>), laid out like a person's: who promised what to whom and by when, where it
+// stands, the message it came from, who and what it is about, its card as a link, and what happened since.
+const promiseHref=p=>'#promise/'+encodeURIComponent(p.id);
+const promiseFirst=who=>String(who||'').split(/\s+/)[0]||who;
+const PROMISE_SAID={'gmail.message':'an email','slack.message':'Slack','whatsapp.message':'WhatsApp','linkedin.message':'LinkedIn','x.message':'X','intercom.message':'Intercom','calendar.event':'a meeting'};
+function promiseState(p){const late=p.due&&p.due<localDay(new Date());
+ return p.state==='open'?(p.direction==='theirs'&&!p.together?['Waiting on '+promiseFirst(p.who),'var(--lavender)']:[late?'Past its date':'Open',late?'var(--orange)':'var(--mint)']):p.state==='card'?['On a card','var(--amber)']
+  :p.state==='kept'?['Kept','var(--muted)']:p.state==='answered'?['They wrote again','var(--muted)']:['Not needed','var(--muted)']}
+function promiseLine(p,h){const via=PROMISE_SAID[h.detail]||'a message';
+ return {said:p.together?'Planned together in '+via:p.direction==='mine'?'Promised to '+p.who+' in '+via:p.who+' promised it in '+via,noted:'Noted by a review',due:'Date moved to '+day(h.detail),
+  kept:'Marked done',dropped:'Marked not needed',answered:'They wrote again',carded:'A card came for it',together:'Both sides said it: one plan',merged:'The same as another promise'}[h.kind]||''}
+async function promisePage(id){const p=await request('api/promise?id='+encodeURIComponent(id)),[state,color]=promiseState(p),person=p.links.find(l=>l.kind==='person');
+ const who=p.together?'With '+p.who:p.direction==='mine'?'Promised to '+p.who:p.who+' promised',when=p.due?'due '+day(p.due):'no date';
+ const actions=p.state==='open'?`<div class="promise-actions"><button class="ghost" data-promise="${p.id}" data-close="kept">Done</button><button class="ghost" data-promise-due>Change date</button><button class="ghost" data-promise="${p.id}" data-close="dropped">Not needed</button></div><form class="promise-due-form" data-promise-id="${p.id}" hidden><input type="date" name="due" value="${esc(p.due||'')}" aria-label="New date" required><button>Save</button></form>`:'';
+ const note=p.state!=='open'&&p.note&&!/\(you\)$/.test(p.note)?`<p class="graph-sub muted">${esc(p.note)}</p>`:'';
+ const src=p.source?.[0],from=src?graphEvents({recent:p.source,name:p.who,kind:'promise'}).replace(/<h2>Events<\/h2><span class="count">\d+<\/span>/,'<h2>Came from</h2>'):'';
+ const open=src&&/^https:\/\//.test(src.source_url||'')?`<p class="graph-sub"><a href="${esc(src.source_url)}" target="_blank" rel="noreferrer">Open in ${esc(SOURCE_NAME[graphSource(src.kind)]||'its app')} ↗</a></p>`:'';
+ const kinds=[['person','People'],['org','Organisation'],['project','Project']].map(([k,t])=>[t,p.links.filter(l=>l.kind===k)]).filter(([,l])=>l.length);
+ const about=kinds.length?`<div class="section-head"><h2>About</h2></div><div class="promise-about">${kinds.map(([t,l])=>`<p class="graph-sub"><span class="muted">${t}</span> ${l.map(nodeButton).join('')}</p>`).join('')}</div>`:'';
+ const card=p.card?`<div class="section-head"><h2>Card</h2></div><p class="graph-sub promise-card"><a href="#card=${esc(p.card.id)}">${esc(p.card.title)}</a></p>`:'';
+ const hist=p.history.map(h=>[promiseLine(p,h),h.at]).filter(([t])=>t);
+ return `<div class="graph-crumbs" role="navigation" aria-label="Breadcrumb">${person?`<a href="${graphHash(person.id)}" data-node="${esc(person.id)}">${esc(person.name)}</a>`:'<a href="#graph" data-crumb="">Graph</a>'}<span aria-hidden="true">›</span><span aria-current="page">Promise</span></div>`+
+  `<article class="graph-detail person-page promise-page"><div class="name-row"><div class="person-head"><h3>${esc(cap(p.what))}</h3><p class="person-job">${esc(who)} · ${esc(when)}</p></div></div>`+
+  `<p class="graph-sub promise-state"><span class="chip" style="--c:${color}">${esc(state)}</span></p>${note}${actions}${from}${open}${about}${card}`+
+  (hist.length?`<div class="section-head"><h2>History</h2></div><ul class="promise-history">${hist.map(([t,at])=>`<li><span>${esc(t)}</span><time datetime="${esc(at)}">${esc(day(at))}</time></li>`).join('')}</ul>`:'')+'</article>'}
+// Promise links, and card links on Graph pages, stay in the page, also when the page's base is another path.
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#promise/"],#people-view a[href^="#card="]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey||e.defaultPrevented)return;e.preventDefault();const href=a.getAttribute('href');if(location.hash===href)graphRoute();else location.hash=href});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-promise-due]');if(!b)return;const f=$('#people-view .promise-due-form');if(f){f.hidden=!f.hidden;if(!f.hidden)f.elements.due.focus()}});
+document.addEventListener('submit',async e=>{const f=e.target.closest('.promise-due-form');if(!f)return;e.preventDefault();const b=f.querySelector('button');b.disabled=true;
+ try{await graphPost('promise_due',{id:Number(f.dataset.promiseId),due:f.elements.due.value});f.hidden=true;toast('Date moved.');await people(graphNode,true)}catch(err){b.disabled=false;toast(err.message,true)}});
 // Graph links: #graph/<node id> opens a person, project or organisation; the browser's back goes to where you were.
 const GRAPH_KIND_PANE={person:['people','People'],project:['projects','Projects'],org:['orgs','Organisations']};
 const graphHash=id=>'#graph/'+encodeURIComponent(id);
 function graphOpen(id){if(location.hash!==graphHash(id))history.pushState(null,'',graphHash(id));people(id)}
 function graphBack(pane){if(pane){graphPane=pane;localStorage.setItem('graph-pane',pane)}if(/^#graph\//.test(location.hash))history.pushState(null,'',location.pathname+location.search+'#graph='+(graphPane||'people'));people('')}
-function graphRoute(){const m=/^#graph\/(.+)$/.exec(location.hash);let id='';try{id=m?decodeURIComponent(m[1]):''}catch{}
+function graphRoute(){const pm=/^#promise\/(\d+)$/.exec(location.hash),m=/^#graph\/(.+)$/.exec(location.hash);let id=pm?'promise:'+pm[1]:'';try{id=id||(m?decodeURIComponent(m[1]):'')}catch{}
  if(id){if($('#people').hidden){graphNode=id;document.querySelector('nav [data-tab="people"]')?.click()}else if(graphNode!==id)people(id);return}
  if(!$('#people').hidden&&graphNode)people('')}
 addEventListener('popstate',()=>{if(!drawerStep)graphRoute()});addEventListener('hashchange',graphRoute);setTimeout(graphRoute);
@@ -3929,6 +3965,7 @@ const GRAPH_PANES=['people','roles','projects','orgs'];
 function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);graphShown=id;graphHashSync();graphSubSync();const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
  for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'))}
 async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=html=>{if(version!==graphRequest||quiet&&view.querySelector('form:not([hidden])'))return;  /* a refresh never closes what the owner is typing */const scroll=window.scrollY;view.innerHTML=html;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
+ if(node&&/^promise:\d+$/.test(node)){const html=await promisePage(node.slice(8));draw(html);if(version!==graphRequest)return;$('#people').classList.add('graph-on-node');pageHead();if(!quiet)scrollTo({top:0});return}
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
   const sub=n.kind==='person'?personSub({...n,role:null,profile:null})+(n.quiet?' · gone quiet':''):n.kind==='project'?(n.state+' · last signal '+day(n.last_at)+(n.probable_signals?' · '+n.probable_signals+' probably part of it':'')):(n.signals+' people · last contact '+day(n.last_at));
   const [paneId,paneName]=GRAPH_KIND_PANE[n.kind]||GRAPH_KIND_PANE.person;
