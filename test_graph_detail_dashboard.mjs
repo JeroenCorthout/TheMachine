@@ -22,7 +22,14 @@ const person=()=>({id:'wa:3247000001',kind:'person',name:'Ann Example',strength:
          {id:36,account_id:'slack',kind:'slack.message',occurred_at:daysAgo(5),title:'#DM U0ANN: thanks',from:null,from_me:false,dm:true,preview:'thanks'},
          {id:35,account_id:'slack',kind:'slack.message',occurred_at:daysAgo(5),title:'#standup: done',from:'You',from_me:true,dm:false,place:'#standup',preview:'done'},
          {id:34,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(-9),title:'Later dinner',preview:''},
-         {id:33,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(-2),title:'Lunch',preview:''}].sort((a,b)=>b.occurred_at.localeCompare(a.occurred_at))});
+         {id:33,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(-2),title:'Lunch',preview:''},
+         // A group conversation: three messages minutes apart are one row; one two hours earlier is its own.
+         ...[[50,1,true,'See you at the beach'],[51,1.01,false,'Bring the umbrella'],[52,1.02,false,'And snacks']].map(([id,d,me,t])=>({id,account_id:'chat',kind:'whatsapp.message',occurred_at:daysAgo(d),title:'Family 🌴',from:me?'You':'Ann Example',from_me:me,preview:t,thread:'chat:whatsapp.message:g1'})),
+         // One to one with Ann: a run of three a minute apart, and one long message on its own.
+         ...[[54,2+2/1440,false,'Are you coming?'],[55,2+1/1440,false,'Dinner is at 7'],[56,2,true,'yes on my way']].map(([id,d,me,t])=>({id,account_id:'chat',kind:'whatsapp.message',occurred_at:daysAgo(d),title:'Ann Example',from:me?'You':'Ann Example',from_me:me,preview:t,thread:'chat:whatsapp.message:ann'})),
+         {id:57,account_id:'chat',kind:'whatsapp.message',occurred_at:daysAgo(2.2),title:'Ann Example',from:'Ann Example',from_me:false,preview:long,thread:'chat:whatsapp.message:ann'},
+         {id:53,account_id:'chat',kind:'whatsapp.message',occurred_at:daysAgo(1.1),title:'Family 🌴',from:'Ann Example',from_me:false,preview:'Morning',thread:'chat:whatsapp.message:g1'},
+         ...Array.from({length:10},(_,i)=>({id:60+i,account_id:'work',kind:'gmail.message',occurred_at:daysAgo(20+i),title:'Invoice '+i,from:'Ann Example',from_me:false,preview:'Attached.'}))].sort((a,b)=>b.occurred_at.localeCompare(a.occurred_at))});
 const calls=[],errors=[];
 const server=createServer(async(req,res)=>{
  const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
@@ -30,6 +37,9 @@ const server=createServer(async(req,res)=>{
  if(url.pathname==='/api/status'){res.end(JSON.stringify({suggestions:[],promises:[],connectors:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[]}));return}
  if(url.pathname==='/api/graph'){const node=url.searchParams.get('node');if(node&&node!=='wa:3247000001'){res.statusCode=404;res.end('{"error":"Not in the graph"}');return}
   res.end(JSON.stringify(node?person():{projects:[],people:[person()],quiet:[],new:[],orgs:[]}));return}
+ if(url.pathname==='/api/originals'){const ids=(url.searchParams.get('events')||'').split(',').map(Number);calls.push({originals:ids});
+  const at=id=>person().recent.find(r=>r.id===id).occurred_at;
+  res.end(JSON.stringify({originals:ids.map((id,i)=>({kind:'whatsapp',from:[50,56].includes(id)?'You':'Ann Example',occurred_at:at(id),body:'message '+id,event_id:id,url:i===ids.length-1&&id===56?'https://wa.example/chat':null}))}));return}
  if(url.pathname==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
   if(call.action==='graph_fact_unlink'||call.action==='forget_fact')known=known.filter(f=>f.id!==(call.args.fact_id??call.args.id));res.end('{}');return}
  if(url.pathname.startsWith('/brand/')||url.pathname.startsWith('/assets/')){res.statusCode=404;res.end();return}
@@ -63,7 +73,50 @@ try{
  const days=await page.locator('.ge-day').allTextContents();
  // Coming up first, soonest on top; then today and back.
  assert.deepEqual((await page.locator('.graph-event h4').allTextContents()).slice(0,2),['Lunch','Later dinner']);
- assert.equal(days[2],'Today');assert.equal(days.length,6);
+ assert.equal(days[2],'Today');assert.equal(days[3],'Yesterday');
+ // One row for the run of three, the time from the first to the last, the last two lines with who said them.
+ const run=page.locator('.graph-event[data-events="52,51,50"]');
+ assert.equal(await page.locator('.graph-event[data-events]').count(),2);
+ assert.equal(await run.locator('h4').textContent(),'Family 🌴');
+ assert.match(await run.locator('.ge-meta').textContent(),/^3 messages · \d\d:\d\d to \d\d:\d\d$/);
+ assert.deepEqual(await run.locator('.ge-lines li').allTextContents(),['Ann: Bring the umbrella','You: See you at the beach']);
+ const alone=page.locator('.graph-event[data-event="53"]:not([data-events])');  // on its own: the same look, one message
+ assert.equal(await alone.locator('h4').textContent(),'Family 🌴');assert.equal(await alone.locator('.ge-preview').textContent(),'Ann: Morning');assert.match(await alone.locator('.ge-meta').textContent(),/^\d\d:\d\d$/);
+ // With the page's own person no title: the page already says who. Just how many, when, and the last lines.
+ const ann=page.locator('.graph-event[data-events="54,55,56"]');
+ assert.equal(await ann.locator('h4').count(),0);assert.match(await ann.locator('.ge-meta').textContent(),/^3 messages · \d\d:\d\d to \d\d:\d\d$/);
+ assert.deepEqual(await ann.locator('.ge-lines li').allTextContents(),['Ann: Dinner is at 7','You: yes on my way']);
+ assert.equal(await ann.getAttribute('aria-label'),'WhatsApp with Ann, 3 messages');
+ const annLong=page.locator('.graph-event[data-event="57"]');
+ assert.equal(await annLong.locator('h4').count(),0);assert.equal(await annLong.locator('.ge-preview.fade').count(),1);
+ // The count is rows; past fifteen the rest waits behind Show more.
+ assert.equal(await page.locator('.graph-events ~ .section-head .count, .section-head:has(+ .graph-events) .count').textContent(),'23');
+ assert.equal(await page.locator('.graph-event:visible').count(),15);
+ await page.locator('[data-ge-more]').click();
+ assert.equal(await page.locator('.graph-event:visible').count(),23);assert.equal(await page.locator('[data-ge-more]').count(),0);
+ // Tapping the run opens the conversation, in order.
+ // A group's transcript: the date once, each turn its sender and time once, yours on the right.
+ await run.click();
+ await page.locator('#email-dialog .convo-say').nth(2).waitFor();
+ assert.deepEqual(calls.pop(),{originals:[52,51,50]});
+ assert.equal(await page.locator('#email-title').textContent(),'Family 🌴');
+ assert.equal(await page.locator('#email-dialog .convo-day').count(),1);
+ assert.equal(await page.locator('#email-dialog .convo-turn').count(),3);
+ assert.match(await page.locator('#email-dialog .convo-turn').first().locator('.convo-meta').textContent(),/^Ann Example · \d\d:\d\d$/);
+ assert.match(await page.locator('#email-dialog .convo-turn.me .convo-meta').textContent(),/^\d\d:\d\d$/);
+ assert.equal(await page.locator('#email-dialog .convo-source').count(),0);
+ await page.keyboard.press('Escape');
+ // One to one: messages a minute apart from the same sender are one turn, no names; the source link at the end.
+ await ann.click();
+ await page.locator('#email-dialog .convo-say').nth(2).waitFor();
+ assert.deepEqual(calls.pop(),{originals:[54,55,56]});
+ assert.equal(await page.locator('#email-title').textContent(),'WhatsApp with Ann');
+ assert.equal(await page.locator('#email-dialog .convo-turn').count(),2);
+ assert.deepEqual(await page.locator('#email-dialog .convo-turn').first().locator('.convo-say').allTextContents(),['message 54','message 55']);
+ assert.match(await page.locator('#email-dialog .convo-turn').first().locator('.convo-meta').textContent(),/^\d\d:\d\d$/);
+ assert.equal(await page.locator('#email-dialog .convo-source').getAttribute('href'),'https://wa.example/chat');
+ assert.equal(await page.locator('#email-dialog .convo-source').textContent(),'Open in WhatsApp');
+ await page.keyboard.press('Escape');
  assert.ok((await page.locator('.graph-event h4').allTextContents()).includes('#standup'));  // a channel by its name, a direct message by who wrote it
  assert.equal(await page.locator('.graph-event[data-event="36"] h4').textContent(),'Ann Example');
  assert.equal(await page.locator('.graph-event[data-event="35"] .ge-preview').textContent(),'You: done');
