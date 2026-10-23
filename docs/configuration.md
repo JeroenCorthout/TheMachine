@@ -35,7 +35,7 @@
 | `microsoft_graph` | — | `client_id` and `tenant` (`common`) of your own Entra app, for Outlook accounts with `"transport": "graph"` |
 | `salesflare_server` | — | `api_base` and `app_base` a new Salesflare account starts on instead of Salesflare's own (a hosted machine's control plane sets it for a team on staging). Only https addresses on salesflare.com subdomains count. An address typed when a key is rejected must be https too |
 | `heartbeat_job_id` | `""` | Optional OpenClaw cron job ID of your main heartbeat, for its health line |
-| `manage_url` | `""` | Optional https page where this install is set up (a hosted machine); the dashboard links to it from Settings (the **Account ↗** tab and General) and Add a connection |
+| `manage_url` | `""` | Optional https page where this install is set up (a hosted machine); the dashboard's Settings, **Account** tab reads the account there and opens its pages, and Add a connection links to it |
 | `needs_you_file` | unset | Optional JSON list of `{id, text, url, action}` notes from a hosting layer; the dashboard shows them under Needs you, with sources that are not fully set up and connections that need signing in again |
 | `browser_url` | unset | Optional page that shows the assistant's browser (a hosted machine's viewer, or `./install.sh --browser-viewer`'s); a card waiting on the browser links to it |
 | `browser_cdp_url` | `http://127.0.0.1:9222` | That browser's DevTools address on this machine; **Open the browser** brings the tab a task uses to the front through it (also when it opens a viewer), and a Preparing card's live look at its tab is taken through it |
@@ -62,7 +62,7 @@
 | `review_worker` | `enabled: false` | `enabled`, `first_look` (true: the automatic first preview, below; false turns it off), `min_signals` (40), `max_wait_minutes` (60), `gap_seconds` (600), `timeout_seconds` (1500), `outage_grace_seconds` (600), `retry_seconds` (60), `max_retry_seconds` (1800) |
 | `weekly_recap` | `enabled: false` | `enabled`, `weekday` (1–7, default 5), `at` (`16:00`) |
 | `embeddings` | `enabled: false` | Optional [related signals](../README.md#related-signals-optional-local-embeddings): `url`, `model`, `dims` (256), `floor` (0.6), `query_floor` (0.4) |
-| `enrichment` | off | Optional [organisation data](../README.md#organisation-data-optional-enrichment): `provider` or `url`, `headers`, `key_file`/`key_env`, `fields`, `per_day` (50) |
+| `enrichment` | off | Optional [organisation data](../README.md#organisation-data-optional-enrichment): `provider` or `url`, `headers`, `key_file`/`key_env`, `fields`, `per_day` (50); for [work contacts](intelligence.md#people-data) `people_url`, `people_fields`, `people_per_day` (50) |
 | `accounts` | `[]` | Sources, below |
 
 Every account has `id`, `service`, `transport` and `boundary` (`work:<Company>` or `personal:<name>`), plus optional `boundary_by` (`owner`: you marked it Work or Personal yourself, in the dashboard or on the setup page; leaving a Work Fleet follows it, see [Fleet](fleet.md#leaving-a-work-fleet-with-your-machine)), `scope` (`work`/`personal`, overrides the label the boundary implies), `poll_seconds` and `exclude` (noise rules, below). `config.example.json` has one complete example per built-in source; each plugin in `connectors/` (GitHub, Stripe, X, LinkedIn, RSS) shows its own at the top of its file.

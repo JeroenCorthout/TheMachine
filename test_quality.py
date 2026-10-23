@@ -111,8 +111,7 @@ class HitRate(Base):
         self.assertIn('- email: 3 of 3 worth it', summary)
         self.assertEqual(self.store.snapshot(self.app.config['accounts'])['quality']['previous']['hit_rate'], None)
         recap = a.weekly_recap(self.store, self.app.config)
-        self.assertIn('**50% worth it**\n3 of the 6 cards you decided on were worth it. Do it got it right the first time 1 of 2 times.', recap)
-        self.assertIn('Do it got it right the first time 1 of 2 times.', recap)
+        self.assertIn('**What changed**\n• 50% of cards worth it (3 of 6). Do it was right first time in 1 of 2.', recap)
 
     def test_trend_per_local_day_and_week(self):
         at = {'a': '2026-10-14T21:30:00+00:00', 'b': '2026-10-14T22:30:00+00:00', 'c': '2026-10-12T08:00:00+00:00', 'd': '2026-10-08T08:00:00+00:00'}

@@ -66,4 +66,6 @@ rm /tmp/copy.sqlite
 
 With `--db`, it collects every name, address, domain, company, chat and account id from that database (and the owner's name and accounts from the config), and fails if any of them appears in the fixture. It prints only how many matched and of what kind, never the values. Run it after changing `fixture.py`. `test_sandbox.py` runs the static rules and checks that the fixture is up to date.
 
+Each open card has its own story in `STORIES`: its people, a thread with several messages both ways, and a draft written for it, so a card's chat, its sources and the Graph pages tell the same story. Everyone else (the crowd) writes about other topics and never shares a first or last name with a story's people. The fixture also holds a card handed to Claude Code with its result and two saved sign-ins (made-up placeholder passwords, sealed like real ones). The site's demo is recorded from this data.
+
 To add data, edit `sandbox/fixture.py`: new names come from its invented pools, and new addresses use `.example`. To add a state, extend `sandbox/load.py` (`STATES` and `load`) and, for the Network, `sandbox/stub_network.py`.
