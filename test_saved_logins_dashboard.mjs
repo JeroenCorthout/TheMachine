@@ -40,10 +40,10 @@ try{
   page.on('pageerror',e=>errors.push(e.message));
   for(const n of [4,1,0]){
    logins=four.slice(0,n);
-   await page.goto(base+'/#connections=signins');
+   await page.goto('about:blank');await page.goto(base+'/#connections=signins');  // a fresh load each time, not just a hash change
    await page.locator('#saved-logins-block').waitFor();
    if(n)await page.locator('#saved-logins .saved-login').nth(n-1).waitFor();else await page.locator('#saved-logins.empty').waitFor();
-   assert.equal(await page.locator('#health-tabs [role=tab][aria-selected="true"]').innerText(),n?`Sign-ins\n${n}`:'Sign-ins');
+   await page.locator('#health-tabs [role=tab][aria-selected="true"]').filter({hasText:n?new RegExp(`^Sign-ins\\s+${n}$`):/^Sign-ins$/}).waitFor();
    const shown=await text(page);
    assert.match(shown,/sign it back in with one tap/);assert.match(shown,/encrypted on this Machine/);
    const html=await page.content();
