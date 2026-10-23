@@ -1305,7 +1305,7 @@ body main{padding-top:0}
   .topbar-menu svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   .topbar-menu .dot{position:absolute;margin:-14px 0 0 16px;width:7px;height:7px;border-radius:50%;background:var(--c-orange)}.topbar-menu .dot[hidden]{display:none}
   body.chat-open:has(#inbox:not([hidden])) .topbar{display:none}
-  .app-side{position:fixed;top:0;bottom:0;left:0;z-index:70;display:flex;flex-direction:column;width:min(88vw,380px);max-width:none;height:100dvh;margin:0;padding:calc(8px + env(safe-area-inset-top)) 12px calc(6px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border-right:1px solid var(--c-line);background:var(--bg);box-shadow:var(--shadow-pop);overflow:hidden;overscroll-behavior:contain;transform:translateX(-104%);visibility:hidden;transition:transform .26s var(--ease),visibility 0s linear .26s}
+  .app-side{position:fixed;top:0;bottom:0;left:0;z-index:70;display:flex;flex-direction:column;width:min(88vw,380px);max-width:none;height:100dvh;margin:0;padding:calc(8px + env(safe-area-inset-top)) 12px calc(6px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border-right:1px solid var(--c-line);background:var(--bg);box-shadow:var(--shadow-pop);overflow:hidden auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;transform:translateX(-104%);visibility:hidden;transition:transform .26s var(--ease),visibility 0s linear .26s}
   :root[data-drawer="open"] .app-side{transform:none;visibility:visible;transition:transform .26s var(--ease)}
   .app-side.dragging{transition:none!important}
   .drawer-scrim{display:block;position:fixed;inset:0;z-index:65;background:#0008;opacity:0;pointer-events:none;transition:opacity .26s var(--ease)}
@@ -1328,7 +1328,7 @@ body main{padding-top:0}
   .app-side nav .side-fold{width:36px;height:36px;margin-top:-18px}
   .side-label{min-height:34px;font-size:var(--fs-sm)}.side-label button{padding:6px 9px}
   .side-head{min-height:38px;font-size:var(--fs-sm)}
-  .side-cards{margin-top:12px;scrollbar-gutter:auto}
+  .side-cards{flex:none;min-height:auto;margin-top:12px;overflow:visible;scrollbar-gutter:auto}  /* on a phone the whole drawer scrolls as one column */
   .side-cards a{padding:9px 10px;font-size:15px}
   .app-side .head-side>.live{min-height:36px}
   #open-browser:not([hidden]){display:flex}
