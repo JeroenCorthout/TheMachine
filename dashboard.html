@@ -1719,6 +1719,8 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 .ios-share{width:17px;height:17px;margin-left:2px;vertical-align:-3px;fill:none;stroke:var(--c-accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .nudge-act{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto}
 .nudge-act button{min-height:0;margin:0;padding:6px 14px}
+/* Under the phone top bar: the same room above it as the first section heading gets (its margin collapses there). */
+@media(max-width:1023px){.device-nudge{margin-top:var(--sp-6)}}
 @media(max-width:560px){.device-nudge{align-items:flex-start;padding:12px}.nudge-text{flex-basis:calc(100% - 50px)}.nudge-act{width:100%;justify-content:flex-end}}
 .device-act{display:flex;align-items:center;gap:6px;flex:none}.device-act button,#device-push #push-test{min-height:0;margin:0;padding:6px 12px}
 #device-push #push-test{flex:none}
@@ -2940,16 +2942,18 @@ const deviceRows=(()=>{const theme=$('#theme-toggle').closest('.settings-list>di
  const test=document.createElement('button');test.type='button';test.className='ghost';test.id='push-test';test.textContent='Send a test';test.hidden=true;$('#push-toggle').before(test);
  test.onclick=async()=>{test.disabled=true;try{await pushTest()}finally{test.disabled=false}};
  list.prepend(app);list.insertBefore(pushRow,theme);return {app,push:pushRow}})();
-function deviceSettings(){const {app}=deviceRows,small=app.querySelector('small'),act=app.querySelector('.device-act'),set=(el,html)=>{if(el.innerHTML!==html)el.innerHTML=html};
+// The help article for both rows (docs/help/phone-app.md on themachine.computer/help).
+const DEVICE_HELP=' <a class="learn" href="https://themachine.computer/help/phone-app" target="_blank" rel="noopener">Learn more</a>';
+function deviceSettings(){const {app}=deviceRows,small=app.querySelector('small'),act=app.querySelector('.device-act'),set=(el,html)=>{if(el.dataset.html!==html){el.innerHTML=html;el.dataset.html=html}};
  app.hidden=!nudgeable;
- if(installEvt){set(small,DEV.mobile?'Opens like an app, from your home screen.':'Pin it to your taskbar or dock.');set(act,'<button type="button" data-device="install-app">Install app</button>')}
- else if(appInstalled()){set(small,'Installed on this device.');set(act,'<span class="device-done">Installed</span>')}
- else{set(small,DEV.ios?`Tap Share ${SHARE_ICON}, then Add to Home Screen.`:DEV.macSafari?'In Safari’s menu bar: File, then Add to Dock.':DEV.chromium?'Find Install in the browser’s menu, or the icon in the address bar.':'This browser can’t install apps. Chrome, Edge and Safari can.');set(act,'')}
+ if(installEvt){set(small,(DEV.mobile?'Opens like an app, from your home screen.':'Pin it to your taskbar or dock.')+DEVICE_HELP);set(act,'<button type="button" data-device="install-app">Install app</button>')}
+ else if(appInstalled()){set(small,'Installed on this device.'+DEVICE_HELP);set(act,'<span class="device-done">Installed</span>')}
+ else{set(small,(DEV.ios?`Tap Share ${SHARE_ICON}, then Add to Home Screen.`:DEV.macSafari?'In Safari’s menu bar: File, then Add to Dock.':DEV.chromium?'Find Install in the browser’s menu, or the icon in the address bar.':'This browser can’t install apps. Chrome, Edge and Safari can.')+DEVICE_HELP);set(act,'')}
  const b=$('#push-toggle'),note=deviceRows.push.querySelector('small'),on=pushOn(),blocked=pushOK&&devicePush.perm==='denied';
  b.hidden=!(pushOK?!blocked:iosTab&&!navigator.standalone);b.title=!pushOK?iosHint:on?'Notifications on':'Turn on notifications';b.setAttribute('aria-pressed',String(on));
  $('#push-test').hidden=!on;
  const text=!pushOK?(iosTab?'On iPhone and iPad, add it to your Home Screen first: Share, then Add to Home Screen.':'This browser can’t show notifications.'):blocked?'Blocked in this browser. '+blockedHint():on?'On for this device. One per card, even without Telegram.':'One per card, even without Telegram.';
- if(note.textContent!==text)note.textContent=text;note.classList.toggle('device-blocked',blocked)}
+ set(note,esc(text)+DEVICE_HELP);note.classList.toggle('device-blocked',blocked)}
 function deviceRender(){const k=nudgeKind()||'',el=nudgeBox;if(el.dataset.kind!==k){el.dataset.kind=k;el.innerHTML=k?nudgeHTML(k):'';el.hidden=!k}deviceSettings()}
 deviceRows.app.onclick=e=>{const b=e.target.closest('[data-device]');if(b)deviceRun(b.dataset.device)};
 $('#push-toggle').onclick=async()=>{const b=$('#push-toggle');if(!pushOK){toast(iosHint);return}b.disabled=true;try{if(pushOn())await pushDisable();else await pushEnable()}finally{b.disabled=false}};

@@ -23,7 +23,7 @@ Your server starts, then the setup page walks you through the rest. Each step is
 3. Reviews turn on by themselves. First cards come from your newest mail, then from your last 7 days.
 4. Optional: [Telegram](telegram.md), and **More sources** such as Slack, WhatsApp or GitHub.
 
-When it's ready, press **Open your dashboard**. Add it to your phone's home screen for notifications: see [The phone app](phone-app.md).
+When it's ready, press **Open your dashboard**. Add it to your phone's home screen for notifications: see [Install the app and turn on notifications](phone-app.md).
 
 ## Come back later
 

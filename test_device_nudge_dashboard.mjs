@@ -67,7 +67,7 @@ const stored=(page,k)=>page.evaluate(k=>{const v=localStorage.getItem(k);try{ret
 const settings=async page=>{await page.evaluate(()=>showSettings('general'));await page.locator('#device-app').waitFor({state:'attached'});
  return page.evaluate(()=>{const row=id=>{const r=document.querySelector(id);return r.hidden?null:r.innerText.replace(/\s+/g,' ').trim()};
   const vis=s=>{const e=document.querySelector(s);return !!e&&!e.hidden&&e.getBoundingClientRect().height>0};
-  return {app:row('#device-app'),push:row('#device-push'),toggle:vis('#push-toggle'),test:vis('#push-test'),theme:vis('#theme-toggle'),
+  return {help:['#device-app','#device-push'].map(id=>document.querySelector(id+' a.learn')?.href),app:row('#device-app'),push:row('#device-push'),toggle:vis('#push-toggle'),test:vis('#push-test'),theme:vis('#theme-toggle'),
    order:[...document.querySelector('#device-app').parentElement.children].map(e=>e.id||e.querySelector('[id]')?.id)}})};
 const shot=async(page,name,sel)=>{if(!shots)return;if(sel)await page.locator(sel).evaluate(e=>scrollTo(0,Math.max(0,e.getBoundingClientRect().top+scrollY-120)));else await page.evaluate(()=>scrollTo(0,0));await page.waitForTimeout(150);await page.screenshot({path:`${shots}/${name}.png`})};
 const actionNames=()=>actions.map(a=>a.action);
@@ -90,7 +90,7 @@ try{
   // Calm: one card, under the page title, above the cards; it covers nothing.
   const box=await page.evaluate(()=>{const n=document.querySelector('#device-nudge').getBoundingClientRect(),c=document.querySelector('.card').getBoundingClientRect(),h=document.querySelector('#page-head').getBoundingClientRect();return {above:n.bottom<=c.top,under:n.top>=h.bottom-1,count:document.querySelectorAll('.device-nudge').length}});
   assert.deepEqual(box,{above:true,under:true,count:1});
-  assert.match((await settings(page)).app,/Install app/);await shot(page,`settings-install-1440-${scheme}`,'#device-app');await page.evaluate(()=>document.querySelector('nav [data-tab="inbox"]').click());
+  {const s=await settings(page);assert.match(s.app,/Install app/);assert.deepEqual(s.help,Array(2).fill('https://themachine.computer/help/phone-app'),'both rows link the help article')}await shot(page,`settings-install-1440-${scheme}`,'#device-app');await page.evaluate(()=>document.querySelector('nav [data-tab="inbox"]').click());
   await page.locator('#device-nudge [data-device="install-app"]').click();
   assert.deepEqual(await asked(page),['prompt']);
   await page.evaluate(()=>dispatchEvent(new Event('appinstalled')));
@@ -108,6 +108,10 @@ try{
   assert.equal(n.kind,'android');assert.match(n.text,/Add it to your home screen\. It opens like an app\./);
   const fit=await page.evaluate(()=>{const n=document.querySelector('#device-nudge').getBoundingClientRect(),t=document.querySelector('#topbar').getBoundingClientRect();return {under:n.top>=t.bottom,fits:document.documentElement.scrollWidth<=innerWidth&&n.right<=innerWidth}});
   assert.deepEqual(fit,{under:true,fits:true});
+  // The same room under the top bar as the page gets without the card (the first heading's).
+  const gap=await page.evaluate(()=>document.querySelector('#device-nudge').getBoundingClientRect().top-document.querySelector('#topbar').getBoundingClientRect().bottom);
+  const bare=await page.evaluate(()=>{const n=document.querySelector('#device-nudge');n.style.display='none';const g=document.querySelector('#suggestions>*').getBoundingClientRect().top-document.querySelector('#topbar').getBoundingClientRect().bottom;n.style.display='';return g});
+  assert.ok(gap>=24&&Math.abs(gap-bare)<=2,'room under the top bar: '+gap+' vs '+bare);
   await shot(page,`install-android-390-${scheme}`);
   await context.close()}
 
