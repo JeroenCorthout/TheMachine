@@ -247,44 +247,36 @@ class Enrichment(unittest.TestCase):
         self.assertEqual(enrichment.settings({'enrichment': {'url': 'https://leadapi.salesflare.com/enrich/companies?domain={domain}'}})['people_url'],
                          'https://leadapi.salesflare.com/enrich/people?name={name}&domain={domain}')
 
-    def test_only_work_contacts_are_looked_up(self):
-        info = {'org': 'org:globex.com', 'org_by': 'email', 'identifiers': ['email:lee@globex.com'], 'wrote': 2, 'heard': 2, 'accounts': ['work']}
-        ok = lambda name='Lee Parker', strength=1, **changes: enrichment.work_contact({**info, **changes}, name, strength, WORK)
+    def test_only_the_technical_skips(self):
+        info = {'org': 'org:globex.com', 'org_by': 'email', 'identifiers': ['email:lee@globex.com']}
+        ok = lambda name='Lee Parker', **changes: enrichment.work_contact({**info, **changes}, name)
         self.assertEqual(ok(), ('lee@globex.com', 'globex.com'))
-        self.assertIsNone(ok(org_by='review'))                      # an organisation a message stated, not their own address
-        self.assertIsNone(ok(org='org:gmail.com', identifiers=['email:lee@gmail.com']))
-        self.assertIsNone(ok(colleague=True))
-        self.assertIsNone(ok(seen_only=True))
-        self.assertIsNone(ok(owner_surname=True))                   # shares the owner's surname: probably family
-        self.assertIsNone(ok(wrote=0, met=0))                       # only wrote in
+        # Who they are to the owner doesn't matter: a colleague, family, only wrote in, only on a personal account.
+        self.assertEqual(ok(colleague=True, seen_only=True, wrote=0, met=0, accounts=['chat'], hints=["shares the owner's surname"]), ('lee@globex.com', 'globex.com'))
+        self.assertEqual(ok(org=None, org_by=None, identifiers=['email:lee@acme.com']), ('lee@acme.com', 'acme.com'))  # the owner's own domain
+        self.assertEqual(ok(identifiers=['email:lee@gmail.com', 'email:lee@globex.com']), ('lee@globex.com', 'globex.com'))
+        # Where a look-up can't work or would be wrong.
         self.assertIsNone(ok('lee'))                                # no full name to look up by
+        self.assertIsNone(ok(org='org:gmail.com', identifiers=['email:lee@gmail.com']))  # free mail: no company to look in
         self.assertIsNone(ok(identifiers=['email:info@globex.com']))
         self.assertIsNone(ok(identifiers=['email:noreply@globex.com']))
-        self.assertIsNone(ok(accounts=['home', 'chat']))            # only on personal accounts
-        self.assertEqual(ok(accounts=['work', 'chat']), ('lee@globex.com', 'globex.com'))  # a work contact also on WhatsApp
-        self.assertIsNone(ok(accounts=['work', 'chat'], strength=enrichment.CLOSE))  # a close one there: personal
-        self.assertIsNone(enrichment.work_contact(info, 'Lee Parker', 1, {'work': ''}))  # accounts without a boundary: not known as work
+        self.assertIsNone(ok(identifiers=['wa:3212345678']))
 
     def test_work_contacts_are_looked_up_on_their_own_budget_and_shown(self):
         def home(event):
             return {**event, 'account_id': 'home'}
         self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee Parker <lee@globex.com>', ('SENT',)),
-                 tg.mail(3, 'Kim Ray <kim@initech.example>', 'sam@acme.com'),                                        # only wrote in
+                 tg.mail(3, 'Kim Ray <kim@initech.example>', 'sam@acme.com'),                                        # only wrote in: looked up too
                  tg.mail(3, 'Bo Smith <bo@gmail.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Bo Smith <bo@gmail.com>', ('SENT',)),
-                 tg.mail(3, 'Ann Doe <ann@hooli.example>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Ann Doe <ann@hooli.example>', ('SENT',)),
                  home(tg.mail(3, 'Max Field <max@umbrella.example>', 'sam@acme.com')), home(tg.mail(2, 'Sam <sam@acme.com>', 'Max Field <max@umbrella.example>', ('SENT',))))
         self.build()
-        with self.store.connect() as db:  # Ann is in the owner's Family on the Network
-            db.execute('CREATE TABLE IF NOT EXISTS fleet_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)')
-            db.execute("INSERT OR REPLACE INTO fleet_meta(key,value) VALUES('directory',?)",
-                       (json.dumps({'fleets': [{'id': 'fam1', 'kind': 'family', 'name': 'Home', 'members': [{'member_id': 'm1', 'emails': ['ann@hooli.example']}]}]}),))
         config, now = self.people_config(), tg.NOW.isoformat()
-        with self.store.connect() as db:
-            self.assertEqual([p['identifier'] for p in enrichment.people_due(db, now, 10, enrichment.accounts_of(config))], ['email:lee@globex.com'])
-        self.assertEqual(enrichment.people_step(self.store.connect, config, now), 1)
+        with self.store.connect() as db:  # everyone with a full name and a company address; Bo has only free mail
+            self.assertEqual([p['identifier'] for p in enrichment.people_due(db, now, 10)], ['email:lee@globex.com', 'email:max@umbrella.example', 'email:kim@initech.example'])
+        self.assertEqual(enrichment.people_step(self.store.connect, config, now, per_pass=1), 1)
         people = [p for p, _ in Service.seen if p.startswith('/enrich/people')]
         self.assertEqual(people, ['/enrich/people?name=Lee%20Parker&domain=globex.com'])  # name and domain only, never the address
-        self.assertEqual(enrichment.people_step(self.store.connect, config, now), 0)  # done until it's due again
+        self.assertEqual(enrichment.people_step(self.store.connect, config, now), 0)  # the others aren't known; done until due again
         with self.store.connect() as db:
             self.assertEqual(enrichment.people_status(db)['found'], 1)
             self.assertEqual(enrichment.status(db, config)['found'], 0)  # the organisations' budget is untouched
@@ -295,33 +287,19 @@ class Enrichment(unittest.TestCase):
         self.assertEqual(enrichment.people_step(self.store.connect, config, now), 1)
         self.build()
         lee = self.node('email:lee@globex.com')
-        self.assertEqual((lee['profile']['title'], lee['profile']['company_domain'], lee['org'], lee['lookup_off']),
-                         ('Head of Sales', 'globex.com', 'org:globex.com', False))
+        self.assertEqual((lee['profile']['title'], lee['profile']['company_domain'], lee['org']), ('Head of Sales', 'globex.com', 'org:globex.com'))
         self.assertNotIn('about_me', json.dumps(lee))
         with self.store.connect() as db:
             lines = graph.context_lines(db, [r[0] for r in db.execute("SELECT event_id FROM graph_events WHERE node_id='email:lee@globex.com'")])
         self.assertIn('job title Head of Sales', lines)
-        # Don't look up: the details go, a late answer doesn't bring them back, and they are not due again until undone.
         self.app.config = {**tg.CONFIG, **config}
-        with self.assertRaisesRegex(ValueError, 'Only the owner'):
-            self.app.action('graph_person_lookup', {'node_id': 'email:lee@globex.com', 'private': True})
-        self.assertTrue({'graph_person_lookup', 'set_people_lookup'} <= a.OWNER_ACTIONS)
-        self.app.action('graph_person_lookup', {'node_id': 'email:lee@globex.com', 'private': True}, owner_dashboard=True)
-        lee = self.node('email:lee@globex.com')
-        self.assertEqual((lee['profile'], lee['lookup_off']), (None, True))
-        with self.store.connect() as db:
-            enrichment.save_person(db, 'email:lee@globex.com', 'found', {'title': 'CEO'}, now)
-            self.assertEqual(tuple(db.execute("SELECT status,profile FROM person_profiles WHERE identifier='email:lee@globex.com'").fetchone()), ('private', None))
-            self.assertEqual(enrichment.people_due(db, '2030-01-01T00:00:00+00:00', 10, WORK), [])
-        self.app.action('graph_person_lookup', {'node_id': 'email:lee@globex.com', 'private': False}, owner_dashboard=True)
-        with self.store.connect() as db:
-            self.assertEqual(len(enrichment.people_due(db, now, 10, WORK)), 1)
+        self.assertTrue({'graph_person_delete', 'set_people_lookup'} <= a.OWNER_ACTIONS and 'graph_person_lookup' not in a.OWNER_ACTIONS)
         # Settings, Look up work contacts: off means nobody is looked up.
         with self.assertRaisesRegex(ValueError, 'Only the owner'):
             self.app.action('set_people_lookup', {'on': False})
         self.assertEqual(self.app.action('set_people_lookup', {'on': False}, owner_dashboard=True), {'people_available': True, 'people': False})
         with self.store.connect() as db:
-            self.assertEqual(enrichment.people_due(db, now, 10, WORK), [])
+            self.assertEqual(enrichment.people_due(db, now, 10), [])
         self.assertEqual(enrichment.people_step(self.store.connect, config, now), 0)
         self.app.action('set_people_lookup', {'on': True}, owner_dashboard=True)
         self.assertEqual(self.app.lookups_view(), {'people_available': True, 'people': True})

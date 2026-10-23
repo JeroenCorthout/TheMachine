@@ -303,11 +303,10 @@ def lookup(connect, config, domain, now):
     return {'domain': domain, 'profile': profile}
 
 
-# People: the work contacts the owner deals with, looked up the same way, on their own budget. Only someone whose
-# organisation comes from their company email address (never free mail, the owner's own domains, a shared inbox or a
-# no-reply sender), whom the owner writes with or meets, and who shows up in a work account. Never Family or Friends,
-# never someone who shares the owner's surname or is a close contact on a personal account, never anyone the owner
-# said not to look up. What comes back is cut down to what the dashboard shows: job title, company, a photo (https
+# People: everyone in the graph with a full name and a company email address, looked up the same way, on their own
+# budget. Only the technical skips, where a look-up can't work or would be wrong: no full name, only free mail (no
+# company to look in), a shared inbox or a no-reply sender. The owner's own colleagues are looked up too, at the
+# owner's own domain. What comes back is cut down to what the dashboard shows: job title, company, a photo (https
 # only), a LinkedIn address and city and country. Kept on this Machine only (person_profiles).
 PEOPLE_PER_PASS = 5
 PEOPLE_PER_DAY = 50
@@ -323,7 +322,6 @@ PERSON_FIELDS = {
 PERSON_NAME = ['name', 'full_name', 'name.fullName', 'fullName']  # only to check it is the same person; never kept
 PERSON_WRAPPERS = ('person', 'data', 'result')
 LINKEDIN = re.compile(r'https://(?:[a-z]{2,3}\.)?linkedin\.com/in/[A-Za-z0-9_%-]{2,100}/?')
-CLOSE = 3  # graph strength from which someone is a close contact (graph.closeness)
 
 
 def people_on(db):
@@ -414,71 +412,43 @@ def fetch_person(cfg, person, timeout=15):
         raise EnrichmentError('the answer was not JSON') from None
 
 
-def fleet_personal(db):
-    """Graph people who are in the owner's Family or among their Friends, from the Network directory kept here."""
+def work_contact(info, name):
+    """(email, domain) to look this person up by, or None when a look-up can't work: no full name, or no company
+    address (free mail, a shared inbox, a no-reply sender). Their organisation's own address goes first."""
     import graph
-    try:
-        row = db.execute("SELECT value FROM fleet_meta WHERE key='directory'").fetchone()
-    except Exception:
-        return set()
-    if not row:
-        return set()
-    try:
-        fleets = {f.get('id') or f.get('kind'): f for f in (json.loads(row[0]) or {}).get('fleets', []) if isinstance(f, dict)}
-        return {node for node, mark in graph.fleet_marks(db, fleets).items() if any(x['kind'] in ('family', 'friends') for x in mark['in'])}
-    except (ValueError, TypeError, KeyError, AttributeError):
-        return set()
-
-
-def work_contact(info, name, strength, accounts):
-    """(email, domain) to look this person up by, or None when they are not a work contact to look up."""
-    import graph
-    org = str(info.get('org') or '')
-    if info.get('org_by') != 'email' or not org.startswith('org:') or org.startswith('org:named:'):
-        return None  # only an organisation from their own company address
-    domain = org[4:]
-    if domain in graph.FREEMAIL or FREEMAIL.match(domain) or MARKETING.match(domain):
-        return None
-    if info.get('colleague') or info.get('seen_only') or info.get('owner_surname'):
-        return None
-    if not (info.get('met') or info.get('wrote')):
-        return None  # the owner never wrote to them or met them: cold outreach, or only copied
     if not graph.plain_name(name) or graph.incomplete_name(name):
         return None  # a lookup needs their full name
-    theirs = set(info.get('accounts') or ())
-    work = {a for a, boundary in accounts.items() if str(boundary or '').startswith('work:')}
-    if not theirs & work:
-        return None  # only seen on personal accounts
-    if theirs - work and strength >= CLOSE:
-        return None  # a close contact who is also on a personal account
-    addresses = [i.split(':', 1)[1] for i in info.get('identifiers') or () if str(i).startswith('email:') and str(i).endswith('@' + domain)]
-    addresses = [a for a in addresses if not graph.bulk(a) and not graph.ROLE.match(a)]
-    return (addresses[0], domain) if addresses else None
+    org = str(info.get('org') or '')
+    preferred = org[4:] if info.get('org_by') == 'email' and org.startswith('org:') and not org.startswith('org:named:') else ''
+    addresses = []
+    for identifier in info.get('identifiers') or ():
+        identifier = str(identifier)
+        if not identifier.startswith('email:') or '@' not in identifier:
+            continue
+        address = identifier.split(':', 1)[1].lower()
+        domain = address.rsplit('@', 1)[1]
+        if domain in graph.FREEMAIL or FREEMAIL.match(domain) or MARKETING.match(domain) or graph.bulk(address) or graph.ROLE.match(address):
+            continue
+        addresses.append((domain != preferred, address, domain))
+    return min(addresses)[1:] if addresses else None
 
 
-def people_due(db, now, limit, accounts):
-    """Work contacts that were never looked up or are due again, the ones the owner deals with most first:
-    [{'identifier', 'email', 'name', 'domain'}]. accounts: {account id: boundary} from the config. Nothing while the
-    owner turned Look up work contacts off."""
+def people_due(db, now, limit):
+    """People that were never looked up or are due again, the ones the owner deals with most first:
+    [{'identifier', 'email', 'name', 'domain'}]. Nothing while the owner turned Look up work contacts off."""
     if limit <= 0 or not people_on(db):
         return []
     current = dt.datetime.fromisoformat(now)
     fresh = (current - dt.timedelta(days=REFRESH_DAYS)).isoformat()
     retry = (current - dt.timedelta(hours=RETRY_HOURS)).isoformat()
     looked = {r[0]: (r[1], r[2]) for r in db.execute('SELECT identifier,status,fetched_at FROM person_profiles')}
-    skip = fleet_personal(db)
     ranked = []
-    for node, name, strength, raw in db.execute("SELECT id,name,strength,info FROM graph_nodes WHERE kind='person' AND json_extract(info,'$.org_by')='email'"):
-        if node in skip:
-            continue
+    for node, name, strength, raw in db.execute("SELECT id,name,strength,info FROM graph_nodes WHERE kind='person'"):
         try:
             info = json.loads(raw or '{}')
         except ValueError:
             continue
-        emails = ['email:' + i.split(':', 1)[1] for i in info.get('identifiers') or () if str(i).startswith('email:')]
-        if any(looked.get(e, ('',))[0] == 'private' for e in emails):
-            continue  # the owner said not to look them up
-        found = work_contact(info, name, strength or 0, accounts)
+        found = work_contact(info, name)
         if not found:
             continue
         identifier = 'email:' + found[0]
@@ -491,25 +461,10 @@ def people_due(db, now, limit, accounts):
 
 
 def save_person(db, identifier, status, profile, now):
-    """Stores a person look-up. Someone the owner said not to look up keeps that mark, and no profile."""
+    """Stores a person look-up; an error keeps what was there."""
     db.execute('INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,?,?,?) '
-               "ON CONFLICT(identifier) DO UPDATE SET status=excluded.status,profile=CASE WHEN excluded.status='error' THEN person_profiles.profile ELSE excluded.profile END,fetched_at=excluded.fetched_at "
-               "WHERE person_profiles.status!='private'",
+               "ON CONFLICT(identifier) DO UPDATE SET status=excluded.status,profile=CASE WHEN excluded.status='error' THEN person_profiles.profile ELSE excluded.profile END,fetched_at=excluded.fetched_at",
                (identifier, status, json.dumps(profile) if profile else None, now))
-
-
-def person_private(db, identifiers, private, now):
-    """Don't look up (private) clears what was looked up about someone and stops looking them up; Look up again undoes it."""
-    emails = sorted({'email:' + str(i).split(':', 1)[1].lower() for i in identifiers if str(i).startswith('email:')})
-    if not emails:
-        raise ValueError('Only someone with an email address is looked up')
-    for e in emails:
-        if private:
-            db.execute("INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,'private',NULL,?) "
-                       "ON CONFLICT(identifier) DO UPDATE SET status='private',profile=NULL,fetched_at=excluded.fetched_at", (e, now))
-        else:
-            db.execute("DELETE FROM person_profiles WHERE identifier=? AND status='private'", (e,))
-    return {'looked_up': not private}
 
 
 def people_available(config):
@@ -522,10 +477,6 @@ def people_available(config):
     return bool(cfg and cfg.get('people_url') and cfg.get('people') is not False)
 
 
-def accounts_of(config):
-    return {str(a.get('id')): str(a.get('boundary') or '') for a in (config or {}).get('accounts') or () if isinstance(a, dict) and a.get('id')}
-
-
 def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
     """Look up a few work contacts with the Machine's own service. Returns how many got a profile; stops at the first
     service error."""
@@ -533,8 +484,8 @@ def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
     if not cfg or not cfg.get('people_url') or cfg.get('people') is False:
         return 0
     with connect() as db:
-        used = db.execute("SELECT count(*) FROM person_profiles WHERE substr(fetched_at,1,10)=? AND status!='private'", (now[:10],)).fetchone()[0]
-        due = people_due(db, now, max(0, min(per_pass, int(cfg.get('people_per_day') or PEOPLE_PER_DAY) - used)), accounts_of(config))
+        used = db.execute("SELECT count(*) FROM person_profiles WHERE substr(fetched_at,1,10)=?", (now[:10],)).fetchone()[0]
+        due = people_due(db, now, max(0, min(per_pass, int(cfg.get('people_per_day') or PEOPLE_PER_DAY) - used)))
     found = 0
     for person in due:
         try:
@@ -551,5 +502,4 @@ def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
 
 def people_status(db):
     counts = dict(db.execute('SELECT status,count(*) FROM person_profiles GROUP BY status').fetchall())
-    return {'on': people_on(db), 'found': counts.get('found', 0), 'unknown': counts.get('none', 0), 'errors': counts.get('error', 0),
-            'not_looked_up': counts.get('private', 0)}
+    return {'on': people_on(db), 'found': counts.get('found', 0), 'unknown': counts.get('none', 0), 'errors': counts.get('error', 0)}

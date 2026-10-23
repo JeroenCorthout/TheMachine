@@ -48,7 +48,7 @@ try{
  assert.equal(await page.locator('.graph-open a[href="#card=0123456789abcdef"]').count(),1);
  assert.match(text,/probably part of it/i);
  // Where they work, as their LinkedIn headline states it, linked to the organisation.
- assert.ok(text.includes('At Globex · from their LinkedIn headline')&&text.includes('“Engineering at Globex”'));
+ assert.ok(text.includes('Globex · from their LinkedIn headline')&&text.includes('“Engineering at Globex”'));
  assert.equal(await page.locator('.org-row button.node[data-node="org:named:globex"]').count(),1);
  const widths=[];
  for(const width of [320,390,768]){
@@ -81,7 +81,7 @@ try{
  await page.locator('.person-org-form button').click();
  for(let i=0;i<100&&calls.length<4;i++)await page.waitForTimeout(20);
  assert.deepEqual(calls[3],{action:'graph_person_org',args:{node_id:'email:ann@client.example',org:'Initech'}});
- await page.locator('.org-row',{hasText:'At Initech · you set it'}).waitFor();
+ await page.locator('.org-row',{hasText:'Initech · you set it'}).waitFor();
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({widths,actions:calls.length,page_errors:errors}));
 }finally{if(browser)await browser.close();await new Promise(r=>server.close(r))}

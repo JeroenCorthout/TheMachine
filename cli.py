@@ -526,7 +526,6 @@ def cmd_enrich(config, args):
         return out_json(state)
     people = state.get('people') or {}
     people_line = (f"Work contacts: {people.get('found', 0)} found, {people.get('unknown', 0)} unknown"
-                   + (f", {people['not_looked_up']} you said not to look up" if people.get('not_looked_up') else '')
                    + ('. Look up work contacts is off in Settings.' if people.get('on') is False else '.'))
     if not state['service']:
         print('Enrichment is off. Add "enrichment" to the config to look up the organisations you deal with (see README, Enrichment).')

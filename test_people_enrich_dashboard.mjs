@@ -7,12 +7,13 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 
 // Work contacts from enrichment: a photo (https only, no referrer, lazy, fixed size, their initials behind it and
 // alone when there is none or it fails) and job title on People rows; on their page the title
-// under their name, city and country, LinkedIn, and Don't look up. Settings has Look up work contacts. SHOT_DIR=… saves screenshots.
+// beside the photo under their name, city and country, LinkedIn, and Delete permanently with a confirm step. Settings has Look up work contacts.
+// SHOT_DIR=… saves screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const day=new Date(Date.now()-864e5).toISOString();
 const FACE=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#c9b8a6"/><circle cx="32" cy="25" r="12" fill="#7a5c48"/><path d="M10 64c2-14 11-21 22-21s20 7 22 21z" fill="#3d5a80"/></svg>`;
 const person=(id,name,profile,extra={})=>({id:'email:'+id,kind:'person',name,strength:2.1,closeness:'regular',last_at:day,signals:6,ids:[id],usual_gap_days:7,
- quiet:false,role:null,org:'org:'+id.split('@')[1],org_name:extra.org_name||null,org_by:'email',profile,lookup_off:false,links:[],recent:[],around:[],open:{},...extra});
+ quiet:false,role:null,org:'org:'+id.split('@')[1],org_name:extra.org_name||null,org_by:'email',profile,links:[],recent:[],around:[],open:{},...extra});
 let people=[
  person('lee@globex.example','Lee Parker',{title:'Head of Sales',company:'Globex',company_domain:'globex.example',photo:'https://photos.test/lee.svg',
   linkedin_url:'https://www.linkedin.com/in/lee-parker-example',city:'Springfield',country:'US'},{org_name:'Globex',role:'customer',role_by:'owner'}),
@@ -27,7 +28,7 @@ const server=createServer(async(req,res)=>{
  if(url.pathname==='/api/status'){res.end(JSON.stringify({suggestions:[],promises:[],connectors:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],lookups}));return}
  if(url.pathname==='/api/graph'){const node=url.searchParams.get('node');res.end(JSON.stringify(node?people.find(p=>p.id===node):{projects:[],people,quiet:[],new:[],orgs:[]}));return}
  if(url.pathname==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
-  if(call.action==='graph_person_lookup')people=people.map(p=>p.id===call.args.node_id?{...p,profile:call.args.private?null:p.profile,lookup_off:!!call.args.private}:p);
+  if(call.action==='graph_person_delete')people=people.filter(p=>p.id!==call.args.node_id);
   if(call.action==='set_people_lookup'){lookups={...lookups,people:call.args.on};res.end(JSON.stringify(lookups));return}
   res.end('{}');return}
  if(url.pathname.startsWith('/brand/')||url.pathname.startsWith('/assets/')){res.statusCode=404;res.end();return}
@@ -65,7 +66,13 @@ try{
   assert.equal(await page.locator('.graph-detail .person-pic.big img').evaluate(i=>i.width),44);
   const text=await page.locator('.graph-detail').textContent();
   assert.equal((await page.locator('.graph-detail .person-job').textContent()).trim(),'Head of Sales');
-  assert.ok(text.includes('At Globex · from their work email'),text);
+  assert.equal(await page.locator('.graph-detail .name-row .person-head h3 + .person-job').count(),1);  // title under the name, beside the photo
+  assert.equal(await page.locator('[data-person-lookup]').count(),0);
+  assert.equal(await page.locator('.graph-detail .person-delete [data-person-delete]').textContent(),'Delete permanently');
+  assert.ok(await page.locator('.person-delete-confirm').isHidden());
+  if(width>=700){const [head,sub]=await page.evaluate(()=>[document.querySelector('.graph-detail .person-head').getBoundingClientRect().left,document.querySelector('.graph-detail .org-row').getBoundingClientRect().left]);
+   assert.ok(Math.abs(head-sub)<=2,`details line up with the name: ${head} ${sub}`)}
+  assert.ok(text.includes('Globex · from their work email')&&!text.includes('At Globex'),text);
   assert.equal(await page.locator('.graph-detail .org-row button.node[data-node="org:globex.example"]').count(),1);
   assert.ok(text.includes('Springfield, United States')&&text.includes('LinkedIn ↗'),text);
   assert.equal(await page.locator('.graph-detail a[href="https://www.linkedin.com/in/lee-parker-example"][rel="noreferrer"]').count(),1);
@@ -74,23 +81,28 @@ try{
   assert.deepEqual(errors,[]);
   await context.close();
  }
- // Don't look up clears them and keeps them from being looked up; Look up again undoes it.
- const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage();
+ // Delete permanently: a confirm step of its own, Cancel backs out, Delete removes them and goes back to People.
+ const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2}),page=await context.newPage();
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
- page.on('dialog',d=>d.accept());
  await page.goto('http://127.0.0.1:'+server.address().port);
  await navClick(page.locator('nav [data-tab="people"]'));
  await navClick(page.locator('.side-sub a[data-graph-sub="people"]'));
  await page.locator('#people-view article[data-node="email:lee@globex.example"] button.node').click();
- await page.locator('[data-person-lookup="off"]').click();
- await page.locator('[data-person-lookup="on"]').waitFor();
- assert.deepEqual(calls.at(-1),{action:'graph_person_lookup',args:{node_id:'email:lee@globex.example',private:true}});
- assert.equal(await page.locator('.graph-detail .person-pic img').count(),0);
- assert.equal((await page.locator('.graph-detail .person-pic').textContent()).trim(),'LP');
- assert.ok((await page.locator('.graph-detail').textContent()).includes('Not looked up, as you asked.'));
- await page.locator('[data-person-lookup="on"]').click();
- await page.waitForFunction(()=>!document.querySelector('[data-person-lookup="on"]'));
- assert.deepEqual(calls.at(-1).args,{node_id:'email:lee@globex.example',private:false});
+ await page.locator('[data-person-delete]').click();
+ const ask=page.locator('.person-delete-confirm');
+ await ask.waitFor();
+ assert.equal((await ask.locator('p').first().textContent()).trim(),'Delete Lee Parker and everything The Machine knows about them? This can’t be undone.');
+ assert.ok((await ask.textContent()).includes('Won’t be added again.'));
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ if(process.env.SHOT_DIR){await ask.scrollIntoViewIfNeeded();await page.screenshot({path:`${process.env.SHOT_DIR}/delete-confirm-390-light.png`})}
+ await ask.locator('[data-person-delete-no]').click();
+ assert.ok(await ask.isHidden());
+ assert.ok(!calls.some(c=>c.action==='graph_person_delete'));
+ await page.locator('[data-person-delete]').click();
+ await ask.locator('[data-person-delete-yes]').click();
+ await page.waitForFunction(()=>!document.querySelector('.graph-detail')&&document.querySelector('#people-view article[data-node]'));
+ assert.deepEqual(calls.at(-1),{action:'graph_person_delete',args:{node_id:'email:lee@globex.example'}});
+ assert.equal(await page.locator('#people-view article[data-node="email:lee@globex.example"]').count(),0);
  // Settings: the switch, on by default, saves at once.
  await navClick(page.locator('#open-settings'));
  const sw=page.locator('#lookup-people');
