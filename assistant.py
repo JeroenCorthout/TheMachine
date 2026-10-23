@@ -10659,6 +10659,17 @@ class App:
             if not getattr(self, 'fleet', None):
                 raise ValueError('This Machine is not on the Network')
             return self.fleet.fill_split(str(args.get('split_id') or ''), args.get('event_id'), args.get('parts') or {})
+        if name == 'push_test':  # Settings or the nudge: one test notification to this device's own subscription
+            if not owner_dashboard:
+                raise ValueError('Phone notifications are turned on in the dashboard app')
+            with self.store.connect() as db:
+                row = db.execute('SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE endpoint=?', (str(args.get('endpoint') or ''),)).fetchone()
+            if not row:
+                raise ValueError('Notifications are off on this device. Turn them on first.')
+            results = push_send(self.store, self.config, [dict(row)], {'title': 'Notifications are on', 'body': 'This is how a new card shows up.', 'url': '.', 'tag': 'push-test'}, 'test')
+            if not any(200 <= r.get('status', 0) < 300 for r in results):
+                raise ValueError('The test didn’t go through. Turn notifications off and on again.')
+            return {'sent': True}
         if name in ('push_subscribe', 'push_unsubscribe'):
             if not owner_dashboard:
                 raise ValueError('Phone notifications are turned on in the dashboard app')
@@ -14046,7 +14057,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
