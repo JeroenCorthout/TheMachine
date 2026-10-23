@@ -960,7 +960,7 @@ def _build(db, config, now):
     # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
     def org_name(domain):
         return (named.get('org:' + domain) or crm_names.get(domain) or paying_names.get(domain)
-                or ({**(profiles.get(domain) or {}), **edits.get(domain, {})}).get('name') or domain)
+                or ({**(profiles.get(domain) or {}), **edits.get(domain, {})}).get('name') or enrichment.readable_name(domain))
     by_org_name = {}
     for domain in sorted(members):
         by_org_name.setdefault(folded_words(org_name(domain)), domain)
@@ -1018,7 +1018,8 @@ def _build(db, config, now):
     for domain, people in members.items():
         total = sum(v for _, v in people)
         role, role_by = said.get('org:' + domain, (None, None))
-        profile = {**(profiles.get(domain) or {}), **edits.get(domain, {})} or None  # what the owner wrote wins
+        # What the owner wrote wins; the email domain is the website when nothing else says one.
+        profile = {'website': enrichment.website(domain), **(profiles.get(domain) or {}), **edits.get(domain, {})}
         nodes.append(('org:' + domain, 'org', org_name(domain)[:200], round(total, 4),
                       max((last_day[p].isoformat() for p, _ in people if p in last_day), default=None), len(people), None, 0, None,
                       json.dumps({'domain': domain, 'role': role, 'role_by': role_by, 'paying': domain in paying_names, 'profile': profile,

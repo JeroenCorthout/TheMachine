@@ -13696,7 +13696,7 @@ class App:
         wait = 120
         while not self.stop.wait(wait):
             try:
-                if enrichment.step(self.store.connect, self.config, now()):
+                if enrichment.step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None))):
                     self.graph_dirty.set()  # show the new profiles
                 found = enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None)), stop=self.stop.is_set)
                 photos = enrichment.photos_step(self.store.connect, now())  # straight after the lookups (hosted ones too, through the agent)
