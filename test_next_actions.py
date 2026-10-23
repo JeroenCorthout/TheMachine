@@ -51,6 +51,10 @@ class NextActions(unittest.TestCase):
         # A draft without recipients still needs the owner to pick them.
         with self.assertRaises(ValueError):
             self.app().action('prepare',{'suggestion_id':self.sid,'body':'x','next_action':{**self.draft(),'to':[]},'send_now':True})
+        with self.assertRaisesRegex(ValueError,'Not sent'):  # a draft they haven't seen yet is shown first
+            self.app().action('prepare',{'suggestion_id':self.sid,'body':'Sent the reply.','next_action':self.draft(),'send_now':True})
+        self.app().action('prepare',{'suggestion_id':self.sid,'body':'The reply is ready.','next_action':self.draft()})
+        self.decide('other','send-it','Send it')
         saved=self.app().action('prepare',{'suggestion_id':self.sid,'body':'Sent the reply.','next_action':self.draft(),'send_now':True})
         self.assertEqual(saved['send'],{'status':'queued'})
         app=self.app();app.action_step(self.transport(send=lambda action,job:(sent.append(action),{'message_id':'sent'})[1]))

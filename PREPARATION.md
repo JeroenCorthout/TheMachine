@@ -81,14 +81,14 @@ So the owner doesn't need Change: the result is the shortest version that works.
 
 ## Next actions
 
-Choose the useful NEXT ACTION on the finished result, not more preparation for its own sake. Usually zero or one extra button is enough. Change already covers rewrites, shorter versions, different wording and corrections; Mark done, Snooze and Not needed are already present. Never add Draft shorter reply or Draft follow-up to a finished email. Do not add Open assistant or links just to fill a menu, or put implementation explanations in the result text. Use next_actions=[...] only for genuinely distinct ways to advance the task (at most 3). A briefing may have no buttons. Never fabricate recipients or buttons.
+Choose the useful NEXT ACTION on the finished result, not more preparation for its own sake. Usually zero or one extra button is enough. Change already covers rewrites, shorter versions, different wording and corrections; Mark done, Snooze and Not needed are already present. Never add Draft shorter reply or Draft follow-up to a finished email. Don't add Open assistant or links to fill a menu, or implementation notes in the result text. Use next_actions=[...] only for genuinely distinct ways to advance the task (at most 3). A briefing may have no buttons. Never fabricate recipients or buttons.
 
 ### Email
 
 `{kind:email,label:Send,account_id:<Gmail or Outlook account ID of the task's company>,to:[<verified addresses>],subject:<exact subject>,body:<full email>}`
 
 - Any ready email, including replies, goes in next_actions as its exact structured email so the owner gets Send; never leave it only in the text because of formatting.
-- When the owner's note asks you to send it ("send it", "reply to them"), add send_now:true to the prepare call: the service then sends that draft right away through the same Send route, with their signature and attachments.
+- send_now:true sends the draft at once via Send, only when the owner's latest note approves a draft already on the card, unchanged. A draft you write or change now is saved without it for them to read and Send, even after "email Sam now".
 - If no recipient is verified, leave to empty: the owner then picks from the task's email addresses. No guessed recipients, guessed attachments or external sends.
 - Write the body as plain text; put links behind words as [text](https://url). End with the closing, a blank line, then the owner's first name (Cheers,\n\nAlex). Never write a signature: the owner's real Gmail HTML signature is added below the name when sent (from an Outlook account none is added). Keep emails short.
 - When offering to meet, put the owner's booking link (from USER.md or the config's `booking_links`) behind text, e.g. [pick a time](https://example.com/book).

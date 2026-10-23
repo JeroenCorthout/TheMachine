@@ -2134,6 +2134,8 @@ class Store:
                 id TEXT PRIMARY KEY,suggestion_id TEXT NOT NULL,old_revision TEXT NOT NULL,new_revision TEXT NOT NULL,
                 kind TEXT NOT NULL,before_subject TEXT,before_body TEXT NOT NULL,after_subject TEXT,after_body TEXT NOT NULL,
                 source TEXT NOT NULL,created_at TEXT NOT NULL);
+              CREATE TABLE IF NOT EXISTS draft_saves(
+                suggestion_id TEXT NOT NULL,revision TEXT NOT NULL,saved_at TEXT NOT NULL,PRIMARY KEY(suggestion_id,revision));
               CREATE TABLE IF NOT EXISTS suggestion_keys(
                 dedupe_key TEXT PRIMARY KEY,suggestion_id TEXT NOT NULL,created_at TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS tool_approval_proposals(
@@ -5087,6 +5089,7 @@ class Store:
                            ({'completed':'done','not_performed':'needs_input','uncertain':'finish_uncertain'}[state],encoded(payload),now(),chosen['id']))
             db.execute("UPDATE action_jobs SET status='done',updated_at=? WHERE suggestion_id=? AND status='local_preparation' AND json_extract(payload,'$.kind')='prepare'",(now(),suggestion_id))
             db.execute("UPDATE suggestions SET body=?,status='prepared',next_action=?,outcome=? WHERE id=?", (body[:5000],action_json,encoded(outcome) if outcome else None,suggestion_id))
+            draft_saved(db,suggestion_id,next_action)
             db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id=? AND message_id IS NOT NULL', (suggestion_id,))
             db.execute("UPDATE preparations SET status='done',updated_at=?,error=NULL,reason=NULL WHERE suggestion_id=?",(now(),suggestion_id))
             if (outcome or {}).get('state')=='snoozed':
@@ -5128,6 +5131,7 @@ class Store:
                 current=revised
             stamp=now()
             db.execute('UPDATE suggestions SET next_action=? WHERE id=?',(encoded(current),suggestion_id))
+            draft_saved(db,suggestion_id,revised,stamp)
             db.execute("UPDATE action_jobs SET status='cancelled',updated_at=? WHERE suggestion_id=? AND revision=? AND status IN ('queued','blocked')",(stamp,suggestion_id,revision))
             db.execute('INSERT INTO draft_edits(id,suggestion_id,old_revision,new_revision,kind,before_subject,before_body,after_subject,after_body,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                 (uuid.uuid4().hex,suggestion_id,revision,revised['revision'],action['kind'],action.get('subject'),next_actions.draft_text(action),revised.get('subject'),next_actions.draft_text(revised),source,stamp))
@@ -7239,11 +7243,40 @@ def chat_items(messages, owner, results=None):
     return sorted(items, key=lambda i: (i['at'], rank.get(i['kind'], 3)))
 
 
+def draft_saved(db, suggestion_id, action, at=None):
+    """Note when each message draft first showed on the card (draft_saves): an assistant send needs the owner to have
+    had it in front of them before they wrote the message that approves it (unseen_draft)."""
+    for a in next_actions.actions(action) if action else []:
+        if a.get('kind') in MESSAGE_KINDS and a.get('revision'):
+            db.execute('INSERT OR IGNORE INTO draft_saves(suggestion_id,revision,saved_at) VALUES(?,?,?)', (suggestion_id, a['revision'], at or now()))
+
+
+def unseen_draft(db, suggestion_id, revision, job_id=None):
+    """Why the assistant may not send this draft revision for the owner now, or None when it may. It may only when the
+    owner approved this exact draft: it was on the card (unchanged since) before the owner's own latest turn, the one
+    that started this preparation (or, outside one, their latest note or Do it on the card). Whether that turn means
+    "send it" is the model's judgment; that the draft was there to see first is checked here."""
+    row = db.execute('SELECT next_action FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+    if not row or not any(a.get('revision') == revision for a in next_actions.actions(row['next_action'] or 'null')):
+        return 'this draft is new or changed in this turn'
+    saved = db.execute('SELECT saved_at FROM draft_saves WHERE suggestion_id=? AND revision=?', (suggestion_id, revision)).fetchone()
+    job = db.execute('SELECT decision_id FROM preparations WHERE suggestion_id=? AND job_id=?', (suggestion_id, job_id)).fetchone() if job_id else None
+    turn = (db.execute("SELECT created_at FROM decisions WHERE id=? AND suggestion_id=? AND source IN ('dashboard','telegram') AND choice IN ('other','accept')",
+                       (job['decision_id'], suggestion_id)).fetchone() if job else None) if job_id else db.execute(
+        "SELECT created_at FROM decisions WHERE suggestion_id=? AND source IN ('dashboard','telegram') AND choice IN ('other','accept') "
+        'ORDER BY created_at DESC,rowid DESC LIMIT 1', (suggestion_id,)).fetchone()
+    if not turn:
+        return 'no message from the owner approves it'
+    if not saved or saved['saved_at'] >= turn['created_at']:
+        return 'the owner has not seen this draft before their latest message'
+    return None
+
+
 def chat_prompt(job, config=None):
     """The next turn of a card's chat, in the session that already has the card's full context: a short message, so
     a long chat doesn't resend that context with every reply. Only the job's own handles change from turn to turn."""
     j, sid = job['job_id'], job['suggestion_id']
-    return f'''The owner wrote to you in the chat of suggestion {sid}. Their message is the latest Change note (latest_feedback, source dashboard), and it is their authorization as before. This is a preparation task: answer it, or do what it asks, under the preparation rules and the instructions earlier in this session (if they are no longer in context, read tools/personal-assistant/PREPARATION.md). A question about the thread, the people or the context is answered from the evidence (events, preparation_history, memory), and the card's current draft and next_actions stay as they are unless the message asks to change them. When you change a draft, the body says concretely what changed. Preparation job ID: {j}.
+    return f'''The owner wrote to you in the chat of suggestion {sid}. Their message is the latest Change note (latest_feedback, source dashboard), and it is their authorization as before. This is a preparation task: answer it, or do what it asks, under the preparation rules and the instructions earlier in this session (if they are no longer in context, read tools/personal-assistant/PREPARATION.md). A question about the thread, the people or the context is answered from the evidence (events, preparation_history, memory), and the card's current draft and next_actions stay as they are unless the message asks to change them. When you change a draft, the body says concretely what changed. Use send_now only when this message approves sending a draft they already saw on the card, unchanged; a draft you write or change now is saved without it, for them to read and Send. Preparation job ID: {j}.
 - Browser lease owner: assistant-{j[:8]} (python3 {browser_lease_script(config)} claim --owner assistant-{j[:8]} --minutes 30 --wait 10).
 - Attachments folder: {WORKSPACE}/data/assistant-attachments/{j}/
 - Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<your reply or result, short>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it.'''
@@ -8552,7 +8585,7 @@ Follow the preparation rules above (tools/personal-assistant/PREPARATION.md; rea
 For this job:
 - Browser lease owner: assistant-{j[:8]} (python3 {browser_lease_script(config)} claim --owner assistant-{j[:8]} --minutes 30 --wait 10).
 - Attachments folder: {WORKSPACE}/data/assistant-attachments/{j}/
-- Save the result with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<short result>, next_actions=[...], outcome and send_now:true only when the owner asked you to send it.
+- Save the result with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<short result>, next_actions=[...], outcome, and send_now:true only when the owner's latest message approves sending a draft they already saw on the card, unchanged (the service refuses any other). A draft you write or change in this turn is saved without send_now and shown to them: they read it and tap Send (outcome:'needs_you', needs:'check the draft and send it'), also when their note only says what to do ("email Sam now").
 - outcome:'done' only when the task itself is complete and nothing is left for the owner but to check it; outcome:'answered' when you only answered their question, explained or planned, and the task itself is still to do (the card then offers Do it again); outcome:'already_done' with no next_actions when it turns out to be done already or no longer needed; outcome:'your_step' with step:'submit' (or pay, book, sign, confirm, order, apply) when everything is ready but that final click is left for them, e.g. a form you filled in and didn't submit (the card says so and links to the page in this Machine's browser by itself; no link of your own needed); outcome:'needs_you' with needs:<the one thing they have to do, in a few words> otherwise (approve the send, sign in, choose); when that is a question for them, write needs as the question itself, ending in "?" (the card then leads with Answer). The card shows that status line itself, so the body doesn't repeat it. Finish what you can first: don't stop to ask about steps the rules already let you do.
 - When latest_feedback is a Change note, also give note_kind: style (how it was written), fact (something you didn't know), continue (keep going or finish the job) or new_ask (something else to do). A style note that holds beyond this card (how they write on a channel or with this kind of person: length, tone, greeting, sign-off, language, capitals, punctuation, links, formatting; "always…", "next time…", or what they asked on an earlier card) updates that channel's voice: assistant_signals remember_fact args kind=voice, channel=<the channel it is about: Email, Slack, WhatsApp, LinkedIn, X DM, another channel's name, or All when it holds everywhere>, text=<that channel's whole voice block (up to {VOICE_LINES} short lines, at most {VOICE_CHARS} characters): the current block with the note worked in, everything else kept, only what it contradicts dropped>, decision_id=<that note's decision>. How a kind of task is done (what to include, where things go) is a draft rule instead: remember_fact kind=draft, text=<the rule, general>. A fact note that holds beyond this card goes in remember_fact as a fact.
 - When the owner's note means they want this task itself back later (remind me about it next week, later, on Tuesday), that is this card's snooze, not a reminder: save with outcome:'snoozed' and snooze_until:<their local date and time, e.g. 2026-10-27T09:00, or a date alone for their morning>, and a one-line body. The card leaves their list and comes back then. Do not also add an automation, cron job or reminder for it. A separate reminder about something else, or a recurring one, stays an automation. Their time zone is {getattr(local_tz(),'key','UTC')}; it is now {dt.datetime.fromisoformat(now()).astimezone(local_tz()).strftime('%a %Y-%m-%d %H:%M')} there.
@@ -9673,6 +9706,16 @@ class App:
                     # The owner wants this card itself back later: the card's own snooze, not a separate reminder.
                     outcome={'state':'snoozed','until':asked_snooze_time(args.get('snooze_until'))}
                 else:raise ValueError("Say whether the job is finished: outcome:'done' (the task itself is complete; nothing left for the owner but to check it), outcome:'answered' (you only answered a question, explained or planned; the task itself is still to do), outcome:'already_done' (it turned out to be done already or no longer needed), outcome:'your_step' with step:<submit, pay, book, sign, confirm, order or apply> (all ready, the owner makes that final click), or outcome:'needs_you' with needs:<what they have to do, e.g. approve the send, sign in, pick an option>")
+            if args.get('send_now') is True:
+                # Only a draft the owner already had in front of them, approved in a later message of theirs. A draft
+                # written or changed in this turn is saved and shown first: the owner reads it and taps Send.
+                ready=[a for a in next_actions.actions(action) if a['kind'] in ('email','linkedin','slack','x') and not a.get('to_options')]
+                with self.store.connect() as db:
+                    why=unseen_draft(db,args['suggestion_id'],ready[0]['revision'],args.get('job_id')) if ready else None
+                if why:
+                    raise ValueError('Not sent: '+why+'. The owner sends only a draft they have seen. Save it again without send_now, '
+                                     "with outcome:'needs_you' and needs:'check the draft and send it', and a body that says it is ready for them "
+                                     '(not that it went out). Do not send it any other way.')
             saved=self.store.prepare(args['suggestion_id'], args['body'],args.get('job_id'),action,outcome,args.get('note_kind'),require_note=True,finish_state=args.get('finish_state'))
 
             if args.get('send_now') is True and not saved.get('replayed'):
