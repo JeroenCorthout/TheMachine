@@ -553,7 +553,9 @@ button.node:hover{text-decoration:underline;background:none}
 .convo-source{align-self:center;margin-top:var(--sp-5);font-size:var(--fs-sm);color:var(--muted)}
 .graph-bar{flex:none;width:52px;height:6px;border-radius:999px;background:var(--sunken);overflow:hidden}
 .graph-bar i{display:block;height:100%;background:var(--mint)}
-.graph-row .fleet-chip{flex:0 100000 auto;min-width:34px}.fleet-chip .ct{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.fleet-mark{color:var(--text)}.graph-sub:is(.fleet-mark,.fleet-named,.detail-sub,.person-facts){white-space:normal}.fp-graph{font-size:.8rem;margin-left:6px;color:var(--muted);text-decoration:none;white-space:nowrap}.fp-graph::before{content:"· "}.fp-graph:hover,.fp-graph:focus-visible{color:var(--text);text-decoration:underline}
+.graph-row .fleet-chip{flex:0 100000 auto;min-width:34px}.fleet-chip .ct{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.fleet-mark{color:var(--text)}.graph-sub:is(.fleet-mark,.fleet-named,.detail-sub,.person-facts){white-space:normal}
+/* On a person or organisation page every row wraps (a long To you, address or relation), never cut off; Edit stays in reach. */
+.graph-detail .graph-sub{white-space:normal;overflow-wrap:anywhere}.graph-detail .graph-sub :is(button,summary){flex:0 0 auto}.fp-graph{font-size:.8rem;margin-left:6px;color:var(--muted);text-decoration:none;white-space:nowrap}.fp-graph::before{content:"· "}.fp-graph:hover,.fp-graph:focus-visible{color:var(--text);text-decoration:underline}
 /* Calmer layout: compact header, one slim count row, quiet empty state, matching folded rows. */
 header{padding-bottom:18px}.avatar{width:52px;height:52px}h1{font-size:1.4rem}
 .brand p{font-size:.86rem;text-wrap:balance}.brand>div{min-width:0}
