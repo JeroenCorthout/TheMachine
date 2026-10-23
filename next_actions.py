@@ -125,7 +125,7 @@ def attachment_bytes(record, config):
 
 
 # Owner-approved sends: each needs the Send review and Send now (Telegram) or the dashboard dialog.
-SEND_KINDS = ('email', 'email_demo', 'linkedin', 'slack', 'x', 'whatsapp')
+SEND_KINDS = ('email', 'email_demo', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')
 # Owner-approved changes to The Machine's own code: Merge reviews the fix, Merge now applies it.
 APPROVE_KINDS = SEND_KINDS + ('merge',)
 # The last step of a task taken up to it (a filled-in form, a cart, a payment): the owner reviews
@@ -135,7 +135,7 @@ FINISH_VERBS = ('Submit', 'Pay', 'Book', 'Confirm', 'Order', 'Buy', 'Publish', '
                 'Approve', 'Create', 'Delete', 'Cancel', 'Register', 'Renew', 'File', 'Upload', 'Schedule', 'Reserve',
                 'Apply', 'Transfer', 'Deploy', 'Send', 'Request', 'Unsubscribe', 'Close', 'Archive', 'Invite',
                 'Share', 'Update', 'Save', 'Claim', 'Return', 'Refund', 'Reply')
-TEXT_KINDS = ('linkedin', 'slack', 'x', 'whatsapp')  # a message without a subject
+TEXT_KINDS = ('linkedin', 'slack', 'x', 'whatsapp', 'intercom')  # a message without a subject
 LINKEDIN_INBOX = Path(__file__).resolve().parent / 'integrations/linkedin_inbox.py'
 X_INBOX = Path(__file__).resolve().parent / 'integrations/x_inbox.py'
 X_URLISH = re.compile(r'(?:https?://)?(?:[\w-]+\.)+[a-zA-Z]{2,}(?:/\S*)?')
@@ -150,6 +150,16 @@ def x_length(text):
 
 def text_length(action, body):
     return x_length(body) if action['kind'] == 'x' and action.get('reply_to') else len(body)
+
+
+def intercom_replies_on(account):
+    """As connectors/intercom.py replies_on (which checks again at send): the owner's own reply token and admin id, and
+    never an account from a Fleet grant."""
+    shared = account.get('shared')
+    if shared and not (isinstance(shared, dict) and shared.get('origin')):
+        return False
+    return (bool(account.get('reply_credential')) and account['reply_credential'] != account.get('credential')
+            and re.fullmatch(r'[0-9]{1,20}', str(account.get('reply_admin_id') or '')) is not None)
 
 
 def canonical(value):
@@ -175,7 +185,7 @@ def visible_actions(value):
 def label(value):
     if value['kind'] == 'x' and not value.get('label'):
         return 'Reply on X' if value.get('reply_to') else 'Send'
-    return value.get('label') or {'email':'Send','email_demo':'Send','linkedin':'Send','slack':'Send','whatsapp':'Send','merge':'Merge fix','prepare':'Prepare next step','open':'Open original','handoff':'Hand off'}.get(value['kind'],'Continue')
+    return value.get('label') or {'email':'Send','email_demo':'Send','linkedin':'Send','slack':'Send','whatsapp':'Send','intercom':'Send reply','merge':'Merge fix','prepare':'Prepare next step','open':'Open original','handoff':'Hand off'}.get(value['kind'],'Continue')
 
 
 def preview(value):
@@ -191,6 +201,8 @@ def preview(value):
         return value['preview'] + message + files + ('\n\n' + value['url'] if value.get('url') else '')
     if value['kind'] == 'whatsapp':
         return 'WhatsApp message to ' + value['to_name'] + '\n\n' + value['body']
+    if value['kind'] == 'intercom':
+        return 'Intercom reply to ' + value['to_name'] + ', as ' + value['as_name'] + '\n\n' + value['body']
     if value['kind'] == 'handoff':
         return 'Hand off to ' + value['to_name'] + ' through The Machine\n\n' + value['body']
     if value['kind'] == 'slack':
@@ -234,13 +246,14 @@ def delegation(value, result, name=None):
         result['to_name'] = name
 
 
-def validate(value, config, allowed_accounts, recipient_options=None, linkedin_threads=None, x_threads=None, whatsapp_chats=None):
+def validate(value, config, allowed_accounts, recipient_options=None, linkedin_threads=None, x_threads=None, whatsapp_chats=None,
+             intercom_conversations=None):
     if value is None:
         return None
     if isinstance(value,list):
         if not 1<=len(value)<=3:raise ValueError('Offer one to three useful next actions, not a menu of everything')
         if any(not isinstance(item,dict) for item in value):raise ValueError('Each next action must be one concrete choice')
-        choices=[validate(item,config,allowed_accounts,recipient_options,linkedin_threads,x_threads,whatsapp_chats) for item in value]
+        choices=[validate(item,config,allowed_accounts,recipient_options,linkedin_threads,x_threads,whatsapp_chats,intercom_conversations) for item in value]
         if len({item['revision'] for item in choices})!=len(choices) or len({label(item).lower() for item in choices})!=len(choices):
             raise ValueError('Next actions must be distinct concrete choices')
         return {'kind':'menu','actions':choices}
@@ -495,6 +508,32 @@ def validate(value, config, allowed_accounts, recipient_options=None, linkedin_t
         if not isinstance(body, str) or not body.strip() or len(body) > 4000 or '\x00' in body:
             raise ValueError('Provide the concrete WhatsApp message, at most 4000 characters')
         result['body'] = body.strip()
+    elif value.get('kind') == 'intercom':
+        # A reply in an Intercom conversation from this task's own messages, as the owner's own Intercom admin (the one
+        # who signed in with Intercom for replies). It goes out only after the owner's Send on this exact text. A plain
+        # comment: never a note, an assignment, a close or a tag. A token shared through a Fleet only reads.
+        if set(value) - {'kind', 'label', 'account_id', 'conversation_id', 'body'}:
+            raise ValueError('Unsupported Intercom fields; a plain reply only: no notes, assigning, closing or tags')
+        account = next((a for a in config['accounts'] if a['id'] == value.get('account_id') and a.get('service') == 'intercom'), None)
+        if not account or account['id'] not in allowed_accounts:
+            raise ValueError('Use the Intercom account belonging to this task')
+        if not intercom_replies_on(account):
+            raise ValueError('Replies are not on for this Intercom account: the owner turns them on by signing in with Intercom '
+                             'themselves (a Fleet-shared token only reads). Give the reply text in the body instead.')
+        result = {'kind': 'intercom', 'account_id': account['id'], 'admin_id': str(account['reply_admin_id']),
+                  'as_name': account.get('reply_admin_name') or 'your Intercom admin'}
+        if value.get('label'):
+            if not re.match(r'(?:Send|Reply)\b', value['label']):
+                raise ValueError('Intercom button labels must say Send or Reply, such as Send reply')
+            result['label'] = value['label']
+        conversation = (intercom_conversations or {}).get(str(value.get('conversation_id') or ''))
+        if not conversation or conversation.get('account_id') != account['id']:
+            raise ValueError('Reply only in an Intercom conversation from this task’s own messages (conversation_id is its metadata.conversation_id)')
+        result.update(conversation_id=str(value['conversation_id']), to_name=conversation.get('name') or 'Intercom conversation', max_length=10000)
+        body = value.get('body')
+        if not isinstance(body, str) or not body.strip() or len(body) > 10000 or '\x00' in body:
+            raise ValueError('Provide the concrete Intercom reply, at most 10000 characters')
+        result['body'] = body.strip()
     elif value.get('kind') == 'handoff':
         # Hand the task to a teammate in the owner's Work Fleet, through The Machine (docs/fleet.md): their
         # Machine gets it as a handoff to accept. Nothing goes by itself: the button opens the Fleet handoff
@@ -583,7 +622,7 @@ def revise(action, subject=None, body=None):
         result['revision'] = hashlib.sha256(canonical(result).encode()).hexdigest()[:12]
         return result
     if action['kind'] not in ('email',) + TEXT_KINDS:
-        raise ValueError('Only email, LinkedIn, Slack, X and WhatsApp drafts and final steps can be edited')
+        raise ValueError('Only email, LinkedIn, Slack, X, WhatsApp and Intercom drafts and final steps can be edited')
     result = {k: v for k, v in action.items() if k != 'revision'}
     if body is not None:
         if (not isinstance(body, str) or not body.strip() or '\x00' in body
@@ -1125,6 +1164,75 @@ class WhatsAppTransport:
         return {'message_id': 'whatsapp:' + str(found[0]['MsgID'])} if len(found) == 1 and found[0].get('MsgID') else {}
 
 
+class IntercomTransport:
+    """Posts one owner-approved reply into an Intercom conversation from the task's own messages, as the owner's own
+    Intercom admin, with their reply token, through the connector's one allowed write (connectors/intercom.py Replier).
+    Checks read-only first. Intercom has no idempotency key, so an unclear outcome is looked for in the conversation
+    afterwards and never resent."""
+
+    REFUSED = {'intercom_replies_shared': 'A token shared through your Fleet only reads. Sign in with Intercom yourself to reply. Nothing was sent.',
+               'intercom_replies_off': 'Replies need your own Sign in with Intercom. Nothing was sent.',
+               'account_identity_mismatch': 'Intercom is signed in as someone else now, or another workspace. Nothing was sent.',
+               'missing_intercom_credential': 'Your Intercom reply sign-in is missing. Sign in with Intercom again. Nothing was sent.'}
+
+    def __init__(self, config, connector, helpers):
+        self.config, self.connector, self.helpers = config, connector, helpers
+
+    def replier(self, action):
+        account = next((a for a in self.config['accounts'] if a['id'] == action['account_id'] and a.get('service') == 'intercom'), None)
+        if not account:
+            raise ValueError('That Intercom account is no longer connected. Nothing was sent.')
+        if str(action.get('admin_id') or '') != str(account.get('reply_admin_id') or ''):
+            raise ValueError('This reply would go as someone else in Intercom. Nothing was sent.')
+        try:
+            return self.connector.Replier(self.config, account, self.helpers)
+        except self.helpers.SourceError as error:
+            raise ValueError(self.REFUSED.get(error.category, 'Intercom replies are off. Nothing was sent.')) from None
+
+    def preflight(self, action):
+        if action['kind'] != 'intercom':
+            raise ValueError('Only an owner-approved Intercom reply can use the Intercom transport')
+        replier = self.replier(action)
+        try:
+            replier.me()
+            detail = replier.conversation(action['conversation_id'])
+        except self.helpers.SourceError as error:
+            raise ValueError(self.REFUSED.get(error.category, 'I couldn’t reach Intercom. Nothing was sent; tap Send again.')) from None
+        action['proof'] = {'intercom_before_ids': [part for part, _, _ in replier.mine(detail)]}
+
+    def find(self, replier, action, detail, since=None):
+        text = self.connector.plain(self.connector.reply_html(action['body']))
+        before = set((action.get('proof') or {}).get('intercom_before_ids') or [])
+        found = [part for part, created, said in replier.mine(detail) if part not in before and said == text
+                 and (since is None or (type(created) is int and created >= since))]
+        return {'message_id': f"intercom:{action['conversation_id']}:{found[0]}"} if len(found) == 1 else {}
+
+    def send(self, action, job):
+        replier = self.replier(action)
+        try:
+            detail = replier.reply(action['conversation_id'], action['body'])
+        except self.helpers.SourceError as error:
+            if error.category == 'unsupported_intercom_method':
+                return {'rejected': 'refused'}
+            if error.status == 429:
+                return {'not_sent': True}
+            if error.status in (400, 401, 403, 404, 422):
+                return {'rejected': error.status}
+            return {}  # Unknown outcome: never resend; reconcile reads the conversation.
+        return self.find(replier, action, detail) if isinstance(detail, dict) else {}
+
+    def reconcile(self, action, job):
+        stamp = (action.get('proof') or {}).get('intercom_dispatched_at')
+        if not stamp:
+            return {}
+        try:
+            since = int(datetime.datetime.fromisoformat(stamp).timestamp()) - 5
+            replier = self.replier(action)
+            return self.find(replier, action, replier.conversation(action['conversation_id']), since)
+        except (ValueError, self.helpers.SourceError):
+            return {}
+
+
 def slack_text(body):
     """Plain draft text in Slack's own format: [text](https://url) links become <url|text>."""
     text = body.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -1532,10 +1640,11 @@ print('MACHINE_PROOF='+json.dumps({'ran':result.testsRun,'failed':result.failed,
 
 
 class ActionTransport:
-    """Routes an approved send to Gmail, LinkedIn, Slack, X or WhatsApp, or a fix to The Machine itself, by its kind."""
+    """Routes an approved send to Gmail, LinkedIn, Slack, X, WhatsApp or Intercom, or a fix to The Machine itself, by its kind."""
 
-    def __init__(self, email, linkedin, slack=None, x=None, merge=None, whatsapp=None):
+    def __init__(self, email, linkedin, slack=None, x=None, merge=None, whatsapp=None, intercom=None):
         self.email, self.linkedin, self.slack, self.x, self.merge, self.whatsapp = email, linkedin, slack, x, merge, whatsapp
+        self.intercom = intercom
 
     def pick(self, action):
         if action['kind'] == 'merge':
@@ -1554,6 +1663,10 @@ class ActionTransport:
             if not self.whatsapp:
                 raise ValueError('WhatsApp sending isn’t set up. Nothing was sent.')
             return self.whatsapp
+        if action['kind'] == 'intercom':
+            if not self.intercom:
+                raise ValueError('Intercom replies aren’t set up. Nothing was sent.')
+            return self.intercom
         return self.linkedin if action['kind'] == 'linkedin' else self.email
 
     def preflight(self, action):

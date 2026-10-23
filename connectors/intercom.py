@@ -1,7 +1,13 @@
-"""Intercom: customer conversations in your Intercom workspace, read-only.
+"""Intercom: customer conversations in your Intercom workspace, and replies the owner approved.
 
-Only GET /me, GET /conversations/<id> and the conversation search (a read-only POST) are ever called; any
-other method or path is refused before the token is read. It never replies, assigns, closes, tags or sends.
+Reading calls only GET /me, GET /conversations/<id> and the conversation search (a read-only POST); any other
+method or path is refused before the token is read. It never assigns, closes, tags or writes a note.
+
+Replies (Replier) are the one write: POST /conversations/<id>/reply with type admin, message_type comment and the
+admin_id of the person who signed in with Intercom for replies, nothing else. They use their own token in their own
+credential file (reply_credential), set only by enable_replies from that person's own sign-in. A token shared
+through a Fleet (an account with "shared" from a grant) only ever reads. A reply goes out only after the owner
+pressed Send on that exact text (next_actions.IntercomTransport).
 
 Config, with an access token from an app in Intercom's Developer Hub in a credential file:
     {"id": "intercom", "service": "intercom", "transport": "api", "boundary": "work:Acme",
@@ -47,12 +53,36 @@ REGIONS = {'us': ('https://api.intercom.io', 'https://app.intercom.com'),
 OPENING, BODY, MAX_PARTS = 20000, 40000, 500
 OVERLAP, FULL_EVERY, MAX_PAGES = 6 * 3600, 86400, 500
 CONVERSATION = re.compile(r'/conversations/[0-9]{1,20}')
+REPLY = re.compile(r'/conversations/([0-9]{1,20})/reply')
+REPLY_FIELDS = {'type', 'admin_id', 'message_type', 'body'}
+REPLY_BODY = 20000
 
 
 def readable(method, path):
     # Search is a read-only POST. No other POST or mutation is admitted.
     return (method == 'GET' and (path == '/me' or CONVERSATION.fullmatch(path) is not None)) or \
         (method == 'POST' and path == '/conversations/search')
+
+
+def received(account):
+    """An account that came from a Fleet grant: someone else's token, read-only whatever its app may do."""
+    shared = account.get('shared')
+    return bool(shared) and not (isinstance(shared, dict) and shared.get('origin'))
+
+
+def replies_on(account):
+    """Replies are on: the owner's own sign-in gave a separate reply token and their admin id."""
+    return (not received(account) and bool(account.get('reply_credential')) and account['reply_credential'] != account.get('credential')
+            and re.fullmatch(r'[0-9]{1,20}', str(account.get('reply_admin_id') or '')) is not None)
+
+
+def repliable(method, path, payload, account):
+    """The one write: a comment in one conversation, as the admin who signed in for replies. Never a note, never as
+    someone else, never any other field (assigning, closing, tagging, attachments)."""
+    return (method == 'POST' and REPLY.fullmatch(path) is not None and replies_on(account) and isinstance(payload, dict)
+            and set(payload) == REPLY_FIELDS and payload['type'] == 'admin' and payload['message_type'] == 'comment'
+            and payload['admin_id'] == str(account['reply_admin_id'])
+            and isinstance(payload['body'], str) and 0 < len(payload['body']) <= REPLY_BODY)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -65,12 +95,17 @@ class Source:
         self.config, self.account, self.helpers = config, account, helpers
         self.opener = urllib.request.build_opener(NoRedirect())
 
+    def allowed(self, method, path, payload):
+        return readable(method, path)
+
     def token(self):
+        return self.read_token(self.account.get('credential', 'intercom'), self.account.get('credential_variable'))
+
+    def read_token(self, name, variable=None):
         SourceError = self.helpers.SourceError
-        secret = self.helpers.credential(self.config, self.account.get('credential', 'intercom'))
+        secret = self.helpers.credential(self.config, name)
         if not isinstance(secret, str):
             raise SourceError('missing_intercom_credential')
-        variable = self.account.get('credential_variable')
         if variable:
             values = {}
             for line in secret.splitlines():
@@ -85,7 +120,7 @@ class Source:
 
     def request(self, method, path, payload=None, region=None):
         SourceError = self.helpers.SourceError
-        if not readable(method, path):
+        if not self.allowed(method, path, payload):
             raise SourceError('unsupported_intercom_method')
         region = region or self.account.get('region') or 'us'
         if region not in REGIONS:
@@ -200,17 +235,89 @@ def event(account, raw, helpers):
     reported = container.get('total_count') if type(container.get('total_count')) is int else len(parts)
     truncated = len(root) > OPENING or len(history) > room or reported > len(parts) or len(parts) >= MAX_PARTS
     cid = str(raw['id'])
+    # Who wrote last (a customer, or a teammate): a reply from the customer after the owner's brings the card back.
+    said = [p for p in parts if p.get('part_type') in ('comment', 'open') and isinstance(p.get('author'), dict)]
+    last = max(said, key=lambda p: (p.get('created_at') or 0, str(p.get('id', ''))))['author'] if said else (source.get('author') or {})
     app = REGIONS.get(account.get('region') or 'us', REGIONS['us'])[1]
     metadata = {'conversation_id': cid, 'state': raw.get('state'), 'open': raw.get('open'), 'priority': raw.get('priority'),
                 'admin_assignee_id': raw.get('admin_assignee_id'), 'team_assignee_id': raw.get('team_assignee_id'),
                 'created_at': raw.get('created_at'), 'updated_at': raw['updated_at'],
-                'from': str((source.get('author') or {}).get('email') or ''), 'parts_returned': len(parts),
+                'from': str((source.get('author') or {}).get('email') or ''),
+                'from_name': ' '.join(str((source.get('author') or {}).get('name') or '').split())[:100],
+                'last_author_type': str(last.get('type') or '') if isinstance(last, dict) else '', 'parts_returned': len(parts),
                 'parts_reported': reported, 'truncated': truncated, 'source_redacted': bool(source.get('redacted')),
                 'source_url': f"{app}/a/inbox/{account['workspace_id']}/inbox/shared/all/conversation/{cid}"}
     return {'account_id': account['id'], 'source_id': cid, 'kind': 'intercom.conversation',
             'occurred_at': helpers.iso(raw['updated_at']),
             'title': (raw.get('title') or source.get('subject') or root.split('\n')[0] or 'Support conversation')[:1000],
             'body': body, 'metadata': metadata, 'deleted': False}
+
+
+class Replier(Source):
+    """Replies as the owner's own Intercom admin, with the reply token alone. Reads (GET /me, the conversation) check
+    the reply token and the conversation first, and find the reply afterwards."""
+
+    def __init__(self, config, account, helpers):
+        super().__init__(config, account, helpers)
+        if received(account):
+            raise helpers.SourceError('intercom_replies_shared')
+        if not replies_on(account):
+            raise helpers.SourceError('intercom_replies_off')
+
+    def allowed(self, method, path, payload):
+        return readable(method, path) or repliable(method, path, payload, self.account)
+
+    def token(self):
+        return self.read_token(self.account['reply_credential'])
+
+    def me(self):
+        """The reply token is still the same person in the same workspace."""
+        profile = self.request('GET', '/me')
+        app = profile.get('app') if isinstance(profile.get('app'), dict) else {}
+        if (not self.account.get('workspace_id') or app.get('id_code') != self.account['workspace_id']
+                or str(profile.get('id', '')) != str(self.account['reply_admin_id'])):
+            raise self.helpers.SourceError('account_identity_mismatch')
+        return profile
+
+    def conversation(self, cid):
+        detail = self.request('GET', '/conversations/' + str(cid))
+        if str(detail.get('id')) != str(cid):
+            raise self.helpers.SourceError('intercom_conversation_identity_mismatch')
+        return detail
+
+    def reply(self, cid, body):
+        return self.request('POST', f'/conversations/{cid}/reply', {'type': 'admin', 'admin_id': str(self.account['reply_admin_id']),
+                                                                     'message_type': 'comment', 'body': reply_html(body)})
+
+    def mine(self, detail):
+        """This admin's comments in the conversation: (part id, created_at, plain text)."""
+        container = detail.get('conversation_parts') if isinstance(detail.get('conversation_parts'), dict) else {}
+        parts = container.get('conversation_parts') if isinstance(container.get('conversation_parts'), list) else []
+        return [(str(p.get('id')), p.get('created_at'), plain(p.get('body'))) for p in parts if isinstance(p, dict)
+                and p.get('part_type') == 'comment' and isinstance(p.get('author'), dict)
+                and p['author'].get('type') == 'admin' and str(p['author'].get('id')) == str(self.account['reply_admin_id'])]
+
+
+def reply_html(body):
+    """Plain text as Intercom's HTML: a paragraph per blank-line block, line breaks kept, nothing else."""
+    blocks = [b for b in re.split(r'\n\s*\n', str(body).strip()) if b.strip()]
+    return ''.join('<p>' + '<br>'.join(html.escape(line) for line in b.strip().split('\n')) + '</p>' for b in blocks)
+
+
+def reply_profile(config, account, token, helpers):
+    """Who a reply token is (GET /me with it, in the account's region): (admin id, name) in the account's own workspace."""
+    token = token.strip() if isinstance(token, str) else ''
+    if not re.fullmatch(r'[A-Za-z0-9_=:.+/-]{8,512}', token):
+        raise helpers.SourceError('missing_intercom_credential')
+    probe = Source(config, account, helpers)
+    probe.token = lambda: token  # this token only, never the account's read token
+    profile = probe.request('GET', '/me')
+    app = profile.get('app') if isinstance(profile.get('app'), dict) else {}
+    admin = str(profile.get('id', ''))
+    if not account.get('workspace_id') or app.get('id_code') != account['workspace_id'] or not re.fullmatch(r'[0-9]{1,20}', admin):
+        raise helpers.SourceError('account_identity_mismatch')
+    name = ' '.join(str(profile.get('name') or profile.get('email') or '').split())[:100]
+    return admin, name
 
 
 def check(config, account, helpers):
