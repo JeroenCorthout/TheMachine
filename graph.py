@@ -1156,10 +1156,13 @@ def with_fleet(db, result, marks):
 
 
 def open_between(db, node_id, limit=6, skip_card=None):
-    """What is open between the owner and this person or project: promises both ways, open cards and
-    the facts learned on them. Read from the signals each sits on."""
-    out = {'you_promised': [], 'they_promised': [], 'cards': [], 'facts': []}
-    project = db.execute("SELECT name FROM graph_nodes WHERE id=? AND kind='project'", (node_id,)).fetchone()
+    """What is open between the owner and this person or project: promises both ways and open cards, read from the
+    signals each sits on. Apart from that, under known: the facts the owner told that are about them (fact_about).
+    A fact is about its subject, never about whoever sent the message it came up in: one about the owner is on no page."""
+    out = {'you_promised': [], 'they_promised': [], 'cards': [], 'known': []}
+    row = db.execute("SELECT kind,name,info FROM graph_nodes WHERE id=?", (node_id,)).fetchone()
+    project = row if row and row['kind'] == 'project' else None
+    ids = list(dict.fromkeys([node_id, *((json.loads(row['info'] or '{}').get('identifiers') or []) if row else [])]))
     on_node = 'SELECT 1 FROM json_each({}) j JOIN graph_events g ON g.event_id=j.value WHERE g.node_id=?'
     try:
         for r in db.execute("SELECT p.id,p.direction,p.who,p.what,p.due FROM promises p LEFT JOIN suggestions s ON s.id=p.suggestion_id "
@@ -1171,9 +1174,12 @@ def open_between(db, node_id, limit=6, skip_card=None):
             f"SELECT s.id,s.title,s.status,s.due FROM suggestions s WHERE s.status IN ({marks}) AND s.id IS NOT ? AND (EXISTS ({on_node.format('s.event_ids')}) "
             "OR (? IS NOT NULL AND s.project=? COLLATE NOCASE)) ORDER BY coalesce(s.due,s.created_at) LIMIT ?",
             (*OPEN_CARD, skip_card, node_id, project and project['name'], project and project['name'], limit))]
-        out['facts'] = [r[0] for r in db.execute(
-            f"SELECT f.text FROM facts f JOIN suggestions s ON s.id=f.suggestion_id WHERE f.removed_at IS NULL AND EXISTS ({on_node.format('s.event_ids')}) "
-            "ORDER BY f.created_at DESC LIMIT ?", (node_id, limit))]
+        marks = ','.join('?' for _ in ids)
+        out['known'] = [{'id': r['id'], 'text': r['text']} for r in db.execute(
+            f"SELECT f.id,f.text FROM facts f WHERE f.removed_at IS NULL AND f.kind='fact' "
+            f"AND EXISTS (SELECT 1 FROM fact_about a WHERE a.fact_id=f.id AND a.removed_at IS NULL AND a.node_id IN ({marks})) "
+            f"AND NOT EXISTS (SELECT 1 FROM fact_about a WHERE a.fact_id=f.id AND a.removed_at IS NOT NULL AND a.node_id IN ({marks})) "
+            "ORDER BY f.created_at DESC LIMIT ?", (*ids, *ids, limit))]
     except sqlite3.OperationalError:
         pass  # a bare graph without the assistant's tables
     out['you_promised'], out['they_promised'] = out['you_promised'][:limit], out['they_promised'][:limit]
@@ -1188,7 +1194,7 @@ def open_line(items):
     for p in items.get('they_promised', ())[:2]:
         bits.append(f"they promised to {p['what']}" + (f" by {short_date(p['due'])}" if p['due'] else ''))
     bits += [f"card \"{c['title']}\"" for c in items.get('cards', ())[:2]]
-    bits += [f"fact: {f}" for f in items.get('facts', ())[:2]]
+    bits += [f"known: {f['text']}" for f in items.get('known', ())[:2]]
     return '; '.join(bits)
 
 

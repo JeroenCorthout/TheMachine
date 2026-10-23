@@ -431,7 +431,7 @@ class SourceError(Exception):
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import'}
@@ -2242,6 +2242,9 @@ class Store:
                 db.execute("ALTER TABLE facts ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'")
             if 'merged_into' not in {r[1] for r in db.execute('PRAGMA table_info(facts)')}:  # condensed: 'fact:<id>' or 'voice:<channel>'
                 db.execute('ALTER TABLE facts ADD COLUMN merged_into TEXT')
+            # Who a fact is about: a person, organisation or project in the graph (its node id), never the owner, who is no node.
+            # A fact without one is about the owner or the world and shows on nobody's page. removed_at: the owner said it isn't about them.
+            db.execute('CREATE TABLE IF NOT EXISTS fact_about(fact_id INTEGER NOT NULL,node_id TEXT NOT NULL,by TEXT NOT NULL,created_at TEXT NOT NULL,removed_at TEXT,PRIMARY KEY(fact_id,node_id))')
             # What each Change note was: a style fix, a missing fact, keep going, or a new ask.
             db.execute('CREATE TABLE IF NOT EXISTS note_kinds(decision_id TEXT PRIMARY KEY,suggestion_id TEXT NOT NULL,kind TEXT NOT NULL,source TEXT NOT NULL,created_at TEXT NOT NULL)')
             # Changes to how cards and drafts are made, shown on the hit-rate chart.
@@ -4133,10 +4136,11 @@ class Store:
             out.append(f"- {e['title']}{subject}\n  Your draft: {clip(e['before'])}\n  {changed}: {clip(e['after'])}")
         return '\n'.join(out)
 
-    def remember_fact(self, text, decision_id, kind='fact', replaces=None):
+    def remember_fact(self, text, decision_id, kind='fact', replaces=None, about=None):
         """Keep a lasting fact from one of the owner's own written notes, so later reviews and preparations use it.
         With replaces (ids of facts and rules) it condenses: the new one says what those said, the newer winning where
-        they disagree, and they stay behind it as history the owner can restore (unmerge_fact)."""
+        they disagree, and they stay behind it as history the owner can restore (unmerge_fact). about: the graph node ids
+        of who the fact is about (fact_about); a condensed fact keeps who its originals were about."""
         text = ' '.join(str(text or '').split())
         if not 5 <= len(text) <= 240:
             raise ValueError('A fact is one short sentence (5-240 characters)')
@@ -4158,8 +4162,10 @@ class Store:
                 if tombstone:
                     return {'id':tombstone['id'],'suppressed':True}
             merging = {o['id'] for o in originals}
+            subjects = self.fact_subjects(db, about) if kind == 'fact' else []
             existing = next((r for r in db.execute('SELECT id FROM facts WHERE removed_at IS NULL AND kind=? AND lower(text)=lower(?)', (kind, text)) if r['id'] not in merging), None)
             if existing and not originals:
+                self.link_fact(db, existing['id'], subjects, 'review')
                 return {'id': existing['id'], 'duplicate': True}
             if not existing and db.execute('SELECT count(*) FROM facts WHERE removed_at IS NULL').fetchone()[0] - len(originals) >= 80:
                 raise ValueError('Too many facts; the owner can remove old ones on the dashboard')
@@ -4169,10 +4175,63 @@ class Store:
                 fact_id = db.execute('INSERT INTO facts(text,decision_id,suggestion_id,created_at,kind) VALUES(?,?,?,?,?)', (text, decision_id, note['suggestion_id'], now(), kind)).lastrowid
                 if kind == 'draft':
                     db.execute("INSERT INTO rule_changes(at,kind,text,ref) VALUES(?,'draft_rule',?,?)", (now(), 'Draft rule: ' + text, str(fact_id)))
+            if kind == 'fact':
+                carried = [r[0] for r in db.execute('SELECT DISTINCT node_id FROM fact_about WHERE removed_at IS NULL AND fact_id IN (' +
+                                                    ','.join('?' for _ in merging) + ')', sorted(merging))] if merging else []
+                self.link_fact(db, fact_id, subjects + carried, 'review')
             if originals:
                 self.merge_originals(db, originals, 'fact:' + str(fact_id), text)
                 return {'id': fact_id, 'merged': len(originals)}
-            return {'id': fact_id}
+            return {'id': fact_id, **({'about': subjects} if subjects else {})}
+
+    @staticmethod
+    def fact_subjects(db, about):
+        """The graph nodes a fact is about, checked: people, organisations and projects. The owner is never a node, so a
+        fact about the owner (their habits, preferences, home, accounts) has none and stays in their own memory."""
+        if about in (None, '', []):
+            return []
+        about = [about] if isinstance(about, str) else about
+        if not isinstance(about, (list, tuple)) or len(about) > 5 or not all(isinstance(v, str) for v in about):
+            raise ValueError('about is a list of up to 5 graph node_ids (people, organisations or projects) the fact is about')
+        out = []
+        for value in about:
+            row = db.execute("SELECT id FROM graph_nodes WHERE id=? AND kind IN ('person','org','project')", (value,)).fetchone()
+            if not row:
+                raise ValueError(f'about: {value[:80]!r} is not a person, organisation or project in the graph; use a node_id from graph')
+            out.append(row['id'])
+        return list(dict.fromkeys(out))
+
+    @staticmethod
+    def link_fact(db, fact_id, node_ids, by):
+        """Tie a fact to who it is about. A link the owner removed stays removed."""
+        db.executemany('INSERT OR IGNORE INTO fact_about(fact_id,node_id,by,created_at) VALUES(?,?,?,?)',
+                       [(fact_id, n, by, now()) for n in dict.fromkeys(node_ids)])
+
+    def fact_about(self, fact_id, about):
+        """A review says who an existing fact is about."""
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute("SELECT id FROM facts WHERE id=? AND removed_at IS NULL AND kind='fact'", (int(fact_id),)).fetchone()
+            if not row:
+                raise ValueError('Unknown fact (only a current kind=fact note has someone it is about)')
+            subjects = self.fact_subjects(db, about)
+            if not subjects:
+                raise ValueError('about names who the fact is about: graph node_ids')
+            self.link_fact(db, row['id'], subjects, 'review')
+        return {'id': row['id'], 'about': subjects}
+
+    def fact_unlink(self, fact_id, node_id):
+        """The owner says a fact isn't about this person, organisation or project: only that link goes, for good. The fact stays."""
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM facts WHERE id=?', (int(fact_id),)).fetchone():
+                raise ValueError('Unknown fact')
+            node = db.execute('SELECT id,info FROM graph_nodes WHERE id=?', (str(node_id),)).fetchone()
+            ids = list(dict.fromkeys([str(node_id), *((json.loads(node['info'] or '{}').get('identifiers') or []) if node else [])]))
+            db.executemany("INSERT INTO fact_about(fact_id,node_id,by,created_at,removed_at) VALUES(?,?,'owner',?,?) "
+                           "ON CONFLICT(fact_id,node_id) DO UPDATE SET removed_at=excluded.removed_at,by='owner' WHERE removed_at IS NULL",
+                           [(int(fact_id), i, now(), now()) for i in ids])
+        return {'unlinked': True}
 
     @staticmethod
     def replaced_facts(db, replaces):
@@ -4304,13 +4363,17 @@ class Store:
         with self.connect() as db:
             last = db.execute("SELECT max(offered_at) FROM edits_offered WHERE edit_id LIKE 'condense:%'").fetchone()[0]
             facts = [dict(r) for r in db.execute('SELECT id,kind,text,created_at FROM facts WHERE removed_at IS NULL ORDER BY kind,id')]
+            about = {}
+            for r in db.execute('SELECT a.fact_id,coalesce(n.name,a.node_id) name FROM fact_about a LEFT JOIN graph_nodes n ON n.id=a.node_id WHERE a.removed_at IS NULL'):
+                about.setdefault(r['fact_id'], []).append(r['name'])
             if len(facts) < least or (last and (max(f['created_at'] for f in facts) <= last or
                                                 dt.datetime.fromisoformat(now()) - dt.datetime.fromisoformat(last) < dt.timedelta(hours=every_hours))):
                 return ''
             if run_id:
                 db.execute('INSERT OR REPLACE INTO edits_offered(edit_id,run_id,offered_at) VALUES(?,?,?)', ('condense:' + now()[:10], run_id, now()))
         label = {'fact': 'fact', 'draft': 'draft rule'}
-        return '\n'.join(f"- id {f['id']} ({label.get(f['kind'], f['kind'])}): {f['text']}" for f in facts)
+        return '\n'.join(f"- id {f['id']} ({label.get(f['kind'], f['kind'])}" + (f"; about {', '.join(about[f['id']])}" if f['id'] in about else '')
+                         + f"): {f['text']}" for f in facts)
 
     def style_notes_to_learn(self, run_id=None, days=30, limit=6, chars=300):
         """The owner's style notes (how a draft should have been written) that no fact, rule or voice came from yet, each offered once."""
@@ -7741,6 +7804,31 @@ class DeliveryNotSent(ValueError):
     """Only the pinned helper's pre-invocation failures are retryable."""
 
 
+MAIL_HEAD = re.compile(r'(?:(?:From|To|Cc|Date|Subject): [^\n]*\n)+\s*')
+SLACK_LINK = re.compile(r'<(https?://[^|>]+)(?:\|([^>]+))?>')
+
+
+def event_glance(event, accounts, chars=240):
+    """An event as a row in the Graph shows it: who wrote it (You for the owner) and the start of its text, in one line."""
+    m = event.get('metadata') or {}
+    account = next((a for a in accounts if a.get('id') == event.get('account_id')), {})
+    mine = bool(m.get('from_me')) or 'SENT' in (m.get('labels') or ()) or (
+        event.get('kind') == 'slack.message' and bool(m.get('user_id')) and m.get('user_id') == account.get('user_id'))
+    sender = str(m.get('sender_display') or m.get('from') or '')
+    who = 'You' if mine else (email.utils.parseaddr(sender)[0] or sender if '@' in sender else sender)
+    text = str(event.get('body') or '')
+    if event.get('kind') == 'calendar.event':
+        text = ' · '.join(v for v in (str(m.get('location') or ''), text) if v)
+    text = SLACK_LINK.sub(lambda g: g.group(2) or g.group(1), MAIL_HEAD.sub('', text, count=1) if text.startswith('From: ') else text)
+    text = ' '.join(text.split())
+    out = {'from': who[:80] or None, 'from_me': mine, 'preview': text[:chars] + ('…' if len(text) > chars else '')}
+    if event.get('kind') == 'slack.message':  # a direct message, or the channel it was said in
+        out['dm'] = m.get('conversation_type') == 'dm'
+        if not out['dm'] and m.get('channel_name'):
+            out['place'] = '#' + str(m['channel_name'])[:80]
+    return out
+
+
 def dashboard_hosts(config):
     """The dashboard's own origin (`dashboard_host`, used for new links) plus older addresses that
     keep working for existing Telegram links. Port 8443 since 2026-10-13: the OpenClaw web app
@@ -8733,14 +8821,14 @@ With the assistant_signals tool: call status, then ONE begin_analysis with accou
 Save only genuinely useful, distinct suggestions with suggest; the service delivers them. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
-When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests.
+When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
 Promises: when a message in this batch commits the owner to doing something for someone, or someone to doing something for the owner, record it with promise (direction, event_id, who, what, due when a date was said). Judge what a message means between these people in its conversation, not its wording: most commitments are never spelled out (agreeing to a request, taking on something the owner asked, accepting a plan), and the same reply can commit one person and be politeness from another, depending on language, habits and the relationship. Read earlier_in_conversation for what was asked. It is not a card; the service checks it when due. When a signal shows an open promise below kept, cancelled or moved, update it with promise and its id.
 Messages are disabled in this turn. Do not work on anything else. End with exactly NO_REPLY.''' + (f'''
 
 Facts the owner told you earlier (true unless newer evidence says otherwise):
 {facts}''' if facts else '') + (f'''
 
-Notes the owner wrote when dismissing, closing or snoozing cards, not kept as a fact yet. Judge each by what it means beyond that one card: when it says what they handle themselves, what they don't want from you, or who does what, save it with remember_fact (text: one general sentence, decision_id) so later reviews stop suggesting it; skip a reason that only fits that card.
+Notes the owner wrote when dismissing, closing or snoozing cards, not kept as a fact yet. Judge each by what it means beyond that one card: when it says what they handle themselves, what they don't want from you, or who does what, save it with remember_fact (text: one general sentence, decision_id, about when it is about someone else) so later reviews stop suggesting it; skip a reason that only fits that card.
 {notes}''' if notes else '') + (f'''
 
 Open promises (the owner's and those made to them):
@@ -9525,7 +9613,13 @@ class App:
                 return self.propose_skill_from_notes(args.get('name'), args.get('description'), args.get('text'), args.get('replaces'), args.get('skill'))
             if args.get('kind') == 'voice':  # how the owner writes on one channel: the whole line, from their note or edit
                 return self.store.save_voice(args.get('channel'), args.get('text'), 'assistant', args.get('decision_id'), args.get('edit_id'), args.get('replaces'))
-            return self.store.remember_fact(args.get('text'), args.get('decision_id'), args.get('kind') or 'fact', args.get('replaces'))
+            if args.get('id') is not None and not args.get('text'):  # who an existing fact is about
+                return self.store.fact_about(args['id'], args.get('about'))
+            return self.store.remember_fact(args.get('text'), args.get('decision_id'), args.get('kind') or 'fact', args.get('replaces'), args.get('about'))
+        if name == 'graph_fact_unlink':
+            if not owner_dashboard:
+                raise ValueError('Only the owner says who a fact is not about, on the dashboard')
+            return self.store.fact_unlink(args.get('fact_id'), args.get('node_id'))
         if name == 'unmerge_fact':
             if not owner_dashboard:
                 raise ValueError('Only the owner undoes a condense, on the dashboard')
@@ -11553,7 +11647,9 @@ class App:
                              "text=<one sentence that keeps everything still true>, kind=fact or draft. Where they contradict, the newer one (higher id) wins. "
                              "A note about how the owner writes on one channel goes into that channel's voice: remember_fact kind=voice, channel, "
                              + VOICE_TEXT + ", replaces=[ids]. A note a newer one made outdated merges into the newer one. "
-                             "Never drop something nothing else still says, and leave a note alone when unsure. The originals stay as history and the owner can undo a merge.")
+                             "Never drop something nothing else still says, and leave a note alone when unsure. The originals stay as history and the owner can undo a merge. "
+                             "A fact (not a draft rule) about one specific person, organisation or project, with no about yet: tie it once with remember_fact id=<its id>, "
+                             "about=[their graph node_ids], found with graph. One about the owner themselves or about the world stays without.")
                     try:
                         own = ', '.join(s['name'] for s in self.own_skills())
                     except Exception:
@@ -12402,7 +12498,8 @@ class App:
                             found = app.graph_action({'node_id': node, 'limit': 10, 'events': 40})
                             rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[int(line.split(' ', 1)[0]) for line in found['recent']])
                             found['recent'] = [{'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
-                                                'source_url': r['metadata'].get('source_url'), 'probable': r['id'] in found['probable_ids']}
+                                                'source_url': r['metadata'].get('source_url'), 'probable': r['id'] in found['probable_ids'],
+                                                **event_glance(r, app.config['accounts'])}
                                                for r in sorted(rows, key=lambda r: r['occurred_at'], reverse=True)]
                             self.output(200, found)
                         else:
@@ -12575,7 +12672,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
