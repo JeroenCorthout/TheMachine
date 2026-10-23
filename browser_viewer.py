@@ -43,14 +43,16 @@ CDP_URL = 'http://127.0.0.1:9222'
 NEEDS = {'Xtigervnc': 'tigervnc-standalone-server', 'websockify': 'websockify', 'matchbox-window-manager': 'matchbox-window-manager'}
 
 
-# The short address (a folder's index.html, e.g. a hosted Machine's /browser/): with no query of its own, it sets what
-# the long vnc.html?autoconnect=1&... link puts in its query, the same way noVNC keeps settings itself (localStorage,
-# which every noVNC release reads), so the address stays short. A phone gets the phone's size, others a scaled view.
-# The websocket path is the long link's: older noVNC reads it from the root (/browser/websockify), newer ones relative
-# to the page, which stays under /browser/ too; websockify takes a websocket on any path.
-SHORT_SETTINGS = ('<script>try{if(!location.search&&!location.hash){const phone=/Mobile|Android|iPhone|iPad/.test(navigator.userAgent);'
-                  "for(const[k,v]of Object.entries({autoconnect:'true',reconnect:'true',resize:phone?'remote':'scale',path:'browser/websockify'}))"
-                  'localStorage.setItem(k,v)}}catch(e){}</script>')
+# The short address (a folder's index.html, e.g. a hosted Machine's /browser/): with no query of its own, it gives the
+# page the long link's query (a phone gets the phone's size, others a scaled view) for noVNC to read as it starts,
+# every release the same way, and takes it off the address again once noVNC has started (it drops its loading class
+# right before it reads autoconnect), so the address stays short. The websocket path is the long link's: older noVNC
+# reads it from the root (/browser/websockify), newer ones relative to the page; websockify takes any path.
+SHORT_SETTINGS = ('<script>try{if(!location.search&&!location.hash){const bare=location.pathname,'
+                  "phone=/Mobile|Android|iPhone|iPad/.test(navigator.userAgent);"
+                  "history.replaceState(history.state,'',bare+'?autoconnect=1&reconnect=1&resize='+(phone?'remote':'scale')+'&path=browser/websockify');"
+                  "const html=document.documentElement,until=Date.now()+15000,back=()=>{if(html.classList.contains('noVNC_loading')&&Date.now()<until)"
+                  "return setTimeout(back,50);history.replaceState(history.state,'',bare)};setTimeout(back,50)}}catch(e){}</script>")
 
 
 def index_page(page):
