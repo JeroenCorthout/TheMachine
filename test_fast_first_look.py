@@ -247,6 +247,22 @@ class FastFirstLook(unittest.TestCase):
             names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
         self.assertEqual(names[claim['events'][0]['id']], 'ask')
 
+    def test_a_slack_dm_from_a_person_counts_like_any_direct_message(self):
+        a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
+        self.addCleanup(setattr, a.Store, 'accounts', [])
+        when = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        slack = lambda sid, kind: {'account_id': 'work', 'source_id': sid, 'kind': 'slack.message', 'occurred_at': when, 'title': 'Slack',
+                                   'body': 'Can you check this?', 'metadata': {'channel_id': 'C' + sid, 'conversation_type': kind, 'user_id': 'U2'},
+                                   'deleted': False}
+        self.store.commit_page('work', {}, [slack('channel', 'channel'), self.mail('mine', 'me@example.com', to='kim@example.org',
+                                                                                  labels=['SENT'], hours_ago=2), slack('dm', 'dm')])
+        self.step(Runner('admitted'))
+        run = self.runs()[0]
+        claim = self.store.begin_analysis(['work'], 40, a.REVIEW_SESSION_PREFIX + run['run_id'], run['run_id'])
+        with self.store.connect() as db:
+            names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
+        self.assertEqual([names[e['id']] for e in claim['events']], ['dm', 'mine', 'channel'])
+
     def test_of_the_upcoming_appointments_the_soonest_come_first(self):
         a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
         self.addCleanup(setattr, a.Store, 'accounts', [])

@@ -3069,6 +3069,8 @@ class Store:
             m = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'] or '{}')
             if row['kind'] in ('linkedin.message', 'x.dm', 'whatsapp.message'):
                 return 3 if m.get('from_me') else 0
+            if row['kind'] == 'slack.message' and m.get('conversation_type') == 'dm':
+                return 3 if m.get('user_id') in self.owner_user_ids else 0
             if row['kind'] != 'gmail.message':
                 return 1 if row['kind'] == 'calendar.event' else 2
             labels = set(m.get('labels') or [])
