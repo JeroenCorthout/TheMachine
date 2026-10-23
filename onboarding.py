@@ -1203,11 +1203,55 @@ def step_slack(config, account, ui):
     ui.say(f'  Slack: {account["email"] or me["user_id"]} in {account.get("slack_host") or me["team_id"]}')
 
 
+SALESFLARE_API = 'https://api.salesflare.com'
+
+
+def salesflare_address(text):
+    """An API address typed for another Salesflare server, as https://host[/path]. Only https: the key goes there."""
+    text = str(text or '').strip()
+    parsed = urllib.parse.urlparse(text if '://' in text else 'https://' + text)
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise SetupError(f'{text} is not an https address', 'type its https address, such as https://api.example.com')
+    return f'https://{parsed.netloc}{parsed.path}'.rstrip('/')
+
+
+def salesflare_app_base(api_base):
+    """The web app next to an API address: stagingapi.x -> staging.x, api.x -> app.x."""
+    host = urllib.parse.urlparse(api_base).netloc
+    first, _, rest = host.partition('.')
+    return 'https://' + ((first.replace('api', '') or 'app') + '.' + rest if rest else host)
+
+
+def salesflare_preset(config):
+    """The Salesflare server this install's new Salesflare accounts start on (`salesflare_server`, set by a hosted
+    machine's control plane for a team on another server, such as staging), or None. Only https addresses on
+    salesflare.com subdomains count; anything else is ignored, so new accounts start on Salesflare's own API."""
+    preset = config.get('salesflare_server')
+    if not isinstance(preset, dict):
+        return None
+    out = {}
+    for field in ('api_base', 'app_base'):
+        value = preset.get(field)
+        if not isinstance(value, str):
+            return None
+        parsed = urllib.parse.urlparse(value.strip())
+        host = (parsed.hostname or '').lower()
+        if (parsed.scheme != 'https' or not host.endswith('.salesflare.com') or parsed.port or parsed.username or parsed.password
+                or parsed.path.strip('/') or parsed.query or parsed.fragment or parsed.netloc.lower() != host):
+            return None
+        out[field] = 'https://' + host
+    return out
+
+
 def step_salesflare(config, account, ui):
     explain(ui, 'Salesflare: create an API key in Salesflare\'s settings (API keys).')
     account.setdefault('credential_variable', 'SALESFLARE_API_KEY')
     store_secret(config, account, ui, 'Salesflare API key', 'SALESFLARE_')
-    account.setdefault('api_base', 'https://api.salesflare.com')
+    preset = salesflare_preset(config)
+    new = account.get('id') not in {a.get('id') for a in config.get('accounts', [])}
+    if preset and new and account.get('api_base') in (None, SALESFLARE_API):
+        account.update(preset)  # a new account starts on the team's server, so its key is only sent there
+    account.setdefault('api_base', SALESFLARE_API)
     while True:
         try:
             me = assistant().Salesflare(config, account).get('/me')
@@ -1218,10 +1262,10 @@ def step_salesflare(config, account, ui):
                 'Its API address, or Enter to stop')
             if not other:
                 raise SetupError(f'Salesflare did not answer: {error}', hint(error)) from None
-            account['api_base'] = other.rstrip('/') if '://' in other else 'https://' + other.rstrip('/')
-            host = urllib.parse.urlparse(account['api_base']).netloc
-            first, _, rest = host.partition('.')
-            account['app_base'] = 'https://' + ((first.replace('api', '') or 'app') + '.' + rest if rest else host)
+            if salesflare_address(other) == account['api_base']:
+                raise SetupError(f'{account["api_base"]} rejected that key', 'check the key, or give the API address of the server it is for')
+            account['api_base'] = salesflare_address(other)
+            account['app_base'] = salesflare_app_base(account['api_base'])
     account.update(user_id=me['id'], team_id=(me.get('team') or {}).get('id'), email=me['email'])
     account['owner_emails'] = sorted({me['email'], *account.get('owner_emails', [])} - {PLACEHOLDERS['email']})
     ui.say(f'  Salesflare: {me["email"]}')
