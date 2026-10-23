@@ -16,10 +16,16 @@ const server=createServer((req,res)=>{const url=new URL(req.url,'http://fixture.
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const base='http://127.0.0.1:'+server.address().port+'/';
 const errors=[];let browser;
-// Start a round and hold the next Z still, so the test aims at a known spot.
-const heldZ=async page=>{await page.waitForFunction(()=>document.querySelector('#game-field .zz:not(.got)'));
- return page.evaluate(()=>{const z=document.querySelector('#game-field .zz:not(.got)');z.id='held';z.classList.remove('gold');z.style.animationPlayState='paused';
-  const r=z.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height}})};
+// Hold the next Z still for the test to aim at: its rise paused at a fixed point (and only once the pause has taken
+// effect, so a busy machine can't move it after it was measured), on top of any Z that spawns later, and a round
+// long enough that it can't end under load. The game itself runs as usual.
+const heldZ=async page=>{for(;;){await page.waitForFunction(()=>document.querySelector('#game-field .zz:not(.got):not(#held)'));
+ const r=await page.evaluate(async()=>{const z=document.querySelector('#game-field .zz:not(.got):not(#held)');if(!z)return null;
+  document.querySelector('#held')?.removeAttribute('id');z.id='held';z.classList.remove('gold');z.style.zIndex='5';game.end=Date.now()+120000;
+  for(const a of z.getAnimations()){a.pause();a.currentTime=600;await a.ready}
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  if(!z.isConnected)return null;const b=z.getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2,w:b.width,h:b.height}});
+ if(r)return r}};
 const score=page=>page.evaluate(()=>+document.querySelector('#game-score').textContent);
 try{
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
