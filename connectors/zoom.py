@@ -169,13 +169,23 @@ class Source:
             begun = stamp(meeting.get('start_time'))
             if begun and begun > end:
                 continue
+            if begun and meeting.get('type') in (1, 2) and begun < start - dt.timedelta(days=1):
+                continue  # a one-off meeting from before the window: nothing new there
             try:
                 instances = self.get(f"/past_meetings/{int(meeting['id'])}/instances")
-            except (self.helpers.SourceError, ValueError, TypeError):
+            except (ValueError, TypeError):
                 continue
+            except self.helpers.SourceError as error:
+                if error.status not in (400, 403):
+                    continue
+                try:  # the instances list is not granted to this sign-in: the meeting's latest instance
+                    latest = self.get(f"/past_meetings/{int(meeting['id'])}")
+                except self.helpers.SourceError:
+                    continue
+                instances = {'meetings': [latest] if isinstance(latest, dict) else []}
             for item in instances.get('meetings') or []:
                 at = stamp((item or {}).get('start_time'))
-                if at and start <= at <= end and isinstance(item.get('uuid'), str):
+                if at and start <= at <= end and isinstance(item.get('uuid'), str) and (item['uuid'], '') not in found:
                     found.append((item['uuid'], ''))
             if len(found) >= MAX_MEETINGS:
                 break

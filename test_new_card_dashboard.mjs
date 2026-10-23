@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // New card and Rename on the dashboard. New card: a row under Find a card on a computer, "+" in the top bar on a
-// phone, C, and Ctrl/Cmd+K then "new"; one field, optional Work/Personal, due date, person and email; Enter adds it
+// phone, C, "new" in Find a card, and the palette (Ctrl/⌘K) then "new"; one field, optional Work/Personal, due date, person and email; Enter adds it
 // with card_new and nothing else (no send). Rename: the sidebar row (⋯, double click, right click, long press on a
 // phone), the chat's title and header menu, and the card (More, and a click on its title on a computer only).
 // Optimistic, Esc cancels, empty keeps the old title, markup stays text, a failure puts the old title back.
@@ -76,12 +76,12 @@ try{
   // The fresh card shows like any other, with Added by you in quiet text
   const fresh=page.locator('#task-'+'ab'.repeat(8));await fresh.waitFor();assert.match(await fresh.locator('.meta-side').textContent(),/^Added by you/);
   assert.match(await fresh.locator('.actions').textContent(),/Do it/);
-  // C opens it, not while typing; Esc closes; Ctrl+K then "new" opens it too
+  // C opens it, not while typing; Esc closes; "new" in Find a card or the palette opens it too
   await page.locator('body').press('c');await dialog.waitFor();await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
   await page.locator('#side-find').fill('c');assert.ok(!(await dialog.isVisible()),'C in a field types a c');await page.locator('#side-find').fill('');
-  await page.locator('body').press('Control+k');assert.equal(await page.evaluate(()=>document.activeElement.id),'side-find');
-  await page.keyboard.type('new');assert.match(await page.locator('#side-new').getAttribute('class'),/hit/);await page.keyboard.press('Enter');await dialog.waitFor();
-  assert.equal(await page.locator('#side-find').inputValue(),'');
+  await page.locator('#side-find').fill('new');assert.match(await page.locator('#side-new').getAttribute('class'),/hit/);await page.locator('#side-find').press('Enter');await dialog.waitFor();
+  assert.equal(await page.locator('#side-find').inputValue(),'');await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+  await page.locator('body').press('Control+k');await page.locator('#palette').waitFor();await page.keyboard.type('new');await page.keyboard.press('Enter');await dialog.waitFor();
   // An empty field adds nothing
   await page.locator('#nc-text').press('Enter');assert.equal(sent('card_new').length,1);await page.keyboard.press('Escape');
   // The merge offer asks, and only a tap merges

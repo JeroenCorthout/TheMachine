@@ -19,7 +19,7 @@ A tab with nothing to show is hidden.
 
 ## General
 
-- **This device**: **Light mode** and **Phone notifications**, only for this browser or phone. See [The phone app](phone-app.md).
+- **This device**: the app (**Install app**), **Notifications** with **Send a test**, and **Light mode**, only for this browser or phone. See [Install the app and turn on notifications](phone-app.md).
 - **Coding agents**: see [Hand to Claude Code or Codex](hand-to-agent.md).
 - **Open the Machine’s browser ↗**: the browser your Machine uses for sites like LinkedIn.
 - **Fleet rules**: see [Sharing rules](sharing-rules.md).

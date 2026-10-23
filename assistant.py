@@ -958,6 +958,47 @@ def gog_read(config, account, api, version, method, params, scope):
         raise SourceError('invalid_response')
     return data
 
+# Contact photos from the owner's Google contacts and Workspace directory, with the scopes the gog sign-in already has
+# (a hosted sign-in through the broker has no Contacts scope, so it is never asked). Read only, once a day per account.
+GOOGLE_PHOTO_LISTS = (
+    ('people.connections.list', {'resourceName': 'people/me', 'pageSize': 1000, 'personFields': 'emailAddresses,phoneNumbers,photos'},
+     'https://www.googleapis.com/auth/contacts', 'connections'),
+    ('people.listDirectoryPeople', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos', 'sources': 'DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE'},
+     'https://www.googleapis.com/auth/directory.readonly', 'people'),
+    ('otherContacts.list', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos'},
+     'https://www.googleapis.com/auth/contacts.other.readonly', 'otherContacts'))
+GOOGLE_PHOTO_PAGES = 20
+
+
+def google_photo_offers(config, account, read=None):
+    """(identifiers, link, chosen) for each of the account's contacts with a real photo. A list the sign-in can't read
+    is skipped."""
+    read = read or gog_read
+    offers = []
+    for method, params, scope, key in GOOGLE_PHOTO_LISTS:
+        token = None
+        for _ in range(GOOGLE_PHOTO_PAGES):
+            try:
+                page = read(config, account, 'people', 'v1', method, {**params, **({'pageToken': token} if token else {})}, scope)
+            except SourceError:
+                break
+            offers += [o for o in (enrichment.google_photo(p) for p in page.get(key) or [] if isinstance(p, dict)) if o]
+            token = page.get('nextPageToken')
+            if not token:
+                break
+    return offers
+
+
+def google_photo_accounts(config):
+    """The owner's own Google sign-ins through gog, once per address (never one shared from a Fleet)."""
+    seen = {}
+    for account in config.get('accounts', []):
+        if account.get('service', 'gmail') in ('gmail', 'calendar') and account.get('transport') == 'gog' and account.get('email') \
+                and not account.get('shared'):
+            seen.setdefault(account['email'].lower(), account)
+    return list(seen.values())
+
+
 # Outlook mail and calendar: they flow through the same sync, cards and sends as Gmail and Google Calendar, and their
 # messages are stored with the same 'gmail.message' kind (it means "an email" everywhere in the app).
 MICROSOFT_SERVICES = ('outlook', 'outlook_calendar')
@@ -6610,6 +6651,10 @@ def remember_slack_names(store, source, events, channels=(), per_page=3):
         profile = user.get('profile') or {}
         name = None if user.get('is_bot') else (profile.get('real_name') or profile.get('display_name') or user.get('real_name'))
         store.remember_name(identifier, name and str(name)[:200], None if user.get('is_bot') else str(profile.get('email') or '').lower()[:320] or None)
+        offer = enrichment.slack_photo({**user, 'id': user.get('id') or identifier.split(':', 1)[1]})
+        if offer:
+            with store.connect() as db:
+                enrichment.offer_photos(db, [offer], 'slack', now(), known_only=False)
 
 
 GATEWAY_SIGNALS = (
@@ -10661,6 +10706,17 @@ class App:
             if not getattr(self, 'fleet', None):
                 raise ValueError('This Machine is not on the Network')
             return self.fleet.fill_split(str(args.get('split_id') or ''), args.get('event_id'), args.get('parts') or {})
+        if name == 'push_test':  # Settings or the nudge: one test notification to this device's own subscription
+            if not owner_dashboard:
+                raise ValueError('Phone notifications are turned on in the dashboard app')
+            with self.store.connect() as db:
+                row = db.execute('SELECT endpoint,p256dh,auth FROM push_subscriptions WHERE endpoint=?', (str(args.get('endpoint') or ''),)).fetchone()
+            if not row:
+                raise ValueError('Notifications are off on this device. Turn them on first.')
+            results = push_send(self.store, self.config, [dict(row)], {'title': 'Notifications are on', 'body': 'This is how a new card shows up.', 'url': '.', 'tag': 'push-test'}, 'test')
+            if not any(200 <= r.get('status', 0) < 300 for r in results):
+                raise ValueError('The test didn’t go through. Turn notifications off and on again.')
+            return {'sent': True}
         if name in ('push_subscribe', 'push_unsubscribe'):
             if not owner_dashboard:
                 raise ValueError('Phone notifications are turned on in the dashboard app')
@@ -13521,6 +13577,15 @@ class App:
                     self.graph_dirty.set()  # show the new profiles
                 found = enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None)), stop=self.stop.is_set)
                 photos = enrichment.photos_step(self.store.connect, now())  # straight after the lookups (hosted ones too, through the agent)
+                for account in google_photo_accounts(self.config):
+                    with self.store.connect() as db:
+                        due = enrichment.contact_run_due(db, 'google:' + account['email'].lower(), now())
+                    if due and not self.stop.is_set():
+                        offers = google_photo_offers(self.config, account)
+                        with self.store.connect() as db:
+                            enrichment.offer_photos(db, offers, 'google', now())
+                            enrichment.contact_run_done(db, 'google:' + account['email'].lower(), now())
+                photos += enrichment.contact_photos_step(self.store.connect, now())
                 if found or photos:
                     LOG.info('enrichment people found=%s photos=%s', found, photos)
                     self.graph_dirty.set()
@@ -14089,7 +14154,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
