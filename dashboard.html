@@ -79,7 +79,7 @@ try{if(localStorage.getItem('side')==='collapsed')root.dataset.side='collapsed'}
 [data-theme="light"] body{background:radial-gradient(900px 420px at 12% -120px,#c7b5e240,transparent 70%),radial-gradient(700px 360px at 100% -160px,#bccba840,transparent 70%),var(--bg)}
 [data-theme="light"] .live{background:#ffffffb3}
 [data-theme="light"] nav{background:#ffffffe6}
-[data-theme="light"] nav button:hover,[data-theme="light"] button.stat:hover{background:#3d375210}
+@media(hover:hover) and (pointer:fine){[data-theme="light"] nav button:hover,[data-theme="light"] button.stat:hover{background:#3d375210}}
 [data-theme="light"] .badge{background:#3d375214}
 [data-theme="light"] nav button.active .badge{background:#ffffff40}
 [data-theme="light"] button.primary:hover{background:#3f582a;color:#fff}
@@ -150,7 +150,7 @@ h1{font-size:1.75rem;letter-spacing:-.035em;font-weight:750}
 /* Tabs */
 nav{display:flex;gap:4px;padding:5px;margin:0 -1px 22px;border:1px solid var(--border);border-radius:13px;background:#26292fe6;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 nav button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;background:transparent;color:var(--muted);font-weight:600;padding:9px 12px;border-radius:9px}
-nav button:hover{color:var(--cream);background:#ffffff08;border-color:transparent}
+@media(hover:hover) and (pointer:fine){nav button:hover{color:var(--cream);background:#ffffff08;border-color:transparent}}
 nav button.active{background:var(--mint);color:var(--charcoal)}
 nav button.active:hover,[data-theme="light"] nav button.active:hover{background:var(--mint);color:var(--charcoal)}  /* hover (sticky after a tap) never hides the current tab */
 .badge{min-width:20px;height:20px;padding:0 6px;border-radius:999px;display:inline-grid;place-items:center;font:600 .72rem/1 var(--mono);background:#ffffff14;color:var(--cream)}
@@ -965,7 +965,7 @@ h1{font-size:var(--fs-2xl);line-height:var(--lh-tight);font-weight:var(--fw-head
 nav,[data-theme="light"] nav{background:var(--sunken);border:0;border-radius:var(--r-md);padding:3px;gap:2px;margin:0 0 var(--sp-5);backdrop-filter:none;-webkit-backdrop-filter:none;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
 nav button{font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);color:var(--muted);border-radius:var(--r-sm);padding:8px 12px;min-height:36px;white-space:nowrap;transition:background var(--dur) var(--ease),color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
-nav button:hover,[data-theme="light"] nav button:hover{background:var(--tile);color:var(--text)}
+@media(hover:hover) and (pointer:fine){nav button:hover,[data-theme="light"] nav button:hover{background:var(--tile);color:var(--text)}}
 nav button.active,nav button.active:hover,[data-theme="light"] nav button.active:hover{background:var(--c-accent-tint);color:var(--text);box-shadow:0 0 0 1px color-mix(in srgb,var(--mint) 18%,transparent),var(--shadow-sm)}
 .badge,[data-theme="light"] .badge{font:var(--fw-strong) 11px/1 var(--sans);font-variant-numeric:tabular-nums;background:color-mix(in srgb,var(--text) 9%,transparent);color:var(--muted);min-width:18px;height:18px;padding:0 5px}
 nav button.active .badge,[data-theme="light"] nav button.active .badge{background:color-mix(in srgb,var(--mint) 22%,transparent);color:var(--text)}
@@ -1186,7 +1186,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 /* A soft edge under the header, so what scrolls under it fades instead of looking cut */
 .chat-head::after{content:'';position:absolute;left:0;right:0;top:100%;z-index:1;height:14px;background:linear-gradient(var(--bg) 30%,color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 /* Back and ⋯ share one 32px box; the title's first line is centred on it (its x-height on the chevron), on one line or two */.chat-back,.chat-menu>summary{display:grid;place-items:center;flex:none;width:32px;height:32px;margin:0;border-radius:50%;color:var(--text);text-decoration:none;cursor:pointer}
-.chat-back:hover,.chat-menu>summary:hover,.chat-menu[open]>summary{background:var(--c-hover)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
+@media(hover:hover) and (pointer:fine){.chat-back:hover,.chat-menu>summary:hover{background:var(--c-hover)}}.chat-menu[open]>summary{background:var(--c-hover)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
 .chat-title{flex:1;min-width:0;margin:calc((32px - 1.35em)/2 - .09em) 0 0;font:600 1rem/1.35 var(--sans);white-space:nowrap;overflow:hidden}
 /* The chat's title is one line at every width, fading out at the right edge; its full text is in the title attribute. */
 .chat-menu{position:relative;flex:none;margin:0}.chat-menu>summary{list-style:none}.chat-menu>summary::-webkit-details-marker{display:none}.chat-menu>summary::before,.chat-menu>summary::after{content:none}
@@ -1306,7 +1306,13 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
   body.chat-open:has(#inbox:not([hidden])) .site-footer{display:none}
   body.chat-open:has(#inbox:not([hidden])) main{padding:0 20px}
   .chat-main{min-height:100dvh}
-  .chat-head{margin:0 -20px;padding:calc(10px + env(safe-area-inset-top)) 11px 12px 8px}
+  /* Phone: ‹ and ⋯ are 44px boxes at the screen edges, their glyphs on the chat's 20px gutters (the chevron's stroke over the
+     text, the dots' edge over the bubbles); all three share the title's centre line, and the title ends in an ellipsis */
+  .chat-head{align-items:center;gap:0;margin:0 -20px;padding:calc(4px + env(safe-area-inset-top)) env(safe-area-inset-right) 6px env(safe-area-inset-left)}
+  .chat-back,.chat-menu>summary{width:44px;height:44px;border-radius:var(--r-sm)}
+  .chat-back{justify-items:start;padding-left:13.6px}  /* the chevron's left stroke at 20px */
+  .chat-menu>summary{justify-items:end;padding-right:17.3px}  /* the right dot's edge at 20px from the right */
+  .chat-title{margin:0 4px 0 0;text-overflow:ellipsis}.chat-title.fade{-webkit-mask-image:none;mask-image:none}
   .chat-log{padding:24px 0 calc(12px + var(--kb,0px))}
   .chat-layout [data-chat-drawer]{display:flex}
   .chat-msg.you{max-width:86%}
@@ -1350,7 +1356,7 @@ body main{padding-top:0}
 .app-side h1{font:var(--fw-heading) 19px/1.2 var(--serif);letter-spacing:-.01em;white-space:nowrap}
 .app-side #tagline{display:none}
 .side-toggle{display:grid;place-items:center;flex:none;width:32px;height:32px;min-height:0;margin:0 0 0 auto;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
-.side-toggle:hover{background:var(--c-hover);color:var(--text)}
+@media(hover:hover) and (pointer:fine){.side-toggle:hover{background:var(--c-hover);color:var(--text)}}
 .side-toggle svg,.side-search svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .side-search{order:1;flex:none;display:flex;align-items:center;gap:8px;height:34px;margin:12px 0 8px;padding:0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:color-mix(in srgb,var(--c-bg) 70%,transparent);color:var(--side-quiet);cursor:text}
 .side-search:focus-within{border-color:var(--c-line-strong)}
@@ -1359,7 +1365,7 @@ body main{padding-top:0}
 .app-side nav,[data-theme="light"] .app-side nav{order:2;flex:none;flex-direction:column;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:none;overflow:visible}
 .app-side nav button,.app-side .head-side>.settings-link{position:relative;flex:none;display:flex;justify-content:flex-start;align-items:center;gap:10px;width:100%;min-height:34px;margin:0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
 .app-side nav button[hidden]{display:none}
-.app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
+@media(hover:hover) and (pointer:fine){.app-side nav button:hover,[data-theme="light"] .app-side nav button:hover,.app-side .head-side>.settings-link:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}}
 .app-side nav button.active,.app-side nav button.active:hover,.app-side .head-side>.settings-link[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);box-shadow:none;font-weight:600}
 .app-side nav .ni,.app-side .head-side>.settings-link svg{display:block;flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .app-side nav .badge,.app-side nav button.active .badge,[data-theme="light"] .app-side nav button.active .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans)}
@@ -1368,16 +1374,16 @@ body main{padding-top:0}
 .side-label{display:flex;align-items:center;gap:2px;margin:0 0 2px;padding:0 4px 0 10px;min-height:26px;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);color:var(--side-quiet)}
 .side-label>span{margin-right:auto}
 .side-label button{min-height:0;margin:0;padding:3px 7px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);font:inherit;cursor:pointer}
-.side-label button:hover{color:var(--text)}
+@media(hover:hover) and (pointer:fine){.side-label button:hover{color:var(--text)}}
 .side-label button[aria-pressed="true"]{color:var(--text);background:var(--c-hover)}
 .side-head{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;margin:6px 0 0;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-quiet);font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);text-align:left;cursor:pointer}
-.side-head:hover{color:var(--text)}
+@media(hover:hover) and (pointer:fine){.side-head:hover{color:var(--text)}}
 .side-head .count{margin-left:auto;font-variant-numeric:tabular-nums}
 .side-head svg{width:12px;height:12px;flex:none;margin-left:-2px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
 .side-head[aria-expanded="false"] svg{transform:rotate(-90deg)}
 .side-cards a{display:block;padding:5px 10px;border-radius:var(--r-sm);color:var(--side-ink);font:400 13px/1.45 var(--sans);text-decoration:none;white-space:nowrap;overflow:hidden}
 .side-group.quiet a{color:var(--side-quiet)}
-.side-cards a:hover{background:var(--c-hover);color:var(--text)}
+@media(hover:hover) and (pointer:fine){.side-cards a:hover{background:var(--c-hover);color:var(--text)}}
 .side-cards a[aria-current]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
 .side-cards a.fade{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 32px),transparent)}
 .side-empty{margin:6px 10px;font-size:var(--fs-xs);color:var(--side-quiet)}
@@ -1404,13 +1410,17 @@ body main{padding-top:0}
 .side-row{position:relative;display:flex;align-items:center}
 .side-row>button[data-tab]~.side-fold{right:auto;left:var(--fold-x,84px)}  /* right after the label, so the count keeps the rows' column */
 .app-side nav .side-fold{position:absolute;right:4px;top:50%;display:grid;place-items:center;justify-content:center;width:26px;height:26px;min-height:0;margin:-13px 0 0;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
-.app-side nav .side-fold:hover{background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
+/* One row: hovering the chevron keeps the row's own highlight and only darkens the arrow, no box of its own; touch gets no hover at all */
+@media(hover:hover) and (pointer:fine){.app-side nav .side-fold:hover,[data-theme="light"] .app-side nav .side-fold:hover{background:none;color:var(--text)}.side-row:has(>.side-fold:hover)>button[data-tab]{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}}
+.app-side nav .side-fold:focus-visible{box-shadow:var(--ring)}  /* the keyboard still sees where it is */
+@media(hover:none),(pointer:coarse){:is(.app-side nav button,.side-toggle,.topbar-menu,.side-head,.side-new,.side-label button):hover:not(:active):not(.active):not([aria-pressed="true"]){background:none}}  /* a tap leaves no hover behind */
+@media(hover:none),(pointer:coarse){:is(.app-side nav button,.app-side nav .side-fold,.side-sub a,.side-cards a,.side-head,.side-new,.topbar-menu,.find-results a):active{background:color-mix(in srgb,var(--text) 6%,transparent)}}  /* a press shows while the finger is down, nothing stays */
 .app-side nav .side-fold svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
 .app-side nav .side-fold[aria-expanded="false"] svg{transform:rotate(-90deg)}
 @media(hover:hover){.app-side nav .side-fold{opacity:0;transition:opacity var(--dur) var(--ease)}.side-row:hover .side-fold,.app-side nav .side-fold:focus-visible,.app-side nav .side-fold[aria-expanded="false"]{opacity:1}}  /* calm until wanted */
 .side-sub{display:flex;flex-direction:column;gap:1px}.side-sub[hidden]{display:none}
 .side-sub a{display:flex;align-items:center;gap:10px;min-height:32px;padding:0 10px 0 20px;border-radius:var(--r-sm);color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-decoration:none;white-space:nowrap}
-.side-sub a:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}
+@media(hover:hover) and (pointer:fine){.side-sub a:hover{background:color-mix(in srgb,var(--text) 4%,transparent);color:var(--text)}}
 .side-sub a[aria-current="page"]{background:color-mix(in srgb,var(--text) 11%,transparent);color:var(--text);font-weight:600}
 .side-sub .badge{margin-left:auto;min-width:0;height:auto;padding:0;background:none;color:var(--side-quiet);font:500 var(--fs-xs)/1 var(--sans);font-variant-numeric:tabular-nums}
 .sq{display:grid;place-items:center;flex:none;width:16px;height:16px;border-radius:4px;background:var(--sq)}
@@ -1443,7 +1453,7 @@ body main{padding-top:0}
   :root[data-side="collapsed"] .app-side .brand>:not(.side-toggle){display:none}
   :root[data-side="collapsed"] .side-toggle{margin:0}
   :root[data-side="collapsed"] .side-search{justify-content:center;padding:0;border-color:transparent;background:none;cursor:pointer}
-  :root[data-side="collapsed"] .side-search:hover{background:var(--c-hover);color:var(--text)}
+  @media(hover:hover) and (pointer:fine){:root[data-side="collapsed"] .side-search:hover{background:var(--c-hover);color:var(--text)}}
   :root[data-side="collapsed"] .side-search input{display:none}
   :root[data-side="collapsed"] .app-side nav button,:root[data-side="collapsed"] .app-side .head-side>.settings-link,:root[data-side="collapsed"] .app-side .head-side>.live{justify-content:center;padding:0}
   :root[data-side="collapsed"] .app-side .nl,:root[data-side="collapsed"] .app-side .head-side .lbl,:root[data-side="collapsed"] #updated{display:none}
@@ -1459,12 +1469,13 @@ body main{padding-top:0}
 /* A phone and a tablet: a slim top bar with the menu button, the page's title in the column, and the sidebar as a drawer */
 @media(max-width:1023px){
   :root{--side-bg:var(--bg)}
-  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(1.1px,env(safe-area-inset-right)) 0 max(2.5px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
   .topbar-title{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 26px);transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:var(--r-sm);color:var(--text);font:var(--fw-heading) 17px/1 var(--serif);letter-spacing:-.01em;text-decoration:none;white-space:nowrap}
   .topbar-title img{width:22px;height:22px;object-fit:contain}
   .topbar>:not(.topbar-title):last-child:not(:first-child){margin-left:auto}  /* a button on the right (New card) */
+  /* 44px boxes; the ☰ and + glyphs sit on the cards' 16px gutters */
   .topbar-menu{display:grid;place-items:center;width:44px;height:44px;min-height:0;margin:0;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--c-text-2);cursor:pointer}
-  .topbar-menu:hover{background:var(--c-hover);color:var(--text)}
+  @media(hover:hover) and (pointer:fine){.topbar-menu:hover{background:var(--c-hover);color:var(--text)}}
   .topbar-menu svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   .topbar-menu .dot{position:absolute;margin:-14px 0 0 16px;width:7px;height:7px;border-radius:50%;background:var(--c-orange)}.topbar-menu .dot[hidden]{display:none}
   body.chat-open:has(#inbox:not([hidden])) .topbar{display:none}
@@ -1483,7 +1494,7 @@ body main{padding-top:0}
   .find-results[hidden]{display:none}
   .find-results .side-head{pointer-events:none}.find-results .side-head svg{display:none}
   .find-results a{display:block;padding:11px 10px;border-radius:var(--r-sm);color:var(--text);font-size:var(--fs-md);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .find-results a:hover,.find-results a.hit{background:var(--c-hover)}
+  .find-results a.hit{background:var(--c-hover)}@media(hover:hover) and (pointer:fine){.find-results a:hover{background:var(--c-hover)}}
   .find-results .side-empty{padding:12px 10px;color:var(--c-text-3)}
   .app-side{position:fixed;top:0;bottom:0;left:0;z-index:70;display:flex;flex-direction:column;width:min(88vw,380px);max-width:none;height:100dvh;margin:0;padding:calc(8px + env(safe-area-inset-top)) 12px calc(6px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border-right:1px solid var(--c-line);background:var(--bg);box-shadow:var(--shadow-pop);overflow:hidden auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;transform:translateX(-104%);visibility:hidden;transition:transform .26s var(--ease),visibility 0s linear .26s}
   :root[data-drawer="open"] .app-side{transform:none;visibility:visible;transition:transform .26s var(--ease)}
@@ -1497,7 +1508,7 @@ body main{padding-top:0}
   .side-toggle{order:-1;width:44px;height:44px;margin:0 2px 0 -4px;color:var(--c-text-2)}
   .side-toggle svg{width:22px;height:22px}
   .side-toggle .ic-panel{display:none}.side-toggle .ic-x{display:block}
-  @media(hover:none){.side-toggle:hover,.topbar-menu:hover{background:none}}
+
   .side-search{height:44px;margin:8px 0 10px;padding:0 12px;border-color:transparent;border-radius:var(--r-md,12px);background:color-mix(in srgb,var(--text) 6%,transparent)}
   .side-search input,.side-search input:focus{font-size:16px}  /* 16px: no zoom on focus on an iPhone */
   .app-side nav button,.app-side .head-side>.settings-link{min-height:44px;gap:12px;font-size:var(--fs-md)}
@@ -1552,31 +1563,84 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 .cal-free{margin:0;padding:12px 0 4px;color:var(--c-text-3);font-size:var(--fs-sm)}
 .cal-note{margin:4px 0 0;color:var(--c-text-3);font-size:var(--fs-sm)}.cal-note a{color:var(--c-text-2)}
 .cal-clear{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:8px;padding:40px 16px 24px;text-align:center}.cal-clear img{width:64px;height:64px;object-fit:contain}.cal-clear strong{display:block;margin-top:6px;font:var(--fw-heading) var(--fs-xl)/1.25 var(--serif);color:var(--text)}.cal-clear span{display:block;color:var(--c-text-3);font-size:var(--fs-sm)}
-.cal-mode{display:none}
+/* The Calendar's header stays on top while the days scroll: Today (quiet when this week is on show), ‹ ›, the week */
+body:has(#calendar:not([hidden])) #page-head{position:sticky;top:0;z-index:30;margin:-10px -10px 18px;padding:10px;background:var(--bg)}
+@media(max-width:1023px){body:has(#calendar:not([hidden])) #page-head{top:calc(52px + env(safe-area-inset-top))}}
+.cal-head{display:flex;flex:1 1 auto;flex-wrap:wrap;align-items:center;gap:8px 20px;min-width:0}
+.cal-nav{display:flex;align-items:center;gap:2px;min-width:0}
+.cal-nav button{min-height:34px;margin:0;padding:0 14px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--text);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer}
+@media(hover:hover){.cal-nav button:hover{background:var(--c-hover)}}
+.cal-nav .cal-today{margin-right:6px}.cal-nav .cal-today.now{border-color:transparent;color:var(--c-text-3)}
+.cal-nav .cal-step{width:34px;padding:0 0 3px;border-color:transparent;border-radius:50%;color:var(--c-text-2);font-size:22px}
+.cal-range{margin-left:8px;color:var(--text);font:var(--fw-medium) var(--fs-md)/1.2 var(--sans);white-space:nowrap}
+.cal-block.cal-empty{margin-bottom:14px}.cal-empty .cal-day{margin:0}.cal-none{margin-left:auto;color:var(--c-text-3);font:400 var(--fs-sm)/1 var(--sans)}
+.cal-wk{margin:4px 0 14px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans);letter-spacing:.04em;text-transform:uppercase}
+.cal-more{display:flex;justify-content:center;margin:-8px 0 12px}.cal-more button{min-height:34px;color:var(--c-text-2)}
 @media(max-width:560px){.cal-item{grid-template-columns:50px 8px minmax(0,1fr) auto;column-gap:10px}.cal-end .chip{display:none}.cal-prep{display:inline;color:var(--c-text-2)}}
-@media(min-width:1024px){
-  .cal-mode{display:inline-flex;align-self:center;margin-left:auto;padding:3px;gap:2px;border-radius:var(--r-sm);background:var(--c-sunken)}
-  .cal-mode button{min-height:30px;margin:0;padding:0 12px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--c-text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer}
-  .cal-mode button:hover{color:var(--text)}
-  .cal-mode button[aria-pressed="true"]{background:var(--c-raised);color:var(--text);box-shadow:var(--shadow-sm),0 0 0 1px var(--c-line)}
-  body:has(#calendar.week:not([hidden])) :is(main,.site-footer){max-width:calc(1080px + 112px)}
-  body:has(#people:not([hidden]) .sub-pane:not([hidden]) .proj-board:not([hidden])) :is(main,.site-footer){max-width:calc(1320px + 112px)}
-  .cal-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--c-line);border-radius:var(--r-lg);background:var(--c-surface);overflow:hidden}
-  .cal-col{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:360px;padding:10px 8px 14px;border-left:1px solid var(--c-line)}
-  .cal-col:first-child{border-left:0}
-  .cal-col.today{background:color-mix(in srgb,var(--c-accent-tint) 45%,transparent)}
-  .cal-col-head{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:2px 4px 8px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1 var(--sans)}
-  .cal-col-head b{color:var(--text);font:var(--fw-heading) 19px/1 var(--serif);font-variant-numeric:tabular-nums}
-  .cal-col.today .cal-col-head span{color:var(--text)}
-  .cal-chip{display:block;padding:6px 8px 7px;border-radius:var(--r-xs);background:var(--c-sunken);color:var(--text);text-decoration:none;font:var(--fw-medium) var(--fs-xs)/1.35 var(--sans);box-shadow:inset 3px 0 0 var(--tone)}
-  .cal-chip.k-meeting{box-shadow:inset 3px 0 0 var(--c-line-strong)}
-  .cal-chip.k-theirs{background:transparent;box-shadow:inset 0 0 0 1px var(--c-line);color:var(--c-text-2)}
-  a.cal-chip:hover{background:color-mix(in srgb,var(--text) 8%,var(--c-sunken))}
-  .cal-chip .t{display:block;color:var(--c-text-3);font-variant-numeric:tabular-nums}
-  .cal-chip .n{display:-webkit-box;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
-  .cal-col .cal-free{padding:2px 4px}
-  #calendar.week .cal-block{margin-bottom:20px}
-}
+/* The view switch, Agenda | Week | Month */
+.cal-mode{display:inline-flex;align-self:center;margin-left:auto;padding:3px;gap:2px;border-radius:var(--r-sm);background:var(--c-sunken)}
+.cal-mode button{min-height:30px;margin:0;padding:0 12px;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--c-text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer}
+@media(hover:hover){.cal-mode button:hover{color:var(--text)}}
+.cal-mode button[aria-pressed="true"]{background:var(--c-raised);color:var(--text);box-shadow:var(--shadow-sm),0 0 0 1px var(--c-line)}
+@media(max-width:1023px){.cal-head{gap:8px 12px}.cal-head .page-title{flex:1 1 auto}.cal-nav{order:3;flex:1 1 100%}.cal-nav .cal-range{margin-left:auto}}
+@media(min-width:1024px){body:has(#calendar.week:not([hidden])) :is(main,.site-footer){max-width:calc(1080px + 112px)}
+  body:has(#people:not([hidden]) .sub-pane:not([hidden]) .proj-board:not([hidden])) :is(main,.site-footer){max-width:calc(1320px + 112px)}}
+/* A chip: an item in the All day strip and in a month's day */
+.cal-chip{display:block;min-width:0;padding:4px 7px 5px;border-radius:var(--r-xs);background:var(--c-sunken);color:var(--text);text-decoration:none;font:var(--fw-medium) var(--fs-xs)/1.3 var(--sans);box-shadow:inset 3px 0 0 var(--tone)}
+.cal-chip.k-meeting{box-shadow:inset 3px 0 0 var(--c-line-strong)}
+.cal-chip.k-theirs,.cal-blk.k-theirs{background:transparent;box-shadow:inset 0 0 0 1px var(--c-line);color:var(--c-text-2)}.cal-blk.k-theirs{background:var(--c-surface)}
+@media(hover:hover){a.cal-chip:hover,a.cal-blk:hover{background:color-mix(in srgb,var(--text) 8%,var(--c-sunken))}}
+.cal-chip .t{color:var(--c-text-3);font-variant-numeric:tabular-nums;margin-right:4px}
+.cal-chip .n{overflow-wrap:anywhere}
+.cal-chip{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* Week: the time grid */
+.cal-tg{--gut:48px;border:1px solid var(--c-line);border-radius:var(--r-lg);background:var(--c-surface);overflow:hidden}
+.cal-tg-head,.cal-tg-strip,.cal-tg-body{display:grid;grid-template-columns:var(--gut) repeat(var(--n),minmax(0,1fr))}
+.cal-tg-head{border-bottom:1px solid var(--c-line)}
+.cal-tg-day{display:flex;align-items:baseline;justify-content:center;gap:6px;padding:10px 4px 9px;border-left:1px solid var(--c-line);color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1 var(--sans)}
+.cal-tg-day b{color:var(--text);font:var(--fw-heading) 19px/1 var(--serif);font-variant-numeric:tabular-nums}
+.cal-tg-day.today span{color:var(--text)}.cal-tg-day.today b{display:inline-grid;place-items:center;min-width:28px;height:28px;margin:-6px 0 -5px;border-radius:50%;background:var(--c-accent);color:var(--c-accent-ink)}
+.cal-tg-day.gone b{color:var(--c-text-3)}
+.cal-tg-strip{border-bottom:1px solid var(--c-line)}
+.cal-tg-label{align-self:center;padding:6px 6px;color:var(--c-text-3);font:var(--fw-medium) 10px/1.1 var(--sans);text-align:right}
+.cal-tg-cell{display:flex;flex-direction:column;gap:3px;min-width:0;padding:4px 3px;border-left:1px solid var(--c-line)}
+.cal-tg-scroll{position:relative;max-height:min(640px,calc(100dvh - 260px));overflow-y:auto;overscroll-behavior:contain}
+.cal-tg-body{position:relative;height:calc(24 * var(--hour));background:repeating-linear-gradient(to bottom,transparent 0 calc(var(--hour) - 1px),color-mix(in srgb,var(--c-line) 70%,transparent) calc(var(--hour) - 1px) var(--hour))}
+.cal-tg-hours{position:relative}
+.cal-tg-hours span{position:absolute;right:6px;transform:translateY(-50%);color:var(--c-text-3);font:var(--fw-medium) 10px/1 var(--sans);font-variant-numeric:tabular-nums}
+.cal-tg-col{position:relative;min-width:0;border-left:1px solid var(--c-line)}
+.cal-tg-col.today{background:color-mix(in srgb,var(--c-accent-tint) 45%,transparent)}
+.cal-blk .c{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--lines);overflow:hidden}
+.cal-blk{position:absolute;display:block;box-sizing:border-box;margin:1px 0 0 2px;padding:2px 6px;overflow:hidden;border-radius:var(--r-xs);background:var(--c-sunken);color:var(--text);text-decoration:none;font:var(--fw-medium) var(--fs-xs)/14px var(--sans);white-space:normal;overflow-wrap:break-word;hyphens:auto;box-shadow:inset 3px 0 0 var(--tone),0 0 0 1px var(--c-surface)}
+.cal-blk.k-meeting{box-shadow:inset 3px 0 0 var(--c-line-strong),0 0 0 1px var(--c-surface)}
+.cal-blk .t{color:var(--c-text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cal-tg-more{position:absolute;right:1px;z-index:5;width:24px;min-height:0;margin:1px 0 0;padding:2px 0;border:0;border-radius:999px;background:var(--c-raised);box-shadow:var(--shadow-sm),0 0 0 1px var(--c-line);color:var(--text);font:var(--fw-medium) 11px/16px var(--sans);cursor:pointer}
+.cal-blk.past{color:var(--c-text-3);background:color-mix(in srgb,var(--c-sunken) 55%,var(--c-surface))}
+.cal-now{position:absolute;left:0;right:0;z-index:2;height:2px;margin-top:-1px;background:var(--orange);pointer-events:none}
+.cal-now::before{content:'';position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--orange)}
+/* Month */
+.cal-mg{border:1px solid var(--c-line);border-radius:var(--r-lg);background:var(--c-surface);overflow:hidden}
+.cal-mg-head,.cal-mg-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.cal-mg-head span{padding:9px 8px 7px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1 var(--sans);border-bottom:1px solid var(--c-line)}
+.cal-mday{display:flex;flex-direction:column;gap:3px;min-width:0;min-height:112px;padding:4px 4px 6px;border-left:1px solid var(--c-line);border-top:1px solid var(--c-line)}
+.cal-mday:nth-child(7n+1){border-left:0}.cal-mday:nth-child(-n+7){border-top:0}
+.cal-mday.out{background:color-mix(in srgb,var(--c-sunken) 55%,transparent)}.cal-mday.out>:is(b,.cal-mnum),.cal-mday.out .cal-chip{opacity:.5}
+.cal-mday.today{background:color-mix(in srgb,var(--c-accent-tint) 45%,transparent)}
+.cal-mnum{align-self:flex-start;min-width:26px;min-height:26px;margin:0;padding:0 6px;border:0;border-radius:999px;background:none;box-shadow:none;color:var(--text);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);font-variant-numeric:tabular-nums;cursor:pointer}
+@media(hover:hover){.cal-mnum:hover,.cal-mmore:hover{background:var(--c-hover)}}
+.cal-mday.today .cal-mnum{background:var(--c-accent);color:var(--c-accent-ink)}
+.cal-mday.gone:not(.today) .cal-mnum{color:var(--c-text-3)}
+.cal-mmore{align-self:flex-start;margin:0;padding:2px 6px;border:0;border-radius:var(--r-xs);background:none;box-shadow:none;color:var(--c-text-2);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans);cursor:pointer}
+.cal-mg.dots{margin-bottom:18px}
+.cal-mg.dots .cal-mday{border-right:0;border-bottom:0;align-items:center;justify-content:flex-start;gap:5px;min-height:52px;margin:0;padding:7px 0 6px;border-radius:0;background:none;box-shadow:none;color:var(--text);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);font-variant-numeric:tabular-nums;cursor:pointer}
+.cal-mg.dots .cal-mday.out{background:color-mix(in srgb,var(--c-sunken) 55%,transparent)}.cal-mg.dots .cal-mday.out b{opacity:.45}
+.cal-mg.dots .cal-mday b{display:grid;place-items:center;min-width:28px;height:28px;border-radius:50%;font-weight:inherit}
+.cal-mg.dots .cal-mday.today{background:none}.cal-mg.dots .cal-mday.today b{background:var(--c-accent);color:var(--c-accent-ink)}
+.cal-mg.dots .cal-mday.picked b{box-shadow:0 0 0 2px var(--text)}
+.cal-mg.dots .cal-mday.gone:not(.today) b{color:var(--c-text-3)}
+.cal-dots{display:flex;gap:3px;height:5px}.cal-dots i{width:5px;height:5px;border-radius:50%;background:var(--tone)}
+.cal-dots i.k-meeting,.cal-dots i.k-prep{background:var(--c-text-3)}.cal-dots i.k-prep{background:var(--tone)}.cal-dots i.k-theirs{background:transparent;box-shadow:inset 0 0 0 1px var(--c-line-strong)}
+@media(max-width:1023px){.cal-tg{--gut:38px;margin:0 -6px}.cal-blk{padding:2px 4px 2px 6px}.cal-tg-more{width:19px;font-size:10px}.cal-tg-scroll{max-height:calc(100dvh - 250px)}.cal-tg-day{flex-direction:column;align-items:center;gap:4px}.cal-tg-day.today b{margin:0}.cal-mg.dots{margin-left:-6px;margin-right:-6px}}
 /* Saved sign-ins (Connections, Sign-ins): one calm row per site, a letter tile, the username, a faint "Password saved"
    line and a quiet Forget; the explainer sits under the heading. */
 .logins-head{flex-direction:column;align-items:flex-start;gap:3px}.logins-head p{margin:0}.logins-head p span{display:block}
@@ -1655,7 +1719,7 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 @media(min-width:1024px){
   .app-side .head-side>.new-card-link{display:none}
   .side-new{order:1;flex:none;display:flex;align-items:center;gap:10px;width:100%;min-height:34px;margin:0 0 6px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-align:left;cursor:pointer;white-space:nowrap}
-  .side-new:hover,.side-new.hit{background:var(--c-hover);color:var(--text)}
+  .side-new.hit{background:var(--c-hover);color:var(--text)}@media(hover:hover) and (pointer:fine){.side-new:hover{background:var(--c-hover);color:var(--text)}}
   .side-new kbd{margin-left:auto;padding:1px 6px;border:1px solid var(--c-line);border-radius:5px;background:none;color:var(--side-quiet);font:500 11px/1.4 var(--sans)}
   :root[data-side="collapsed"] .side-new{justify-content:center;padding:0}
   :root[data-side="collapsed"] .side-new span,:root[data-side="collapsed"] .side-new kbd{display:none}
@@ -1960,7 +2024,11 @@ const sentence=t=>{t=String(t).trim();return /[.?!…]$/.test(t)?t:t+'.'};
 const finalStep=s=>{if(s.status!=='prepared'||s.handled_hint)return '';try{const o=JSON.parse(s.outcome||'{}');return o.state==='your_step'&&o.step||''}catch{return ''}};
 // One that names its questions counts even after a browser step. Same rules as ask_blocked(), ask_text() and
 // retry_pointless() in assistant.py.
-const askBlocked=s=>s.preparation_status==='blocked'&&!s.preparation_error&&!!String(s.preparation_reason||'').trim()&&retryLabel(s.preparation_reason)!=='Continue'&&(!!s.preparation_questions?.length||!s.preparation_browser);
+// A run that named no questions asks nothing (it says what stopped it): Stuck and Try again, never Answer.
+const askBlocked=s=>s.preparation_status==='blocked'&&!s.preparation_error&&!!String(s.preparation_reason||'').trim()&&retryLabel(s.preparation_reason)!=='Continue'&&(!!s.preparation_questions?.length||!s.preparation_no_questions&&!s.preparation_browser);
+// The card's state in a word: its chip, and the chat's status line while it is stuck or preparing (chatStatus), so the two never
+// disagree. A stopped run comes first: a card whose run stopped is not Preparing any more, whatever its status says.
+const cardState=s=>s.preparation_status==='blocked'&&!closed(s)&&s.status!=='snoozed'?(askBlocked(s)||s.preparation_browser?'Needs your help':'Stuck'):['accepted','instructions'].includes(s.status)?'Preparing':label(s.status);
 const askQuestion=(s,smart,hint)=>{if(closed(s)||s.status==='snoozed'||hint)return '';if(askBlocked(s))return s.preparation_questions?.length?s.preparation_questions.map(q=>q.question).join(' '):String(s.preparation_reason).trim();
  if(s.status!=='prepared'||s.preparation_status==='blocked'||smart.some(a=>a.kind!=='open'))return '';
  try{const o=JSON.parse(s.outcome||'{}'),q=String(o.needs||'').trim();return o.state==='needs_you'&&/\?$/.test(q)?q:''}catch{return ''}};
@@ -1977,7 +2045,7 @@ const retryPointless=s.preparation_cause==='retry'&&askBlocked(s);
 const choices=ask?[['answer','Answer'],...(s.preparation_status==='blocked'&&!retryPointless?[['retry',retryLabel(s.preparation_reason)]]:[]),['complete','Mark done'],['snooze','Snooze'],['reject','Not needed']]:s.status==='pending'?[['accept',s.labels?.accept||'Do it'],['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject',s.labels?.reject||'Not needed']]:s.status==='snoozed'?[['accept',s.handoff_wait?'Check in now':'Unsnooze'],['snooze','Change time'],['reject','Not needed']]:[...(s.preparation_status==='blocked'?[['retry',retryLabel(s.preparation_reason)]]:answered?[['accept','Do it']]:[]),['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']];
 const notes=smart.map(a=>({action:a,state:a.state||s.action_status})).filter(x=>x.action!==tpSent&&actionNote(x.action.kind==='intercom'?{...x.state,as_name:x.action.as_name}:x.state,x.action.kind));
 const undo=closed(s)&&s.undo_until&&Date.parse(s.undo_until)>Date.now();
-const status=s.preparation_status==='blocked'&&!closed(s)&&s.status!=='snoozed'?'Needs your help':['accepted','instructions'].includes(s.status)?'Preparing':label(s.status);
+const status=cardState(s);
 // One status line, under the title: where it stands and what's left for you. A later sign that it's
 // handled wins over the result's own line; nothing else repeats it.
 const statusLine=(()=>{const line=(text,cls='')=>`<p class="note status-line${cls}">${format(text)}</p>`;
@@ -2008,7 +2076,7 @@ const viewIn=s.browser_view&&!smart.some(a=>a.browser)?[{kind:'open',browser:tru
 const smartButtons=s.status==='prepared'?[...smart,...viewIn].map(a=>a.kind==='handoff'?(canHandoff(s)?`<button class="primary" data-fleet-handoff="${esc(s.id)}">${esc(a.label||'Hand off')}</button>`:''):a.kind==='open'&&a.browser?`<a class="open${finalStep(s)?' primary':''}" href="${esc(state.browser_link||'#')}" target="_blank" rel="noopener" data-browser-show="${esc(s.id)}"${a.site?` title="${esc(a.site)}, in your Machine’s browser"`:''}>${esc(a.label)} ↗</a>`:a.kind==='open'?`<a class="open" href="${esc(safeURL(a.url))}" target="_blank" rel="noreferrer">${esc(a.label)} ↗</a>`:!(a.kind==='finish'&&(a.state||s.action_status)?.status==='done')&&!sendBusy(a.state||s.action_status)?`<button class="primary" data-id="${s.id}" data-smart="${a.revision}">${esc(sendLabel(a)||(a.kind==='prepare'?'Prepare next step':'Review and send'))}</button>`:'').join(''):'';
 // A merged fix stays reversible for a day.
 const unmerge=['prepared','completed'].includes(s.status)&&smart.some(a=>a.kind==='merge'&&Date.parse((a.state||s.action_status)?.undo_until||'')>Date.now())?`<button data-id="${s.id}" data-unmerge="1">Undo merge</button>`:'';
-return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${s.origin==='owner'?'<span class="added-by">Added by you</span>':''}${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${mergeOffer(s)}${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>${s.latest_feedback.choice==='other'?'Asked':'Your note'}</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.action.kind==='intercom'?{...x.state,as_name:x.action.as_name}:x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
+return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${s.origin==='owner'?'<span class="added-by">Added by you</span>':''}${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${mergeOffer(s)}${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>Your note</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.action.kind==='intercom'?{...x.state,as_name:x.action.as_name}:x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
 }
 // Success notices clear themselves after a few seconds; errors stay until the next notice.
 let noticeTimer;const notice=(text,error=false)=>{const n=$('#notice');n.textContent=text;n.className=error?'error':'';clearTimeout(noticeTimer);if(text&&!error)noticeTimer=setTimeout(()=>{if(n.textContent===text)n.textContent=''},4500)};
@@ -3164,7 +3232,8 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  const copyAt=s&&s.status==='prepared'&&!p.send&&p.copy?rows.findLastIndex(i=>i.kind==='reply'):-1;
  const isResult=(i,n)=>i.kind==='reply'?!!((i.drafts||[]).length||headline(i.text)||n===copyAt):i.kind==='card'?!!(s&&!closed(s)&&(p.ask||q.ask||s.status==='prepared'&&p.send)):false;
  // Raised only while it is open: a draft not sent yet, an outcome on a card still going, or the call the card waits on
- const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||i.drafts.some(d=>!sent.has(d.body.trim())));
+ // A draft is open only while the card offers it to send: once a change is asked for, it is an earlier draft.
+const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||s.status==='prepared'&&i.drafts.some(d=>!sent.has(d.body.trim())));
  const last=rows.findLastIndex(isResult),current=last>=0&&isOpen(rows[last])?last:-1;
  const result=(n,i,inner,only)=>`<div class="chat-result ${n===current?'current':'earlier'}${only?' only-draft':''}">${inner}${tm(i.at)}</div>`;
  let lastTo='';
@@ -3208,7 +3277,7 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
     push(i,result(n,i,`<div class="chat-result-head"><span class="chat-result-title">${esc(title)}</span><button type="button" class="link" data-id="${esc(s.id)}" data-result="read" data-file="${esc(f.path)}" data-file-name="${esc(f.label)}">Open</button></div>${body}<p class="chat-why">${COPY_WHY}</p>${options(n,false)}`));return}
    const parts=ds.map((d,m)=>{const dk=k+':d'+m,ls=liveOf(d),liveSent=ls?.st.status==='sent',went=outcome.get(d)==='sent'||liveSent,last=d===newest&&!went&&s?.status==='prepared',not=!last&&outcome.get(d)==='not';
     const before=prev&&prev.kind===d.kind&&!sent.has(prev.body.trim())&&prev.body!==d.body?chatDiff(prev.body,d.body):null;prev=d;
-    const to=d.to.length?' to '+d.to.join(', '):'',what=d.reply?'Reply':d.kind==='email'||d.kind==='email_demo'?'Email':'Message';
+    const to=d.to.length?' to '+d.to.join(', '):'',what=d.reply?'Reply':d.kind==='email'||d.kind==='email_demo'?'Email':d.kind==='whatsapp'?'WhatsApp':'Message';
     const links=[chatLong(d.body,quiet?2:4)?`<button type="button" class="link" data-unclamp="${dk}">${chatOpenSet.has(dk)?'Less':'Show all'}</button>`:'',before?`<button type="button" class="link" data-unclamp="${dk}:diff">${chatOpenSet.has(dk+':diff')?'Hide changes':'Show what changed'}</button>`:''].filter(Boolean).join('');
     return `<div class="chat-draft${went||not?' went':''}${last?' current':''}"><div class="chat-draft-head"><span>${what}${esc(to)}</span>${went?(liveSent?'':'<span class="went-tag">Sent</span>'):not?'<span class="went-tag not">Not sent</span>':last||!quiet?'':'<span>Earlier draft</span>'}</div>${d.subject&&!d.reply?`<div class="chat-draft-subject">${esc(d.subject)}</div>`:''}<div class="chat-clamp${chatOpenSet.has(dk)?' open':''}">${chatMarkdown(d.body)}</div>
      ${before&&chatOpenSet.has(dk+':diff')?`<div class="chat-diff">${before}</div>`:''}${ls&&(last||liveSent)?chatSendLine(d,ls):''}${links||last&&p.send?`<div class="chat-draft-foot"><span>${links}</span>${last&&p.send?p.lead:''}</div>`:''}</div>`}).join('');
@@ -3232,7 +3301,7 @@ const DOTS='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r
 const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}):d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
 // One small line over the message box: where the card stands, with its one way back (Unsnooze, Reopen) as a text button
 function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…':s.status==='snoozed'?(s.snoozed_until?(s.handoff_wait?checkinLabel(s):'Snoozed until '+chatUntil(s.snoozed_until)):'Snoozed')
-  :closed(s)?(s.status==='completed'?'Done':'Not needed'):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':s.preparation_status==='blocked'?p.status:'';
+  :closed(s)?(s.status==='completed'?'Done':'Not needed'):s.preparation_status==='blocked'?p.status||cardState(s):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
  const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
@@ -3496,42 +3565,63 @@ function graphSubSync(){pageHead();const on=!$('#people').hidden,graph=$('nav [d
 function graphHashSync(){if($('#people').hidden||graphNode||!graphShown)return;const h=location.hash;if(h&&!/^#(graph|people)(=[a-z]+)?$/.test(h))return;const want='#graph='+graphShown;if(h!==want)history.replaceState(null,'',location.pathname+location.search+want)}
 $('#graph-sub').addEventListener('click',e=>{const a=e.target.closest('a[data-graph-sub]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const url=location.pathname+location.search+'#graph='+a.dataset.graphSub;
  if(history.state?.drawer)history.replaceState(null,'',url);else if(location.hash!=='#graph='+a.dataset.graphSub)history.pushState(null,'',url);openTabLink();graphSubSync();if(!DESK.matches)scrollTo(0,0)});
-{const fold=$('#graph-fold'),lab=fold.parentNode.querySelector('.nl'),place=()=>{const w=lab.offsetLeft+lab.offsetWidth;if(w)fold.style.setProperty('--fold-x',w+(matchMedia('(max-width:1023px)').matches?-6:0)+'px')};
+{const fold=$('#graph-fold'),lab=fold.parentNode.querySelector('.nl'),place=()=>{const w=lab.offsetLeft+lab.offsetWidth;if(w)fold.style.setProperty('--fold-x',w+(matchMedia('(max-width:1023px)').matches?2:4)+'px')  /* just after the label, its box never under the text */};
  new ResizeObserver(place).observe(lab);place();
  const set=open=>{fold.setAttribute('aria-expanded',String(open));fold.setAttribute('aria-label',open?'Hide People, Organisations and Projects':'Show People, Organisations and Projects');$('#graph-sub').hidden=!open};
  set(sideStore.get('graph-sub')!=='closed');fold.onclick=()=>{const open=fold.getAttribute('aria-expanded')!=='true';set(open);sideStore.set('graph-sub',open?'open':'closed')}}
 // The counts come with the Graph; fetch it once at the start so the rows show them before it is opened
 setTimeout(()=>{if(!graphCounts)request('api/graph').then(g=>graphCountsSet(g?.counts)).catch(()=>{})},1500);
 
-// Calendar: the next seven days as an agenda (Today, Tomorrow, then each day), and on a computer also as a week grid.
-// It holds the meetings from the connected calendars, each with its card if one is about it, cards due or coming back
-// that day, handoff check-ins and promises with a date. Read-only: viewing sends or changes nothing. A row opens its
-// card's chat, the Promises list, or the meeting in its own calendar.
-const CAL_DAYS=7;let calMeetings=null,calFetched=0,calFailed=false,calFetching=null,calReturn=false;
-let calMode=sideStore.get('cal-mode')==='week'?'week':'agenda';
-const calDay=n=>{const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+n);return d};
-const calWeek=()=>calMode==='week'&&DESK.matches;
-function calFetch(force){if(calFetching)return calFetching;if(!force&&calMeetings&&Date.now()-calFetched<60000)return Promise.resolve();
- const q='from='+encodeURIComponent(calDay(0).toISOString())+'&to='+encodeURIComponent(calDay(CAL_DAYS).toISOString());
- return calFetching=request('api/calendar?'+q).then(r=>{calMeetings=Array.isArray(r?.meetings)?r.meetings:[];calFailed=false;calFetched=Date.now()})
-  .catch(()=>{calFailed=true;calMeetings=calMeetings||[]}).finally(()=>{calFetching=null})}
+// Calendar: an agenda that runs on through the days (later ones load as you scroll down, earlier ones as you scroll up
+// or tap Earlier days), and on a computer also the calendar week, Monday to Sunday, as seven columns. It holds the
+// meetings from the connected calendars, each with its card if one is about it, cards due or coming back that day,
+// handoff check-ins and promises with a date. Read-only: viewing sends or changes nothing. A row opens its card's chat,
+// the promise's page, or the meeting in its own calendar. Meetings load one calendar week (Monday to Monday) per ask
+// and are kept for a minute. Today, ‹ › and the view switch stay on top; t, ← → (or k j), a and w do the same. The
+// address holds the view and its week (#calendar?view=week&date=2026-10-26), so back and forward work.
+const CAL_BACK=26,CAL_AHEAD=52;  // how many weeks the agenda runs back and ahead of this one
+let calWeeks=new Map(),calMeetings=null,calReturn=false,calRouting=false,calBusy=null,calMoreFailed={},calUp=false,calLastY=0;
+let calMode=['week','month'].includes(sideStore.get('cal-mode'))?sideStore.get('cal-mode'):'agenda';
+const calMid=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x};
+const calAdd=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);x.setHours(0,0,0,0);return x};  // by calendar days, also over a clock change
+const calOf=k=>{const [y,m,d]=String(k).split('-').map(Number);return new Date(y,m-1,d)};
+const calMonday=d=>{const x=calMid(d);return calAdd(x,-((x.getDay()+6)%7))};
+const calDay=n=>calAdd(calMid(new Date()),n);
+const calFirst=d=>new Date(d.getFullYear(),d.getMonth(),1);
+// The week on show (its Monday), the month (its 1st), a phone's three days (the first), and the agenda's days [from, to)
+let calAt=calMonday(new Date()),calMonth=calFirst(new Date()),calStart=calDay(0),calFrom=calDay(0),calTo=calDay(7);
+const calList=()=>calMode==='agenda',calThree=()=>calMode==='week'&&!DESK.matches;
+const calMonthDays=m=>[calMonday(m),calAdd(calMonday(new Date(m.getFullYear(),m.getMonth()+1,0)),7)];  // Monday on or before the 1st to the Monday after the last Sunday
+const calRange=()=>calMode==='month'?calMonthDays(calMonth):calMode==='week'?(DESK.matches?[calAt,calAdd(calAt,7)]:[calStart,calAdd(calStart,3)]):[calFrom,calTo];
+const calMondays=(from,to)=>{const out=[];for(let d=calMonday(from);d<to;d=calAdd(d,7))out.push(d);return out};
+function calFetchWeek(mon,force){const k=localDay(mon),w=calWeeks.get(k);if(w?.loading)return w.loading;
+ if(w&&!w.failed&&!force&&Date.now()-w.at<60000)return Promise.resolve();
+ const q='from='+encodeURIComponent(mon.toISOString())+'&to='+encodeURIComponent(calAdd(mon,7).toISOString());
+ const loading=request('api/calendar?'+q).then(r=>{calWeeks.set(k,{meetings:Array.isArray(r?.meetings)?r.meetings:[],failed:false,at:Date.now()})})
+  .catch(()=>{calWeeks.set(k,{meetings:w?.meetings||[],failed:true,at:Date.now()})}).finally(calUnion);
+ calWeeks.set(k,{meetings:w?.meetings||null,failed:!!w?.failed,at:w?.at||0,loading});return loading}
+// Every loaded week's meetings, each once (one that runs over a Monday comes in both weeks)
+function calUnion(){const seen=new Set(),all=[];let any=false;for(const w of calWeeks.values()){if(!w.meetings)continue;any=true;for(const m of w.meetings)if(!seen.has(m.id)){seen.add(m.id);all.push(m)}}calMeetings=any?all:null}
+const calFailedIn=(a,b)=>calMondays(a,b).some(d=>calWeeks.get(localDay(d))?.failed);
+function calFetch(force){const [a,b]=calRange(),weeks=[...calMondays(a,b)],now=calMonday(new Date());if(!weeks.some(d=>+d===+now))weeks.push(now);return Promise.all(weeks.map(d=>calFetchWeek(d,force)))}
 async function calendarView(force){calRender();await calFetch(force);calRender()}
-// Everything with a date this week, by local day ('overdue' for due dates already past)
-function calItems(){const days=[...Array(CAL_DAYS)].map((_,i)=>localDay(calDay(i))),week=new Set(days),today=days[0],now=Date.now(),out=[],seen=new Set();
+// Everything with a date in [from, to), by local day ('overdue' for due dates already past, when today is in it)
+function calItems(from=calDay(0),to=calDay(1)){const days=[];for(let d=calMid(from);d<to;d=calAdd(d,1))days.push(localDay(d));
+ const week=new Set(days),today=localDay(new Date()),withToday=week.has(today),now=Date.now(),out=[],seen=new Set();
  const open=(state.suggestions||[]).filter(s=>!closed(s)),cardFor=id=>open.find(s=>eventIds(s).map(Number).includes(Number(id)));
  // Someone else's event on a calendar shared with the owner shows, marked as theirs, and never carries a card
  for(const m of calMeetings||[]){const s=m.shared?null:cardFor(m.id),a=new Date(m.start),b0=new Date(m.end);if(isNaN(a))continue;const b=isNaN(b0)||b0<=a?new Date(a.getTime()+1):b0;
   // All day, or a day or more (a trip): on every day it covers, as All day with its dates, never as times
   if(m.all_day||b-a>=864e5){const first=localDay(a),last=localDay(new Date(b-1)),span=first!==last?[first,last]:null;
-   for(let i=0;i<CAL_DAYS;i++)if(a<calDay(i+1)&&b>calDay(i))out.push({day:days[i],kind:'meeting',allDay:true,at:0,m,s,span,promises:[]});if(s)seen.add(s.id);continue}
-  const day=localDay(a)<today?today:localDay(a);if(!week.has(day))continue;if(s)seen.add(s.id);
+   for(const k of days){const d=calOf(k);if(a<calAdd(d,1)&&b>d)out.push({day:k,kind:'meeting',allDay:true,at:0,m,s,span,promises:[]})}if(s)seen.add(s.id);continue}
+  let day=localDay(a);if(day<days[0]&&b>from)day=days[0];if(!week.has(day))continue;if(s)seen.add(s.id);  // one still going at the start shows on the first day
   out.push({day,kind:'meeting',at:a.getTime(),m,s,past:b.getTime()<now,promises:[]})}
  for(const s of open){if(seen.has(s.id))continue;
   if(s.status==='snoozed'&&s.snoozed_until){const d=new Date(s.snoozed_until),day=localDay(d);if(week.has(day))out.push({day,kind:s.handoff_wait?'checkin':'back',at:d.getTime(),s});continue}
-  if(s.due&&(s.due<today||week.has(s.due)))out.push({day:s.due<today?'overdue':s.due,kind:'due',at:-1,s})}
+  if(s.due&&(s.due<today?withToday:week.has(s.due)))out.push({day:s.due<today?'overdue':s.due,kind:'due',at:-1,s})}
  // One row per promise: said by both sides it is a plan made together, shown as the owner's ("With …"); one about a
  // meeting that day with the same person rides on that meeting's row
- const said=new Map();for(const p of state.promises||[]){if(p.state!=='open'||!p.due||!(p.due<today||week.has(p.due)))continue;
+ const said=new Map();for(const p of state.promises||[]){if(p.state!=='open'||!p.due||!(p.due<today?withToday:week.has(p.due)))continue;
   const k=[p.who,p.what].map(v=>calNorm(v).split(/\s+/).join(' ')).join('\n'),was=said.get(k);
   if(!was){said.set(k,{...p});continue}if(was.direction!==p.direction)was.together=true;if(p.direction==='mine')Object.assign(was,{...p,together:was.together||p.together})}
  for(const p of said.values()){const on=p.due>=today&&out.find(it=>it.kind==='meeting'&&!it.m.shared&&it.day===p.due&&calWith(p,it.m));
@@ -3562,34 +3652,157 @@ function calRow(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.hre
  return `<${tag} class="cal-item k-${x.tone}${it.past?' past':''}"${attrs}><span class="cal-time">${esc(x.time)}</span><span class="cal-dot" aria-hidden="true"></span><span class="cal-main"><span class="cal-title">${x.owner?`<span class="cal-owner">${esc(x.owner)}</span> `:''}${esc(x.title)}</span>${x.sub||x.prep?`<span class="cal-sub">${x.prep?`<span class="cal-prep">${esc(x.prep)}${x.sub?' · ':''}</span>`:''}${esc(x.sub)}</span>`:''}${(x.said||[]).map(t=>`<span class="cal-sub cal-said">${esc(t)}</span>`).join('')}</span><span class="cal-end">${x.badge||''}${x.url?'<span class="cal-go" aria-label="Opens in its calendar">↗</span>':x.href?'<span class="cal-go" aria-hidden="true">›</span>':''}</span></${tag}>`}
 function calChip(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'';
  return `<${tag} class="cal-chip k-${x.tone}${it.past?' past':''}"${attrs} title="${esc([x.owner,x.title].filter(Boolean).join(' ')+(x.sub?' · '+x.sub:'')+(x.said||[]).map(t=>' · '+t).join(''))}"><span class="t">${esc(x.owner||x.time)}</span><span class="n">${esc(x.title)}</span></${tag}>`}
-const calName=(k,i)=>i===0?'Today':i===1?'Tomorrow':new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'long'});
-const calDate=k=>new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}).replace(/,/g,'');
-function calHead(){const a=calDay(0),b=calDay(CAL_DAYS-1),range=calDate(localDay(a))+' to '+calDate(localDay(b));
- return `<div><h2 class="page-title">Calendar</h2><p class="page-sub">${esc(range)}</p></div><div class="cal-mode" role="group" aria-label="View">${[['agenda','Agenda'],['week','Week']].map(([v,t])=>`<button type="button" data-cal-mode="${v}" aria-pressed="${calMode===v}">${t}</button>`).join('')}</div>`}
-function calRender(){const box=$('#calendar-view');if(!box||!state)return;const {days,items}=calItems(),byDay=k=>items.filter(i=>i.day===k),late=byDay('overdue'),week=calWeek();
- $('#calendar').classList.toggle('week',week);
- const cals=(state.connectors||[]).some(c=>['calendar','outlook_calendar'].includes(c.service));
- const note=calFailed?'<p class="cal-note">Meetings couldn’t load. Cards and promises are here.</p>':!cals?'<p class="cal-note">No calendar connected, so no meetings yet. <a href="#connections">Connections</a></p>':'';
+const calDate=k=>calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}).replace(/,/g,'');
+const calMon=d=>d.toLocaleDateString(CHAT_LOCALE,{month:'short'}).replace(/\.$/,'');
+// A run of days as "26 Oct – 1 Nov 2026" (the year once, or on both sides when it changes)
+function calSpan(a,n=7){const b=calAdd(a,n-1);
+ return a.getFullYear()!==b.getFullYear()?`${a.getDate()} ${calMon(a)} ${a.getFullYear()} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`:
+  a.getMonth()!==b.getMonth()?`${a.getDate()} ${calMon(a)} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`:`${a.getDate()} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`}
+const calMonthName=m=>m.toLocaleDateString(CHAT_LOCALE,{month:'long',year:'numeric'});
+const calLabel=()=>calMode==='month'?calMonthName(calMonth):calThree()?calSpan(calStart,3):calSpan(calAt);
+const calStepName=()=>calMode==='month'?'month':calThree()?'days':'week';
+// On the current period: this week, this month, or three days that hold today
+function calOnNow(){const t=calDay(0);return calMode==='month'?+calMonth===+calFirst(t):calThree()?calStart<=t&&t<calAdd(calStart,3):+calAt===+calMonday(t)}
+const CAL_VIEWS=[['agenda','Agenda','a'],['week','Week','w'],['month','Month','m']];
+function calHead(){const step=calStepName();
+ return `<div class="cal-head"><h2 class="page-title">Calendar</h2><div class="cal-nav"><button type="button" class="cal-today${calOnNow()?' now':''}" data-cal-go="0" title="Today (t)">Today</button>`+
+  `<button type="button" class="cal-step" data-cal-go="-1" aria-label="Previous ${step}" title="Previous ${step} (←)">‹</button><button type="button" class="cal-step" data-cal-go="1" aria-label="Next ${step}" title="Next ${step} (→)">›</button>`+
+  `<span class="cal-range">${esc(calLabel())}</span></div><div class="cal-mode" role="group" aria-label="View">${CAL_VIEWS.map(([v,t,k])=>`<button type="button" data-cal-mode="${v}" aria-pressed="${calMode===v}" title="${t} (${k})">${t}</button>`).join('')}</div></div>`}
+const calHash=()=>'#calendar?view='+calMode+'&date='+localDay(calMode==='month'?calMonth:calThree()?calStart:calAt);
+function calPush(replace){const h=calHash();if(location.hash===h)return;history[replace?'replaceState':'pushState'](null,'',location.pathname+location.search+h)}
+const calName=k=>{const t=localDay(new Date());return k===t?'Today':k===localDay(calDay(1))?'Tomorrow':k===localDay(calDay(-1))?'Yesterday':calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'long'})};
+const calMoreRow=dir=>{const end=dir==='up'?calFrom<=calAdd(calMonday(new Date()),-7*CAL_BACK):calTo>=calAdd(calMonday(new Date()),7*CAL_AHEAD);if(end)return '';
+ return `<div class="cal-more" data-cal-more="${dir}"><button type="button" class="quiet">${calMoreFailed[dir]?'Couldn’t load. Try again':dir==='up'?'Earlier days':'Later days'}</button></div>`};
+// The sticky header's bottom edge: rows under it are out of sight
+const calEdge=()=>{const h=$('#page-head');return h&&!h.hidden?Math.max(0,h.getBoundingClientRect().bottom):0};
+function calAnchor(box){const edge=calEdge();for(const el of box.querySelectorAll('.cal-block[data-day]')){const r=el.getBoundingClientRect();if(r.bottom>edge)return {day:el.dataset.day,top:r.top}}return null}
+const calWeekday=k=>calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'short'}).replace(/[,.]/g,'');
+function calDayBlock(k,list,late,today){const name=calName(k),date=calDate(k);
+ return (k===today?late:'')+`<section class="cal-block${list.length?'':' cal-empty'}" data-day="${k}" aria-label="${esc(name+' '+date)}"><h3 class="cal-day"><span>${esc(name)}</span><small>${esc(/^(Today|Tomorrow|Yesterday)$/.test(name)?date:date.replace(/^\S+\s/,''))}</small>${list.length?`<span class="count">${list.length}</span>`:'<span class="cal-none">Nothing planned</span>'}</h3>${list.map(calRow).join('')}</section>`}
+// Week as a time grid: hours down the side, a column per day, each meeting a block as long as it lasts; ones that
+// overlap share the width. All day, and dates without a time (due cards, promises), sit in a strip on top. A line
+// marks now on today. A computer shows the calendar week; a phone three days, swiped through.
+const CAL_HOUR=68,CAL_MIN=30;  // px an hour, so half an hour holds two lines; a block is never shorter than that
+function calMins(v,k){const d=new Date(v),day=localDay(d);return day<k?0:day>k?1440:d.getHours()*60+d.getMinutes()}  // local clock time, so a day with a clock change still lines up
+// Lay a day's timed items out like a paper calendar: ones that really overlap share the width, at most two abreast
+// (one on a phone's narrow days), and the rest become "+N" (which opens the day in the agenda). One that only touches the one before because blocks
+// have a minimum height sits a little to the right, on top, keeping the full width.
+function calLay(list,k){const ev=list.map(it=>{let s,e;if(it.kind==='meeting'){s=calMins(it.m.start,k);const end=new Date(it.m.end);e=!isNaN(end)&&end>new Date(it.m.start)?calMins(it.m.end,k):s+30}else{s=calMins(it.at,k);e=s+30}
+  s=Math.min(s,1440-CAL_MIN);e=Math.min(1440,Math.max(e,s+1));return {it,s,e,ve:Math.min(1440,Math.max(e,s+CAL_MIN)),ind:0}}).sort((a,b)=>a.s-b.s||b.e-a.e);
+ const shown=[],more=[];let group=[],end=-1;
+ const flush=()=>{if(!group.length)return;const cols=[];for(const x of group){let c=cols.findIndex(e=>e<=x.s);if(c<0){c=cols.length;cols.push(0)}cols[c]=x.e;x.col=c}
+  const max=DESK.matches?2:1,n=Math.min(max,cols.length),hid=group.filter(x=>x.col>=max);for(const x of group)if(x.col<max){x.n=n;x.rail=hid.length>0;shown.push(x)}
+  if(hid.length)more.push({s:Math.min(...hid.map(x=>x.s)),n:hid.length});group=[]};
+ for(const x of ev){if(group.length&&x.s>=end){flush();end=-1}group.push(x);end=Math.max(end,x.e)}flush();
+ for(const x of shown)for(const y of shown){if(y===x)break;if(y.s<x.s&&x.s<y.ve&&x.s>=y.e&&(x.n===1||y.n===1||x.col===y.col))x.ind=Math.max(x.ind,y.ind+1)}
+ return {shown,more}}
+// A block: its start time, then its title, on as many lines as it has room for (two at least)
+function calBlock(b){const x=calParts(b.it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'',h=(b.ve-b.s)*CAL_HOUR/60-2,off=b.ind*12,rail=b.rail?(DESK.matches?26:20):0;
+ return `<${tag} class="cal-blk k-${x.tone}${b.it.past?' past':''}"${attrs} style="top:${b.s*CAL_HOUR/60}px;height:${h}px;left:calc(${b.col} * (100% - ${rail}px) / ${b.n} + ${off}px);width:calc((100% - ${rail}px) / ${b.n} - ${3+off}px);z-index:${1+b.ind};--lines:${Math.max(2,Math.floor((h-4)/14))}" title="${esc([x.time,x.owner,x.title].filter(Boolean).join(' ')+(x.sub?' · '+x.sub:'')+(x.said||[]).map(t=>' · '+t).join(''))}"><span class="c"><span class="t">${esc(x.time)}</span> <span class="n">${x.owner?esc(x.owner)+' ':''}${esc(x.title)}</span></span></${tag}>`}
+const calMoreBlock=(m,k)=>`<button type="button" class="cal-tg-more" data-cal-open="${k}" style="top:${m.s*CAL_HOUR/60}px" aria-label="${m.n} more, open the day">+${m.n}</button>`;
+function calTimeGrid(days,byDay,today){const n=days.length,nowMin=new Date().getHours()*60+new Date().getMinutes();
+ const cols=days.map(k=>{const list=byDay(k);return {k,strip:list.filter(i=>i.allDay||i.at<0),lay:calLay(list.filter(i=>!i.allDay&&i.at>=0),k)}}),strip=cols.some(c=>c.strip.length);
+ const head=`<div class="cal-tg-head">${'<span></span>'+cols.map(c=>`<div class="cal-tg-day${c.k===today?' today':''}${c.k<today?' gone':''}" data-day="${c.k}"><span>${c.k===today?'Today':esc(calWeekday(c.k))}</span><b>${calOf(c.k).getDate()}</b></div>`).join('')}</div>`;
+ const top=strip?`<div class="cal-tg-strip"><span class="cal-tg-label">All day</span>${cols.map(c=>`<div class="cal-tg-cell">${c.strip.map(calChip).join('')}</div>`).join('')}</div>`:'';
+ const hours=[...Array(23)].map((_,h)=>`<span style="top:${(h+1)*CAL_HOUR}px">${String(h+1).padStart(2,'0')}:00</span>`).join('');
+ return `<div class="cal-tg" style="--n:${n};--hour:${CAL_HOUR}px">${head}${top}<div class="cal-tg-scroll"><div class="cal-tg-body"><div class="cal-tg-hours" aria-hidden="true">${hours}</div>${cols.map(c=>`<div class="cal-tg-col${c.k===today?' today':''}" data-col="${c.k}">${c.k===today?`<i class="cal-now" style="top:${nowMin*CAL_HOUR/60}px" aria-hidden="true"></i>`:''}${c.lay.shown.map(calBlock).join('')}${c.lay.more.map(m=>calMoreBlock(m,c.k)).join('')}</div>`).join('')}</div></div></div>`}
+// Month: the calendar month, Monday on or before the 1st to Sunday on or after the last; days of the months around it
+// step back. A computer shows up to three items a day and "+N more"; a phone shows dots, and a tap lists that day.
+let calPick='';
+function calMonthGrid(days,byDay,today){const m=calMonth.getMonth(),phone=!DESK.matches;
+ if(!calPick||calOf(calPick).getMonth()!==m||!days.includes(calPick))calPick=localDay(calOnNow()?calDay(0):calMonth);
+ const head=`<div class="cal-mg-head">${days.slice(0,7).map(k=>`<span>${esc(calWeekday(k))}</span>`).join('')}</div>`;
+ const cells=days.map(k=>{const d=calOf(k),list=byDay(k),cls=`cal-mday${d.getMonth()!==m?' out':''}${k===today?' today':''}${k<today?' gone':''}`;
+  if(phone)return `<button type="button" class="${cls}${k===calPick?' picked':''}" data-cal-pick="${k}" aria-label="${esc(calDate(k)+(list.length?', '+list.length:''))}" aria-pressed="${k===calPick}"><b>${d.getDate()}</b><span class="cal-dots">${list.slice(0,3).map(i=>`<i class="k-${calParts(i).tone}"></i>`).join('')}</span></button>`;
+  return `<div class="${cls}" data-day="${k}"><button type="button" class="cal-mnum" data-cal-open="${k}" aria-label="${esc(calDate(k))}">${d.getDate()}</button>${list.slice(0,3).map(calChip).join('')}${list.length>3?`<button type="button" class="cal-mmore" data-cal-open="${k}">+${list.length-3} more</button>`:''}</div>`}).join('');
+ return `<div class="cal-mg${phone?' dots':''}">${head}<div class="cal-mg-days">${cells}</div></div>`+(phone?calDayBlock(calPick,byDay(calPick),'',''):'')}
+function calRender(){const box=$('#calendar-view');if(!box||!state)return;const list=calList(),[from,to]=calRange(),{days,items}=calItems(from,to),byDay=k=>items.filter(i=>i.day===k),late=byDay('overdue'),today=localDay(new Date());
+ $('#calendar').classList.toggle('week',!list);
+ const cals=(state.connectors||[]).some(c=>['calendar','outlook_calendar'].includes(c.service)),failed=calFailedIn(from,to);
+ const note=failed?'<p class="cal-note">Meetings couldn’t load. Cards and promises are here.</p>':!cals?'<p class="cal-note">No calendar connected, so no meetings yet. <a href="#connections">Connections</a></p>':'';
+ const lateBlock=late.length?`<section class="cal-block late" aria-label="Overdue"><h3 class="cal-day"><span>Overdue</span><span class="count">${late.length}</span></h3>${late.map(calRow).join('')}</section>`:'';
  let html='';
- if(!items.length&&calMeetings)html=`<div class="all-clear cal-clear"><img src="brand/avatar.png" alt="" width="64" height="64"><div><strong>A clear week</strong><span>Meetings, due cards and promises show here.</span></div></div>`;
- else if(week){html=(late.length?`<section class="cal-block late" aria-label="Overdue"><h3 class="cal-day"><span>Overdue</span><span class="count">${late.length}</span></h3>${late.map(calRow).join('')}</section>`:'')+
-  `<div class="cal-week">${days.map((k,i)=>{const d=new Date(k+'T12:00'),list=byDay(k);return `<div class="cal-col${i===0?' today':''}"><div class="cal-col-head"><span>${i===0?'Today':esc(d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}).replace(/[,.]/g,''))}</span><b>${d.getDate()}</b></div>${list.map(calChip).join('')||'<span class="cal-free">Free</span>'}</div>`}).join('')}</div>`}
- else html=(late.length?[['overdue','Overdue','']]:[]).concat(days.map((k,i)=>[k,calName(k,i),calDate(k)])).map(([k,name,date])=>{const list=byDay(k);
-  return `<section class="cal-block${k==='overdue'?' late':''}" aria-label="${esc(name)}"><h3 class="cal-day"><span>${esc(name)}</span>${date&&name!==date?`<small>${esc(k===days[0]||k===days[1]?date:date.replace(/^\S+\s/,''))}</small>`:''}${list.length?`<span class="count">${list.length}</span>`:''}</h3>${list.map(calRow).join('')||'<p class="cal-free">Nothing planned</p>'}</section>`}).join('');
- html+=note;if(!calMeetings&&!items.length)html='<p class="cal-note">Loading…</p>';if(box.innerHTML!==html)box.innerHTML=html;
+ if(calMode==='month')html=lateBlock+calMonthGrid(days,byDay,today);
+ else if(!list)html=lateBlock+calTimeGrid(days,byDay,today);
+ else if(!items.length&&calMeetings&&!failed)html=`<div class="all-clear cal-clear"><img src="brand/avatar.png" alt="" width="64" height="64"><div><strong>A clear week</strong><span>Meetings, due cards and promises show here.</span></div></div>`+calMoreRow('down');
+ else html=calMoreRow('up')+days.map((k,i)=>(i&&calOf(k).getDay()===1?`<p class="cal-wk">${esc(calSpan(calOf(k)))}</p>`:'')+calDayBlock(k,byDay(k),lateBlock,today)).join('')+calMoreRow('down');
+ html+=note;if(!calMeetings&&!items.length)html='<p class="cal-note">Loading…</p>';
+ // Earlier days coming in above, or a week's meetings arriving, never move what is on screen; the time grid keeps its hour
+ const keep=list&&!$('#calendar').hidden?calAnchor(box):null,pane=box.querySelector('.cal-tg-scroll'),hash=calHash(),y=pane&&calGridShown===hash?pane.scrollTop:null;
+ if(box.innerHTML!==html){box.innerHTML=html;if(keep){const el=box.querySelector(`[data-day="${keep.day}"]`),d=el?el.getBoundingClientRect().top-keep.top:0;if(Math.abs(d)>.5)scrollBy(0,d)}calObserve(box)}
+ const p=box.querySelector('.cal-tg-scroll');if(p){if(y!=null)p.scrollTop=y;else if(calMeetings){p.scrollTop=calFirstHour(box)*CAL_HOUR;calGridShown=hash}}
  calBadge();pageHead()}
+// The time grid opens an hour before now on today's week while there is more to come, else an hour before the first
+// meeting (08:00 when there is none)
+let calGridShown='';
+function calFirstHour(box){const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR),h=new Date().getHours()-1;
+ if(box.querySelector('.cal-now')&&tops.some(t=>t>=h))return Math.max(0,h);return tops.length?Math.max(0,Math.floor(Math.min(...tops))-1):8}
 // The row's count: what is on today, also before the Calendar is opened (its meetings come once, a moment after the start)
-function calBadge(){if(!state)return;const {days,items}=calItems(),n=items.filter(i=>i.day===days[0]).length,b=$('#badge-calendar');if(b&&b.textContent!==(n?String(n):''))b.textContent=n?String(n):''}
+function calBadge(){if(!state)return;const {items}=calItems(),n=items.filter(i=>i.day===localDay(new Date())).length,b=$('#badge-calendar');if(b&&b.textContent!==(n?String(n):''))b.textContent=n?String(n):''}
 setTimeout(()=>calFetch().then(calBadge),2000);
-// A row opens its card's chat (back returns here), the Promises list, or the meeting in a new tab; the view toggle is
-// remembered on this device.
-$('#calendar').addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;const href=a.getAttribute('href');e.preventDefault();
+setInterval(()=>{if(!$('#calendar').hidden&&!calList())calRender()},60000);  // the now line moves on
+// More days: a week at a time, below as you near the end, above as you scroll up to the top; a tap does it too, and
+// is the way back when a week couldn't load
+async function calMore(dir){if(calBusy)return calBusy;const up=dir==='up',a=up?calMonday(calAdd(calFrom,-1)):calTo,b=up?calFrom:calAdd(calMonday(calTo),7);  // up to a Monday, on to the next
+ if(!calMoreRow(dir))return;const btn=$(`#calendar-view [data-cal-more="${dir}"] button`);if(btn){btn.disabled=true;btn.textContent='Loading…'}
+ calBusy=(async()=>{await Promise.all(calMondays(a,b).map(d=>calFetchWeek(d)));calMoreFailed[dir]=calFailedIn(a,b);if(!calMoreFailed[dir]){if(up)calFrom=a;else calTo=b}calRender()})().finally(()=>{calBusy=null});return calBusy}
+const calIO=window.IntersectionObserver?new IntersectionObserver(es=>{for(const e of es){const dir=e.target.dataset.calMore;if(!e.isIntersecting||calMoreFailed[dir]||dir==='up'&&!calUp)continue;calMore(dir)}},{rootMargin:'300px 0px'}):null;
+function calObserve(box){if(!calIO)return;calIO.disconnect();box.querySelectorAll('[data-cal-more]').forEach(el=>calIO.observe(el))}
+const calUpSeen=()=>{const el=$('#calendar-view [data-cal-more="up"]');return el&&el.getBoundingClientRect().bottom>-300};
+// Which way the agenda moves, and its week in the header and the address as it scrolls
+let calScrollTick=0,calUrlTimer=0;
+addEventListener('scroll',()=>{if($('#calendar').hidden||calScrollTick)return;calScrollTick=requestAnimationFrame(()=>{calScrollTick=0;const y=scrollY;calUp=y<calLastY;calLastY=y;if(!calList())return;
+ const top=calAnchor($('#calendar-view'));if(!top)return;const mon=calMonday(calOf(top.day));if(+mon===+calAt)return;calAt=mon;pageHead();clearTimeout(calUrlTimer);calUrlTimer=setTimeout(()=>{if(!$('#calendar').hidden)calPush(true)},300)})},{passive:true});
+// At the very top a page can't scroll up, so a wheel or a pull down there asks for earlier days; on a phone's three
+// days a sideways swipe moves three days on or back
+let calTouch=null;
+addEventListener('wheel',e=>{if(e.deltaY<0&&!$('#calendar').hidden&&calList()&&calUpSeen()){calUp=true;calMore('up')}},{passive:true});
+addEventListener('touchstart',e=>{const t=e.touches[0];calTouch=t?{x:t.clientX,y:t.clientY,grid:!!e.target.closest?.('.cal-tg')}:null},{passive:true});
+addEventListener('touchmove',e=>{if(!calTouch||$('#calendar').hidden||!calList())return;if(e.touches[0].clientY-calTouch.y>40&&calUpSeen()){calTouch=null;calUp=true;calMore('up')}},{passive:true});
+addEventListener('touchend',e=>{const t=e.changedTouches[0],s=calTouch;calTouch=null;if(!s?.grid||!t||$('#calendar').hidden||!calThree())return;const dx=t.clientX-s.x,dy=t.clientY-s.y;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)calGo(dx<0?1:-1)},{passive:true});
+// Bring a day to the top of the agenda, under the header (Today brings Overdue along when there is one)
+function calScrollTo(day){const k=localDay(day),box=$('#calendar-view');let el=box.querySelector(`.cal-block[data-day="${k}"]`);if(!el)return;
+ if(k===localDay(new Date())){const prev=el.previousElementSibling;if(prev?.classList.contains('late'))el=prev}
+ const h=$('#page-head'),off=h&&!h.hidden?h.offsetHeight+(parseFloat(getComputedStyle(h).top)||0):0;calLastY=Math.max(0,scrollY+el.getBoundingClientRect().top-off-8);calUp=false;scrollTo({top:calLastY})}
+// The day a view is about: today when it is on show, else the period's first day
+function calFocus(){const t=calDay(0);if(calOnNow())return t;return calMode==='month'?calMonth:calThree()?calStart:calAt}
+const calSetAll=day=>{calAt=calMonday(day);calMonth=calFirst(day);calStart=calMid(day)};
+// Draw the period on show. The agenda keeps its days when the week is next to them, or starts again from it, and
+// brings the day to the top.
+async function calShowNow(day){if(calList()){const mon=calAt,thisWeek=+mon===+calMonday(new Date());day=day||(thisWeek?calDay(0):mon);const end=calAdd(calMonday(day),7);
+  if(day<calAdd(calFrom,-7)||day>calTo){calFrom=day;calTo=calAdd(day,7)}else{if(day<calFrom)calFrom=day;if(end>calTo)calTo=end}calMoreFailed={}}
+ if(!calList()&&scrollY)scrollTo({top:0});calRender();await calFetch();calRender();if(calList())calScrollTo(day)}
+function calGo(n){if(calMode==='month')calMonth=n?new Date(calMonth.getFullYear(),calMonth.getMonth()+n,1):calFirst(new Date());
+ else if(calThree())calStart=n?calAdd(calStart,3*n):calDay(0);
+ else calAt=n?calAdd(calAt,7*n):calMonday(new Date());
+ calPush();return calShowNow()}
+// Switching views keeps the period: Month after a week shows that week's month, Week after a month its first week
+function calSetMode(v,day){if(calMode===v&&!day)return;const at=day||calFocus();calMode=v;sideStore.set('cal-mode',v);calSetAll(at);calPush();return calShowNow(day)}
+// Back and forward, and a shared link: #calendar?view=week&date=2026-10-26
+function calRoute(){const m=/^#calendar\?(.*)$/.exec(location.hash);if(!m)return;const q=new URLSearchParams(m[1]),v=q.get('view'),k=q.get('date')||'';
+ const d=/^\d{4}-\d{2}-\d{2}$/.test(k)&&!isNaN(calOf(k))?calOf(k):calDay(0);if(CAL_VIEWS.some(([x])=>x===v))calMode=v;
+ if($('#calendar').hidden){calRouting=true;try{showTab('calendar')}finally{calRouting=false}}
+ calSetAll(d);calShowNow()}
+addEventListener('popstate',calRoute);addEventListener('hashchange',calRoute);setTimeout(calRoute);
+// The arrows move the period on a computer; t, k j, a, w and m are with the shared shortcuts (actionAdd, below)
+const CAL_KEYS={arrowleft:()=>calGo(-1),arrowright:()=>calGo(1)};
+addEventListener('keydown',e=>{if($('#calendar').hidden||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||e.defaultPrevented||drawerIs()||document.querySelector('dialog[open]')||e.target.closest?.('textarea,input,select,[contenteditable]'))return;
+ const f=CAL_KEYS[e.key.toLowerCase()];if(f){e.preventDefault();f()}});
+// A row opens its card's chat (back returns here), the promise's page, or the meeting in a new tab. In Month a day
+// opens in the agenda (a computer) or lists below (a phone). The view is remembered on this device, and the Calendar
+// always opens on the current period.
+$('#calendar').addEventListener('click',e=>{const more=e.target.closest('[data-cal-more] button');if(more){const dir=more.parentElement.dataset.calMore;calMoreFailed[dir]=false;calUp=dir==='up';calMore(dir);return}
+ const pick=e.target.closest('[data-cal-pick]');if(pick){calPick=pick.dataset.calPick;calRender();return}
+ const day=e.target.closest('[data-cal-open]');if(day){calSetMode('agenda',calOf(day.dataset.calOpen));return}
+ const a=e.target.closest('a[href^="#"]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;const href=a.getAttribute('href');e.preventDefault();
  if(href.startsWith('#chat=')){calReturn=true;chatGo(href.slice(6));return}
- if(href.startsWith('#promise/')){if(location.hash!=='#calendar')history.replaceState(null,'',location.pathname+location.search+'#calendar');location.hash=href;return} // Back returns to the Calendar
+ if(href.startsWith('#promise/')){calPush(true);location.hash=href;return}  // back returns to this period of the Calendar
  if(href==='#connections')showTab('health')});
-$('#page-head').addEventListener('click',e=>{const b=e.target.closest('[data-cal-mode]');if(!b)return;calMode=b.dataset.calMode;sideStore.set('cal-mode',calMode);calRender()});
-$('nav').addEventListener('click',e=>{if(e.target.closest('button')?.dataset.tab==='calendar')calendarView(true)});
-DESK.addEventListener?.('change',()=>{if(!$('#calendar').hidden)calRender()});
+$('#page-head').addEventListener('click',e=>{const b=e.target.closest('[data-cal-mode],[data-cal-go]');if(!b)return;if(b.dataset.calMode)calSetMode(b.dataset.calMode);else calGo(Number(b.dataset.calGo))});
+$('nav').addEventListener('click',e=>{const t=e.target.closest('button')?.dataset.tab;
+ if(t==='calendar'){if(!calRouting&&(e.isTrusted||!/^#calendar\?/.test(location.hash))){calSetAll(calDay(0));calFrom=calDay(0);calTo=calDay(7);calMoreFailed={};calUp=false;calPush(true);scrollTo({top:0})}calendarView(true)}
+ else if(t&&/^#calendar\?/.test(location.hash))history.replaceState(null,'',location.pathname+location.search)});
+DESK.addEventListener?.('change',()=>{if(!$('#calendar').hidden){calPush(true);calShowNow()}});
 addEventListener('hashchange',()=>{if(calReturn&&!/^#chat=/.test(location.hash)&&!chatId){calReturn=false;showTab('calendar')}});
 // A title over the main area on a computer: the tagline on Suggestions, else the tab's name
 // The footer's Help: the help article for what's on screen (themachine.computer/help, the articles in docs/help/)
@@ -4878,6 +5091,14 @@ const actLabel=(a,ctx)=>typeof a.label==='function'?a.label(ctx):a.label;
 function actRun(a,ctx){if(typeof drawerClose==='function')drawerClose();try{const r=a.run(ctx);if(r?.catch)r.catch(e=>toast(e.message,true))}catch(e){toast(e.message||'That didn’t work',true)}}
 // Go to
 const kbNav=sel=>()=>{const el=$(sel);if(!el)return;if(chatId&&el.dataset.tab==='inbox'&&!$('#inbox').hidden){history.replaceState(null,'',location.pathname+location.search);chatPushed=false;openChatLink();scrollTo(0,0);return}el.click()};
+// The Calendar's own keys, while it is on show: t Today, k j the period before or after (← → too), a Agenda, w Week, m Month
+{const onCal=()=>!$('#calendar').hidden;actionAdd(
+ {id:'cal-today',group:'Calendar',label:'Today',keywords:'calendar now this week',keys:'t',when:onCal,run:()=>calGo(0)},
+ {id:'cal-prev',group:'Calendar',label:'Previous',keywords:'calendar earlier back',keys:'k',when:onCal,run:()=>calGo(-1)},
+ {id:'cal-next',group:'Calendar',label:'Next',keywords:'calendar later on',keys:'j',when:onCal,run:()=>calGo(1)},
+ {id:'cal-agenda',group:'Calendar',label:'Agenda',keywords:'calendar list',keys:'a',when:onCal,run:()=>calSetMode('agenda')},
+ {id:'cal-week',group:'Calendar',label:'Week',keywords:'calendar grid',keys:'w',when:onCal,run:()=>calSetMode('week')},
+ {id:'cal-month',group:'Calendar',label:'Month',keywords:'calendar grid',keys:'m',when:onCal,run:()=>calSetMode('month')})}
 actionAdd(
  {id:'go-suggestions',group:'Go to',label:'Suggestions',keywords:'cards home inbox',keys:'g s',run:kbNav('nav [data-tab="inbox"]')},
  {id:'go-calendar',group:'Go to',label:'Calendar',keywords:'meetings today agenda',keys:'g c',run:kbNav('nav [data-tab="calendar"]')},
@@ -4991,10 +5212,11 @@ function palPick(i){const x=pal.items[i];if(!x)return;const ctx=pal.ctx;palClose
 function keysOpen(){let d=$('#keys-sheet');for(const x of document.querySelectorAll('dialog[open]'))if(x!==d)return;
  if(!d){d=document.createElement('dialog');d.id='keys-sheet';d.setAttribute('aria-labelledby','keys-title');document.body.append(d);d.addEventListener('click',e=>{if(e.target===d)d.close()})}
  const row=(keys,label,more='')=>`<p><span>${esc(label)}</span><span class="keys">${kbKeys(keys)}${more}</span></p>`,ctx={card:null,id:'',chat:false};
- const of=g=>ACTIONS.filter(a=>a.group===g&&a.keys&&!a.review&&!a.each&&(!a.when||(()=>{try{return a.when(ctx)}catch{return false}})()||g==='This card')).map(a=>row(a.keys,actLabel(a,ctx))).join('');
+ const of=g=>ACTIONS.filter(a=>a.group===g&&a.keys&&!a.review&&!a.each&&(!a.when||(()=>{try{return a.when(ctx)}catch{return false}})()||g==='This card'||g==='Calendar')).map(a=>row(a.keys,actLabel(a,ctx))).join('');
  d.innerHTML=`<form method="dialog"><div class="snooze-heading"><h2 id="keys-title">Keyboard shortcuts</h2><button aria-label="Close">×</button></div></form><div class="keys-sheet">
  <div><h3>General</h3>${row('mod+k','Search and commands','<span class="then">or</span><kbd>/</kbd>')}${of('Actions')}${row('esc','Close')}</div>
  <div><h3>Go to</h3>${of('Go to')}</div>
+ <div><h3>Calendar</h3>${of('Calendar')}${row('←','Previous')}${row('→','Next')}</div>
  <div><h3>Lists and cards</h3>${row('j','Next')}${row('k','Previous')}${row('enter','Open')}${of('This card')}</div></div>`;
  d.showModal()}
 
@@ -5021,7 +5243,7 @@ document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.isComposing||e.
  if(key==='g'&&!e.shiftKey){kbG=Date.now();e.preventDefault();return}
  if(key==='/'){e.preventDefault();palOpen();return}
  if(key==='?'){e.preventDefault();keysOpen();return}
- if(key==='j'||key==='k'){e.preventDefault();kbMove(key==='j'?1:-1);return}
+ if((key==='j'||key==='k')&&$('#calendar').hidden){e.preventDefault();kbMove(key==='j'?1:-1);return}
  if(key==='Enter'){if(kbEnter())e.preventDefault();return}
  if(key==='Escape'&&kbSel){kbPick(null);return}
  if(e.shiftKey||key.length!==1)return;

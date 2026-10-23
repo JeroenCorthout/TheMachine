@@ -488,13 +488,15 @@ def validate(value, config, allowed_accounts, recipient_options=None, linkedin_t
         result['body'] = body.strip()
         delegation(value, result)
     elif value.get('kind') == 'whatsapp':
-        # A WhatsApp reply in a chat from this task's own WhatsApp messages, from the owner's linked
-        # account; wacli sends it only after the owner's Send now. Text only.
-        if set(value) - {'kind', 'label', 'account_id', 'chat_id', 'body'}:
+        # A WhatsApp message in an existing chat, from the owner's linked account; wacli sends it only after the
+        # owner's Send now. Text only. The chat is one from this task's own WhatsApp messages, or, when the owner
+        # talks to this person on WhatsApp although the task came in another way, their existing chat that the
+        # service looked up in that account (whatsapp_chats marks it so): the card switches to it.
+        if set(value) - {'kind', 'label', 'account_id', 'chat_id', 'to_name', 'body'}:
             raise ValueError('Unsupported WhatsApp fields; plain text only, no media')
         account = next((a for a in config['accounts'] if a['id'] == value.get('account_id') and a.get('service') == 'whatsapp'), None)
-        if not account or account['id'] not in allowed_accounts:
-            raise ValueError('Use the WhatsApp account belonging to this task')
+        if not account:
+            raise ValueError('Use one of the owner’s WhatsApp accounts')
         result = {'kind': 'whatsapp', 'account_id': account['id']}
         if value.get('label'):
             if value['label'] != 'Send' and not value['label'].startswith('Send '):
@@ -502,7 +504,8 @@ def validate(value, config, allowed_accounts, recipient_options=None, linkedin_t
             result['label'] = value['label']
         chat = (whatsapp_chats or {}).get(str(value.get('chat_id') or ''))
         if not chat or chat.get('account_id') != account['id']:
-            raise ValueError('Reply only in a WhatsApp chat from this task’s own messages (chat_id is its metadata.chat_id)')
+            raise ValueError('Send only in an existing WhatsApp chat: one from this task’s own messages (its metadata.chat_id), '
+                             'or the person’s chat in this account (chat_id, or to_name to look it up)')
         result.update(chat_id=str(value['chat_id']), to_name=chat.get('name') or 'WhatsApp chat', max_length=4000)
         body = value.get('body')
         if not isinstance(body, str) or not body.strip() or len(body) > 4000 or '\x00' in body:

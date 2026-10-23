@@ -42,14 +42,14 @@ const promises=[
  {id:4,direction:'theirs',who:'alex morgan',what:'Send the  Q3 deck',due:day(4),state:'open',made_at:now,check_at:now},  // the same plan, seen from both sides
  {id:5,direction:'mine',who:'Evelien Smit',what:'pick up the pram after swimming',due:day(5),state:'open',made_at:now,check_at:now},  // the same thing as that day's meeting
  {id:3,direction:'theirs',who:'Kim',what:'On a card already',due:day(0),state:'card',made_at:now,check_at:now}];
-let calls=[],calendarAsks=[],calendarDown=false,empty=false;
+let calls=[],calendarAsks=[],calendarDown=false,failFrom=null,empty=false;
 const state=()=>({suggestions:empty?[]:cards,promises:empty?[]:promises,connectors:[{id:'cal',email:'owner@example.com',service:'calendar',status:'ok'}],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]}});
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(brand[url.pathname]){res.setHeader('Content-Type',url.pathname.endsWith('.png')?'image/png':'font/woff2');res.end(await readFile(new URL('./'+brand[url.pathname],import.meta.url)));return}
  if(req.method!=='GET')calls.push(url.pathname+' '+body);
  if(url.pathname==='/api/status'){res.end(JSON.stringify(state()));return}
- if(url.pathname==='/api/calendar'){calendarAsks.push(Object.fromEntries(url.searchParams));if(calendarDown){res.statusCode=500;res.end('{"error":"down"}');return}res.end(JSON.stringify({meetings:empty?[]:meetings}));return}
+ if(url.pathname==='/api/calendar'){calendarAsks.push(Object.fromEntries(url.searchParams));if(calendarDown||failFrom&&new Date(url.searchParams.get('from'))>=failFrom){res.statusCode=500;res.end('{"error":"down"}');return}res.end(JSON.stringify({meetings:empty?[]:meetings}));return}
  if(url.pathname==='/api/action'){const r=JSON.parse(body||'{}');res.end(JSON.stringify(r.action==='card_chat'?{session:true,status:'ok',active:false,items:[]}:{}));return}
  res.statusCode=url.pathname.startsWith('/brand/')?404:200;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -70,10 +70,12 @@ try{
   const rows=await page.locator('nav button[data-tab]').evaluateAll(b=>b.map(x=>x.dataset.tab));assert.equal(rows[1],'calendar');
   await page.locator('nav [data-tab="calendar"]').click();await showCal(page);
   assert.equal(await page.locator('#page-head .page-title').textContent(),'Calendar');
-  assert.match(await page.locator('#page-head .page-sub').textContent(),/ to /);
-  // The window asked for is today's midnight to seven days on, with time zones
-  const ask=calendarAsks.at(-1);assert.equal(new Date(ask.from).getTime(),at(0,0).getTime());assert.equal(new Date(ask.to).getTime(),at(7,0).getTime());
-  const b=await blocks(page),names=b.map(x=>x.day);
+  assert.match(await page.locator('#page-head .cal-range').textContent(),/^\d{1,2}( \w{3})? – \d{1,2} \w{3} \d{4}$/);
+  // Meetings come a calendar week per ask, Monday midnight to Monday midnight with time zones, this week and the next
+  const monday=n=>{const d=at(0,0);d.setDate(d.getDate()-(d.getDay()+6)%7+7*n);return d.getTime()};
+  for(const ask of calendarAsks){const a=new Date(ask.from),b=new Date(ask.to);assert.equal(a.getHours()+a.getMinutes()+b.getHours()+b.getMinutes(),0);assert.equal(a.getDay(),1);assert.equal(b.getDay(),1)}
+  assert.ok(calendarAsks.some(a=>new Date(a.from).getTime()===monday(0))&&calendarAsks.some(a=>new Date(a.from).getTime()===monday(1)));
+  const b=(await blocks(page)).slice(0,8),names=b.map(x=>x.day);
   assert.deepEqual(names.slice(0,3),['Overdue','Today','Tomorrow']);assert.equal(names.length,8);
   assert.deepEqual(b[0].rows,[await page.evaluate(d=>calShort(d),day(-1))+' | Renew the shop domain | ']);assert.match(b[0].rows[0],/^\w{3} \d{1,2} \|/);
   const today=b[1].rows.join('\n');
@@ -111,26 +113,27 @@ try{
   // A promise opens its own page, never Suggestions
   await page.locator('#calendar-view a.cal-item',{hasText:'Send the Q3 deck'}).click();await page.waitForFunction(()=>/^#promise\/\d+$/.test(location.hash)&&!document.querySelector('#people').hidden&&document.querySelector('#inbox').hidden);
   await page.goBack();await page.waitForFunction(()=>!document.querySelector('#calendar').hidden&&document.querySelector('#people').hidden);
-  // The Week grid: seven columns, today first, remembered after a reload; Agenda again
-  await page.evaluate(()=>showTab('calendar'));await page.locator('[data-cal-mode="week"]').click();
-  assert.equal(await page.locator('.cal-week .cal-col').count(),7);assert.match(await page.locator('.cal-col.today .cal-col-head').textContent(),/^Today\d+$/);
-  assert.equal(await page.locator('.cal-week .cal-chip',{hasText:'Team offsite'}).count(),2);
+  // The Week grid: the calendar week, Monday to Sunday, today marked; remembered after a reload; Agenda again
+  await page.evaluate(()=>showTab('calendar'));await page.locator('[data-cal-go="0"]').click();await page.locator('[data-cal-mode="week"]').click();  // Week opens on the week in view
+  assert.equal(await page.locator('.cal-tg .cal-tg-day').count(),7);assert.match(await page.locator('.cal-tg-day.today').textContent(),/^Today\d+$/);
+  assert.match(await page.locator('.cal-tg-day').first().textContent(),/^(Mon|Today)\d+$/);
+  const wd=(new Date().getDay()+6)%7;assert.equal(await page.locator('.cal-tg-strip .cal-chip',{hasText:'Team offsite'}).count(),[3,4].filter(n=>wd+n<=6).length);
   assert.equal(await page.locator('#calendar-view .cal-block .cal-day span').first().textContent(),'Overdue');
   const w=await page.locator('main').evaluate(m=>m.getBoundingClientRect().width);assert.ok(w>1000,'the week gets a wider main area '+w);await fits(page,'week 1440');
   if(process.env.CALENDAR_SHOT){for(const scheme of ['dark','light']){await page.emulateMedia({colorScheme:scheme});await page.waitForTimeout(500);await page.screenshot({path:`${process.env.CALENDAR_SHOT}/calendar-1440-${scheme}-week.png`,fullPage:true})}await page.emulateMedia({colorScheme:'dark'})}
-  await page.reload();await page.locator('#task-'+cards[1].id).waitFor();await showCal(page);assert.equal(await page.locator('.cal-week').count(),1,'Week is remembered');
-  await page.locator('[data-cal-mode="agenda"]').click();assert.equal(await page.locator('.cal-week').count(),0);
+  await page.reload();await page.waitForFunction(()=>!document.querySelector('#calendar').hidden);await showCal(page);assert.equal(await page.locator('.cal-tg').count(),1,'Week is remembered');
+  await page.locator('[data-cal-mode="agenda"]').click();assert.equal(await page.locator('.cal-tg').count(),0);
   if(process.env.CALENDAR_SHOT)for(const scheme of ['dark','light']){await page.emulateMedia({colorScheme:scheme});await page.waitForTimeout(500);await page.screenshot({path:`${process.env.CALENDAR_SHOT}/calendar-1440-${scheme}.png`,fullPage:true})}
   // The link: #calendar opens it
   await page.evaluate(()=>showTab('inbox'));await page.evaluate(()=>{location.hash='#calendar'});await page.waitForFunction(()=>!document.querySelector('#calendar').hidden);
   await context.close()}
- // Below 1024px: the row in the drawer, the agenda only (no toggle), and it fits
+ // Below 1024px: the row in the drawer, the agenda by default, and it fits
  for(const [width,height] of [[900,1000],[390,844],[360,780]]){for(const scheme of ['dark','light']){const {context,page}=await open(width,height,scheme);
   await page.evaluate(()=>drawerOpen());const row=page.locator('nav [data-tab="calendar"]');await row.waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('#app-side').getAnimations().length);
   if(process.env.CALENDAR_SHOT&&width<900)await page.screenshot({path:`${process.env.CALENDAR_SHOT}/calendar-${width}-${scheme}-drawer.png`});
   await row.click();await showCal(page);assert.equal(await page.evaluate(()=>document.documentElement.dataset.drawer||''),'','picking it closes the drawer');
-  assert.ok(!(await page.locator('.cal-mode').isVisible()),'no Week toggle at '+width);
-  assert.equal(await page.locator('.cal-week').count(),0);await fits(page,'agenda '+width);
+  assert.equal(await page.locator('.cal-mode [aria-pressed="true"]').textContent(),'Agenda','the agenda by default at '+width);
+  assert.equal(await page.locator('.cal-tg').count(),0);await fits(page,'agenda '+width);
   if(width<=390){const t=await page.locator('.cal-item .cal-title').first().evaluate(e=>getComputedStyle(e).textOverflow);assert.equal(t,'ellipsis')}
   // On a phone the meeting's card says so in its line
   if(width<=560)assert.match(await page.locator('a.cal-item',{hasText:'Pilot review'}).locator('.cal-sub').textContent(),/^Prep ready · /);

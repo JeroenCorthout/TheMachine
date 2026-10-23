@@ -338,15 +338,26 @@ try{
  assert.ok(!(await page.locator('.chat-side').evaluate(n=>n.getBoundingClientRect().right>0)));
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'nothing wider than the phone');
  await page.evaluate(()=>scrollTo(0,0));await shot('phone-top');
- // A long title stays on one line on a phone too, fading out at the right edge, with the full text on hover and the back
- // arrow, the title and ⋯ centred on one row; a tap still renames
+ // A long title stays on one line on a phone too, ending in an ellipsis before ⋯, with the full text on hover; the back
+ // arrow and ⋯ are 44px boxes whose glyphs sit on the chat's gutters (the chevron's stroke over the text, the dots' edge
+ // over the bubbles), all three on the title's cap-height centre; a tap still renames
  {const long='A mutual NDA from the vendor is ready for review before the call on Thursday';
   await page.evaluate(t=>{const h=document.querySelector('.chat-title');h.firstChild.textContent=t;h.title=t;chatFades()},long);
   for(const width of [390,360]){await page.setViewportSize({width,height:800});await page.waitForTimeout(150);await page.evaluate(()=>chatFades());
    const m=await page.evaluate(()=>{const q=s=>document.querySelector(s),R=n=>n.getBoundingClientRect(),c=r=>r.top+r.height/2,h=q('.chat-title'),L=parseFloat(getComputedStyle(h).lineHeight);
     return {lines:Math.round(R(h).height/L),fade:h.classList.contains('fade'),title:h.title,mid:c(R(h)),back:c(R(q('.chat-back'))),menu:c(R(q('.chat-menu>summary')))}});
    assert.equal(m.lines,1,'one line at '+width);assert.ok(m.fade,'fades out at the right edge at '+width);assert.equal(m.title,long);
-   assert.ok(Math.abs(m.mid-m.back)<=2&&Math.abs(m.back-m.menu)<=1,'one row at '+width+': '+JSON.stringify(m))}
+   assert.ok(Math.abs(m.mid-m.back)<=2&&Math.abs(m.back-m.menu)<=1,'one row at '+width+': '+JSON.stringify(m))
+   const g=await page.evaluate(()=>{const q=s=>document.querySelector(s),R=n=>n.getBoundingClientRect(),h=q('.chat-title'),cs=getComputedStyle(h),cv=document.createElement('canvas').getContext('2d');cv.font=cs.font;
+    const f=cv.measureText('H'),L=parseFloat(cs.lineHeight),base=R(h).top+(L-(f.fontBoundingBoxAscent+f.fontBoundingBoxDescent))/2+f.fontBoundingBoxAscent,cap=base-f.actualBoundingBoxAscent/2;
+    const box=R(q('.chat-back')),menu=R(q('.chat-menu>summary')),path=R(q('.chat-back path')),k=R(q('.chat-back svg')).width/24,dots=[...document.querySelectorAll('.chat-menu>summary circle')].map(R);
+    const range=document.createRange();range.selectNodeContents(h);
+    return {box:[box.width,box.height,menu.width,menu.height],chev:path.left-k,text:R(q('.chat-log .chat-msg:not(.you)')).left,dots:Math.max(...dots.map(r=>r.right)),bubble:R(q('.chat-log .chat-msg.you')).right,
+     cap:[path.top+path.height/2-cap,(dots[0].top+dots[0].bottom)/2-cap],ellipsis:cs.textOverflow,end:Math.min(range.getBoundingClientRect().right,R(h).right),menuLeft:menu.left}});
+   assert.deepEqual(g.box,[44,44,44,44],'44px boxes at '+width);
+   assert.ok(Math.abs(g.chev-g.text)<=0.5&&Math.abs(g.dots-g.bubble)<=0.5,'the glyphs on the gutters at '+width+': '+JSON.stringify(g));
+   assert.ok(g.cap.every(d=>Math.abs(d)<=0.5),'on the title\'s cap centre at '+width+': '+JSON.stringify(g.cap));
+   assert.equal(g.ellipsis,'ellipsis');assert.ok(g.end<=g.menuLeft,'the title ends before ⋯ at '+width)}
   await page.setViewportSize({width:390,height:800});await page.locator('.chat-title').click();await page.locator('.rename-box input').waitFor();
   await page.keyboard.press('Escape');await page.locator('.rename-box').waitFor({state:'detached'})}
  await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));await shot('phone-bottom');

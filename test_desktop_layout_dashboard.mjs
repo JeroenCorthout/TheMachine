@@ -200,7 +200,11 @@ try{
   // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
   {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#suggestions')}});
    assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
-   assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
+   assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);
+   // ☰ and + are 44px boxes whose glyphs sit on the cards' gutters, like the chat header's ‹ and ⋯
+   if(w<861){const g=await page.evaluate(()=>{const r=e=>e.getBoundingClientRect(),q=s=>document.querySelector(s),ink=el=>{const rs=[...el.querySelectorAll('svg :is(path,rect,line,circle)')].map(r),k=r(el.querySelector('svg')).width/24*0.8;return {l:Math.min(...rs.map(x=>x.left))-k,r:Math.max(...rs.map(x=>x.right))+k}};
+     const card=r(q('#suggestions article'));return {m:r(q('#drawer-open')).width,p:r(q('#new-card-top')).width,ml:ink(q('#drawer-open')).l-card.left,pr:ink(q('#new-card-top')).r-card.right}});
+    assert.ok(g.m===44&&g.p===44&&Math.abs(g.ml)<=0.5&&Math.abs(g.pr)<=0.5,'the top bar glyphs on the gutters at '+w+': '+JSON.stringify(g))}assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
   {const q=await page.evaluate(()=>{const t=document.querySelector('#page-head .page-title'),s=document.querySelector('#page-head .page-sub'),h=[...document.querySelectorAll('[id^="section-"]')].find(n=>n.getBoundingClientRect().height>0);
     return {tag:t.getBoundingClientRect().width,named:t.textContent.length>0,sub:s&&s.getBoundingClientRect().height,head:h&&h.getBoundingClientRect().top,bar:document.querySelector('#topbar').getBoundingClientRect().bottom}});
    assert.ok(q.tag<=1&&q.named,'no tagline on a phone, still there for screen readers, at '+w);assert.ok(!q.sub,'no counts line over the cards on a phone (the section heads carry them) at '+w);
