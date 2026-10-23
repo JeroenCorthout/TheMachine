@@ -2644,7 +2644,18 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         sealing = self.relay if isinstance(self.relay, network.Sealing) else None
         if sealing:
             sealing.flush()  # answers kept while the Network was away go first
-        found = self.relay.call('GET', f'/inbox?wait={int(wait)}&notices=1&ack=1', timeout=wait + 15)
+        # shared: the shared connectors' stamp seen last; the inbox answers at once when a share stops or its token is
+        # replaced, so this Machine looks again now instead of at its next directory (it still checks what it keeps)
+        seen = self.meta('shared_stamp') or '-'
+        found = self.relay.call('GET', f'/inbox?wait={int(wait)}&notices=1&ack=1&shared={seen}', timeout=wait + 15)
+        if isinstance(found.get('shared'), str) and found['shared'] != seen:
+            self.set_meta('shared_stamp', found['shared'])
+            self.last['shared'] = time.monotonic()
+            try:
+                self.directory(refresh=True)
+                self.shared_round()
+            except (ValueError, OSError, KeyError, TypeError, Unavailable, Off) as error:
+                LOG.error('shared connectors error=%s', type(error).__name__)
         for ask in found.get('asks', []):
             if sealing and ask.get('id') and sealing.taken(ask['id']):
                 continue  # taken before: its answer is sent or waits in the outbox, so it's never acted on twice

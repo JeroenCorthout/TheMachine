@@ -1,12 +1,14 @@
 """Shared connectors (shared_connectors.py, fleet_trust.py): a Fleet admin shares Intercom once and teammates' Machines
 read it, with the token sealed for each approved Machine only and checked against a signed grant. A fake Network
 stands in for the control plane, honest or not; no network, no Intercom."""
+import hashlib
 import copy
 import importlib.util
 import json
 import secrets
 import stat
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -87,7 +89,10 @@ class FakeRelay:
                 if r['from'] == self.me and r.get('answered') and not r.get('acked'):
                     answers.append({'id': r['id'], 'fleet_id': FLEET, 'from': r['to'], 'kind': r['kind'], 'status': r['status'], 'receipt': 'rc' + r['id'],
                                     'answer': None, **({'sealed': r['answer_sealed']} if r.get('answer_sealed') else {})})
-            return {'asks': asks, 'answers': answers, 'ack': True}
+            # shared: the control plane's stamp of what is shared now (fleet_shared.stamp): it changes on a stop or a replace
+            stamp = {'shared': hashlib.sha256(json.dumps(sorted((k, v['grant']) for k, v in self.net.shared.items())).encode()).hexdigest()[:16]} \
+                if 'shared=' in path and self.me in self.net.people else {}
+            return {'asks': asks, 'answers': answers, 'ack': True, **stamp}
         if route == '/answer':
             self.net.asks[body['id']].update(status=body['status'], answered=True, answer_sealed=body.get('sealed'))
             return {'ok': True}
@@ -283,6 +288,19 @@ class Shared(unittest.TestCase):
         self.assertIsNone(self.held(self.mem))
         self.assertFalse(path.exists())
         self.refused(self.own, self.forge(self.own, 'mem3', grant=secrets.token_hex(16)))
+
+    def test_a_stop_reaches_a_member_at_once_not_at_their_next_directory(self):
+        """The inbox says the shared connectors changed: the Machine looks again right away and drops the token."""
+        self.shared_flag(['mem3'])
+        path = Path(self.mem.config['credentials'][self.held(self.mem)['credential']])
+        self.mem.directory(refresh=True)
+        self.mem.step(wait=5)  # sees the stamp as it is now
+        self.assertEqual(self.token_of(self.mem), TOKEN)
+        self.own.share_stop(FLEET, 'intercom')
+        self.mem.last['shared'] = time.monotonic()  # no regular round due, and the directory is fresh
+        self.mem.step(wait=5)
+        self.assertIsNone(self.held(self.mem))
+        self.assertFalse(path.exists())
 
     def test_a_changed_recipient_key_needs_a_new_ok(self):
         self.shared_flag(['mem3'])

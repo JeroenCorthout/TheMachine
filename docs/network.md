@@ -61,11 +61,13 @@ never has it, and never needs it.
   Fleet's tables or a log. The account is read-only and in the Fleet's company (`work:<Fleet>`). Connections shows
   "Shared by <Fleet>. Its admins manage it." with nothing to change.
 - **Leaving.** Leaving or being removed takes the shared account with the Fleet's other work accounts, and your
-  Machine drops it when the Fleet stops showing it or is off. The remaining admins' Machines then show "<name> had the
-  Intercom token. Replace it in Intercom." with a field for the new one; any admin can replace it, the new token goes
+  Machine drops it when the Fleet stops showing it or is off. The remaining admins' Machines then show "<name> left
+  <Fleet>. Replace the Intercom token so it stops working on their Machine." with a field for the new one; any admin can replace it, the new token goes
   to who stays, and every Machine drops the old one. Stop sharing on an admin's Fleet tab does the same for everyone.
 - **Limits.** A Machine that joins after the owner changed trusts the first root it sees. A stopped or replaced share
-  reaches the Machines within about 10 minutes. Intercom's API doesn't say what a token may do, so use a dedicated
+  reaches the Machines at once: their Network inbox answers as soon as the shared connectors change, and they look
+  again (it carries no secret and no say: what they keep is still checked). A Machine that was away sees it at its
+  next directory, within about 10 minutes. Intercom's API doesn't say what a token may do, so use a dedicated
   Intercom app with read permissions only. Code: `shared_connectors.py` and `fleet_trust.py`.
 
 ## Reliability

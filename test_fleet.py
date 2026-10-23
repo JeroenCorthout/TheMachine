@@ -329,7 +329,7 @@ class Fleet(unittest.TestCase):
                                  {'choice': 'confirm', 'label': 'sneaky'}]},
             {'id': 'fn_bad', 'kind': 'seat_request', 'version': 1}, {'id': 'fn_' + 'c' * 16, 'kind': 'run_this', 'version': 1}]}
         self.fleet.step(wait=0)
-        self.assertIn('/inbox?wait=0&notices=1&ack=1', [p for _, p, _ in self.relay.calls])
+        self.assertIn('/inbox?wait=0&notices=1&ack=1&shared=-', [p for _, p, _ in self.relay.calls])
         self.assertEqual([v['id'] for v, _ in told], [nid, joined])  # the malformed and unknown ones are dropped
         message = told[0][1]
         self.assertEqual(message['text'].split('\n')[0], 'Ann wants a Standard server in Acme: €30/month, new total €60/month.')
