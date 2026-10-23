@@ -862,12 +862,16 @@ nav button.active .badge,[data-theme="light"] nav button.active .badge{backgroun
 :is(.fleet-tabs,.sub-tabs) button[aria-selected="true"]{background:var(--c-accent-tint);border-color:transparent;color:var(--text)}
 :is(.fleet-tabs,.sub-tabs) button[aria-selected="true"] .badge{background:color-mix(in srgb,var(--mint) 22%,transparent);color:var(--text)}
 
-/* Needs you: one calm line per item with a small amber dot. */
-#needs-you{padding:var(--sp-3) var(--sp-4);border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow-sm);margin-bottom:var(--sp-4)}
+/* Needs you: one calm line per item with a small amber dot. A notice card (.notice-card, pageNotice()) is the same quiet
+   card for one line at the top of a page: the text, and its button on the right (below it when the line wraps on a phone). */
+:is(#needs-you,.notice-card){padding:var(--sp-3) var(--sp-4);border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow-sm);margin-bottom:var(--sp-4)}
 #needs-you>strong{display:inline-flex;align-items:center;gap:var(--sp-2);color:var(--faint);font:var(--fw-medium) var(--fs-xs)/1.4 var(--sans);letter-spacing:0;text-transform:none;margin:0}
 #needs-you>strong::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
 #needs-you li{padding:var(--sp-1) 0}
 #needs-you .head-link{min-height:30px;padding:0 12px}
+.notice-card{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);color:var(--text);font-size:var(--fs-sm);line-height:1.45}
+.notice-card>span{flex:1 1 16em;min-width:0;overflow-wrap:anywhere}
+.notice-card .head-link{flex:0 0 auto;margin:0 0 0 auto;min-height:30px;padding:0 12px;font:inherit;font-size:.85rem;cursor:pointer}
 
 /* Counts: plain figures on one hairline row. */
 .stats,#suggestion-stats .stats,[data-theme="light"] #suggestion-stats .stats{box-shadow:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);backdrop-filter:none;-webkit-backdrop-filter:none}
@@ -981,7 +985,17 @@ dialog h2,.snooze-heading h2{font:var(--fw-heading) var(--fs-xl)/var(--lh-tight)
   .card .actions:not(.result-actions)>.more-actions{margin-left:auto}
   .card .more-actions>summary{min-height:36px;font-size:var(--fs-sm);padding:7px 12px}
 }
-#needs-you .head-link,.fleet-pane button:not(.primary),.fleet-box button:not(.primary){background:var(--surface-2)}
+#needs-you .head-link,.notice-card .head-link,.fleet-pane button:not(.primary),.fleet-box button:not(.primary){background:var(--surface-2)}
+/* Handoffs on a Work Fleet: one row each, open ones first; accepted and done ones quieter. The summary is one line until tapped. */
+.fleet-ho-list{list-style:none;margin:var(--sp-2) 0 0;padding:0}
+.fleet-ho{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px var(--sp-3);padding:var(--sp-2) 0;border-top:1px solid var(--lines)}
+.fleet-ho:first-child{border-top:0}
+.fleet-ho.quiet{opacity:.7}
+.fleet-ho-top{display:flex;align-items:center;flex-wrap:wrap;gap:4px var(--sp-2);min-width:0}
+.fleet-ho-top time{font-size:var(--fs-xs)}
+#fleet-view .fleet-ho-sum{grid-column:1/-1;min-width:0;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--muted);font:inherit;font-size:var(--fs-sm);font-weight:400;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#fleet-view .fleet-ho-sum[aria-expanded="true"]{white-space:normal;overflow-wrap:anywhere}
+.fleet-ho .fleet-brief-open{grid-column:2;grid-row:1}
 /* Lists inside a box: rows divided by a line, not boxes in a box. */
 .fleet-box .list{border:0;border-radius:0;background:transparent;box-shadow:none}
 .fleet-box .list>article{background:transparent;border:0;border-top:1px solid var(--border);border-radius:0;box-shadow:none;margin:0;padding:12px 0}
@@ -1680,6 +1694,8 @@ const label=v=>({pending:'Needs your decision',accepted:'Accepted',prepared:'Rea
 const tone=v=>({pending:'amber',accepted:'lavender',instructions:'lavender',prepared:'mint',snoozed:'lavender',completed:'mint',rejected:'muted'}[v]||'muted');
 // A blocker waiting on the owner (a sign-in in the kept tab) resumes with Continue; same rule as the service.
 const retryLabel=r=>/\b(?:sign(?:ed)?[ -]?in|log(?:ged)?[ -]?in|signed out|2fa|two-factor|authenticator|passkey|tap continue)\b/i.test(r||'')&&!/try again/i.test(r||'')?'Continue':'Try again';
+// One calm line at the top of a page, in a quiet card; with a button when there is somewhere to go (data: its data-* attributes).
+const pageNotice=(text,button,data={},cls='')=>`<div class="notice-card${cls?' '+cls:''}" role="status"><span>${esc(text)}</span>${button?`<button type="button" class="head-link"${Object.entries(data).map(([k,v])=>` data-${k}="${esc(v)}"`).join('')}>${esc(button)}</button>`:''}</div>`;
 const chip=(text,t)=>`<span class="chip t-${t}"><span class="ct">${esc(text)}</span></span>`;
 // Deadlines in local days: overdue and today stand out; the rest read as a weekday or date.
 function dueChip(s){if(!s.due||closed(s))return '';const today=new Date(localDay(new Date())+'T12:00'),due=new Date(s.due+'T12:00'),days=Math.round((due-today)/864e5);
@@ -3445,6 +3461,26 @@ let fleetAt=0,fleetLoading=null;
 function fleetSync(force){if(!state?.fleet?.on)return Promise.resolve();if(fleetLoading)return fleetLoading;if(!force&&Date.now()-fleetAt<20000)return Promise.resolve();
  const before=fleetSig();fleetLoading=request('api/fleet').then(d=>{fleetData=d;fleetAt=Date.now();if(fleetSig()!==before)render();if(!$('#fleet').hidden&&!($('#fleet-view').contains(document.activeElement)&&document.activeElement.matches('input,select,textarea')))fleetView(false,true)}).catch(()=>{fleetAt=Date.now()}).finally(()=>{fleetLoading=null});return fleetLoading}
 const fleetOn=(type,fn)=>{for(const el of [$('#fleet-view'),$('#suggestions')])el.addEventListener(type,fn)};
+// Handoffs in one Work Fleet: the ones you handed to a teammate (asked, from fleet_out, as on the card's own line) and the
+// ones a teammate hands you that wait under Suggestions. Open first; accepted and done ones after, quieter, three shown.
+const HO_Q=/^Can you take this on: ([\s\S]*?)\? Their summary: “([\s\S]*?)”([\s\S]*)$/;
+function fleetHandoffs(f,work,inFleet){const cards=new Set((state?.suggestions||[]).map(s=>s.id));
+ const what=q=>{const m=HO_Q.exec(q||'');return m?[m[1]+(m[2]?`: “${m[2]}”`:''),m[3].trim()].filter(Boolean).join(' '):String(q||'')};
+ const stage=a=>{const [st,...note]=String(a.answer||'').split(': ');const n=note.join(': ');
+  if(['asked','waiting'].includes(a.status))return['Waiting for an answer'+(a.delivered===false?', not delivered yet':''),'amber',false];
+  if(a.status==='expired')return['No answer in time','orange',false];
+  if(a.status==='declined'||st==='declined')return['Declined','orange',false,n];
+  if(st==='done')return['Done','muted',true];
+  if(st.startsWith('accepted'))return[st==='accepted'?'Accepted':'Accepted with a change','mint',true,n];
+  return[st||a.status,'muted',true,n]};
+ const rows=[
+  ...(f.waiting||[]).filter(w=>w.kind==='handoff'&&inFleet(w,work)).map(w=>({who:'From '+w.name,text:what(w.question),st:['Waits for you','amber',false],at:w.at,href:/^q_[a-f0-9]{16}$/.test(w.id)?'#fleet='+w.id:''})),
+  ...(f.asked||[]).filter(a=>a.kind==='handoff'&&inFleet(a,work)).map(a=>{const card=String(a.context||'').slice(8);return{who:'To '+a.name,text:what(a.question),st:stage(a),at:a.answered_at||a.at,href:cards.has(card)?'#card='+card:''}})];
+ if(!rows.length)return'';
+ const open=rows.filter(r=>!r.st[2]),quiet=rows.filter(r=>r.st[2]),shown=3;
+ const row=(r,k)=>{const more=r.st[2]&&k>=shown,text=r.text+(r.st[3]?` · “${r.st[3].replace(/^“|”$/g,'')}”`:'');
+  return`<li class="fleet-ho${r.st[2]?' quiet':''}${more?' fleet-ho-more':''}"${more?' hidden':''}><div class="fleet-ho-top"><strong>${esc(r.who)}</strong>${chip(r.st[0],r.st[1])}${time(r.at,true)}</div><button type="button" class="fleet-ho-sum" aria-expanded="false" title="${esc(text)}" data-ho-expand>${esc(text)}</button>${r.href?`<a class="fleet-brief-open" href="${esc(r.href)}">Open</a>`:''}</li>`};
+ return`<div class="fleet-box fleet-handoffs"><h3>Handoffs</h3><ul class="fleet-ho-list">${open.map(row).join('')}${quiet.map(row).join('')}</ul>${quiet.length>shown?`<button type="button" class="quiet fleet-brief-show" data-ho-more>Show ${quiet.length-shown} more</button>`:''}</div>`}
 function fleetIntroOffers(f,work,inFleet){const offers=(f.intro_offers||[]).filter(o=>inFleet(o,work));
  return offers.length?`<div class="list">${offers.map(o=>`<article><p><strong>${esc(o.name)}</strong> knows someone at ${esc(o.about)}.</p><form class="fleet-ask fleet-intro-form" data-fleet="${esc(o.fleet)}" data-member="${esc(o.member_id)}" data-about="${esc(o.about)}"><input name="note" maxlength="300" placeholder="Why, in a line (optional; they see it)" aria-label="Why"><button class="primary">Ask ${esc(o.name)} for an intro</button></form></article>`).join('')}</div>`:''}
 function fleetHandoff(s){const contact=s.handoff_contact?`<p class="note handoff-contact">Contact: ${esc(s.handoff_contact)}</p>`:'';
@@ -3615,13 +3651,13 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
  const panes=[];
  const notices=f.notices||[],asking=notices.filter(n=>n.buttons.length),told=notices.filter(n=>!n.buttons.length&&!/^friend_/.test(n.kind));
  const noticeCard=n=>`<article id="fleet-${esc(n.id)}"><p>${esc(n.text)}</p>${n.detail?`<p class="muted">${esc(n.detail)}</p>`:''}${n.outcome?`<p class="muted">→ ${esc(n.outcome)}</p>`:''}${n.reason?`<p class="note">${esc(n.reason)}</p>`:''}${n.buttons.length?`<div class="actions">${n.buttons.map(b=>`<button${b.choice==='confirm'?' class="primary"':''} data-fleet-notice="${esc(n.id)}" data-choice-n="${b.choice}" data-key="${esc(n.key)}">${esc(b.label)}</button>`).join('')}</div>`:''}<p><small class="mono">${esc(new Date(n.at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small></p></article>`;
- for(const work of works){const asked=f.asked.filter(a=>inFleet(a,work));
+ for(const work of works){const asked=f.asked.filter(a=>inFleet(a,work)&&a.kind!=='handoff');  // handoffs have their own box
   let h=`<div id="fleet-${esc(work.id)}">`+head(work,(work.people||[]).length)+people(work);
   if(work.members.length){
    h+=box('Who knows someone?','Their Machines say how well they know someone there and when they last talked. Names only if they allow it.',
     `<form class="fleet-ask fleet-ask-form" data-fleet="${esc(work.id)}"><input name="about" maxlength="120" placeholder="A company, domain, email address or name" aria-label="Who knows someone at"><button class="primary">Ask ${several?esc(work.name):'the Fleet'}</button></form>`+fleetIntroOffers(f,work,inFleet)
     +(asked.length?`<div class="list">${asked.map(a=>`<article><p><strong>${esc(a.name)}</strong> · ${esc(a.question)}</p><p class="muted">${esc(a.status==='answered'?a.answer:a.status==='waiting'?'Waiting for them to allow it':a.status==='asked'?(a.delivered===false?'Not delivered yet':'Asked'):a.status)}</p></article>`).join('')}</div>`:''));
-   h+=fleetBrief(f,work)+box('Ask anything','',fleetFree(f,work,several))}
+   h+=fleetHandoffs(f,work,inFleet)+fleetBrief(f,work)+box('Ask anything','',fleetFree(f,work,several))}
   else h+=fleetIntroOffers(f,work,inFleet);
   panes.push({id:'fleet-'+work.id,label:work.name,html:h+'</div>',at:work.joined_at})}
  if(family)panes.push({id:'family',label:family.name||'Family',html:head(family,(family.people||[]).length)+familySection(f,family),at:family.joined_at});
@@ -3643,8 +3679,8 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
  panes.push({id:'activity',label:'Activity',html:(told.length?box('Lately','Who joined, asked for a server, had one started, or left.',`<div class="list">${told.map(noticeCard).join('')}</div>`):'')
   +box('Log','Every question asked or answered, both ways.',`<ul class="fleet-log list">${f.log.map(l=>`<li><small class="mono">${esc(new Date(l.at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small> ${l.direction==='in'?'From':'To'} ${esc(l.name||'')}: ${esc(l.what)} · <span class="muted">${esc(l.outcome)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul>`)});
  const current=panes.some(p=>p.id===fleetPane)?fleetPane:panes[0].id;
- let html=f.off?'<p class="note">The Network is off for now. Nothing is asked or answered.</p>':'';
- {const todo=fleetCardsOf(f).length;if(todo)html+=`<p class="note fleet-todo">${todo===1?'One Fleet item waits':todo+' Fleet items wait'} for you under Suggestions. <button type="button" class="link" data-tab-go="inbox">Show</button></p>`}
+ let html=f.off?pageNotice('The Network is off for now. Nothing is asked or answered.'):'';
+ {const todo=fleetCardsOf(f).length;if(todo)html+=pageNotice(`${todo===1?'One Fleet item waits':todo+' Fleet items wait'} for you under Suggestions.`,'Show',{'tab-go':'inbox'},'fleet-todo')}
  html+=`<div class="fleet-tabs" role="tablist" aria-label="Fleet">${panes.map(p=>`<button type="button" role="tab" data-fleet-pane="${esc(p.id)}" aria-selected="${p.id===current}"><span class="ell">${esc(p.label)}</span>${p.badge?` <span class="badge">${p.badge}</span>`:''}</button>`).join('')}</div>`;
  // A slot for suggested connections (people already on the Network you may know), filled by its own feature.
  html+='<div id="fleet-discover" class="fleet-discover"></div>';
@@ -3717,6 +3753,9 @@ fleetOn('change',async e=>{const t=e.target.closest('[data-net-addr]');if(!t)ret
 fleetOn('change',async e=>{const t=e.target.closest('[data-net-toggle]');if(!t)return;t.disabled=true;
  try{await fleetPost('fleet_network',{do:t.dataset.netToggle});await fleetView()}catch(err){t.checked=!t.checked;toast(err.message,true)}finally{t.disabled=false}});
 fleetOn('click',async e=>{const more=e.target.closest('[data-brief-more]');if(more){more.closest('.fleet-brief').querySelectorAll('.fleet-brief-more').forEach(li=>li.hidden=false);more.remove();return}
+ const hoMore=e.target.closest('[data-ho-more]');if(hoMore){hoMore.closest('.fleet-handoffs').querySelectorAll('.fleet-ho-more').forEach(li=>li.hidden=false);hoMore.remove();return}
+ const hoGo=e.target.closest('.fleet-ho a[href^="#"]');if(hoGo&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();location.hash=hoGo.getAttribute('href');return}  // in-page, also under another base path
+ const hoSum=e.target.closest('[data-ho-expand]');if(hoSum){hoSum.setAttribute('aria-expanded',String(hoSum.getAttribute('aria-expanded')!=='true'));return}
  const ask=e.target.closest('[data-brief-ask]');if(ask){const input=document.querySelector(`.fleet-free-form[data-fleet="${CSS.escape(ask.dataset.fleet)}"] input[name=text]`);if(!input)return;input.value=ask.dataset.briefAsk;input.focus();input.scrollIntoView({block:'center',behavior:'smooth'});return}
  const hide=e.target.closest('[data-brief-hide]');if(!hide)return;hide.disabled=true;
  try{await fleetPost('fleet_brief_hide',{fleet:hide.dataset.fleet,key:hide.dataset.briefHide});hide.closest('li').remove();toast('Hidden from this brief.');await fleetView()}catch(err){hide.disabled=false;toast(err.message,true)}});
