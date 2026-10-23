@@ -33,6 +33,10 @@ SETUP = {'label': 'Intercom', 'what': 'Customer conversations in your Intercom w
                      'credential': 'intercom', 'poll_seconds': 600},
          'note': 'In Intercom\'s Developer Hub, open your app, then Authentication, and copy its access token.',
          'secret': 'Intercom access token',
+         # On a hosted Machine its account page also offers Sign in with Intercom (the app The Machine), as well as pasting
+         'account_page': 'source-intercom',
+         # Always work, for the company the workspace names: connecting doesn't ask (connect() sets work:<workspace name>)
+         'boundary': 'workspace',
          'hints': {'account_identity_mismatch': 'that token is for another Intercom workspace; add it as another account',
                    'intercom:HTTP_401': 'Intercom turned the access token down; copy it again from your app in the Developer Hub'}}
 VERSION = '2.11'
@@ -130,6 +134,8 @@ class Source:
             raise SourceError('account_identity_mismatch')
         name = ' '.join(str(app.get('name') or '').split())[:100]
         self.account.update(workspace_id=workspace, workspace_name=name or workspace, region=region, admin_id=str(profile['id']))
+        if ':' not in str(self.account.get('boundary') or ''):  # always work: the company is the workspace, renamed later as any
+            self.account['boundary'] = 'work:' + ' '.join((name or workspace).split())[:60]
         if isinstance(profile.get('email'), str) and '@' in profile['email']:
             self.account['email'] = profile['email'].lower()
         return profile

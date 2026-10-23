@@ -228,7 +228,8 @@ class WebUI:
 
 def catalog(config):
     """The sources this install can add, with what each asks for and how many are connected already. `broker`:
-    a hosted machine's control plane signs it in (its account page), not this install."""
+    a hosted machine's control plane signs it in (its account page), not this install. `account_page`: the part of
+    that page where a hosted machine connects it (a sign-in there), while it can also be set up here."""
     have = {}
     for account in config.get('accounts', []):
         have[account.get('service', 'gmail')] = have.get(account.get('service', 'gmail'), 0) + 1
@@ -239,7 +240,8 @@ def catalog(config):
         service = SERVICES.get(name, name)
         setup = setup_of(service) or {}
         found.append({'name': name, 'service': service, 'label': label(service), 'note': setup.get('note'), 'what': setup.get('what'),
-                      'connected': have.get(service, 0), 'broker': service in brokered or bool(setup.get('broker'))})
+                      'connected': have.get(service, 0), 'broker': service in brokered or bool(setup.get('broker')),
+                      **({'account_page': setup['account_page']} if isinstance(setup.get('account_page'), str) else {})})
     return found
 
 
@@ -826,6 +828,8 @@ def new_account(config, service, account_id=None, ui=None):
     options = boundaries(config, service)
     if service in ('android', 'whatsapp', 'gateway') and not same:
         pass  # keep the example's device boundary
+    elif setup_of(service).get('boundary') == 'workspace':
+        account['boundary'] = 'work'  # its check names the company after the workspace it connects (work:<name>)
     elif same or options:
         # Work (which company) or personal: the owner's own choice, which a Work Fleet's removal follows
         choice = ui.choose('Which part of your life is this account', [(b, scope_label(b)) for b in options]

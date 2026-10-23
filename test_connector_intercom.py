@@ -251,16 +251,18 @@ class IntercomTests(unittest.TestCase):
         class UI(onboarding.UI):
             interactive, explains = True, False
             def __init__(self):
-                self.said = []
+                self.said, self.asked = [], []
             def say(self, text=''):
                 self.said.append(str(text))
             def ask(self, prompt, default=''):
+                self.asked.append(prompt)
                 return default
             def secret(self, prompt):
                 return TOKEN if prompt.startswith('Intercom access token') else ''
             def yes(self, prompt, default=True):
                 return default
             def choose(self, prompt, options):
+                self.asked.append(prompt)
                 return options[0][0]
 
         ui = UI()
@@ -271,6 +273,9 @@ class IntercomTests(unittest.TestCase):
                          ('42', 'us', 'abc123', 'Example Support'))
         saved = json.loads(config_path.read_text())
         self.assertEqual(saved['accounts'][0]['admin_id'], '42')
+        # Always work: no Work or personal question, the company is the workspace (renamed later as any account)
+        self.assertEqual(ui.asked, [])
+        self.assertEqual(saved['accounts'][0]['boundary'], 'work:Example Support')
         self.assertNotIn(TOKEN, config_path.read_text())
         self.assertNotIn(TOKEN, '\n'.join(ui.said))
         token_file = Path(saved['credentials'][account['credential']])
