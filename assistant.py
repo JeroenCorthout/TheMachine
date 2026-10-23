@@ -12369,14 +12369,15 @@ class App:
                 if self.headers.get('Upgrade', '').lower() != 'websocket':
                     web = app.config.get('browser_novnc') or browser_viewer.WEB
                     found = browser_viewer.view_file(web, 'vnc.html' if short else rest)
-                    if not found:
+                    settings = rest in ('defaults.json', 'mandatory.json')  # also when this noVNC has none of its own
+                    if not found and not settings:
                         self.output(404, {'error': 'Not found'})
                         return
-                    data = found.read_bytes()
+                    data = found.read_bytes() if found else b'{}'
                     base = dashboard_base(app.config, self.headers.get('Host', ''))
                     if short:
                         data = browser_viewer.short_page(data.decode(), base).encode()
-                    elif rest in ('defaults.json', 'mandatory.json'):
+                    elif settings:
                         try:
                             own = json.loads(data)
                         except ValueError:
@@ -12384,7 +12385,7 @@ class App:
                         ours = browser_viewer.view_settings(base)[rest == 'mandatory.json']
                         data = json.dumps({**(own if isinstance(own, dict) else {}), **ours}).encode()
                     self.send_response(200)
-                    self.send_header('Content-Type', browser_viewer.file_type(found))
+                    self.send_header('Content-Type', browser_viewer.file_type(found or Path(rest)))
                     self.send_header('Content-Length', str(len(data)))
                     self.send_header('Cache-Control', 'no-cache')
                     self.send_header('X-Content-Type-Options', 'nosniff')

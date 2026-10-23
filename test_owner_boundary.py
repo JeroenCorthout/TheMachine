@@ -130,6 +130,8 @@ class OwnerBoundary(unittest.TestCase):
             conn.request('GET', path, headers=headers); r = conn.getresponse(); body = r.read(); conn.close(); return r.status, body
         owner = {'Host': 'machine.example:8443', 'Tailscale-User-Login': 'owner@example.com'}
         self.assertEqual(get('/browser/vnc.html', owner), (200, b'<html>viewer</html>'))
+        self.assertEqual(json.loads(get('/browser/mandatory.json', owner)[1]), {'path': '/browser/websockify'})  # none in this noVNC
+        self.assertEqual(get('/browser/other.json', owner)[0], 404)
         (web / 'vnc.html').write_text('<html><head></head>viewer</html>'); (web / 'defaults.json').write_text('{"bell": "off"}'); (web / 'mandatory.json').write_text('{}')
         for short in ('/browser', '/browser/'):  # the short link: vnc.html itself, its files resolving under /browser/
             status, body = get(short, owner)
