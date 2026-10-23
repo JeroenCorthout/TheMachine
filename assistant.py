@@ -6749,7 +6749,7 @@ _SOURCE_URL = {}
 
 def source_url(root=APP_ROOT):
     """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else its commit, else the repo."""
-    if _SOURCE_URL.get('at', 0) > time.monotonic() - 600:
+    if 'url' in _SOURCE_URL and _SOURCE_URL['at'] > time.monotonic() - 600:
         return _SOURCE_URL['url']
     ref = None
     try:

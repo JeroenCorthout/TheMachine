@@ -56,6 +56,14 @@ class HomeScreenApp(unittest.TestCase):
         self.assertEqual(a.source_url('/nonexistent-dir'), a.SOURCE_REPO)
         a._SOURCE_URL.clear()
 
+    def test_source_url_right_after_boot(self):
+        # time.monotonic() counts from boot: under 10 minutes of uptime an empty cache must not look fresh.
+        from unittest import mock
+        a._SOURCE_URL.clear()
+        with mock.patch.object(a.time, 'monotonic', return_value=5.0):
+            self.assertEqual(a.source_url('/nonexistent-dir'), a.SOURCE_REPO)
+        a._SOURCE_URL.clear()
+
 
 if __name__ == '__main__':
     unittest.main()
