@@ -3032,7 +3032,7 @@ new MutationObserver(()=>{$('#drawer-dot').hidden=!$('#badge-health').textConten
 const GRAPH_SUBS={people:'People',orgs:'Organisations',projects:'Projects',roles:'Who’s who'};let graphCounts=null;
 function graphCountsSet(c){if(!c)return;graphCounts=c;for(const [k,n] of Object.entries({people:c.person,orgs:c.org,projects:c.project})){const b=$('#count-'+k);if(b)b.textContent=n?String(n):''}graphSubLabels();pageHead()}
 let rolesWaiting=0;
-function rolesRow(on,n){rolesWaiting=on?n||0:0;const a=$('.side-sub a[data-graph-sub="roles"]');a.hidden=!on;$('#count-roles').textContent=on&&n?String(n):'';graphSubLabels()}
+function rolesRow(on,n){rolesWaiting=on?n||0:0;const a=$('.side-sub a[data-graph-sub="roles"]');a.hidden=!on;$('#count-roles').textContent=on&&n?String(n):'';graphSubLabels();if(!$('#people').hidden)pageHead()}
 function graphSubLabels(){for(const a of document.querySelectorAll('.side-sub a')){const n=a.querySelector('.badge').textContent.trim(),label=GRAPH_SUBS[a.dataset.graphSub]+(n?' · '+n:'');if(a.getAttribute('aria-label')!==label)a.setAttribute('aria-label',label)}}
 function graphSubSync(){pageHead();const on=!$('#people').hidden,graph=$('nav [data-tab="people"]');let lit=false;
  for(const a of document.querySelectorAll('.side-sub a')){const me=on&&a.dataset.graphSub===graphShown;lit||=me;if(me)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')}graph.classList.toggle('sub-on',lit)}
