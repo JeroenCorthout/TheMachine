@@ -5280,10 +5280,27 @@ class Store:
             cache[key]=task_page(db,suggestion_id)
         return cache[key]
 
+    def chat_linked_files(self, db, suggestion_id):
+        """The result files each of this card's saved results linked (what its chat shows as chips)."""
+        files = []
+        for r in db.execute("SELECT c.params FROM preparation_calls c JOIN preparation_runs p ON p.job_id=c.job_id "
+                            "WHERE p.suggestion_id=? AND c.tool='assistant_signals' AND (c.error IS NULL OR c.error='')", (suggestion_id,)):
+            try:
+                params = json.loads(r['params'])
+            except (ValueError, TypeError):
+                continue
+            args = params.get('args') if isinstance(params, dict) and isinstance(params.get('args'), dict) else {}
+            if params.get('action') == 'prepare' and args.get('suggestion_id') == suggestion_id:
+                files += chat_result_files(args.get('body'))[1]
+        return files
+
     def result_document(self, suggestion_id, relative):
         with self.connect() as db:
             suggestion=db.execute('SELECT * FROM suggestions WHERE id=?',(suggestion_id,)).fetchone()
-            if not suggestion or relative not in [f['path'] for f in self.suggestion_result(dict(suggestion),db)['result_files']]:
+            linked = [f['path'] for f in self.suggestion_result(dict(suggestion),db)['result_files']] if suggestion else []
+            if suggestion and relative not in linked:
+                linked += [f['path'] for f in self.chat_linked_files(db, suggestion_id)]
+            if not suggestion or relative not in linked:
                 raise ValueError('This result is not linked to that task')
         candidate=(WORKSPACE/relative).resolve()
         if not candidate.is_relative_to((WORKSPACE/'memory/assistant').resolve()):
@@ -6832,7 +6849,7 @@ def preparation_steps(job_id, agent_db=None, limit=4):
 # service prompts in the transcript; the agent's side is its replies and its steps, in the owner's words.
 CHAT_HISTORY_LIMIT = 200
 CHAT_OWNER_WORDS = {'accept': 'Do it', 'retry': 'Try again', 'complete': 'Marked done', 'reject': 'Not needed',
-                    'snooze': 'Snoozed', 'reopen': 'Reopened', 'undo': 'Undone'}
+                    'snooze': 'Snoozed', 'reopen': 'Reopened', 'undo': 'Reopened'}
 # A tap that the next one takes back within a minute (done then reopened, snoozed then unsnoozed), or that Undo took
 # back, is left out, both.
 CHAT_UNDONE = {('complete', 'reopen'), ('reject', 'reopen'), ('snooze', 'unsnooze')}
@@ -6851,6 +6868,21 @@ CHAT_SECRETS = (
 )
 CHAT_PATHS = re.compile(r'(?:~|/home|/tmp|/var|/Users|/root|/opt)/[^\s,;:)"\'”]+')
 CHAT_IDS = re.compile(r'\b(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{20,}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b')
+
+
+_DASHBOARD_VERSION = {}
+
+
+def dashboard_version():
+    """A short hash of the dashboard page being served: an open page that runs another one reloads itself."""
+    path = ROOT / 'dashboard.html'
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        return ''
+    if _DASHBOARD_VERSION.get('mtime') != mtime:
+        _DASHBOARD_VERSION.update(mtime=mtime, version=hashlib.sha256(path.read_bytes()).hexdigest()[:12])
+    return _DASHBOARD_VERSION['version']
 
 
 def chat_text(text, step=False, chars=4000):
@@ -6881,6 +6913,29 @@ def chat_reply(text):
             continue
         kept.append(CHAT_MARKER.sub('', part.replace('`', '')))
     return '\n\n'.join(p for p in kept if p.strip()).strip(), noted
+
+
+# A link in a saved result to one of its files ("[Draft and sources](memory/assistant/x.md)"): the chat shows it as a
+# chip that opens the file, never as a bare title.
+CHAT_RESULT_LINK = re.compile(r'\[([^\]\n]{1,200})\]\((?:[^)\s]*/)?(memory/assistant/[^)\s]{1,300})\)')
+
+
+def chat_result_files(body):
+    """(body without its result-file links, [{'label', 'path'}]) of a saved result; a line left with only the link goes."""
+    files, body = [], str(body or '')
+    for m in CHAT_RESULT_LINK.finditer(body):
+        path = m[2]
+        if '..' in path.split('/') or not re.fullmatch(r'memory/assistant/[\w.\-/ ]{1,300}', path):
+            continue
+        if all(f['path'] != path for f in files):
+            files.append({'label': clamp(m[1].strip() or path.rsplit('/', 1)[-1], 200), 'path': path})
+    lines = []
+    for line in body.split('\n'):
+        kept = re.sub(r'(?<=\S)  +', ' ', CHAT_RESULT_LINK.sub('', line))
+        if kept != line and re.fullmatch(r'[\s·•|,;:()\-–—]*', kept):
+            continue
+        lines.append(kept.rstrip())
+    return '\n'.join(lines), files[:6]
 
 
 def chat_draft(action):
@@ -10953,11 +11008,12 @@ class App:
             if r['error'] or params.get('action') != 'prepare' or args.get('suggestion_id') != suggestion_id:
                 continue
             actions = args.get('next_actions') if isinstance(args.get('next_actions'), list) else [args.get('next_action')]
-            text = chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(args.get('body'))))[0]
+            body, files = chat_result_files(args.get('body'))
+            text = chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(body)))[0]
             drafts = [d for d in map(chat_draft, actions) if d][:3]
             for d in drafts:
                 d['to'] = [chat_name(t, names, about) for t in d['to']]
-            results.setdefault(r['job_id'], []).append({'kind': 'reply', 'text': text, 'drafts': drafts,
+            results.setdefault(r['job_id'], []).append({'kind': 'reply', 'text': text, 'drafts': drafts, 'files': files,
                                                        'at': chat_ms(r['started_at'])})
         # Work handed to a coding agent (Hand to Claude Code / Codex): when it went, each change asked of it, and what came back
         jobs = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_jobs'").fetchone()  # only once agents are set up
@@ -12197,7 +12253,7 @@ class App:
                     self.browser_view(path.path[len('/browser/'):])
                 elif path.path == '/':
                     csrf = hmac.new(app.token.encode(), app.config['tailscale_owner'].encode(), hashlib.sha256).hexdigest()
-                    self.output(200, (ROOT / 'dashboard.html').read_text().replace('__CSRF__', csrf).replace('__BASE__', dashboard_base(app.config, self.headers.get('Host', ''))), 'text/html')
+                    self.output(200, (ROOT / 'dashboard.html').read_text().replace('__CSRF__', csrf).replace('__UI_VERSION__', dashboard_version()).replace('__BASE__', dashboard_base(app.config, self.headers.get('Host', ''))), 'text/html')
                 elif path.path == '/manifest.webmanifest':
                     self.output(200, (ROOT / 'manifest.webmanifest').read_text(), 'application/manifest+json')
                 elif path.path == '/sw.js':
@@ -12208,7 +12264,7 @@ class App:
                     asset = BRAND_ASSETS[path.path]
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
                 elif path.path == '/api/status':
-                    self.output(200, app.action('status', {'full': True}))
+                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version()})
                     try:
                         app.store.note_card_shown()
                     except sqlite3.Error as error:

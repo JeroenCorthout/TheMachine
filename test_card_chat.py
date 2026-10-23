@@ -107,6 +107,15 @@ class CardChat(unittest.TestCase):
         self.assertEqual(result['text'], 'Drafted it. See notes.')
         self.assertEqual([(d['to'], d['body'], d['reply']) for d in result['drafts']], [(['Alex'], 'Hi Alex, done.', True)])
 
+    def test_result_file_links_are_chips_not_bare_titles(self):
+        body, files = a.chat_result_files('Drafted it. Nothing sent.\n\n[Draft and sources](memory/assistant/261023-note.md)\n'
+                                          'See [the plan](/home/x/.openclaw/workspace/memory/assistant/plan.md) too. [Bad](memory/assistant/../secret.md)')
+        self.assertEqual(files, [{'label': 'Draft and sources', 'path': 'memory/assistant/261023-note.md'},
+                                 {'label': 'the plan', 'path': 'memory/assistant/plan.md'}])
+        self.assertNotIn('Draft and sources', body)
+        self.assertIn('See too.', body)
+        self.assertEqual(a.chat_reply(body)[0].splitlines()[0], 'Drafted it. Nothing sent.')
+
     def test_names_read_as_people_say_them(self):
         self.assertEqual(a.chat_person('Lee, Sam'), 'Sam Lee')
         self.assertEqual(a.chat_person('"Alex Doe"'), 'Alex Doe')
