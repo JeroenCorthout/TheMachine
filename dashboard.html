@@ -1186,7 +1186,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 /* A soft edge under the header, so what scrolls under it fades instead of looking cut */
 .chat-head::after{content:'';position:absolute;left:0;right:0;top:100%;z-index:1;height:14px;background:linear-gradient(var(--bg) 30%,color-mix(in srgb,var(--bg) 0%,transparent));pointer-events:none}
 /* Back and ⋯ share one 32px box; the title's first line is centred on it (its x-height on the chevron), on one line or two */.chat-back,.chat-menu>summary{display:grid;place-items:center;flex:none;width:32px;height:32px;margin:0;border-radius:50%;color:var(--text);text-decoration:none;cursor:pointer}
-.chat-back:hover,.chat-menu>summary:hover,.chat-menu[open]>summary{background:var(--c-hover)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
+@media(hover:hover) and (pointer:fine){.chat-back:hover,.chat-menu>summary:hover{background:var(--c-hover)}}.chat-menu[open]>summary{background:var(--c-hover)}.chat-back svg{width:22px;height:22px}.chat-menu>summary svg{width:20px;height:20px}
 .chat-title{flex:1;min-width:0;margin:calc((32px - 1.35em)/2 - .09em) 0 0;font:600 1rem/1.35 var(--sans);white-space:nowrap;overflow:hidden}
 /* The chat's title is one line at every width, fading out at the right edge; its full text is in the title attribute. */
 .chat-menu{position:relative;flex:none;margin:0}.chat-menu>summary{list-style:none}.chat-menu>summary::-webkit-details-marker{display:none}.chat-menu>summary::before,.chat-menu>summary::after{content:none}
@@ -1306,7 +1306,13 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
   body.chat-open:has(#inbox:not([hidden])) .site-footer{display:none}
   body.chat-open:has(#inbox:not([hidden])) main{padding:0 20px}
   .chat-main{min-height:100dvh}
-  .chat-head{margin:0 -20px;padding:calc(10px + env(safe-area-inset-top)) 11px 12px 8px}
+  /* Phone: ‹ and ⋯ are 44px boxes at the screen edges, their glyphs on the chat's 20px gutters (the chevron's stroke over the
+     text, the dots' edge over the bubbles); all three share the title's centre line, and the title ends in an ellipsis */
+  .chat-head{align-items:center;gap:0;margin:0 -20px;padding:calc(4px + env(safe-area-inset-top)) env(safe-area-inset-right) 6px env(safe-area-inset-left)}
+  .chat-back,.chat-menu>summary{width:44px;height:44px;border-radius:var(--r-sm)}
+  .chat-back{justify-items:start;padding-left:13.6px}  /* the chevron's left stroke at 20px */
+  .chat-menu>summary{justify-items:end;padding-right:17.3px}  /* the right dot's edge at 20px from the right */
+  .chat-title{margin:0 4px 0 0;text-overflow:ellipsis}.chat-title.fade{-webkit-mask-image:none;mask-image:none}
   .chat-log{padding:24px 0 calc(12px + var(--kb,0px))}
   .chat-layout [data-chat-drawer]{display:flex}
   .chat-msg.you{max-width:86%}
@@ -1463,10 +1469,11 @@ body main{padding-top:0}
 /* A phone and a tablet: a slim top bar with the menu button, the page's title in the column, and the sidebar as a drawer */
 @media(max-width:1023px){
   :root{--side-bg:var(--bg)}
-  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(1.1px,env(safe-area-inset-right)) 0 max(2.5px,env(safe-area-inset-left));background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
   .topbar-title{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 26px);transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:var(--r-sm);color:var(--text);font:var(--fw-heading) 17px/1 var(--serif);letter-spacing:-.01em;text-decoration:none;white-space:nowrap}
   .topbar-title img{width:22px;height:22px;object-fit:contain}
   .topbar>:not(.topbar-title):last-child:not(:first-child){margin-left:auto}  /* a button on the right (New card) */
+  /* 44px boxes; the ☰ and + glyphs sit on the cards' 16px gutters */
   .topbar-menu{display:grid;place-items:center;width:44px;height:44px;min-height:0;margin:0;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--c-text-2);cursor:pointer}
   @media(hover:hover) and (pointer:fine){.topbar-menu:hover{background:var(--c-hover);color:var(--text)}}
   .topbar-menu svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}

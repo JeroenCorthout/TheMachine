@@ -64,6 +64,9 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
 - **Layout**: every tab, and Settings, uses the same reading column: `--measure` (720px) plus 24px gutters, so `main`
   is 768px. No tab sets its own width, and the page keeps the scrollbar's room (`scrollbar-gutter: stable`), so a
   short tab like Events doesn't shift or look narrower than a long one.
+- **Phone header bars** (the top bar, a card's chat): the buttons at either end are 44px boxes whose glyphs sit on the
+  content's gutters (☰ and + on the cards' edges, ‹ and ⋯ on the chat's text and bubbles), every glyph on the title's
+  cap-height centre line, and a long title ends in an ellipsis before the right button.
 - **Sidebar**: one component for every width. From 1024px it is a column on the left: the tabs as quiet rows with
   icons (Suggestions, Calendar, Events, Graph, Feedback, Connections), Find a card, the cards by section (Done folded), and Browser, Settings and the status at the bottom; it folds
   to icons (Ctrl/⌘+B). Graph has its own rows, People, Organisations and Projects, each a coloured square and a count,
