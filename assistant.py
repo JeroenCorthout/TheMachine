@@ -6690,7 +6690,7 @@ def browser_link(config):
     if urllib.parse.urlsplit(url).scheme in ('http', 'https'):
         return url
     if config.get('browser_vnc') and config.get('dashboard_host'):
-        return 'https://' + str(config['dashboard_host']) + browser_viewer.view_link(config.get('dashboard_path', '/'))
+        return 'https://' + str(config['dashboard_host']) + browser_viewer.view_link(config.get('dashboard_path', '/'), config.get('browser_novnc') or browser_viewer.WEB)
     return None
 
 
@@ -12193,8 +12193,8 @@ class App:
                 if not self.owner():
                     self.output(403, {'error': 'Use the owner-authenticated Tailscale dashboard'})
                     return
-                if path.path.startswith('/browser/') and app.config.get('browser_vnc'):
-                    self.browser_view(path.path[len('/browser/'):])
+                if (path.path == '/browser' or path.path.startswith('/browser/')) and app.config.get('browser_vnc'):
+                    self.browser_view(path.path[len('/browser/'):], short=path.path in ('/browser', '/browser/'))
                 elif path.path == '/':
                     csrf = hmac.new(app.token.encode(), app.config['tailscale_owner'].encode(), hashlib.sha256).hexdigest()
                     self.output(200, (ROOT / 'dashboard.html').read_text().replace('__CSRF__', csrf).replace('__BASE__', dashboard_base(app.config, self.headers.get('Host', ''))), 'text/html')
@@ -12358,19 +12358,31 @@ class App:
                 else:
                     self.output(404, {'error': 'Not found'})
 
-            def browser_view(self, rest):
+            def browser_view(self, rest, short=False):
                 """This computer's screen in noVNC (`browser_vnc`): the viewer's files, and its websocket to the VNC
                 server. Only the owner, only from the dashboard's own page (a websocket ignores CORS, so another
-                site could otherwise use the owner's tailnet identity)."""
+                site could otherwise use the owner's tailnet identity). /browser and /browser/ are vnc.html itself,
+                with noVNC's settings from this dashboard's defaults.json and mandatory.json."""
                 if rest == 'region':  # where the browser's window is, for the viewer to open on it
                     self.output(200, {'region': browser_viewer.window_region(app.config.get('browser_cdp_url') or browser_viewer.CDP_URL)})
                     return
                 if self.headers.get('Upgrade', '').lower() != 'websocket':
-                    found = browser_viewer.view_file(app.config.get('browser_novnc') or browser_viewer.WEB, rest)
+                    web = app.config.get('browser_novnc') or browser_viewer.WEB
+                    found = browser_viewer.view_file(web, 'vnc.html' if short else rest)
                     if not found:
                         self.output(404, {'error': 'Not found'})
                         return
                     data = found.read_bytes()
+                    base = dashboard_base(app.config, self.headers.get('Host', ''))
+                    if short:
+                        data = browser_viewer.short_page(data.decode(), base).encode()
+                    elif rest in ('defaults.json', 'mandatory.json'):
+                        try:
+                            own = json.loads(data)
+                        except ValueError:
+                            own = {}
+                        ours = browser_viewer.view_settings(base)[rest == 'mandatory.json']
+                        data = json.dumps({**(own if isinstance(own, dict) else {}), **ours}).encode()
                     self.send_response(200)
                     self.send_header('Content-Type', browser_viewer.file_type(found))
                     self.send_header('Content-Length', str(len(data)))

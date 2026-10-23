@@ -51,11 +51,24 @@ class BrowserWaitTest(unittest.TestCase):
 
     def test_a_desktop_view_links_to_the_dashboards_own_viewer(self):
         config = {'browser_vnc': '/run/user/1000/view/vnc.sock', 'dashboard_host': 'machine.example', 'dashboard_path': '/'}
-        self.assertEqual(assistant.browser_link(config), 'https://machine.example/browser/vnc.html?' + browser_viewer.VIEW_QUERY + '&path=browser/websockify')
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'vnc.html').write_text("<html><head></head><script>fetch('./defaults.json')</script></html>")
+            config['browser_novnc'] = folder
+            self.assertEqual(assistant.browser_link(config), 'https://machine.example/browser')  # noVNC 1.5+: the short link
+            self.assertEqual(browser_viewer.view_link('/assistant/', folder), '/assistant/browser')
+            (Path(folder) / 'vnc.html').write_text('<html><head></head></html>')  # an older noVNC reads only the query
+            self.assertEqual(assistant.browser_link(config), 'https://machine.example/browser/vnc.html?' + browser_viewer.VIEW_QUERY + '&path=browser/websockify')
+            self.assertTrue(browser_viewer.view_link('/assistant/', folder).endswith('&path=assistant/browser/websockify'))
         self.assertEqual(assistant.browser_link({**config, 'browser_url': 'https://cp.example/open?to=browser'}), 'https://cp.example/open?to=browser')
         self.assertIsNone(assistant.browser_link({'browser_vnc': '/x.sock'}))  # no dashboard address for Telegram
-        self.assertTrue(browser_viewer.view_link('/assistant/').startswith('/assistant/browser/vnc.html?'))
-        self.assertTrue(browser_viewer.view_link('/assistant/').endswith('&path=assistant/browser/websockify'))
+
+    def test_the_short_viewer_page_and_its_settings(self):
+        defaults, mandatory = browser_viewer.view_settings('/')
+        self.assertEqual(defaults, {'autoconnect': True, 'reconnect': True, 'resize': 'off', 'view_clip': True, 'frame': 'window'})
+        self.assertEqual(mandatory, {'path': '/browser/websockify'})
+        self.assertEqual(browser_viewer.view_settings('/assistant/')[1], {'path': '/assistant/browser/websockify'})
+        self.assertEqual(browser_viewer.short_page('<html lang="en"><head><title>x</title></head></html>', '/'),
+                         '<html lang="en"><head><base href="/browser/"><title>x</title></head></html>')
 
     def test_telegram_card_says_so_and_gets_a_button_only_for_a_https_viewer(self):
         row = {'id': 'abc', 'status': 'accepted', 'title': 'Reply', 'body': 'Body', 'preparation_status': 'running',
