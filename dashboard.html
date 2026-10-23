@@ -2127,6 +2127,7 @@ const notesN=n=>`${n} note${n===1?'':'s'}`;
 // What I've learned: one block per kind (how they write per channel, facts, how to do things, moved into skills); newest first.
 // Each block has a count and folds after 5 with Show all; a channel shows 2 lines with More. A condensed one says what it stands for, with Undo.
 const learnAll=new Set(),voiceOpen=new Set();
+const learnDay=d=>d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})}).replace(/,/g,'');  // Tue 20 Oct, as elsewhere
 const VOICE_ICON={linkedin:'linkedin',whatsapp:'whatsapp',slack:'slack',email:'gmail',gmail:'gmail',outlook:'gmail',x:'x','x dm':'x',twitter:'x',github:'github'};
 function learnedList(){
  const facts=state.facts||[],at=x=>x.updated_at||x.created_at||'',newest=(a,b)=>at(b).localeCompare(at(a));
@@ -2140,7 +2141,7 @@ function learnedList(){
   ['skills','Moved into skills','Notes that now live in a skill.',(state.moved||[]).map(m=>`<div><span class="grow"><strong>${esc(m.name)}</strong> ${notesN(m.notes)}</span><span class="learn-acts"><button type="button" class="quiet" data-unmerge-skill="${esc(m.skill_id)}" aria-label="Put back the notes in ${esc(m.name)}">Put back</button></span></div>`)]].filter(g=>g[3].length);
  if(!groups.length)return'<div class="muted">Nothing yet. When a card note holds beyond that card, I keep it here.</div>';
  const c=state.condensed;
- return (c&&c.notes?`<div class="muted learn-note">Condensed ${notesN(c.notes)} on ${new Date(c.at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}.</div>`:'')+
+ return (c&&c.notes?`<div class="muted learn-note">Condensed ${notesN(c.notes)} on ${esc(learnDay(new Date(c.at)))}.</div>`:'')+
   groups.map(([k,title,blurb,rows])=>{const all=learnAll.has(k)||rows.length<=6;
    return `<section class="learn-group" data-group="${k}" aria-labelledby="learn-${k}"><div class="learn-head"><h3 id="learn-${k}">${title} <span class="count">${rows.length}</span></h3><p>${blurb}</p></div><div class="list">${(all?rows:rows.slice(0,5)).join('')}${rows.length>6?`<button type="button" class="quiet learn-all" data-learn-all="${k}" aria-expanded="${all}">${all?'Show fewer':'Show all '+rows.length}</button>`:''}</div></section>`}).join('');
 }
