@@ -13,7 +13,7 @@ from test_connectors import a, Response
 
 TOKEN = 'fixture-intercom-token'
 ACCOUNT = {**intercom.SETUP['account'], 'workspace_id': 'abc123', 'admin_id': '42', 'region': 'us'}
-ME = {'type': 'admin', 'id': '42', 'email': 'Owner@example.com', 'app': {'id_code': 'abc123', 'type': 'app'}}
+ME = {'type': 'admin', 'id': '42', 'email': 'Owner@example.com', 'app': {'id_code': 'abc123', 'type': 'app', 'name': '  Example   Support '}}
 
 
 def conversation(cid='1', body='<p>Hello <b>world</b></p><script>secret()</script>', updated=100):
@@ -74,9 +74,9 @@ class IntercomTests(unittest.TestCase):
         self.assertIs(a.load_connector('intercom'), a.load_connector('intercom'))
         self.assertEqual(a.source_kind('intercom.conversation'), 'Intercom')
         setup = intercom.SETUP
-        self.assertEqual((setup['label'], setup['secret'], setup['ask']), ('Intercom', 'Intercom access token',
-                                                                           [('workspace_id', 'Intercom workspace ID')]))
+        self.assertEqual((setup['label'], setup['secret'], setup.get('ask')), ('Intercom', 'Intercom access token', None))
         self.assertIn('Developer Hub', setup['note'])
+        self.assertEqual(setup['note'].count('. '), 0)  # one line
         for text in (setup['what'], setup['note'], *setup['hints'].values()):
             self.assertNotIn('—', text)
 
@@ -91,21 +91,34 @@ class IntercomTests(unittest.TestCase):
         self.credential.assert_not_called()
         self.assertEqual(self.requests, [])
 
-    def test_connect_checks_the_workspace_and_keeps_admin_and_region(self):
-        account = {**intercom.SETUP['account'], 'workspace_id': 'https://app.intercom.com/a/apps/abc123/inbox'}
+    def test_connect_reads_the_workspace_from_the_token_and_keeps_it(self):
+        account = dict(intercom.SETUP['account'])
         self.assertIsNone(intercom.check({}, account, self.helpers))
-        self.assertEqual((account['workspace_id'], account['admin_id'], account['region'], account['email']),
-                         ('abc123', '42', 'us', 'owner@example.com'))
+        self.assertEqual((account['workspace_id'], account['workspace_name'], account['admin_id'], account['region'], account['email']),
+                         ('abc123', 'Example Support', '42', 'us', 'owner@example.com'))
         self.assertEqual([(m, p) for m, _, p, _ in self.requests], [('GET', '/me')])
         self.assertIsNone(self.store.checkpoint(account['id']))
-        wrong = {**intercom.SETUP['account'], 'workspace_id': 'other1'}
+        intercom.check({}, account, self.helpers)  # connecting again with a token of the same workspace
+        self.assertEqual(account['workspace_id'], 'abc123')
+        # an account keeps its workspace: a token from another one is refused, nothing changes
+        other = {**intercom.SETUP['account'], 'workspace_id': 'other1', 'workspace_name': 'Other'}
         with self.assertRaisesRegex(a.SourceError, '^account_identity_mismatch$'):
-            intercom.check({}, wrong, self.helpers)
-        self.assertNotIn('admin_id', wrong)
+            intercom.check({}, other, self.helpers)
+        self.assertEqual((other['workspace_id'], other['workspace_name']), ('other1', 'Other'))
+        self.assertNotIn('admin_id', other)
+        for broken in ({'app': None}, {'app': {'id_code': '../x'}}, {'id': 'x'}):
+            with self.subTest(broken=broken):
+                self.me = {**copy.deepcopy(ME), **broken}
+                with self.assertRaisesRegex(a.SourceError, '^intercom_invalid_profile$'):
+                    intercom.check({}, dict(intercom.SETUP['account']), self.helpers)
+        self.me = {**copy.deepcopy(ME), 'app': {'id_code': 'abc123'}}
+        unnamed = dict(intercom.SETUP['account'])
+        intercom.check({}, unnamed, self.helpers)
+        self.assertEqual(unnamed['workspace_name'], 'abc123')  # no name: its ID
 
     def test_connect_finds_an_eu_workspace(self):
         self.hosts = {'api.eu.intercom.io'}
-        account = {**intercom.SETUP['account'], 'workspace_id': 'abc123'}
+        account = dict(intercom.SETUP['account'])
         intercom.check({}, account, self.helpers)
         self.assertEqual(account['region'], 'eu')
         self.assertEqual([h for _, h, _, _ in self.requests], ['api.intercom.io', 'api.eu.intercom.io'])
@@ -116,7 +129,7 @@ class IntercomTests(unittest.TestCase):
     def test_a_rejected_token_says_so_without_the_token(self):
         self.hosts = set()
         with self.assertRaises(a.SourceError) as caught:
-            intercom.check({}, {**intercom.SETUP['account'], 'workspace_id': 'abc123'}, self.helpers)
+            intercom.check({}, dict(intercom.SETUP['account']), self.helpers)
         self.assertEqual(str(caught.exception), 'intercom:HTTP_401')
         self.assertNotIn(TOKEN, repr(caught.exception.__dict__))
         self.assertIn('intercom:HTTP_401', intercom.SETUP['hints'])
@@ -242,7 +255,7 @@ class IntercomTests(unittest.TestCase):
             def say(self, text=''):
                 self.said.append(str(text))
             def ask(self, prompt, default=''):
-                return {'Intercom workspace ID': 'abc123'}.get(prompt, default)
+                return default
             def secret(self, prompt):
                 return TOKEN if prompt.startswith('Intercom access token') else ''
             def yes(self, prompt, default=True):
@@ -254,7 +267,8 @@ class IntercomTests(unittest.TestCase):
         real = a.CONNECTOR_HELPERS.credential
         with patch.object(onboarding, 'assistant', return_value=a):
             account = onboarding.connect(config_path, 'intercom', ui, restart=False)
-        self.assertEqual((account['admin_id'], account['region'], account['workspace_id']), ('42', 'us', 'abc123'))
+        self.assertEqual((account['admin_id'], account['region'], account['workspace_id'], account['workspace_name']),
+                         ('42', 'us', 'abc123', 'Example Support'))
         saved = json.loads(config_path.read_text())
         self.assertEqual(saved['accounts'][0]['admin_id'], '42')
         self.assertNotIn(TOKEN, config_path.read_text())

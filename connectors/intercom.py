@@ -5,10 +5,11 @@ other method or path is refused before the token is read. It never replies, assi
 
 Config, with an access token from an app in Intercom's Developer Hub in a credential file:
     {"id": "intercom", "service": "intercom", "transport": "api", "boundary": "work:Acme",
-     "credential": "intercom", "workspace_id": "abc123de", "poll_seconds": 600}
+     "credential": "intercom", "poll_seconds": 600}
 The credential file holds the token alone, or an INTERCOM_ACCESS_TOKEN= line (set "credential_variable").
-Connecting checks the token on GET /me: it must belong to `workspace_id`, and it keeps which admin and region
-(US, EU or Australia) it belongs to. Every sync checks both again, exactly.
+Connecting reads the workspace from the token (GET /me) and keeps its ID and name, the admin and the region
+(US, EU or Australia). Every sync checks the workspace and admin again, exactly. Connecting an account that
+already has a workspace with a token from another workspace is refused: add that one as another account.
 
 Coverage: conversations updated in the last `bootstrap_days` (7), read in frozen search windows whose cursor
 commits with the conversations. Polls overlap six hours, the whole window is reread daily, and an expired
@@ -30,11 +31,9 @@ KINDS = {'intercom.conversation': 'Intercom'}
 SETUP = {'label': 'Intercom', 'what': 'Customer conversations in your Intercom workspace.',
          'account': {'id': 'intercom', 'service': 'intercom', 'transport': 'api', 'boundary': 'work',
                      'credential': 'intercom', 'poll_seconds': 600},
-         'note': 'In Intercom\'s Developer Hub, open your app (or create one), then Authentication: copy its access token. '
-                 'Read permissions are enough. The workspace ID is in your Intercom address, after /apps/.',
-         'ask': [('workspace_id', 'Intercom workspace ID')],
+         'note': 'In Intercom\'s Developer Hub, open your app, then Authentication, and copy its access token.',
          'secret': 'Intercom access token',
-         'hints': {'account_identity_mismatch': 'that token belongs to another Intercom workspace; check the workspace ID',
+         'hints': {'account_identity_mismatch': 'that token is for another Intercom workspace; add it as another account',
                    'intercom:HTTP_401': 'Intercom turned the access token down; copy it again from your app in the Developer Hub'}}
 VERSION = '2.11'
 # Intercom keeps each workspace in one region, with its own API and app address.
@@ -50,13 +49,6 @@ def readable(method, path):
     # Search is a read-only POST. No other POST or mutation is admitted.
     return (method == 'GET' and (path == '/me' or CONVERSATION.fullmatch(path) is not None)) or \
         (method == 'POST' and path == '/conversations/search')
-
-
-def workspace_of(value):
-    """The workspace ID as typed, or taken from an Intercom address (…/a/apps/<id>/… or …/a/inbox/<id>/…)."""
-    value = str(value or '').strip()
-    match = re.match(r'https://app\.(?:(?:eu|au)\.)?intercom\.com/a/(?:apps|inbox)/([A-Za-z0-9]+)(?:[/?#]|$)', value)
-    return match[1] if match else value
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -117,12 +109,9 @@ class Source:
         return data
 
     def connect(self):
-        """At connect: the token must belong to the workspace asked for. Finds its region and keeps which admin
-        it is, so every sync after can check both exactly."""
+        """At connect: reads which workspace, admin and region the token belongs to and keeps them, so every sync
+        after can check them exactly. An account that already has a workspace keeps it."""
         SourceError = self.helpers.SourceError
-        workspace = workspace_of(self.account.get('workspace_id'))
-        if not re.fullmatch(r'[A-Za-z0-9]{1,40}', workspace):
-            raise SourceError('intercom_invalid_workspace')
         # A token is only known in its workspace's region: a 401 elsewhere means try the next one.
         regions = [self.account['region']] if self.account.get('region') in REGIONS else list(REGIONS)
         for region in regions:
@@ -133,11 +122,14 @@ class Source:
                 if error.status != 401 or region == regions[-1]:
                     raise
         app = profile.get('app') if isinstance(profile.get('app'), dict) else {}
-        if app.get('id_code') != workspace:
-            raise SourceError('account_identity_mismatch')
-        if not re.fullmatch(r'[0-9]{1,20}', str(profile.get('id', ''))):
+        workspace = app.get('id_code')
+        if not isinstance(workspace, str) or not re.fullmatch(r'[A-Za-z0-9]{1,40}', workspace) \
+                or not re.fullmatch(r'[0-9]{1,20}', str(profile.get('id', ''))):
             raise SourceError('intercom_invalid_profile')
-        self.account.update(workspace_id=workspace, region=region, admin_id=str(profile['id']))
+        if self.account.get('workspace_id') and self.account['workspace_id'] != workspace:
+            raise SourceError('account_identity_mismatch')
+        name = ' '.join(str(app.get('name') or '').split())[:100]
+        self.account.update(workspace_id=workspace, workspace_name=name or workspace, region=region, admin_id=str(profile['id']))
         if isinstance(profile.get('email'), str) and '@' in profile['email']:
             self.account['email'] = profile['email'].lower()
         return profile
