@@ -16,6 +16,21 @@
 	default_bind 100.64.0.1 [fd00::1]
 }
 
+(restarting) {
+	# A service restart leaves 8787 closed for about a second. The dashboard proxies below keep
+	# dialing for 15 s instead of answering at once; when that runs out, the dashboard's paths
+	# (the path given to the import) get a JSON 503 rather than Caddy's empty 502, which no JSON parser can read.
+	handle_errors 502 503 504 {
+		@dashboard expression `{http.request.orig_uri.path}.startsWith("{args[0]}")`
+		handle @dashboard {
+			header Content-Type "application/json; charset=utf-8"
+			header Cache-Control no-store
+			header Retry-After 5
+			respond `{"error":"The Machine is restarting. Trying again in a moment.","restarting":true}` 503
+		}
+	}
+}
+
 (assistant) {
 	redir /assistant /assistant/
 	handle_path /assistant/* {
@@ -24,6 +39,8 @@
 			header_up -Tailscale-User-Name
 			header_up -Tailscale-User-Profile-Pic
 			header_up X-Tailnet-Client {remote_host}
+			lb_try_duration 15s
+			lb_try_interval 250ms
 		}
 	}
 }
@@ -38,7 +55,10 @@ assistant.example.com {
 		header_up -Tailscale-User-Name
 		header_up -Tailscale-User-Profile-Pic
 		header_up X-Tailnet-Client {remote_host}
+		lb_try_duration 15s
+		lb_try_interval 250ms
 	}
+	import restarting /
 }
 
 # The machine's ts.net name, certificate from tailscaled: the dashboard under /assistant/
@@ -48,6 +68,7 @@ machine.example.ts.net {
 		get_certificate tailscale
 	}
 	import assistant
+	import restarting /assistant
 	handle {
 		reverse_proxy 127.0.0.1:18789
 	}
