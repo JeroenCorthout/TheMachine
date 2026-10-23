@@ -107,8 +107,11 @@ The installer offers to publish the dashboard on your tailnet (`tailscale serve`
 
 The dashboard installs as a phone app and notifies you of each card, result, reminder and the weekly recap. With it, Telegram is optional.
 
-- **Android (Chrome):** open the dashboard, tap ⋮ → **Add to Home screen** (or **Install app**). Open The Machine from your home screen, open **Settings** (the gear at the top) → **General** and tap the bell, then allow notifications.
-- **iPhone/iPad (iOS 16.4 or newer):** open the dashboard in Safari, tap **Share** → **Add to Home Screen**. Open The Machine from your Home Screen (not a Safari tab: iOS only allows notifications there), open **Settings** (the gear) → **General**, tap the bell and allow.
+- **Android (Chrome):** open the dashboard and tap **Install** on the card at the top of Suggestions (or ⋮ → **Install app**). Open The Machine from your home screen and tap **Turn on** on the next card, then allow notifications.
+- **iPhone/iPad (iOS 16.4 or newer):** open the dashboard in Safari, tap **Share** → **Add to Home Screen**. Open The Machine from your Home Screen (not a Safari tab: iOS only allows notifications there) and tap **Turn on**.
+- **A computer (Chrome, Edge):** **Install** puts The Machine in its own window, to pin to the taskbar or dock. Safari on a Mac: **File** → **Add to Dock**. Firefox can't install it, but notifications work in the tab.
+
+The cards show up after the first minute, one at a time, and **Not now** waits 14 days (a second one stops it on that device). The same controls stay in **Settings** → **General** → **This device**: install the app, notifications on or off with **Send a test**, and light mode. If notifications are blocked, it says where to allow them again in the browser's site settings.
 
 Turn Telegram off or on later with `assistant telegram off` / `assistant telegram on <your Telegram user ID>`.
 

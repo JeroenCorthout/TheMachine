@@ -182,7 +182,7 @@ SAVED_LOGINS = [('billing.cobaltandfinch.example', 'alex@lumenlabs.example'), ('
 # (stage, why, the message that shows it). The last move is where it stands; next is the owner's next step.
 D = 24 * 60
 BOARDS = [
-    {'name': 'Partner listings', 'stages': [{'name': 'Contacted', 'hint': 'Asked or applied, no yes yet'}, {'name': 'Agreed', 'hint': 'They said yes'},
+    {'name': 'Partner listings', 'about': 'Partners we list our app with, one project per partner', 'stages': [{'name': 'Contacted', 'hint': 'Asked or applied, no yes yet'}, {'name': 'Agreed', 'hint': 'They said yes'},
                                             {'name': 'In review', 'hint': 'Copy or listing with one side'}, {'name': 'Partly live', 'hint': 'Some of it is up'},
                                             {'name': 'Live', 'hint': 'Everything agreed is up'}],
      'projects': [
@@ -223,7 +223,7 @@ BOARDS = [
          ('Lanternfish', 'lanternfish.example', 'Beatrix Oyelaran', [(10, True, 'Asked for a listing'), (9, False, 'Address not found')],
           [('Contacted', 'asked for a listing', 0), ('Stalled or declined', 'the only address bounced', 1)], 'Find a working contact or drop it'),
      ]},
-    {'name': 'Customer onboarding', 'stages': [{'name': 'Kickoff', 'hint': 'Signed, first call planned'}, {'name': 'Setting up', 'hint': 'Import and settings'},
+    {'name': 'Customer onboarding', 'about': 'New customers we are setting up, one project per customer', 'stages': [{'name': 'Kickoff', 'hint': 'Signed, first call planned'}, {'name': 'Setting up', 'hint': 'Import and settings'},
                                                {'name': 'Training', 'hint': 'Teams learning it'}, {'name': 'Live', 'hint': 'Using it every day'}],
      'projects': [
          ('Thornbury Freight onboarding', 'thornburyfreight.example', 'Maeve Dalton', [(3, False, 'Signed, can we plan the kickoff?')],
@@ -235,7 +235,7 @@ BOARDS = [
          ('Brackenridge Homes rollout', 'brackenridge.example', 'Owen Mbeki', [(40, False, 'Signed'), (6, False, 'Everyone is on it now')],
           [('Kickoff', 'signed', 0), ('Live', 'Owen says everyone uses it', 1)], 'Ask for a review'),
      ]},
-    {'name': 'Support escalations', 'stages': [{'name': 'Open'}, {'name': 'Waiting on us'}, {'name': 'Waiting on them'}, {'name': 'Solved'}],
+    {'name': 'Support escalations', 'about': 'Support cases that needed more than a reply', 'stages': [{'name': 'Open'}, {'name': 'Waiting on us'}, {'name': 'Waiting on them'}, {'name': 'Solved'}],
      'projects': [
          ('Kittiwake export bug', 'kittiwake.example', 'Signe Paulsen', [(2, False, 'The export drops custom fields')],
           [('Open', 'Signe reported missing custom fields', 0)], 'Reproduce it'),
@@ -246,13 +246,20 @@ BOARDS = [
 
 
 BY_HAND = {'Moorhen Data': ('Live', 1)}  # the owner dragged it there, a day ago
+# Projects on no board yet that are one kind of work: a review suggested a board for them ("Start a board for Hiring?")
+SUGGESTED = {'name': 'Hiring', 'about': 'Roles we are hiring for, one project per role',
+             'reason': 'Three open roles, each with candidates writing in',
+             'stages': [{'name': 'Sourced', 'hint': 'Candidates found or applied'}, {'name': 'Screening'}, {'name': 'Interviews'}, {'name': 'Offer'}, {'name': 'Hired'}],
+             'projects': [('Hire: support lead', 'tallowcrest.example', 'Imogen Hale', [(6, False, 'Applying for the support lead role, CV attached'), (4, True, 'Thanks, can we talk Thursday')]),
+                          ('Hire: backend engineer', 'gullwing.example', 'Tobiah Renn', [(9, False, 'Three backend candidates for you to look at'), (2, True, 'Let us meet the second one')]),
+                          ('Hire: product designer', 'mossgate.example', 'Signe Laurier', [(3, False, 'Portfolio for the product designer role')])]}
 
 
 def board_data():
     """Boards, their projects, the messages behind each move and one open card on a project waiting for a reply."""
     events, boards, cards = [], [], []
     for b in BOARDS:
-        board = {'name': b['name'], 'stages': b['stages'], 'projects': []}
+        board = {'name': b['name'], 'about': b['about'], 'stages': b['stages'], 'projects': []}
         for name, domain, contact, msgs, moves, step in b['projects']:
             first, key = contact.split()[0], slug(name)
             address = f'{first.lower()}@{domain}'
@@ -271,6 +278,20 @@ def board_data():
                                       'events': keys, 'moves': [{'stage': st, 'reason': why, 'event': keys[i]} for st, why, i in moves], 'next': step,
                                       **({'by_hand': {'stage': BY_HAND[name][0], 'days_ago': BY_HAND[name][1]}} if name in BY_HAND else {})})
         boards.append(board)
+    suggestion = {k: SUGGESTED[k] for k in ('name', 'about', 'reason', 'stages')}
+    suggestion['projects'] = []
+    for name, domain, contact, msgs in SUGGESTED['projects']:
+        first, key, keys = contact.split()[0], slug(name), []
+        for i, (days_ago, mine, text) in enumerate(msgs):
+            k, thread = f'hire:{key}:{i}', f'th{key}'
+            events.append({'key': k, 'account_id': 'work-gmail', 'kind': 'gmail.message', 'minutes_ago': days_ago * D + 60 + i * 9, 'title': name.split(': ')[1].capitalize(),
+                           'body': f'Hi {first},\n\n{text}.\n\nBest,\nAlex' if mine else f'Hi Alex,\n\n{text}.\n\n{first}',
+                           'metadata': {'from': f"{OWNER['name']} <{OWNER['email']}>" if mine else f'{contact} <{first.lower()}@{domain}>',
+                                        'to': f'{first.lower()}@{domain}' if mine else OWNER['email'], 'labels': ['SENT'] if mine else ['INBOX'],
+                                        'thread_id': thread, 'message-id': f'<{thread}.{i}@{domain}>', 'source_url': f'https://mail.example/#inbox/{thread}'}})
+            keys.append(k)
+        suggestion['projects'].append({'name': name, 'events': keys})
+    boards.append({'suggestion': suggestion})
     cards.append({'key': 'board-bramblebox', 'title': 'Follow up with Hugo at Bramblebox: no reply in 52 days', 'body': 'You asked for a listing and nudged twice; nothing back.',
                   'status': 'pending', 'events': ['board:bramblebox:2'], 'accounts': ['work-gmail'], 'minutes_ago': 300, 'source': 'email to Hugo Penrose',
                   'project': 'Bramblebox', 'urgent': False, 'snooze_hours': None})

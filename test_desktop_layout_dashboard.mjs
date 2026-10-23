@@ -116,13 +116,13 @@ try{
   assert.equal(names[0],'Suggestions · 4 ready · 8 to decide');assert.deepEqual(names.slice(1),['Calendar','Events','Graph','Feedback','Connections']);
   for(const q of ['#open-settings','#side-toggle','#live'])assert.ok(await page.locator(q).getAttribute('aria-label'),q+' has a name');
   const row=page.locator('.app-side nav [data-tab="inbox"]');await row.hover();await page.waitForTimeout(120);assert.equal(await page.locator('#side-tip').isVisible(),false,'not at once on hover');
-  await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide');
+  await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide · G then S');  // with its key
   const pos=await page.evaluate(()=>{const t=document.querySelector('#side-tip').getBoundingClientRect(),s=document.querySelector('#app-side').getBoundingClientRect(),r=document.querySelector('.app-side nav [data-tab="inbox"]').getBoundingClientRect();return {gap:t.left-s.right,mid:Math.abs((t.top+t.bottom)/2-(r.top+r.bottom)/2)}});
   assert.ok(pos.gap>=4&&pos.gap<=16&&pos.mid<2,JSON.stringify(pos));
   await page.screenshot({path:process.env.SHOT_DIR?process.env.SHOT_DIR+'/tip.png':'/dev/null'}).catch(()=>{});
   await page.mouse.move(900,500);await page.locator('#side-tip').waitFor({state:'hidden'});
   await page.locator('#open-settings').focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');
-  assert.equal(await page.locator('#side-tip').isVisible(),true,'at once on keyboard focus');assert.equal(await page.locator('#side-tip').textContent(),'Settings');
+  assert.equal(await page.locator('#side-tip').isVisible(),true,'at once on keyboard focus');assert.equal(await page.locator('#side-tip').textContent(),'Settings · G then ,');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#side-tip').isVisible(),false);
   await page.locator('body').click({position:{x:900,y:300}});await page.keyboard.press('Control+b');await page.waitForFunction(()=>document.documentElement.dataset.side==='open');
   assert.equal(await page.locator('#side-toggle').getAttribute('aria-label'),'Collapse sidebar');
@@ -171,7 +171,7 @@ try{
   await page.locator('#graph-fold').click();assert.ok(await page.locator('#graph-sub').isVisible());
   await page.locator('#side-toggle').click();assert.equal(await page.locator('.side-sub a[data-graph-sub="people"]').getAttribute('aria-label'),'People · 214');
   assert.ok(await page.locator('.side-sub .sq').first().isVisible());assert.ok(!(await page.locator('.side-sub .nl').first().isVisible()));
-  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Organisations · 38');
+  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Organisations · 38 · G then O');
   await page.locator('#side-toggle').click();await context.close()}
  // A phone and a tablet: a slim top bar with the menu button and the page's title; the sidebar is a drawer
  const touch=(page,from,to)=>page.evaluate(([from,to])=>{const el=document.elementFromPoint(from[0],from[1]),t=(x,y)=>new Touch({identifier:1,target:el,clientX:x,clientY:y});
