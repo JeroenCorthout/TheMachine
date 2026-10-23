@@ -99,9 +99,10 @@ async function graphPage(page,label){
  await pane.locator('[data-graph-list="people"]').click();
  await page.evaluate(()=>scrollTo(0,document.body.scrollHeight));await until(async()=>await pane.locator('.graph-list article').count()>=60,'people again '+label);
  // open a person and come back: same tab, order, pages and scroll
- await page.evaluate(()=>scrollTo(0,600));const y=await page.evaluate(()=>scrollY),had=await pane.locator('.graph-list article').count();
+ await until(async()=>!(await page.locator('[data-graph-panel="people"] .pager-loading').count()),'pages settled '+label);
+ const y=await page.evaluate(()=>{const n=document.querySelectorAll('[data-graph-panel="people"] .graph-list article .node')[5];scrollTo(0,0);scrollTo(0,n.getBoundingClientRect().top-200);return scrollY}),had=await pane.locator('.graph-list article').count();
  assert.equal(await page.title(),'The Machine · People','the tab title follows the page '+label);
- await pane.locator('.graph-list article .node').nth(5).click();await page.locator('.graph-crumbs').waitFor();
+ await page.evaluate(()=>document.querySelectorAll('[data-graph-panel="people"] .graph-list article .node')[5].click());await page.locator('.graph-crumbs').waitFor();  // no scroll on the way
  assert.match(await page.title(),/^The Machine · Person \d{3}$/,'the person is in the tab title '+label);
  const before=calls.length;await page.goBack();
  await until(async()=>await page.locator('[data-graph-panel="people"] .graph-list article').count()===had,'pages kept on back '+label);
@@ -112,7 +113,7 @@ async function graphPage(page,label){
  const n0=calls.length,took=await page.evaluate(()=>{const i=document.querySelector('#people-query'),t=performance.now();i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));
   return document.querySelector('[data-graph-panel="people"]:not([hidden]) .graph-list article')?performance.now()-t:1e9});assert.ok(took<100,'the list is back at once '+label+': '+took+'ms');assert.equal(calls.length,n0,'no network call to clear '+label);
  assert.equal(await page.locator('[data-graph-panel="people"] .graph-list article').count(),had,'pages kept after a search '+label);
- {const ya=await page.evaluate(()=>scrollY);assert.ok(Math.abs(ya-yq)<4,'scroll kept after a search '+label+' '+yq+' '+ya+' '+y)}
+ await until(async()=>Math.abs(await page.evaluate(()=>scrollY)-yq)<4,'scroll kept after a search '+label);  // set in the next frame, before it paints
  let release;searchHold=new Promise(r=>release=r);
  await q.fill('slow');await until(async()=>calls.some(c=>c.startsWith('/api/graph?q=slow')),'slow asked '+label);
  assert.equal(await page.locator('#people-view').textContent().then(t=>t.includes('Nobody by that name')),false,'no "Nobody" while it searches '+label);

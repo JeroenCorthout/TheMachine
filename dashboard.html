@@ -2806,7 +2806,7 @@ const pagerNear=el=>{const f=el.querySelector('.pager-foot');if(!f||!el.offsetPa
 function pagerMore(key){const p=pagers.get(key);if(!p||p.next==null&&!p.busy)return Promise.resolve();if(p.busy)return p.pending;return p.pending=pagerLoad(key,p)}
 async function pagerLoad(key,p){p.busy=true;p.failed=false;const els=()=>[...document.querySelectorAll('[data-pager]')].filter(e=>e.dataset.pager===key);
  for(const el of els())pagerFootPaint(el,p);let fresh='';
- try{const r=await p.load(p.next);if(pagers.get(key)!==p)return;p.items.push(...r.items);fresh=r.items.map(x=>p.row(x)).join('');p.html+=fresh;p.next=r.next??null;p.total=r.total??p.total;p.onload?.(r.items)}catch{p.failed=true}finally{p.busy=false}
+ try{const r=await p.load(p.next);if(pagers.get(key)!==p)return;const have=new Set(p.items.map(x=>x?.id).filter(Boolean));r.items=r.items.filter(x=>!x?.id||!have.has(x.id));p.items.push(...r.items);fresh=r.items.map(x=>p.row(x)).join('');p.html+=fresh;p.next=r.next??null;p.total=r.total??p.total;p.onload?.(r.items)}catch{p.failed=true}finally{p.busy=false}
  for(const el of els()){el.querySelector('.pager-rows')?.insertAdjacentHTML('beforeend',fresh);pagerFootPaint(el,p)}
  if(fresh)requestAnimationFrame(()=>{for(const el of els())if(pagerNear(el)){pagerMore(key);break}})}
 const pagerSeen=new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){const el=e.target.closest('[data-pager]');if(el&&pagerNear(el))pagerMore(el.dataset.pager)}},{rootMargin:'0px 0px 600px 0px'});
@@ -2815,7 +2815,14 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-pager-more
 const doneExtra=new Map();
 const closedAt=s=>s.closed_at||(state?.decisions||[]).filter(d=>d.suggestion_id===s.id&&['complete','reject'].includes(d.choice)).map(d=>d.created_at).sort().at(-1)||s.created_at;
 const doneKey=()=>'done:'+scopeFilter;
-function donePager(){return pager(doneKey(),cursor=>request(`api/cards/done?cursor=${encodeURIComponent(cursor)}${scopeFilter==='all'?'':'&scope='+scopeFilter}`).then(r=>{for(const c of r.cards)doneExtra.set(c.id,c);cardsMerge();return {items:r.cards,next:r.next,total:r.total}}),s=>suggestionCard(s))}
+// A Machine from before the Done pages has no api/cards/done: then the done cards in the status payload are the list
+const doneLocal=()=>{const items=(state?.suggestions||[]).filter(s=>closed(s)&&(scopeFilter==='all'||s.scope===scopeFilter)).sort((a,b)=>closedAt(b).localeCompare(closedAt(a)));return {items,next:null,total:items.length}};
+// The first page is the done cards the status payload already has, so the list is there at once; the Machine sends the rest
+function donePager(){const fresh=!pagers.has(doneKey()),p=pager(doneKey(),cursor=>request(`api/cards/done?cursor=${encodeURIComponent(cursor)}${scopeFilter==='all'?'':'&scope='+scopeFilter}`).catch(()=>null).then(r=>{
+  if(!Array.isArray(r?.cards)){const l=doneLocal(),n=Number(cursor)||0;return {items:l.items.slice(n,n+30),next:n+30<l.items.length?String(n+30):null,total:l.total}}
+  for(const c of r.cards)doneExtra.set(c.id,c);cardsMerge();return {items:r.cards,next:r.next,total:r.total}}),s=>suggestionCard(s));
+ if(fresh){const l=doneLocal(),n=Math.min(30,l.items.length),total=Math.max(l.total,state?.done_counts?.[scopeFilter]??0);p.items=l.items.slice(0,n);p.html=p.items.map(x=>p.row(x)).join('');p.total=total;p.next=total>n?String(n):null}
+ return p}
 function cardsMerge(){if(!state?.suggestions)return;const ids=new Set(state.suggestions.map(s=>s.id));for(const c of doneExtra.values())if(!ids.has(c.id))state.suggestions.push(c)}
 let doneSeen='';  // done counts and ids as last shown: when they change, the Done lists start over from the top
 const listShown={};const clipList=(id,rows,empty,n=3)=>{const k=listShown[id]||n;return rows.length?rows.slice(0,k).join('')+(rows.length>k?`<button type="button" class="quiet more-rows" data-more="${id}" data-shown="${k}">Show ${Math.min(10,rows.length-k)} more</button>`:''):empty};
@@ -4790,7 +4797,7 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
   if(p.failed&&!p.items.length)throw new Error('Couldn’t search. Try again.');
   draw(p.items.length?`<div class="graph-found"><div class="section-head"><h2>Found</h2></div>${pagerSlot(key,'','graph-list')}</div>`:'<div class="empty all-clear graph-found"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nobody by that name.</strong>Try part of a name, an address or a company.</div></div>','search');pagerMount(view);return}
  const g=await request('api/graph'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';
- const back=quiet?null:graphScroll;graphScroll=null;const lc=g.list_counts||Object.fromEntries(['people','quiet','new','orgs','warmup','projects','projects_done'].map(k=>[k,(g[k]||[]).length]));graphLocal=g.list_counts?null:g;
+ const back=graphScroll;  /* back from a person: a quiet refresh that wins the race restores it too */const lc=g.list_counts||Object.fromEntries(['people','quiet','new','orgs','warmup','projects','projects_done'].map(k=>[k,(g[k]||[]).length]));graphLocal=g.list_counts?null:g;
  if(JSON.stringify(lc)!==JSON.stringify(graphLists)||!g.list_counts){pagerDrop('graph');graphLists=lc}
  const panes=[{id:'people',label:'People',html:sameList(g.same_person)+graphTabs('people')},
   {id:'projects',label:'Projects',html:projectsPane(g)},
@@ -4799,7 +4806,7 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
  const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;graphCountsSet(g.counts);if(version===graphRequest){graphShown=current||'';graphHashSync();graphSubSync()}
  rolesRow(panes.some(p=>p.id==='roles'),waiting);draw((panes.length?panes.map(p=>`<div class="sub-pane" role="tabpanel" data-graph-panel="${p.id}"${p.id===current?'':' hidden'}>${p.html}</div>`).join(''):'')
   ||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing mapped yet.</strong>People appear as messages and meetings come in.</div></div>');
- if(version===graphRequest){pagerMount(view);if(back!=null)scrollTo(0,back)}if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
+ if(version===graphRequest){pagerMount(view);if(back!=null&&version===graphRequest){graphScroll=null;scrollTo(0,back)}}if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
 const graphPost=(action,args)=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
 $('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){for(const x of $('#people-view').querySelectorAll('.graph-events [hidden]'))x.hidden=false;e.target.closest('[data-ge-more]').remove();return}if(openEventFrom(e))return;
  const q=e.target.closest('[data-quote-event]');if(q){openEvent(q.dataset.quoteEvent,'');return}
