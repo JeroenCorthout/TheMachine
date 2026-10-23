@@ -40,7 +40,7 @@ class HandoffSources(unittest.TestCase):
         self.assertEqual(self.ask('handoff', question, 'q1'), 'waiting')
         made = self.fleet.decide('q1', 'once')['card_id']
         row = self.card_row(made)
-        self.assertEqual(row['title'], 'Take over from Pat: Send Sam the pricing')
+        self.assertEqual(row['title'], 'Send Sam the pricing')
         self.assertEqual(row['body'], 'Pat asks you to take this on: “Send Sam the pricing for 40 seats.” Contact: sam@client.example.')
         self.assertTrue(row['source_line'].startswith('Source: email from Sam Lee, via Pat · '))
         # (+1 is Sam's own email on this Machine, the contact's latest.) The handoff's own event is the card's text, not a source:
@@ -115,7 +115,8 @@ class HandoffSources(unittest.TestCase):
         draft = self.fleet.handoff_draft(card)
         self.assertEqual((draft['task'], draft['note']), ('Send Sam the pricing for 40 seats', 'Sam is a big account'))  # the form's lead and note
         summary = draft['summary']
-        self.assertEqual(summary, 'Send Sam the pricing for 40 seats My note: Sam is a big account')
+        self.assertEqual(summary, 'Send Sam the pricing for 40 seats. Sam is a big account')  # plain sentences, no "My note:"
+        self.assertEqual(fleet_requests.sentences('Done!', ' Next ', ''), 'Done! Next')
         self.assertNotIn('The Machine', summary)
 
     def test_a_teammates_sources_are_kept_in_their_fixed_form(self):

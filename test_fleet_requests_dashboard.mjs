@@ -54,7 +54,7 @@ try{
  await form.locator('button.primary').click();
  await page.getByText('Handed off to Pat, waiting for an answer').waitFor();
  assert.equal(await page.getByText('is on it').count(),0);  // a claim without a teammate's name says nothing
- assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats. My note: He is a big account.',contact:'sam@client.example',sources:[]}});
+ assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats. He is a big account.',contact:'sam@client.example',sources:[]}});
  // Requests wait as cards under Suggestions (tagged Fleet, Work) with Accept, their words shown as text; the Suggestions
  // badge counts them and the Fleet tab has no badge.
  const intro=page.locator('#suggestions #fleet-q_'+'1'.repeat(16));await intro.waitFor();

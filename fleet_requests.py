@@ -91,6 +91,12 @@ def carried_text(text, chars):
     return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip()[:chars]
 
 
+def sentences(*parts):
+    """Parts of a message joined as plain sentences, with a full stop between them where one is missing."""
+    parts = [' '.join(str(p).split()) for p in parts if p and str(p).strip()]
+    return ' '.join(p if n == len(parts) - 1 or p[-1] in '.!?…' else p + '.' for n, p in enumerate(parts))
+
+
 def parse_sources(value):
     """The sources a handoff carries, in their fixed form; anything else in them is dropped."""
     out, budget = [], SOURCES_CHARS
@@ -366,7 +372,7 @@ class Requests:
             # card's own sources (copies on this Machine, readable offline), never links into their mailbox.
             first = sender.split()[0] if sender else 'A teammate'
             carried = question.get('sources') or []
-            return self.make_card(kind='handoff', ask_id=row['id'], name=sender, title=f'Take over from {first}: {question["title"]}'[:90],
+            return self.make_card(kind='handoff', ask_id=row['id'], name=sender, title=question['title'][:90],
                                   body=(f'{first} asks you to take this on: “{summary}”'
                                         + (f' Contact: {question["contact"]}.' if question.get('contact') else '')),
                                   evidence=evidence, due=question.get('when'), **({'carried': carried} if carried else {}))
@@ -422,7 +428,7 @@ class Requests:
         else:
             task = (self.card_task or (lambda row: row.get('title') or ''))({**dict(card), **(dict(prep) if prep else {})})
             mine_note = ' '.join(str(note['feedback']).split()) if note else ''
-        summary = ' '.join(x for x in (task, mine_note and f'My note: {mine_note}') if x)
+        summary = sentences(task, mine_note)
         first = lambda m: not (ready and self.is_person(m, ready))  # the teammate that text is for comes first, so it's the default
         fleets = [f for f in [{'id': ref, 'name': self.fleets()[ref].get('name'),
                    'members': sorted(({'member_id': m['member_id'], 'name': fleet.label(m), '_first': first(m)} for m in self.teammates(ref)

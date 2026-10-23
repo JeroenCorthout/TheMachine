@@ -572,7 +572,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 .card .card-foot{margin-top:10px;font-size:.84rem;color:var(--faint)}.card .card-foot .source{color:var(--faint)}
 .card .checkin-line{margin:-4px 0 0;font-size:.84rem;color:var(--faint)}  /* when a handoff comes back to check in: the source line's style, under the status */
 .card .card-foot .read-original{align-items:flex-start;color:var(--faint);font-weight:400;text-align:left;text-decoration:none}.card .card-foot .read-original:is(:hover,:focus,:active){background:none;text-decoration:none}
-.card .card-foot .read-original::before,.card .card-foot .read-original>span{flex:none;margin-top:calc((1lh - 14px)/2)}.card .card-foot .read-original>span{margin-top:0}  /* icon and arrow sit on the first line when the source wraps; no underline, so the arrow never gets one */
+.card .card-foot .read-original::before,.card .card-foot .read-original>span{flex:none;margin-top:calc((1lh - 14px)/2)}.card .card-foot .read-original>span.src{flex:0 1 auto;min-width:0;margin-top:0}.src-date{white-space:nowrap}.card .card-foot .read-original>span{margin-top:0}  /* icon and arrow sit on the first line when the source wraps; no underline, so the arrow never gets one */
 @media (hover:hover){.card .card-foot .read-original:hover{color:var(--text)}}
 .card .foot-links{display:inline-flex;gap:14px;margin-left:auto}.card .foot-links button{margin:0;padding:0;border:0;background:none;min-height:0;font-size:inherit;font-weight:600;color:var(--muted)}.card .foot-links button:hover{color:var(--text)}
 /* Button tiles: equal height, the primary action in mint first; on a phone three per row, the rest share the next row. */
@@ -1240,6 +1240,7 @@ const snoozedUntil=v=>new Date(v).toLocaleString('en-GB',{weekday:'short',day:'n
 const checkinLabel=s=>'Check in with '+s.handoff_wait.name+' '+chatUntil(s.snoozed_until)+' if no answer';
 const backLabel=v=>'Back '+new Date(v).toLocaleString([],{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})+' · '+ago(v);
 const sourceText=v=>{const t=String(v||'').replace(/^Source:\s*/i,'');return t.charAt(0).toUpperCase()+t.slice(1)};
+const sourceHtml=v=>{const t=sourceText(v),i=t.lastIndexOf(' · ');return`<span class="src">${i<0?esc(t):`${esc(t.slice(0,i+3))}<span class="src-date">${esc(t.slice(i+3))}</span>`}</span>`};  // the date never splits over two lines
 const syncError=v=>v==='android_feed_unavailable'?'Notification bridge unavailable':v==='android_offline'?'Phone disconnected':v==='android_notifications_unavailable'?'Phone notifications unavailable':v==='android_gateway_unavailable'?'OpenClaw connection unavailable':v?.startsWith('network')?'Connection problem':v==='timeout'?'Connection timed out':['slack:HTTP_429','slack_ratelimited'].includes(v)?'Slack rate limit':readableError(v);
 // Error codes like linkedin_read_failed, in words: the source's name and what went wrong.
 function readableError(v){if(!v)return 'Sync error';const m=/^([a-z]+)[_:](.+)$/.exec(v),name=m?service(m[1]):'',what=m?m[2]:v;
@@ -1377,7 +1378,7 @@ const statusLine=(()=>{const line=(text,cls='')=>`<p class="note status-line${cl
 const drafts=s.status==='prepared'?smart.filter(a=>DRAFT_KINDS.includes(a.kind)&&draftText(a)):[];
 // One faint line, like the site: the source itself opens the original; Read result and Copy draft (when there is a draft or file) sit at its end.
     const results=s.status==='prepared'||s.result_files?.length?`<span class="foot-links"><button type="button" class="link" data-id="${s.id}" data-result="read">Read result</button>${(messageDrafts(s).length||s.result_files?.length)&&!copyLead(s,smart)?`<button type="button" class="link" data-id="${s.id}" data-result="copy">Copy draft</button>`:''}</span>`:'';
-    const readLabel=isEmail(s)?'Read email':'Read message',src=s.source_line?esc(sourceText(s.source_line)):'';
+    const readLabel=isEmail(s)?'Read email':'Read message',src=s.source_line?sourceHtml(s.source_line):'';
     const foot=hasOriginal(s)||s.source_line||s.snoozed_until||results?`<div class="card-foot">${hasOriginal(s)?`<button type="button" class="link read-original via-${cardViaIcon(s)}" data-id="${s.id}" data-original="read" aria-label="${readLabel}" title="${readLabel}">${src||readLabel}<span aria-hidden="true"> ↗</span></button>`:src?`<p class="source">${src}</p>`:''}${s.snoozed_until&&!s.handoff_wait?`<span class="back-on" title="${esc(date(s.snoozed_until))}">${esc(backLabel(s.snoozed_until))}</span>`:''}${results}</div>`:'';
 // A page the task's own run worked on opens in the Machine's browser (its viewer, with that tab in front), never in yours.
 const viewIn=s.browser_view&&!smart.some(a=>a.browser)?[{kind:'open',browser:true,label:s.browser_view.label,site:s.browser_view.site}]:[];
@@ -3048,7 +3049,7 @@ $('#suggestions').addEventListener('click',async e=>{const c=e.target.closest('[
 $('#suggestions').addEventListener('input',e=>{const t=e.target.closest('.fleet-handoff-form');const d=t&&handingOff.get(t.dataset.card);if(!d)return;
  const moved=d.to!==t.elements.to.value;Object.assign(d,{to:t.elements.to.value,email:t.elements.email?t.elements.email.value:d.email,task:t.elements.task.value,note:t.elements.note.value});if(moved)render()});
 $('#suggestions').addEventListener('submit',async e=>{const t=e.target;if(!t.classList.contains('fleet-handoff-form'))return;e.preventDefault();const [fleet,member_id]=t.elements.to.value.split('|'),d=handingOff.get(t.dataset.card)||{};
- const note=t.elements.note.value.trim(),summary=[t.elements.task.value.trim(),note&&'My note: '+note].filter(Boolean).join(' ');
+ const parts=[t.elements.task.value.trim(),t.elements.note.value.trim()].filter(Boolean),summary=parts.map((x,n)=>n<parts.length-1&&!/[.!?…]$/.test(x)?x+'.':x).join(' ');  // as plain sentences
  if(t.elements.to.value==='email'){try{await fleetPost('fleet_handoff_email',{suggestion_id:t.dataset.card,email:t.elements.email.value.trim(),title:t.elements.title.value.trim(),summary});
   handingOff.delete(t.dataset.card);toast('Your email is ready on the card. Read it, then send it yourself.');await refresh()}catch(err){toast(err.message,true)}return}
  try{await fleetPost('fleet_handoff',{suggestion_id:t.dataset.card,fleet,member_id,title:t.elements.title.value.trim(),summary,contact:d.contact&&d.with_contact!==false?d.contact:'',sources:(d.sources||[]).map((_,n)=>n).filter(n=>!d.dropped?.includes(n))});
