@@ -1256,8 +1256,8 @@ body main{padding-top:0}
 #settings-browser{display:none!important}  /* Browser is in the sidebar */
 /* Graph's own rows: People, Organisations and Projects, each a small coloured square and a count, under a fold */
 .side-row{position:relative;display:flex;align-items:center}
-.side-row>button[data-tab]{padding-right:36px!important}
-.app-side nav .side-fold{position:absolute;right:4px;top:50%;display:grid;place-items:center;width:26px;height:26px;min-height:0;margin:-13px 0 0;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
+.side-row>button[data-tab]~.side-fold{right:auto;left:var(--fold-x,84px)}  /* right after the label, so the count keeps the rows' column */
+.app-side nav .side-fold{position:absolute;right:4px;top:50%;display:grid;place-items:center;justify-content:center;width:26px;height:26px;min-height:0;margin:-13px 0 0;padding:0;border:0;border-radius:6px;background:none;box-shadow:none;color:var(--side-quiet);cursor:pointer}
 .app-side nav .side-fold:hover{background:color-mix(in srgb,var(--text) 7%,transparent);color:var(--text)}
 .app-side nav .side-fold svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur) var(--ease)}
 .app-side nav .side-fold[aria-expanded="false"] svg{transform:rotate(-90deg)}
@@ -1359,7 +1359,7 @@ body main{padding-top:0}
   .app-side nav .badge,.side-sub .badge{font-size:var(--fs-sm)}
   .side-sub a{min-height:40px;gap:12px;padding-left:22px;font-size:var(--fs-md)}
   .side-sub .sq{width:18px;height:18px}
-  .app-side nav .side-fold{width:36px;height:36px;margin-top:-18px}
+  .app-side nav .side-fold{width:40px;height:44px;margin-top:-22px}
   .side-label{min-height:34px;font-size:var(--fs-sm)}.side-label button{padding:6px 9px}
   .side-head{min-height:38px;font-size:var(--fs-sm)}
   .side-cards{flex:none;min-height:auto;margin-top:12px;overflow:visible;scrollbar-gutter:auto}  /* on a phone the whole drawer scrolls as one column */
@@ -3173,7 +3173,9 @@ function graphSubSync(){pageHead();const on=!$('#people').hidden,graph=$('nav [d
 function graphHashSync(){if($('#people').hidden||graphNode||!graphShown)return;const h=location.hash;if(h&&!/^#(graph|people)(=[a-z]+)?$/.test(h))return;const want='#graph='+graphShown;if(h!==want)history.replaceState(null,'',location.pathname+location.search+want)}
 $('#graph-sub').addEventListener('click',e=>{const a=e.target.closest('a[data-graph-sub]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const url=location.pathname+location.search+'#graph='+a.dataset.graphSub;
  if(history.state?.drawer)history.replaceState(null,'',url);else if(location.hash!=='#graph='+a.dataset.graphSub)history.pushState(null,'',url);openTabLink();graphSubSync();if(!DESK.matches)scrollTo(0,0)});
-{const fold=$('#graph-fold'),set=open=>{fold.setAttribute('aria-expanded',String(open));fold.setAttribute('aria-label',open?'Hide People, Organisations and Projects':'Show People, Organisations and Projects');$('#graph-sub').hidden=!open};
+{const fold=$('#graph-fold'),lab=fold.parentNode.querySelector('.nl'),place=()=>{const w=lab.offsetLeft+lab.offsetWidth;if(w)fold.style.setProperty('--fold-x',w+(matchMedia('(max-width:1023px)').matches?-6:0)+'px')};
+ new ResizeObserver(place).observe(lab);place();
+ const set=open=>{fold.setAttribute('aria-expanded',String(open));fold.setAttribute('aria-label',open?'Hide People, Organisations and Projects':'Show People, Organisations and Projects');$('#graph-sub').hidden=!open};
  set(sideStore.get('graph-sub')!=='closed');fold.onclick=()=>{const open=fold.getAttribute('aria-expanded')!=='true';set(open);sideStore.set('graph-sub',open?'open':'closed')}}
 // The counts come with the Graph; fetch it once at the start so the rows show them before it is opened
 setTimeout(()=>{if(!graphCounts)request('api/graph').then(g=>graphCountsSet(g?.counts)).catch(()=>{})},1500);

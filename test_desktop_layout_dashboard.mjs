@@ -10,6 +10,15 @@ const quietTagline=async(page,label)=>{const q=await page.evaluate(()=>{const t=
  assert.ok(q.size<=18,'the tagline is about body size '+label+': '+q.size);assert.equal(q.lines,1,'the tagline is one line '+label);assert.ok(q.muted,'the tagline is muted '+label);
  assert.ok(q.sub>=13&&q.below,'the count is readable under it '+label)};
 
+// Graph folded shows its count in the same column as the other rows' counts, and its chevron is a toggle of its own,
+// right after the label with clear space on both sides; open, the rows under it carry the counts
+const foldedRow=async(page,label,tap)=>{const g=await page.evaluate(()=>{const r=q=>document.querySelector(q).getBoundingClientRect();
+   return {lab:r('[data-tab="people"] .nl'),fold:r('#graph-fold'),chev:r('#graph-fold svg'),count:r('#badge-people'),other:r('#badge-inbox'),text:document.querySelector('#badge-people').textContent}});
+ assert.equal(g.text,'1','the Graph count shows '+label);assert.ok(Math.abs(g.count.right-g.other.right)<=1,'the Graph count is in the rows\' column '+label+': '+g.count.right+' vs '+g.other.right);
+ assert.ok(g.chev.left-g.lab.right>=5&&g.count.left-g.chev.right>=24,'the chevron sits apart from the label and the count '+label+': '+JSON.stringify(g));
+ assert.ok(g.fold.width>=tap[0]&&g.fold.height>=tap[1],'the chevron has a tap target '+label+': '+g.fold.width+'x'+g.fold.height);
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('#graph-fold')).opacity==='1',null,{timeout:2000})};  // folded, the chevron shows
+
 // The desktop layout (from 1024px): a fixed sidebar with the tabs as rows, the cards as a list by section (Done folded,
 // each fold remembered), a filter and a Work/Personal switch; the main area gets a title per tab. The sidebar folds to
 // icons and remembers it, also when the browser blocks storage. Every tab scrolls as a page at 1024, 1440 and 1920,
@@ -27,7 +36,7 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(url.pathname==='/api/status'){res.end(JSON.stringify(state()));return}
  if(url.pathname==='/api/graph'){const n=(kind,name,i)=>({id:kind+':'+i,kind,name,strength:2-i/10,last_at:now,signals:9,ids:[]});
-  res.end(JSON.stringify({counts:{person:214,org:38,project:9},people:[n('person','Robin Example',1),n('person','Alex Example',2)],quiet:[],new:[],projects:[n('project','Garden plan',3)],orgs:[n('org','Example Ltd',4)],whos_who:[],waiting:0}));return}
+  res.end(JSON.stringify({counts:{person:214,org:38,project:9},people:[n('person','Robin Example',1),n('person','Alex Example',2)],quiet:[],new:[],projects:[n('project','Garden plan',3)],orgs:[n('org','Example Ltd',4)],whos_who:[],waiting:1}));return}
  if(url.pathname==='/api/action'){const r=JSON.parse(body);res.end(JSON.stringify(r.action==='card_chat'?history:{}));return}
  res.statusCode=url.pathname.startsWith('/brand/')?404:200;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -158,6 +167,7 @@ try{
   await page.locator('nav [data-tab="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');assert.equal(await lit(),'people');
   await page.locator('#graph-fold').click();assert.ok(!(await page.locator('#graph-sub').isVisible()));assert.equal(await page.locator('#graph-fold').getAttribute('aria-expanded'),'false');
   await page.reload();await page.locator('#task-'+cards[0].id).waitFor({state:'attached'});assert.ok(!(await page.locator('#graph-sub').isVisible()),'the fold is remembered');
+  await page.mouse.move(800,500);await page.locator('#badge-people:text("1")').waitFor();await foldedRow(page,'at 1440',[26,26]);
   await page.locator('#graph-fold').click();assert.ok(await page.locator('#graph-sub').isVisible());
   await page.locator('#side-toggle').click();assert.equal(await page.locator('.side-sub a[data-graph-sub="people"]').getAttribute('aria-label'),'People · 214');
   assert.ok(await page.locator('.side-sub .sq').first().isVisible());assert.ok(!(await page.locator('.side-sub .nl').first().isVisible()));
@@ -220,6 +230,11 @@ try{
   assert.equal(Math.round(d.x),0);assert.ok(d.w>=Math.min(w*.8,360)&&d.w<=w*.9,'drawer width '+d.w);assert.ok(d.inert,'the page behind is inert');assert.equal(d.focus,'side-toggle');assert.ok(d.settings>h-120,'Settings at the bottom');assert.ok(d.wide);
   assert.equal(await page.locator('[data-side-fold="done"]').getAttribute('aria-expanded'),'false');assert.ok(await page.locator('#side-cards a').first().isVisible());
   assert.ok(!(await page.locator('#side-search').isVisible()),'no search field in the drawer');
+  await page.locator('#graph-fold').click();assert.ok(!(await page.locator('#graph-sub').isVisible()));await foldedRow(page,'at '+w,[40,44]);
+  {const g=await page.evaluate(()=>{const r=q=>document.querySelector(q).getBoundingClientRect();return {lab:r('[data-tab="people"] .nl'),chev:r('#graph-fold'),count:getComputedStyle(document.querySelector('#badge-people')).display}});
+   await page.locator('#graph-fold').click();assert.ok(await page.locator('#graph-sub').isVisible());
+   const o=await page.evaluate(()=>({chev:document.querySelector('#graph-fold').getBoundingClientRect(),count:getComputedStyle(document.querySelector('#badge-people')).display}));
+   assert.ok(Math.abs(o.chev.left-g.chev.left)<1,'open, the chevron stays put at '+w);assert.equal(o.count,'none','open, the rows carry the counts at '+w)}
   const rows=await page.locator('.app-side nav button[data-tab]:not([hidden])').evaluateAll(b=>b.map(x=>x.getBoundingClientRect().height));assert.ok(rows.every(x=>x>=44),'rows are a thumb high: '+rows);
   // Esc closes it and gives focus back; so do ✕, the shade and back, and none leaves an entry on the history
   await page.keyboard.press('Escape');await settle(page);assert.ok(!(await isOpen(page)));assert.equal(await page.evaluate(()=>document.activeElement.id),'drawer-open');assert.ok(!(await page.evaluate(()=>document.querySelector('main').inert)));
