@@ -49,7 +49,7 @@ function answeredOnly(item:any){try{return item.status==='prepared'&&JSON.parse(
 function askQuestion(item:any){if(['completed','rejected','snoozed'].includes(item.status)||item.handled_hint)return '';
   const reason=String(item.preparation_reason||'').trim();
   const qs=Array.isArray(item.preparation_questions)?item.preparation_questions:[];
-  if(item.preparation_status==='blocked'&&reason&&!item.preparation_error&&retryLabel(reason)!=='Continue'&&(qs.length||!item.preparation_browser))return qs.length?qs.map((q:any)=>q.question).join(' '):reason;
+  if(item.preparation_status==='blocked'&&reason&&!item.preparation_error&&retryLabel(reason)!=='Continue'&&(qs.length||!item.preparation_no_questions&&!item.preparation_browser))return qs.length?qs.map((q:any)=>q.question).join(' '):reason;
   if(item.status!=='prepared'||item.preparation_status==='blocked'||taskActions(item).some((a:any)=>a.kind!=='open'))return '';
   try{const o=JSON.parse(item.outcome||'{}'),q=String(o.needs||'').trim();return o.state==='needs_you'&&q.endsWith('?')?q:''}catch{return ''}}
 function cardButtons(item: any) {

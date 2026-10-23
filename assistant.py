@@ -1396,7 +1396,7 @@ class WhatsApp:
         self.config, self.account = config, account
 
     def read(self, command):
-        if command[:2] not in (['auth', 'status'], ['messages', 'list']):
+        if command[:2] not in (['auth', 'status'], ['messages', 'list'], ['chats', 'show'], ['chats', 'list']):
             raise SourceError('unsupported_whatsapp_method')
         env = os.environ.copy()
         env['WACLI_READONLY'] = '1'
@@ -1406,13 +1406,15 @@ class WhatsApp:
             result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=20)
         except subprocess.TimeoutExpired:
             raise SourceError('whatsapp_read_timeout') from None
+        except OSError:
+            raise SourceError('whatsapp_source_unavailable') from None
         if result.returncode:
             raise SourceError('whatsapp_source_unavailable')
         try:
             data = json.loads(result.stdout)
         except ValueError:
             raise SourceError('whatsapp_invalid_json') from None
-        if data.get('success') is not True or data.get('error') is not None or not isinstance(data.get('data'), dict):
+        if data.get('success') is not True or data.get('error') is not None or not isinstance(data.get('data'), list if command[:2] == ['chats', 'list'] else dict):
             raise SourceError('whatsapp_invalid_response')
         return data['data']
 
@@ -1423,6 +1425,62 @@ class WhatsApp:
                 or hashlib.sha256(linked.encode()).hexdigest() != self.account['identity_sha256']):
             raise SourceError('account_identity_mismatch')
         return data
+
+
+WHATSAPP_JID = r'(?:[0-9]+(?::[0-9]+)?@(?:s\.whatsapp\.net|lid)|[0-9]+(?:-[0-9]+)?@g\.us)'
+
+
+def owner_whatsapp_chats(config, db, raw, task_chats, source=None):
+    """The chats a prepare's WhatsApp messages go to that are not from the task's own messages: the person's
+    existing chat in the owner's own WhatsApp account, for a card that switches to WhatsApp because that is
+    where the owner talks to them. A chat_id is checked against the account's synced messages, else its chat
+    list (read-only); a to_name alone is looked up there and must match one chat. Never a new number, never a
+    chat the owner excluded. Returns {chat_id: {account_id, name, switched}} and fills in the chat_id it found."""
+    found = {}
+    for item in raw if isinstance(raw, list) else [raw]:
+        if not isinstance(item, dict) or item.get('kind') != 'whatsapp' or str(item.get('chat_id') or '') in task_chats:
+            continue
+        account = next((a for a in config['accounts'] if a['id'] == item.get('account_id') and a.get('service') == 'whatsapp'), None)
+        if not account:
+            continue
+        excluded = {c for r in account.get('exclude') or [] if set(r) == {'chats'} for c in r['chats']}
+        reader = source(config, account) if source else WhatsApp(config, account)
+        chat_id, name = str(item.get('chat_id') or ''), None
+        if chat_id:
+            if not re.fullmatch(WHATSAPP_JID, chat_id) or chat_id in excluded:
+                continue
+            row = db.execute("SELECT metadata FROM events WHERE kind='whatsapp.message' AND account_id=? AND json_extract(metadata,'$.chat_id')=? "
+                             'ORDER BY occurred_at DESC LIMIT 1', (account['id'], chat_id)).fetchone()
+            if row:
+                name = json.loads(row['metadata']).get('chat_name')
+            else:
+                try:
+                    chat = reader.read(['chats', 'show', '--jid', chat_id])
+                except SourceError:
+                    continue
+                if chat.get('jid') != chat_id:
+                    continue
+                name = chat.get('name')
+        elif isinstance(item.get('to_name'), str) and 2 <= len(item['to_name'].strip()) <= 100:
+            try:
+                chats = reader.read(['chats', 'list', '--query', item['to_name'].strip(), '--limit', '10'])
+            except SourceError:
+                raise ValueError('WhatsApp can’t be read right now, so I can’t find the chat. Put the message in the body and say '
+                                 'in one line that they can send it on WhatsApp themselves.') from None
+            chats = [c for c in chats if isinstance(c, dict) and isinstance(c.get('jid'), str) and re.fullmatch(WHATSAPP_JID, c['jid'])
+                     and c['jid'] not in excluded] if isinstance(chats, list) else []
+            people = [c for c in chats if c.get('kind') == 'dm'] or chats
+            if len(people) != 1:
+                raise ValueError(('More than one WhatsApp chat matches: ' + '; '.join(f"{c.get('name') or 'chat'} (chat_id {c['jid']})" for c in people[:5])
+                                  + '. Give the right chat_id.') if people else
+                                 'No WhatsApp chat with ' + item['to_name'].strip() + ' in this account. Never start a new one: put the message '
+                                 'in the body and say in one line that they can send it on WhatsApp themselves.')
+            chat_id, name = people[0]['jid'], people[0].get('name')
+            item['chat_id'] = chat_id
+        else:
+            continue
+        found[chat_id] = {'account_id': account['id'], 'name': name or 'WhatsApp chat', 'switched': True}
+    return found
 
 
 def whatsapp_event(account, raw):
@@ -5810,8 +5868,9 @@ class Store:
                 raise ValueError('Preparation cancelled or replaced')
             if note_kind:
                 self.tag_note(suggestion_id, note_kind, db)
+            # An empty list says the run asks nothing (ask_blocked); NULL is a blocker from before runs named questions.
             db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,questions=?,updated_at=? WHERE suggestion_id=?",
-                       (reason,(details or '').strip() or None,encoded(questions) if questions else None,now(),suggestion_id))
+                       (reason,(details or '').strip() or None,encoded(questions),now(),suggestion_id))
             db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(suggestion_id,))
         return {'status':'blocked','reason':reason}
 
@@ -6070,7 +6129,8 @@ class Store:
                 job=jobs.get(suggestion['id'])
                 if job: suggestion.update(preparation_status=job['status'],preparation_reason=job['reason'],preparation_error=job['error'],
                                           preparation_details=job['details'],preparation_started_at=job['started_at'],preparation_retried=job['auto_retries']>0,
-                                          preparation_questions=blocker_questions(job.get('questions')),preparation_cause=job.get('cause'))
+                                          preparation_questions=blocker_questions(job.get('questions')),preparation_no_questions=job.get('questions')=='[]',
+                                          preparation_cause=job.get('cause'))
                 suggestion.update(self.suggestion_result(suggestion, db))
             counts = db.execute('SELECT count(*) total,sum(analyzed_version<version) pending,sum(analyzed_version=0) first_review,coalesce(sum(analyzed_version<version AND deferrals>=?),0) set_aside FROM events', (SET_ASIDE_AFTER,)).fetchone()
             result['review_health'] = {**dict(counts), 'last_completed': db.execute("SELECT max(finished_at) FROM analyses WHERE status='complete'").fetchone()[0]}
@@ -7890,7 +7950,7 @@ def chat_prompt(job, config=None):
     return f'''The owner wrote to you in the chat of suggestion {sid}. Their message is the latest Change note (latest_feedback, source dashboard), and it is their authorization as before. This is a preparation task: answer it, or do what it asks, under the preparation rules and the instructions earlier in this session (if they are no longer in context, read tools/personal-assistant/PREPARATION.md). A question about the thread, the people or the context is answered from the evidence (events, preparation_history, memory), and the card's current draft and next_actions stay as they are unless the message asks to change them. When you change a draft, the body says concretely what changed. Use send_now only when this message approves sending a draft they already saw on the card, unchanged; a draft you write or change now is saved without it, for them to read and Send. Preparation job ID: {j}.
 - Browser lease owner: assistant-{j[:8]} (python3 {browser_lease_script(config)} claim --owner assistant-{j[:8]} --minutes 30 --wait 10).
 - Attachments folder: {WORKSPACE}/data/assistant-attachments/{j}/
-- Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<your reply or result, short>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it.'''
+- Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<your reply or result, short>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it. When they say they talk to this person on another channel (WhatsApp), switch the draft to it as PREPARATION.md says; a limit of The Machine is never a question for them. When they say the person doesn't know about it yet, the message first says what it is about.'''
 
 
 # What a review's own tool calls say it is doing, in the owner's words. Only names and card titles (what a card already
@@ -8351,13 +8411,17 @@ def blocker_questions(value, strict=False):
 
 
 def ask_blocked(row):
-    """A run that stopped to ask the owner: a blocker it wrote itself (no error of the service's own), not a sign-in.
-    One that names its questions counts even after a browser step; otherwise not while it waits in the browser. Same
-    rule as askBlocked() in dashboard.html."""
+    """A run that stopped to ask the owner: a blocker it wrote itself (no error of the service's own), not a sign-in,
+    with the questions it asks. Those count even after a browser step. A run that named no questions (saved as an
+    empty list) asks nothing: it says what stopped it (a limit, a failure), and the card says it is stuck and offers
+    Try again, never Answer. A blocker from before runs named their questions (none saved at all) asks with its reason,
+    unless it waits in the browser. Same rule as askBlocked() in dashboard.html."""
     reason = str(row.get('preparation_reason') or '').strip()
     if row.get('preparation_status') != 'blocked' or not reason or row.get('preparation_error') or retry_label(reason) == 'Continue':
         return False
-    return bool(blocker_questions(row.get('preparation_questions'))) or not row.get('preparation_browser')
+    if blocker_questions(row.get('preparation_questions')):
+        return True
+    return not (row.get('preparation_questions') == '[]' or row.get('preparation_no_questions') or row.get('preparation_browser'))
 
 
 def ask_text(row):
@@ -8927,7 +8991,7 @@ def telegram(config, row, action, message_id=None):
         ready=row['status']=='prepared'
         root='https://'+config['dashboard_host']+config.get('dashboard_path','/')
         signin=not ready and (row.get('preparation_browser') or {}).get('signin_url')
-        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ')+'**'+title+'**'
+        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if ask_blocked(row) or row.get('preparation_browser') else 'Stuck: ')+'**'+title+'**'
         message+='\n\n[View '+('result' if ready else 'task')+']('+root+'#result='+row['id']+')'
         # A sign-in blocker opens the dashboard's sign-in for this task; once in, the task carries on by itself.
         blocks=[{'type':'buttons','buttons':[{'label':'Sign in','action':{'type':'url','url':signin}}]}] if signin else []
@@ -9260,6 +9324,7 @@ For this job:
 - When the card's title no longer says where things stand after this result (the situation changed, not just the wording), add title=<a new short title for now, under 90 characters>; otherwise leave title out.
 - When latest_feedback is a Change note, also give note_kind: style (how it was written), fact (something you didn't know), continue (keep going or finish the job) or new_ask (something else to do). A style note that holds beyond this card (how they write on a channel or with this kind of person: length, tone, greeting, sign-off, language, capitals, punctuation, links, formatting; "always…", "next time…", or what they asked on an earlier card) updates that channel's voice: assistant_signals remember_fact args kind=voice, channel=<the channel it is about: Email, Slack, WhatsApp, LinkedIn, X DM, another channel's name, or All when it holds everywhere>, text=<that channel's whole voice block (up to {VOICE_LINES} short lines, at most {VOICE_CHARS} characters): the current block with the note worked in, everything else kept, only what it contradicts dropped>, decision_id=<that note's decision>. How a kind of task is done (what to include, where things go) is a draft rule instead: remember_fact kind=draft, text=<the rule, general>. A fact note that holds beyond this card goes in remember_fact as a fact.
 - When the owner's note means they want this task itself back later (remind me about it next week, later, on Tuesday), that is this card's snooze, not a reminder: save with outcome:'snoozed' and snooze_until:<their local date and time, e.g. 2026-10-27T09:00, or a date alone for their morning>, and a one-line body. The card leaves their list and comes back then. Do not also add an automation, cron job or reminder for it. A separate reminder about something else, or a recurring one, stays an automation. Their time zone is {getattr(local_tz(),'key','UTC')}; it is now {dt.datetime.fromisoformat(now()).astimezone(local_tz()).strftime('%a %Y-%m-%d %H:%M')} there.
+- A first message to someone who doesn't know about it yet says what it is about before it asks.
 - Or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason=<one plain sentence>, details=<technical specifics>. Block only on what you truly can't know (their first-hand notes, a fact only they have, a call with no sensible default); a minor judgment call with an obvious sensible default you make yourself and name in one line of the result. When only the owner can unblock it, also give questions=[{{question:<one short plain question>, options:[<2-4 short choices, only when it is a clear choice>]}}] (at most 3). Each question must make sense on its own to someone who hasn't seen your work: plain words, what it is about and why it matters, no jargon or internal terms, e.g. {{question:'What did you notice when you tried OnePageCRM? A few lines on what you tried and what stood out are enough.'}}. The card shows them with quick picks and an Answer box. No paths, IDs or tool names in reason or questions.''' + owner_details(config) + (f'''
 
 Facts the owner told you earlier that bear on this card (true unless they say otherwise now):
@@ -10590,6 +10655,8 @@ class App:
                 intercom_conversations={m['conversation_id']:{'account_id':r[0],'name':m.get('from_name') or m.get('from') or 'Intercom conversation'} for r in db.execute(
                     "SELECT e.account_id,e.metadata FROM events e JOIN json_each(?) ids ON ids.value=e.id WHERE e.kind='intercom.conversation' ORDER BY e.occurred_at",(row['event_ids'],))
                     for m in (json.loads(r[1]),) if m.get('conversation_id')}
+                # The owner talks to this person on WhatsApp although the task came in another way: their existing chat.
+                whatsapp_chats.update(owner_whatsapp_chats(self.config,db,args.get('next_actions',args.get('next_action')),whatsapp_chats))
             action=next_actions.validate(args.get('next_actions',args.get('next_action')),self.config,json.loads(row['account_ids']),options,threads,x_threads,whatsapp_chats,intercom_conversations)
             for item in next_actions.actions(action):
                 if item['kind']=='handoff' and not (getattr(self,'fleet',None) and self.fleet.teammate(item)):
