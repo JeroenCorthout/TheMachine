@@ -121,6 +121,8 @@ if args[:1] == ['app-server']:
         method, params = m['method'], m.get('params') or {}
         if method == 'thread/start':
             out({'id': m['id'], 'result': {'thread': {'id': 'THREAD'}}})
+        elif method == 'thread/resume' and os.environ.get('AJ_GONE'):  # its rollout was removed
+            out({'id': m['id'], 'error': {'code': -32600, 'message': 'no rollout found for thread id ' + params['threadId']}})
         elif method == 'thread/resume' and os.environ.get('AJ_WRITER'):  # open in the Codex app
             out({'id': m['id'], 'error': {'code': -32600, 'message': 'thread ' + params['threadId'] + ' already has an active writer'}})
         elif method == 'thread/fork' and os.environ.get('AJ_WRITER') == 'nofork':
@@ -164,6 +166,115 @@ print(json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 't
 print(json.dumps({'type': 'turn.completed', 'usage': {}}))
 """.replace('FORK_ID', FORK).replace('THREAD', THREAD)
 
+FAKE_SYSTEMD_RUN = r"""#!PYTHON
+import json, os, sys
+args = sys.argv[1:]
+open(os.environ['AJ_LOG'], 'a').write(json.dumps({'tool': 'systemd-run', 'args': args}) + '\n')
+out = next(a.split('append:', 1)[1] for a in args if a.startswith('--property=StandardOutput=append:'))
+open(out, 'a').write('codex app-server (WebSockets)\n  listening on: ws://127.0.0.1:' + os.environ['AJ_WS_PORT'] + '\n')
+"""
+FAKE_SYSTEMCTL = r"""#!PYTHON
+import json, os, sys
+args = sys.argv[1:]
+open(os.environ['AJ_LOG'], 'a').write(json.dumps({'tool': 'systemctl', 'args': args}) + '\n')
+if 'show' in args:
+    print('NoNewPrivileges=yes\nPrivateTmp=yes\nUMask=0077')
+elif 'is-active' in args:
+    print('active')
+"""
+
+
+class FakeWsAppServer:
+    """`codex app-server --listen ws://127.0.0.1:0 --ws-auth capability-token`, as the job's own unit runs it: it lets
+    in only the token whose hash it was started with, and the turn runs on with nobody connected."""
+    def __init__(self, token_hash):
+        import socket
+        self.token_hash, self.calls, self.conns = token_hash, [], []
+        self.started, self.done = threading.Event(), False
+        self.server = socket.create_server(('127.0.0.1', 0))
+        self.port = self.server.getsockname()[1]
+        threading.Thread(target=self.accept, daemon=True).start()
+
+    def accept(self):
+        while True:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.serve, args=(conn,), daemon=True).start()
+
+    def close(self):
+        self.server.close()
+        import socket
+        for c in self.conns:
+            try:
+                c.shutdown(socket.SHUT_RDWR)
+                c.close()
+            except OSError:
+                pass
+
+    def serve(self, conn):
+        import hashlib, struct
+        head = b''
+        while b'\r\n\r\n' not in head:
+            head += conn.recv(4096)
+        token = next((l.split(b'Bearer ', 1)[1].strip() for l in head.split(b'\r\n') if l.lower().startswith(b'authorization:')), b'')
+        if hashlib.sha256(token).hexdigest() != self.token_hash():
+            conn.sendall(b'HTTP/1.1 401 Unauthorized\r\n\r\n')
+            conn.close()
+            return
+        conn.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
+        self.conns.append(conn)
+        buf = [b'']
+        def take(n):
+            while len(buf[0]) < n:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    raise EOFError
+                buf[0] += chunk
+            out, buf[0] = buf[0][:n], buf[0][n:]
+            return out
+        def out(m):
+            data = json.dumps(m).encode()
+            n = len(data)
+            conn.sendall(bytes([0x81]) + (bytes([n]) if n < 126 else bytes([126]) + struct.pack('>H', n)) + data)
+        def finish_turn():
+            time.sleep(0.2)
+            self.done = True
+            out({'method': 'item/completed', 'params': {'item': {'type': 'agentMessage', 'text': 'Done after the restart.'}}})
+            out({'method': 'turn/completed', 'params': {'turn': {'id': 't1', 'status': 'completed'}}})
+        try:
+            while True:
+                first, second = take(2)
+                n = second & 0x7F
+                if n == 126:
+                    n = struct.unpack('>H', take(2))[0]
+                mask = take(4)
+                m = json.loads(bytes(b ^ mask[i % 4] for i, b in enumerate(take(n))))
+                self.calls.append({'method': m.get('method'), 'params': m.get('params')})
+                if 'id' not in m:
+                    continue
+                method, params = m['method'], m.get('params') or {}
+                if method == 'thread/start':
+                    out({'id': m['id'], 'result': {'thread': {'id': THREAD}}})
+                elif method == 'thread/resume':
+                    turn = {'id': 't1', 'status': 'completed' if self.done else 'inProgress', 'items': []}
+                    out({'id': m['id'], 'result': {'thread': {'id': params['threadId'], 'turns': [turn]}}})
+                    if not self.done:
+                        threading.Thread(target=finish_turn, daemon=True).start()
+                elif method == 'turn/start':
+                    out({'id': m['id'], 'result': {'turn': {'id': 't1', 'status': 'inProgress'}}})
+                    self.started.set()  # and it runs on: the first connection never hears the end of it
+                else:
+                    out({'id': m['id'], 'result': {}})
+        except (EOFError, OSError, ValueError):
+            return
+
+
+def job_session(jobs, job_id):
+    with jobs.connect() as db:
+        return db.execute('SELECT session_id FROM agent_jobs WHERE id=?', (job_id,)).fetchone()[0]
+
 
 def wait(jobs, job_id, done=('result', 'failed', 'cancelled'), seconds=20):
     end = time.time() + seconds
@@ -183,7 +294,7 @@ class AgentJobs(unittest.TestCase):
         root = Path(self.tmp.name)
         self.bin = root / 'bin'
         self.bin.mkdir()
-        for name, body in (('claude', FAKE_CLAUDE), ('codex', FAKE_CODEX)):
+        for name, body in (('claude', FAKE_CLAUDE), ('codex', FAKE_CODEX), ('systemd-run', FAKE_SYSTEMD_RUN), ('systemctl', FAKE_SYSTEMCTL)):
             path = self.bin / name
             path.write_text(body.replace('PYTHON', sys.executable))
             path.chmod(path.stat().st_mode | stat.S_IXUSR)
@@ -196,6 +307,10 @@ class AgentJobs(unittest.TestCase):
         app = patch.object(agent_jobs, 'DESKTOP_CODEX', ())  # never the real Codex app's codex
         app.start()
         self.addCleanup(app.stop)
+        detach = patch.object(agent_jobs, 'can_detach', lambda: False)  # never a real systemd unit (DetachedCodex tests fake one)
+        detach.start()
+        self.addCleanup(detach.stop)
+        agent_jobs._HOST.update(at=0.0, found=None)
         poll = patch.object(agent_jobs.BackgroundClaude, 'POLL', 0.05)
         poll.start()
         self.addCleanup(poll.stop)
@@ -253,6 +368,14 @@ class AgentJobs(unittest.TestCase):
         self.assertIn('https://mail.example/t1', draft['brief'])
         self.assertIn('card/messages.md', draft['brief'])
         self.assertIn('Done looks like', draft['brief'])
+        # The hand-off sheet: one plain line and small chips for what it gets, never a link itself
+        self.assertEqual(draft['line'], 'Picks up “Sum up the quarterly numbers” and reports back here. Sends nothing itself.')
+        self.assertEqual([g['label'] for g in draft['gets']], ['1 message', 'messages.md', '1 link'])
+        self.assertFalse(any('http' in g['label'] for g in draft['gets']))
+        self.assertEqual(agent_jobs.gets_for({'message_kinds': ['email'] * 5, 'messages': 'x', 'drafts': [{'to_name': 'Robin Lee', 'body': 'Hi'}]}),
+                         [{'kind': 'mail', 'label': '5 emails'}, {'kind': 'draft', 'label': 'Draft to Robin'}, {'kind': 'file', 'label': 'messages.md'}])
+        self.assertEqual(agent_jobs.with_note('The job', ' Keep it short '), 'A note from me: Keep it short\n\nThe job')
+        self.assertEqual(agent_jobs.with_note('The job', ''), 'The job')
         with self.assertRaises(ValueError):
             self.jobs().draft('nope')
 
@@ -448,13 +571,91 @@ class AgentJobs(unittest.TestCase):
         self.assertEqual((job['status'], job['error']), ('failed', 'It broke'))
         with patch.object(jobs, 'launch') as launch:
             jobs.retry(job['id'])
-        launch.assert_called_once_with(job['id'], 'this will fail', resume=None)
+        # It had a session: Try again carries on there, and starts over from the brief only if that is gone.
+        launch.assert_called_once_with(job['id'], agent_jobs.CARRY_ON, resume=job_session(jobs, job['id']), fresh='this will fail')
+
+    def test_try_again_after_a_restart_carries_on_in_the_same_codex_thread(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt')['id'])
+        with self.store.connect() as db:  # as recover() leaves a job that was running when The Machine restarted
+            db.execute("UPDATE agent_jobs SET status='running' WHERE id=?", (job['id'],))
+        jobs.recover()
+        job = jobs.get(job['id'])
+        self.assertEqual((job['status'], job['error_kind'], job['error']), ('failed', 'restart', agent_jobs.RESTARTED))
+        job = wait(jobs, jobs.retry(job['id'])['id'])
+        self.assertEqual(job['status'], 'result', job)
+        calls = self.calls('codex')[-1]['calls']
+        self.assertIn({'method': 'thread/resume', 'params': {'threadId': THREAD}}, calls)
+        self.assertNotIn('thread/start', [c.get('method') for c in calls])
+        self.assertEqual([c['params']['input'][0]['text'] for c in calls if c.get('method') == 'turn/start'], [agent_jobs.CARRY_ON])
+        self.assertEqual(job['url'], 'codex://threads/' + THREAD)
+
+    def test_try_again_starts_over_from_the_brief_when_the_thread_is_gone(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt')['id'])
+        jobs.finish(job['id'], 'failed', error=agent_jobs.RESTARTED, error_kind='restart')
+        with patch.dict(os.environ, {'AJ_GONE': '1'}):
+            job = wait(jobs, jobs.retry(job['id'])['id'])
+        self.assertEqual(job['status'], 'result', job)
+        calls = self.calls('codex')[-1]['calls']
+        self.assertEqual([c.get('method') for c in calls if 'method' in c][:3], ['initialize', 'initialized', 'thread/start'])
+        self.assertEqual([c['params']['input'][0]['text'] for c in calls if c.get('method') == 'turn/start'], ['Write out.txt'])
+
+    def test_the_codex_link_opens_the_thread_on_this_computer_from_other_devices(self):
+        jobs = self.jobs()
+        job = wait(jobs, jobs.start(self.sid, 'codex', 'Write out.txt')['id'])
+        self.assertIsNone(job['url_elsewhere'])  # the Codex app here has no remote connections
+        codex = Path(os.environ['HOME']) / '.codex'
+        codex.mkdir()
+        import sqlite3
+        with sqlite3.connect(codex / 'state_5.sqlite') as db:
+            db.execute('CREATE TABLE remote_control_enrollments(websocket_url TEXT, account_id TEXT, app_server_client_name TEXT, server_id TEXT, '
+                       'environment_id TEXT, server_name TEXT, updated_at INTEGER, remote_control_enabled INTEGER)')
+            db.execute("INSERT INTO remote_control_enrollments VALUES('wss://x', 'acct', 'Codex Desktop', 'srv', 'env_0123abcd', 'desk', 1, 1)")
+        agent_jobs._HOST.update(at=0.0, found=None)
+        job = jobs.get(job['id'])
+        self.assertEqual(job['url'], 'codex://threads/' + THREAD)  # on this computer itself
+        self.assertEqual(job['url_elsewhere'], 'codex://threads/' + THREAD + '?hostId=remote-control%3Aenv_0123abcd')
 
     def test_a_job_that_takes_too_long_stops(self):
         jobs = self.jobs()
         jobs.timeout = 1
         job = wait(jobs, jobs.start(self.sid, 'claude', 'sleep now')['id'])
         self.assertEqual((job['status'], job['error_kind']), ('failed', 'timeout'))
+
+    def test_codex_runs_in_a_unit_of_its_own_so_a_restart_of_the_machine_does_not_stop_it(self):
+        def token_hash():
+            run = next(c for c in self.calls('systemd-run'))
+            return run['args'][run['args'].index('--ws-token-sha256') + 1]
+        server = FakeWsAppServer(token_hash)
+        self.addCleanup(server.close)
+        with patch.dict(os.environ, {'AJ_WS_PORT': str(server.port)}), patch.object(agent_jobs, 'can_detach', lambda: True), \
+                patch.object(agent_jobs, 'own_unit', lambda: 'personal-assistant.service'):
+            jobs = self.jobs()
+            job = jobs.start(self.sid, 'codex', 'Write out.txt')
+            self.assertTrue(server.started.wait(20))
+            run = self.calls('systemd-run')[0]['args']
+            # The service's own hardening and environment carry over; values never go on the command line.
+            for prop in ('NoNewPrivileges=yes', 'PrivateTmp=yes', 'UMask=0077'):
+                self.assertIn('--property=' + prop, run)
+            self.assertIn('--setenv=PATH', run)
+            self.assertFalse([a for a in run if a.startswith('--setenv=') and '=' in a[len('--setenv='):]])
+            self.assertFalse([a for a in run if a.startswith('--setenv=INVOCATION_ID')])
+            self.assertEqual(run[run.index('--') + 2:run.index('--') + 7], ['app-server', '--listen', 'ws://127.0.0.1:0', '--ws-auth', 'capability-token'])
+            folder = Path(self.tmp.name) / 'agent-jobs' / job['id']
+            live = json.loads((folder / 'app-server.json').read_text())
+            self.assertNotIn(live['token'], json.dumps(run))  # only its hash
+            self.assertEqual(stat.S_IMODE((folder / 'app-server.json').stat().st_mode), 0o600)
+            with self.assertRaises(OSError):
+                agent_jobs.AppSocket(server.port, 'not-the-token')
+            # The Machine restarts while the turn runs on in its unit: the new service follows it to its end.
+            again = self.jobs()
+            again.recover()
+            job = wait(again, job['id'])
+        self.assertEqual((job['status'], job['summary']), ('result', 'Done after the restart.'), job)
+        self.assertIn({'method': 'thread/resume', 'params': {'threadId': THREAD}}, server.calls)
+        self.assertEqual([c['method'] for c in server.calls].count('turn/start'), 1)  # not started over
+        self.assertIn(['--user', 'stop', '--no-block', live['unit']], [c['args'] for c in self.calls('systemctl')])
 
     def test_a_restart_fails_running_jobs_and_restarts_waiting_ones(self):
         jobs = self.jobs()
@@ -465,6 +666,7 @@ class AgentJobs(unittest.TestCase):
         with patch.object(jobs, 'launch') as launch:
             jobs.recover()
         self.assertEqual(jobs.get(job['id'])['error_kind'], 'restart')
+        self.assertEqual(jobs.get(job['id'])['error'], agent_jobs.RESTARTED)  # says why, and what Try again does
         launch.assert_not_called()
 
     def test_the_brief_and_result_are_sealed_at_rest(self):
@@ -516,6 +718,116 @@ class AgentSettings(unittest.TestCase):
         # A Machine on the owner's own computer with nothing remote set: no such settings (its local CLIs are used)
         app.config = {'accounts': []}
         self.assertIsNone(app.agents_view())
+
+
+class TaskFirstBrief(unittest.TestCase):
+    """The job a card hands to Claude Code or Codex leads with the card's next step (its Needs you line), not its latest
+    chat reply; the owner's note follows word for word; the source email's full text is in the job folder."""
+    NEEDS = 'add the agreed Listly link to your agency lead-generation article'
+    REPLY = 'Yes, you still need to add the link: their last email confirms position 6 once the link is live.'
+    NOTE = 'Do I still need to add the link?'
+    MAIL = ('Hi,\n\nHere is the final entry for the list. We are happy to take position 6.\n\n'
+            'Link to use: https://listly.example/agencies\n\nThanks, Robin')
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.store = a.Store(root / 'events.sqlite', protect=True)
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm1', 'kind': 'gmail.message', 'occurred_at': '2026-10-22T09:00:00+00:00',
+                                             'title': 'Final entry for the agency list', 'body': self.MAIL, 'deleted': False,
+                                             'metadata': {'from': 'Robin Vendor <robin@listly.example>', 'to': 'me@example.com', 'thread_id': 't1',
+                                                          'labels': ['INBOX'], 'source_url': 'https://mail.google.com/mail/u/0/#all/t1'}}])
+        with self.store.connect() as db:
+            event_id = db.execute('SELECT id FROM events').fetchone()[0]
+        self.sid = self.store.suggest('listly', 'Listly sent the final entry and offers position 6', 'Robin sent the final entry.', [event_id])['id']
+        with self.store.connect() as db:
+            db.execute("UPDATE suggestions SET status='prepared',body=?,outcome=? WHERE id=?",
+                       (self.REPLY, json.dumps({'state': 'needs_you', 'needs': self.NEEDS}), self.sid))
+            db.execute("INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES('d1',?,'other',?,'dashboard',?)",
+                       (self.sid, self.NOTE, '2026-10-22T10:00:00+00:00'))
+            db.execute("INSERT INTO preparation_runs(job_id,suggestion_id,session_job_id,status,started_at) VALUES('job1',?,'job1','ok',?)",
+                       (self.sid, '2026-10-22T10:01:00+00:00'))
+            db.execute('INSERT INTO preparation_calls(job_id,call_id,tool,params,started_at) VALUES(?,?,?,?,?)',
+                       ('job1', 'c1', 'assistant_signals', json.dumps({'action': 'prepare', 'args': {'suggestion_id': self.sid, 'body': self.REPLY}}),
+                        '2026-10-22T10:01:30+00:00'))
+        self.app = object.__new__(a.App)
+        self.app.store = self.store
+        self.app.config = {'accounts': [], 'database': str(root / 'events.sqlite')}
+        self.config = {'database': str(root / 'events.sqlite'), 'accounts': [], 'agents': {}}
+
+    def jobs(self):
+        return agent_jobs.AgentJobs(self.store.connect, self.config, Path(self.tmp.name) / 'agent-jobs', card=self.app.agent_card)
+
+    def test_the_task_comes_first_then_the_note_then_background(self):
+        brief = self.jobs().draft(self.sid)['brief']
+        lines = brief.splitlines()
+        self.assertEqual(lines[0], 'Task: Add the agreed Listly link to your agency lead-generation article.')
+        self.assertEqual(lines[2:4], ['My note on the card, as I wrote it:', self.NOTE])
+        self.assertNotIn('What this is about', brief)
+        # The latest chat reply is background, labelled so, after the task; never the lead.
+        self.assertIn('So far (background only; the task above is what to do):', brief)
+        self.assertIn('- The Machine answered: ' + self.REPLY, brief)
+        self.assertGreater(brief.index(self.REPLY), brief.index('Task: '))
+        self.assertEqual(brief.count(self.NOTE), 1)  # the note isn't repeated as a chat turn
+        self.assertIn('- With: Robin Vendor <robin@listly.example> (email)', brief)
+        self.assertIn('card/messages.md', brief)
+        # Raw links come after the files, as a second reference only.
+        self.assertGreater(brief.index('https://mail.google.com/'), brief.index('card/messages.md'))
+        self.assertIn('Done looks like: the task above done', brief)
+        self.assertTrue(lines[-1].startswith('- Leave anything that sends, publishes, pays or submits for me'))
+
+    def test_the_folder_has_the_source_email_text(self):
+        parts = self.app.agent_card(self.sid)
+        jobs = self.jobs()
+        jobs.prepare_folder('aj_0123456789abcdef', jobs.draft(self.sid)['brief'], parts)
+        work = Path(self.tmp.name) / 'agent-jobs' / 'aj_0123456789abcdef' / 'work'
+        text = (work / 'card/messages.md').read_text()
+        self.assertIn(self.MAIL.strip(), text)  # the whole body, not a snippet
+        self.assertIn('From: Robin Vendor <robin@listly.example>', text)
+        self.assertIn('To: me@example.com', text)
+        self.assertTrue((work / 'BRIEF.md').read_text().startswith('Task: Add the agreed Listly link'))
+
+    def test_a_job_that_runs_elsewhere_carries_the_messages_newest_first(self):
+        # Remote Claude Code and Codex cloud don't get the job folder: the source text travels in the job, under a cap.
+        later = 'Robin again. ' + 'The banner size is 600 by 300. ' * 400
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm2', 'kind': 'gmail.message', 'occurred_at': '2026-10-22T11:00:00+00:00',
+                                             'title': 'One more thing', 'body': later, 'deleted': False,
+                                             'metadata': {'from': 'Robin Vendor <robin@listly.example>', 'thread_id': 't1', 'labels': ['INBOX']}}])
+        with self.store.connect() as db:
+            ids = [r[0] for r in db.execute('SELECT id FROM events ORDER BY id')]
+            db.execute('UPDATE suggestions SET event_ids=? WHERE id=?', (json.dumps(ids), self.sid))
+        jobs = self.jobs()
+        with patch.object(agent_jobs.AgentJobs, 'tools', lambda self: [{'id': 'codex', 'name': 'Codex', 'place': 'cloud'}]):
+            brief = jobs.draft(self.sid)['brief']
+        self.assertTrue(brief.startswith('Task: Add the agreed Listly link'))
+        self.assertIn('The source messages, newest first, with their text', brief)
+        self.assertNotIn('card/messages.md', brief)  # not a file it can read there
+        self.assertLess(brief.index('### One more thing'), brief.index('### Final entry for the agency list'))
+        self.assertIn('Robin again.', brief)
+        self.assertRegex(brief, r'\(Cut here: \d+ more characters in the original\.\)')
+        self.assertLessEqual(len(brief), agent_jobs.BRIEF_MAX)
+        self.assertTrue(brief.splitlines()[-1].startswith('- Leave anything that sends, publishes, pays or submits for me'))
+        # On this computer the folder has them, so the job only points there.
+        with patch.object(agent_jobs.AgentJobs, 'tools', lambda self: [{'id': 'codex', 'name': 'Codex', 'place': 'local'}]):
+            local = jobs.draft(self.sid)['brief']
+        self.assertIn('card/messages.md', local)
+        self.assertNotIn('Robin again.', local)
+        # Many messages: the older ones that don't fit are named as left out.
+        many = [{'title': f'Mail {n}', 'from': 'x@example.com', 'occurred_at': f'2026-10-{10 + n}', 'body': 'word ' * 600} for n in range(9)]
+        text = agent_jobs.inline_messages(many, 7000)
+        self.assertTrue(text.startswith('### Mail 8'))
+        self.assertRegex(text, r'\(\d+ older messages left out here, to keep this short\.\)$')
+        self.assertLessEqual(len(text), 7000)
+
+    def test_the_task_follows_the_card(self):
+        row = {'status': 'prepared', 'title': 'Pick a venue', 'outcome': json.dumps({'state': 'needs_you', 'needs': 'which venue do we book?'})}
+        self.assertEqual(a.card_task(row), 'Help me answer this: Which venue do we book?')
+        row['outcome'] = json.dumps({'state': 'your_step', 'step': 'submit'})
+        self.assertEqual(a.card_task(row), 'Check that everything is ready for me to submit, and fix what isn’t.')
+        self.assertEqual(a.card_task({'status': 'pending', 'title': 'Sum up the quarterly numbers'}), 'Sum up the quarterly numbers.')
+        blocked = {'status': 'accepted', 'title': 'X', 'preparation_status': 'blocked', 'preparation_reason': 'Which account should pay?'}
+        self.assertEqual(a.card_task(blocked), 'Help me answer this: Which account should pay?')
 
 if __name__ == '__main__':
     unittest.main()

@@ -11,7 +11,7 @@ let person={id:'email:ann@client.example',kind:'person',name:'Ann Example',stren
  usual_gap_days:6,quiet:false,role:'customer',role_by:'review',org:'org:named:globex',org_name:'Globex',org_by:'review',org_via:'LinkedIn headline',
  org_at:'2026-10-15',org_quote:'Engineering at Globex',org_event_id:40,links:[{id:'project:1',kind:'project',name:'Acme renewal',link:'project',strength:0.5}],
  open:{you_promised:[{id:7,who:'Ann',what:'send the renewal quote with the new seat count',due:soon}],they_promised:[{id:8,who:'Ann',what:'sign the order form',due:null}],
-       cards:[{id:'0123456789abcdef',title:'Answer Ann about pricing',status:'pending',due:null}],facts:['Ann prefers calls before 10']},
+       cards:[{id:'0123456789abcdef',title:'Answer Ann about pricing',status:'pending',due:null}],known:[{id:5,text:'Ann prefers calls before 10'}]},
  recent:[{id:41,account_id:'work',kind:'gmail.message',occurred_at:new Date().toISOString(),title:'Seat count for next year',probable:true},
          {id:40,account_id:'work',kind:'gmail.message',occurred_at:new Date(Date.now()-864e5).toISOString(),title:'Renewal',probable:false}],around:[]};
 const calls=[],errors=[];
@@ -40,9 +40,12 @@ try{
  const text=await page.locator('#people-view').textContent();
  assert.ok(text.includes('To you: customer · a review read it in your messages'));
  assert.ok(text.includes('You promised: send the renewal quote')&&text.includes('They promised: sign the order form'));
- assert.ok(text.includes('Card: Answer Ann about pricing')&&text.includes('Fact: Ann prefers calls before 10'));
+ assert.ok(text.includes('Card: Answer Ann about pricing')&&!text.includes('Fact:'));
+ // What the owner told about her is no open item: its own quiet section.
+ assert.equal(await page.locator('.graph-open',{hasText:'Ann prefers calls'}).count(),0);
+ assert.ok((await page.locator('.graph-known').textContent()).includes('Ann prefers calls before 10')&&text.includes('Known about Ann'));
  assert.equal(await page.locator('.graph-open a[href="#card=0123456789abcdef"]').count(),1);
- assert.ok(text.includes('probably part of it'));
+ assert.match(text,/probably part of it/i);
  // Where they work, as their LinkedIn headline states it, linked to the organisation.
  assert.ok(text.includes('At Globex · from their LinkedIn headline')&&text.includes('“Engineering at Globex”'));
  assert.equal(await page.locator('.org-row button.node[data-node="org:named:globex"]').count(),1);

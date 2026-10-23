@@ -241,6 +241,11 @@ class StoreTest(unittest.TestCase):
             [entry] = store.list()
             self.assertEqual((entry['site'], entry['username']), ('example.invalid', USER))
             self.assertNotIn('password', entry)
+            self.assertIs(entry['password_saved'], True)
+            self.assertNotIn(SECRET, json.dumps(store.list()))
+            store.save('other.invalid', USER, None)  # a username only: says so
+            self.assertIs([e for e in store.list() if e['site'] == 'other.invalid'][0]['password_saved'], False)
+            store.forget('other.invalid')
             self.assertTrue(store.forget('example.invalid'))
             self.assertEqual(store.list(), [])
 
@@ -323,6 +328,20 @@ class SealedStoreTest(unittest.TestCase):
             browser_login.LoginStore(folder).save('example.invalid', USER, SECRET)
             opened = moving._open_file(Path(folder) / browser_login.SEALED, {'database': str(Path(folder) / 'events.sqlite')})
             self.assertEqual(json.loads(opened)['example.invalid']['password'], SECRET)
+
+
+@unittest.skipUnless(shutil.which('openssl'), 'needs openssl')
+class ListActionTest(unittest.TestCase):
+    def test_the_dashboard_list_has_no_password_value_or_length(self):
+        import assistant
+        with tempfile.TemporaryDirectory() as folder:
+            browser_login.LoginStore(folder).save('example.invalid', USER, SECRET)
+            app = assistant.App.__new__(assistant.App)
+            app.config = {'accounts': [], 'database': str(Path(folder) / 'events.sqlite')}
+            sent = app.action('browser_logins', {}, owner_dashboard=True)
+            self.assertEqual(sent['logins'], [{'site': 'example.invalid', 'username': USER, 'password_saved': True,
+                                              'saved_at': sent['logins'][0]['saved_at']}])
+            self.assertNotIn(SECRET, json.dumps(sent))
 
 
 class OwnerOnlyTest(unittest.TestCase):

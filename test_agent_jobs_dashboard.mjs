@@ -21,35 +21,53 @@ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','applica
  if(req.url==='/api/agent-jobs'){res.end(JSON.stringify({jobs:card.agent_job?{c1:card.agent_job}:{}}));return}
  if(req.url.startsWith('/api/agent-diff')){res.setHeader('Content-Type','text/plain');res.end('+Summary line');return}
  if(req.url==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
-  if(call.action==='agent_draft'){res.end(JSON.stringify({suggestion_id:'c1',brief:'Sum up the quarterly numbers\n\nDone looks like: a summary.',tools:state.agent_tools}));return}
+  if(call.action==='agent_draft'){res.end(JSON.stringify({suggestion_id:'c1',brief:'Sum up the quarterly numbers\n\nLinks:\n- https://mail.google.com/mail/u/?authuser=sam#all/1a167\n\nDone looks like: a summary.',tools:state.agent_tools,
+   line:'Picks up “Sum up the quarterly numbers” and reports back here. Sends nothing itself.',gets:[{kind:'mail',label:'5 emails'},{kind:'file',label:'messages.md'},{kind:'link',label:'1 link'}]}));return}
   if(call.action==='agent_send'){card.agent_job={...job,status:'running',progress:'Write: summary.md'};res.end(JSON.stringify(card.agent_job));return}
   if(call.action==='agent_follow_up'){card.agent_job={...card.agent_job,status:'running',turns:2};res.end(JSON.stringify(card.agent_job));return}
   res.end('{}');return}
  res.statusCode=404;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
-const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--host-resolver-rules=MAP machine.test 127.0.0.1']});
 try{
  const page=await (await browser.newContext({viewport:{width:390,height:900}})).newPage();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:'+server.address().port);
+ const base='http://127.0.0.1:'+server.address().port+'/';await page.goto(base);
  const c=page.locator('#task-c1');await c.waitFor();
  assert.equal(await c.locator('[data-agent-hand]').count(),2);
  const more=c.locator('.more-actions>summary');if(await more.count())await more.click();
  await c.locator('[data-agent-hand="claude"]').click();
- const form=c.locator('.agent-form');await form.waitFor();
- assert.match(await form.innerText(),/Runs on this computer with your own Claude Code setup\./);
- assert.match(await form.locator('textarea').inputValue(),/Done looks like/);
- await form.locator('textarea').fill('Summarize the card into summary.md');
- await form.locator('button.primary').click();
+ // A compact sheet: Hand to with a small switcher, one plain line, chips for what it gets (never a link), an empty note,
+ // the whole job only behind See the full job (monospace, thin scrollbar)
+ const form=c.locator('.agent-sheet');await form.waitFor();
+ assert.equal(await form.locator('.agent-switch input:checked').getAttribute('value'),'claude');
+ assert.deepEqual(await form.locator('.agent-switch span').allTextContents(),['Claude Code','Codex']);
+ assert.equal(await form.locator('.agent-what').textContent(),'Picks up “Sum up the quarterly numbers” and reports back here. Sends nothing itself.');
+ assert.deepEqual(await form.locator('.agent-get').allTextContents(),['5 emails','messages.md','1 link']);
+ assert.equal(await form.locator('textarea.agent-note').inputValue(),'');
+ assert.equal(await form.locator('textarea.agent-note').getAttribute('placeholder'),'Add a note for Claude Code');
+ assert.equal(await form.locator('.agent-full').evaluate(d=>d.open),false);
+ assert.doesNotMatch(await form.innerText(),/https?:|Done looks like|The job, as it will get it/);
+ assert.ok(await page.evaluate(()=>document.activeElement?.classList.contains('agent-note')),'the note has the focus');
+ await form.locator('.agent-switch span',{hasText:'Codex'}).click();
+ assert.equal(await form.locator('textarea.agent-note').getAttribute('placeholder'),'Add a note for Codex');
+ await form.locator('.agent-switch span',{hasText:'Claude Code'}).click();
+ await form.locator('textarea.agent-note').fill('Keep it to one page');
+ await form.locator('.agent-full summary').click();
+ const full=form.locator('.agent-full textarea');assert.match(await full.inputValue(),/Done looks like/);
+ assert.match(await full.evaluate(t=>getComputedStyle(t).fontFamily),/mono/i);
+ await full.fill('Summarize the card into summary.md');
+ assert.equal(await form.locator('textarea.agent-note').inputValue(),'Keep it to one page');
+ await form.locator('button.primary',{hasText:'Hand off'}).click();
  await page.waitForTimeout(300);
- assert.deepEqual(calls.at(-1),{action:'agent_send',args:{suggestion_id:'c1',tool:'claude',brief:'Summarize the card into summary.md'}});
+ assert.deepEqual(calls.at(-1),{action:'agent_send',args:{suggestion_id:'c1',tool:'claude',brief:'Summarize the card into summary.md',note:'Keep it to one page'}});
  assert.match(await c.innerText(),/Claude Code is working on it/);
  assert.match(await c.innerText(),/Write: summary\.md/);
  assert.equal(await c.locator('[data-agent-hand]').count(),0);  // one job at a time
  assert.equal(await c.locator('[data-agent-cancel]').count(),1);
  // The result comes back: the card follows it without a full refresh.
  const long='Rewrote the reply in [draft.md](/home/owner/.local/share/agent-jobs/aj_1/work/draft.md) and added [summary.md](/home/owner/.local/share/agent-jobs/aj_1/work/summary.md).\n\n## Details\n- Kept the tone of `/tmp/x/notes.txt`\n- Checked the numbers';
- card.agent_job={...job,status:'result',summary:long,url:'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75',app:'Open in Codex',can_follow_up:true,draft_updated:true,
+ card.agent_job={...job,status:'result',summary:long,url:'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75',url_elsewhere:'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75?hostId=remote-control%3Aenv_0123abcd',app:'Open in Codex',can_follow_up:true,draft_updated:true,
   files:[{path:'summary.md',size:20},{path:'draft.md',size:20}],has_diff:true,finished_at:new Date().toISOString()};
  await c.locator('.agent-result').waitFor({timeout:10000});
  const text=await c.locator('.agent-result').innerText();
@@ -57,6 +75,11 @@ try{
  assert.match(text,/Rewrote the reply in draft\.md and added summary\.md\./);
  assert.match(text,/Updated the draft below/);
  assert.equal(await c.locator('.agent-result a.agent-app').getAttribute('href'),'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75');
+ // From another device (not this computer's own address) the link opens the thread on this computer through the Codex
+ // app's remote connection, where a plain link would look for it on that device.
+ {const other=await (await browser.newContext()).newPage();await other.goto('http://machine.test:'+server.address().port);
+  const link=other.locator('#task-c1 .agent-result a.agent-app');await link.waitFor({timeout:10000});
+  assert.equal(await link.getAttribute('href'),'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75?hostId=remote-control%3Aenv_0123abcd');await other.close()}
  assert.equal(await c.locator('.agent-result .agent-files').count(),0);  // both files are already in the line
  const chips=c.locator('.agent-result .agent-line a.agent-file');
  assert.deepEqual(await chips.allInnerTexts(),['draft.md','summary.md']);
@@ -78,6 +101,54 @@ try{
  await page.waitForTimeout(300);
  assert.deepEqual(calls.at(-1),{action:'agent_follow_up',args:{job_id:job.id,text:'Shorter, please'}});
  assert.ok((await c.locator('.actions>button').allInnerTexts()).some(b=>/send to Sam/i.test(b)));  // also while it works
+ // A work folder full of housekeeping: only what the answer names shows, the rest under Details behind "+N more".
+ const junk=['build.log','build.pid','deploy.log','preview.pid','.cache/x.json','notes/a.md','notes/b.md','site/index.html','report.md','summary.md'];
+ card.agent_job={...card.agent_job,status:'result',turns:2,draft_updated:false,has_diff:false,summary:'Wrote the report in report.md.',files:junk.map(path=>({path,size:9}))};
+ await page.evaluate(()=>refresh());await page.waitForFunction(()=>/report\.md/.test(document.querySelector('.agent-result')?.textContent||''));
+ const shownChips=()=>c.locator('.agent-result>.agent-files>a.agent-file').allInnerTexts();
+ assert.deepEqual(await shownChips(),['report.md']);  // the file the answer names, not the folder
+ assert.equal(await c.locator('.agent-result [data-agent-files]').innerText(),'+9 more');
+ card.agent_job={...card.agent_job,summary:'Done. The site is ready to look at.'};await page.evaluate(()=>refresh());
+ await page.waitForFunction(()=>/ready to look/.test(document.querySelector('.agent-result')?.textContent||''));
+ const shown=await shownChips();
+ assert.deepEqual(shown,['a.md','b.md','index.html']);  // no .pid, .log or dot folders, at most three
+ assert.equal(await c.locator('.agent-result [data-agent-files]').innerText(),'+7 more');
+ assert.equal(await c.locator('.agent-result .agent-more').getAttribute('open'),null);
+ await c.locator('.agent-result [data-agent-files]').click();
+ assert.notEqual(await c.locator('.agent-result .agent-more').getAttribute('open'),null);
+ assert.deepEqual(await c.locator('.agent-result .agent-allfiles a.agent-file').allInnerTexts(),junk.map(f=>f.split('/').pop()));
+ // The same block in the card chat looks like it does on the card: chips, the header with Open in Codex on the right,
+ // quiet text buttons, at 1280 and 390 without awkward wraps.
+ const twin={...card,id:'c1c1c1c1c1c1c1c1'};state.suggestions.push(twin);
+ for(const width of [1280,390,300]){await page.setViewportSize({width,height:900});await page.goto(base+'#chat='+twin.id);await page.reload();
+  const b=page.locator('.chat-agent .agent-result');await b.waitFor({timeout:10000});
+  // Fonts differ per OS: wait for the header to have fitted itself (one row), whatever the metrics; fail only if it never does.
+  await page.waitForFunction(()=>{const h=document.querySelector('.chat-agent .agent-result .agent-head'),a=h?.querySelector('a.agent-app'),n=h?.firstElementChild;
+   return a&&a.getBoundingClientRect().top<n.getBoundingClientRect().bottom-1},null,{timeout:5000}).catch(()=>{});
+  const look=await b.evaluate(el=>{const r=n=>n.getBoundingClientRect(),q=s=>el.querySelector(s),name=q('.agent-head .dm'),app=q('.agent-head a.agent-app'),cs=n=>getComputedStyle(n);
+   const line=n=>{const h=parseFloat(cs(n).lineHeight)||parseFloat(cs(n).fontSize)*1.4;return r(n).height<h*1.6};
+   return {head:cs(q('.agent-head')).display,gap:r(app).left-r(name).right,sameRow:r(app).top<r(name).bottom-1&&r(name).top<r(app).bottom-1,appRight:Math.abs(r(app).right-r(q('.agent-head')).right)<1,
+    chips:[...el.querySelectorAll(':scope>.agent-files>.agent-file')].map(n=>({border:cs(n).borderTopStyle,one:line(n),deco:cs(n).textDecorationLine})),
+    tools:[...el.querySelectorAll('.agent-tools button')].map(n=>({border:cs(n).borderTopStyle,bg:cs(n).backgroundColor,one:line(n)})),
+    wide:el.scrollWidth<=el.clientWidth+1}});
+  assert.equal(look.head,'flex',width);assert.ok(look.appRight,JSON.stringify(look));
+  assert.ok(look.sameRow&&look.gap>=12,JSON.stringify(look));  // one row; name and Open in Codex never run together
+  assert.ok(look.chips.length===4&&look.chips.every(x=>x.border==='solid'&&x.one&&x.deco==='none'),JSON.stringify(look.chips));
+  assert.ok(look.tools.length===2&&look.tools.every(x=>x.border==='none'&&/rgba\(0, 0, 0, 0\)|transparent/.test(x.bg)&&x.one),JSON.stringify(look.tools));
+  assert.ok(look.wide,width)}
+ state.suggestions.pop();
+ // The card's header keeps one row too: where "Open in Codex" doesn't fit next to the name it reads "Open".
+ // Measured, not assumed from font metrics: "Open" only where the full label really doesn't fit beside the name.
+ for(const [width,want] of [[1280,'long'],[390,null],[300,'short']]){await page.setViewportSize({width,height:900});await page.goto(base);await page.reload();
+  const h=c.locator('.agent-result .agent-head');await h.waitFor();
+  const r=await h.evaluate(el=>new Promise(ok=>{const t=Date.now(),one=()=>{const a=el.querySelector('a.agent-app').getBoundingClientRect(),n=el.firstElementChild.getBoundingClientRect();return a.top<n.bottom-1&&n.top<a.bottom-1};
+   const go=()=>{if(!one()&&Date.now()-t<5000)return requestAnimationFrame(go);const a=el.querySelector('a.agent-app'),tight=el.classList.contains('tight'),out={same:one(),label:a.innerText.trim(),aria:a.getAttribute('aria-label'),tight};
+    if(tight){el.classList.remove('tight');out.longFits=one();el.classList.add('tight')}ok(out)};go()}));
+  assert.ok(r.same&&r.aria==='Open in Codex',JSON.stringify({width,...r}));
+  assert.equal(r.label,r.tight?'Open ↗':'Open in Codex ↗',JSON.stringify({width,...r}));
+  if(r.tight)assert.equal(r.longFits,false,JSON.stringify({width,...r}));  // shortened only when the full label wraps
+  if(want)assert.equal(r.tight?'short':'long',want,JSON.stringify({width,...r}))}
+ await page.setViewportSize({width:1280,height:900});await page.goto(base);await c.waitFor();
  // Without the tools on this Machine, no Hand to buttons.
  delete card.agent_job;state.agent_tools=[];await page.evaluate(()=>refresh());
  assert.equal(await c.locator('[data-agent-hand]').count(),0);

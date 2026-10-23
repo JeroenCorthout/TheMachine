@@ -266,14 +266,30 @@ class CardChat(unittest.TestCase):
         self.assertEqual(self.calls[0]['session_key'], 'agent:main:assistant-review-preparation-' + job['session_job_id'])
         self.assertEqual((self.calls[0]['limit'], self.calls[0]['cursor']), (a.CHAT_HISTORY_LIMIT, None))
         self.assertTrue(chat['active'])
-        self.assertEqual(chat['cursor'], 'cur1')
+        self.assertEqual(chat['cursor'].split('|')[0], 'cur1')
         self.assertEqual(chat['live'], {'text': 'Writing to …'})
         self.assertEqual([(i['kind'], i['text']) for i in chat['items']], [('source', 'Actual evidence'), ('you', 'Make it shorter'), ('reply', 'On it.')])
         # Polling with the cursor: nothing new is just "unchanged", with the live reply
         with self.gateway({'kind': 'delta', 'messages': [], 'deltaCursor': 'cur2', 'inFlightRun': {'text': 'Writing more'}}):
-            delta = self.app.card_chat(self.sid, 'cur1')
-        self.assertEqual((delta['unchanged'], delta['cursor'], delta['live']), (True, 'cur2', {'text': 'Writing more'}))
+            delta = self.app.card_chat(self.sid, chat['cursor'])
+        self.assertEqual(self.calls[-1]['cursor'], 'cur1')
+        self.assertEqual((delta['unchanged'], delta['cursor'].split('|')[0], delta['live']), (True, 'cur2', {'text': 'Writing more'}))
         self.assertNotIn('items', delta)
+        # A send moving on (queued, then sent) is the service's own news: the whole chat comes back, not "unchanged"
+        with self.store.connect() as db:
+            db.execute("INSERT INTO action_jobs(id,suggestion_id,revision,payload,status,created_at,updated_at,approval_id,source,rfc_message_id) "
+                       "VALUES('j1',?,'r1',?,'queued',?,?,'ap1','dashboard','')",
+                       (self.sid, json.dumps({'kind': 'email', 'to': ['sam@example.com'], 'to_name': 'Sam', 'subject': 'Hi', 'body': 'Hello Sam'}), a.now(), a.now()))
+        with self.gateway({'kind': 'delta', 'messages': [], 'deltaCursor': 'cur3'}):
+            moved = self.app.card_chat(self.sid, delta['cursor'])
+        self.assertIsNone(self.calls[-1]['cursor'])  # asked for the whole conversation again
+        self.assertNotIn('unchanged', moved)
+        self.assertIn(('event', 'Sending to Sam…'), [(i['kind'], i['text']) for i in moved['items']])
+        with self.store.connect() as db:
+            db.execute("UPDATE action_jobs SET status='sent',message_id='m1' WHERE id='j1'")
+        with self.gateway({'messages': history['messages'], 'deltaCursor': 'cur4'}):
+            sent = self.app.card_chat(self.sid, moved['cursor'])
+        self.assertIn(('event', 'Sent to Sam'), [(i['kind'], i['text']) for i in sent['items']])
         with self.gateway({'error': 'unavailable'}):
             down = self.app.card_chat(self.sid)
         self.assertTrue(down['unavailable'])
@@ -318,6 +334,17 @@ class CardChat(unittest.TestCase):
         calls.clear()
         self.app.preparation_step(lambda r: calls.append(r) or {'status': 'admitted'})
         self.assertNotIn('wrote to you in the chat', next(c['message'] for c in calls if c.get('message')))
+
+
+class ChatHandleTest(unittest.TestCase):
+    def test_raw_chat_handles_never_name_anyone(self):
+        import assistant
+        self.assertEqual(assistant.chat_draft({'kind': 'slack', 'body': 'hi', 'to_name': 'andrea', 'to_email': 'andrea@example.com'})['to'], ['Andrea'])
+        self.assertEqual(assistant.chat_draft({'kind': 'slack', 'body': 'hi', 'to': ['#DM']})['to'], [])
+        for handle in ('#DM', '#DM U0A3LDWTNUS', 'D0A4EP54JM6', '#general'):
+            self.assertTrue(assistant.CHAT_HANDLE.fullmatch(handle), handle)
+            self.assertEqual(assistant.chat_name(handle, {}, 'Andrea Bustos'), 'Andrea')
+        self.assertEqual(assistant.chat_name('sam@example.com', {}, ''), 'sam@example.com')
 
 
 if __name__ == '__main__':

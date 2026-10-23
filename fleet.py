@@ -1135,6 +1135,9 @@ def telegram_message(rows, root):
     for n, row in enumerate(rows, 1):
         outcome = ((fleet_requests.ACCEPTED if row['kind'] in fleet_requests.STAGED else DECIDED).get(row['choice']) or (BY_RULE.get(row['status']) if row['choice'] == 'rule' else None) or ('Answered' if row['status'] == 'answered' else row['status'].capitalize())
                    if row['status'] != 'waiting' else '')
+        if row['choice'] == 'silent':  # marked as theirs by what they did (silent acceptance); Not mine is on the card
+            how = json.loads(_get(row, 'silent') or '{}').get('how')
+            outcome = (fleet_requests.Requests.marked_line(how) if how else 'Marked as yours') + '. Not mine on the card undoes it.'
         prefix = f'{n}. ' if many else ''
         if row['kind'] == 'anything':
             # Their words, quoted, then the draft built from your own accounts. Send this answer sends exactly that draft.
@@ -1551,11 +1554,15 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         # notify, only within them. search(accounts, query, limit) -> [(event_id, similarity)]: the app's own search.
         self.hours = {}
         self.search = None
+        # card_task(card row) -> what whoever takes a card on is asked to do (the app's card_task): a handoff leads with it.
+        self.card_task = None
         # notify_brief(text, url) tells the owner their brief is ready (phone, Telegram) and returns the Telegram id.
         self.last['briefs'] = 0.0
         self.notify_brief = None
         # remove_work(item) removes a Work Fleet's company data from this Machine and returns the counts (work_removal.py)
         self.remove_work = None
+        # task_pages() brings in answers from task pages (task_pages.TaskPages.round)
+        self.task_pages = None
         self.last['removals'] = None
         with self.connect() as db:
             ensure(db)
@@ -1925,7 +1932,8 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
 
     def telegram_view(self, message_id):
         with self.connect() as db:
-            rows = db.execute('SELECT * FROM fleet_in WHERE telegram_message_id=? ORDER BY at,id', (str(message_id),)).fetchall()
+            rows = db.execute("SELECT i.*,m.value AS silent FROM fleet_in i LEFT JOIN fleet_meta m ON m.key='handoff_silent:'||i.id "
+                              'WHERE i.telegram_message_id=? ORDER BY i.at,i.id', (str(message_id),)).fetchall()
         return telegram_message(rows, dashboard_root(self.config)) if rows else None
 
     # -- notices: what happens in the owner's Fleet (a seat request, joined, a server started, left)
@@ -2691,6 +2699,11 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
             self.requests_round()
             self.followup_round()
             self.family_reminders()
+            if self.task_pages:  # answers from task pages (task_pages.py)
+                try:
+                    self.task_pages()
+                except (ValueError, OSError) as error:
+                    LOG.warning('task pages round error=%s', type(error).__name__)
         if stamp - self.last.get('network', 0.0) > MEETINGS_EVERY or not wait:
             self.last['network'] = stamp
             self.discovery_step()

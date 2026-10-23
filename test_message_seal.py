@@ -509,7 +509,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
             'profile_runs.draft': 'profile notes (USER.md)', 'skills.body': 'a skill', 'skills.description': 'a skill',
             'skills.note': 'a skill', 'skill_hints.summary': 'a skill hint', 'tool_approval_proposals.title': 'a proposal',
             'tool_approval_proposals.detail': 'a proposal', 'checkpoints.state': 'a sync cursor (MESSAGE_SEAL_AUDIT checks)',
-            'analyses.items': 'ids and versions', 'preparations.details': 'why a preparation stopped',
+            'analyses.items': 'ids and versions', 'task_pages.state': "a task page's stage (offered, shared, done)", 'preparations.details': 'why a preparation stopped',
             'preparations.reason': 'a reason code', 'preparations.questions': 'what a stopped run asks the owner',
             'android_inbox.payload': "its text sealed by the Gateway's plugin (message_seal.INBOX); deleted once read",
             'network_outbox.body': 'matched in SQL until sent; sealed end to end in transit (network_crypto)',
@@ -520,6 +520,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
             'faults.message': "an error's own message with anything private taken out (assistant.fault_message)",
             'voices.text': 'how the owner writes on a channel, learned like a fact',
             'voice_merges.merged_text': 'the same learned channel voice, retained only for undo',
+            'suggestions.title_source': 'who wrote the title: auto or user',
             'skill_clusters.description': 'a skill suggested from learned notes', 'skill_clusters.body': 'a skill suggested from learned notes',
         }
         sealed = {f'{t}.{c}' for t, cs in message_seal.DERIVED.items() for c in cs} | {f'{t}.{c}' for t, c, _ in message_seal.DERIVED_JSON}

@@ -1,11 +1,17 @@
 # Coding agents
 
 A card can go to Claude Code or Codex. **Hand to Claude Code** and **Hand to Codex** sit with the card's other
-actions when that tool is there. You read and edit the brief first: the task, the card's drafts, links and files, and
-what done looks like. Nothing goes without your tap.
+actions when that tool is there. A small sheet opens (in the card chat, in the message box's place): **Hand to** with a
+switch between the tools, one line of what it will do, chips for what it gets (the emails, the draft, `messages.md`,
+links counted, never shown raw) and an optional note for the agent. **See the full job** shows the whole brief to read
+or edit. It opens with the task, the card's next step (its Needs you line), then your note on the card word for word,
+who it's about, what happened so far as background, the card's drafts and files, what done looks like and the limits.
+Nothing goes without your **Hand off**.
 
 The job runs in its own folder under the Machine's data folder (`agent-jobs/<job>/work`), with the card's messages in
-`card/`. The card shows its progress, then a short result with the files it made. Details stay folded away. **Ask for
+`card/messages.md`, full text included, so it needs no mailbox of its own. A job that runs away from this computer
+(Claude Code on your paired computer, Codex cloud) doesn't get that folder, so the messages are in the brief itself,
+newest first, shortened to fit with a note where something is cut. The card shows its progress, then a short result with up to three of the files it made: the ones its answer names, never logs or `.pid` files. The full list and the rest stay folded under Details. The chat shows the same block. **Ask for
 changes** sends a follow-up to the same job. Cancel stops it.
 
 A job never sends anything for you. If it rewrites a message (`draft.md`), that text becomes the card's draft, and you
@@ -24,6 +30,15 @@ The CLIs keep their own sign-ins. The Machine never reads, copies or stores a Cl
   uses `codex exec`, and the job only shows on the card. Nothing is approved for you: a command that needs approval is
   declined. If the job's thread is open in the Codex app, a follow-up from the card goes on in a copy of the thread
   (`thread/fork`), which shows in the app too. If even that is refused, the card says to carry on in Codex.
+- **On your other devices**: with remote connections on in the Codex app on this computer, **Open in Codex** from
+  another device opens the thread on this computer through that connection (`codex://threads/<id>?hostId=...`). The
+  job keeps running here. A plain thread link would look for it on the device you clicked it on.
+- **Restarts**: on Linux, Codex's app server runs in a systemd user unit of its own. It keeps The Machine's own
+  hardening (NoNewPrivileges, PrivateTmp, UMask) and environment, and it listens on loopback behind a token that only
+  the job folder holds. An update that restarts The Machine doesn't stop the job: The Machine picks it up again when
+  it is back. Claude Code background sessions run on by themselves too.
+- **Try again** carries on in the job's own thread or session, where it left off. It starts again from the brief only
+  when that thread is gone. The card says in plain words why a job stopped.
 
 ## On a hosted Machine
 
@@ -47,9 +62,10 @@ Coding agents**.
 
 ```json
 {"agents": {"claude": {"command": "claude", "config_dir": "~/.claude-other", "background": true},
-            "codex": {"command": "codex", "app_server": true},
+            "codex": {"command": "codex", "app_server": true, "detach": true},
             "max_parallel": 2, "timeout_minutes": 30}}
 ```
 
 `config_dir` points the jobs' Claude Code at another config folder, such as another account, and only for jobs.
+`"detach": false` keeps Codex's app server a child of The Machine, so a restart stops the job.
 `"claude": false` or `"codex": false` hides that action. `"agents": false` turns both off.

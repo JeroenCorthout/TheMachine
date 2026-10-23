@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Card text shows [words](https://...) as a link on the words and makes bare web addresses clickable (a long one by
-// its domain), next to the highlighted **values**: in the body, the Needs you line, the You asked note, a blocker and
+// its domain), next to the highlighted **values**: in the body, the Needs you line, the Asked note, a blocker and
 // its details, the result and a teammate's answer. Only http(s) and mailto become links; the rest stays inert text.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const now=new Date().toISOString(),doc='https://docs.google.com/document/d/abc123/edit';
@@ -38,7 +38,7 @@ try{
  assert.ok(!body.includes('](')&&!body.includes('[Google'),body);
  assert.ok(body.includes('See example.com. Ask Sam.'),body);
  assert.equal(await page.locator('#task-l1 .body strong').textContent(),'3 listings');
- // Needs you line and the You asked note
+ // Needs you line and the Asked note
  assert.deepEqual(await anchors('#task-l1 .status-line'),[['listing page','https://example.com/listing','_blank',ext]]);
  assert.equal(await page.locator('#task-l1 .status-line').innerText(),'Needs you: Check the listing page.');
  assert.deepEqual(await anchors('#task-l1 .saved-feedback blockquote'),[['https://example.org/x','https://example.org/x','_blank',ext]]);
