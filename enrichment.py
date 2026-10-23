@@ -30,6 +30,9 @@ REFRESH_DAYS = 90
 RETRY_HOURS = 24        # after an error (timeout, rate limit)
 PER_PASS = 5
 PER_DAY = 50
+# Paired with the Network, a self-hosted Machine gets hosted's organisation budget (the control plane's 1,000 a day).
+PAIRED_PER_PASS = 50
+PAIRED_PER_DAY = 1000
 PRESETS = {
     'apollo': {'url': 'https://api.apollo.io/api/v1/organizations/enrich?domain={domain}', 'headers': {'X-Api-Key': '{key}'}},
     'peopledatalabs': {'url': 'https://api.peopledatalabs.com/v5/company/enrich?website={domain}', 'headers': {'X-Api-Key': '{key}'},
@@ -252,15 +255,17 @@ def save(db, domain, status, profile, now):
                (domain, status, json.dumps(profile) if profile else None, now))
 
 
-def step(connect, config, now, per_pass=PER_PASS):
-    """Look up a few organisations. Returns how many got a profile; stops at the first service error."""
+def step(connect, config, now, per_pass=None, paired=False):
+    """Look up a few organisations. Returns how many got a profile; stops at the first service error. Paired with the
+    Network: hosted's budget (PAIRED_PER_DAY, PAIRED_PER_PASS) unless per_day says otherwise."""
     cfg = settings(config)
     if not cfg:
         return 0
+    per_pass = per_pass or (PAIRED_PER_PASS if paired else PER_PASS)
     with connect() as db:
         today = now[:10]
         used = db.execute("SELECT count(*) FROM org_profiles WHERE substr(fetched_at,1,10)=? AND status!='wrong'", (today,)).fetchone()[0]
-        domains = due(db, now, max(0, min(per_pass, int(cfg.get('per_day') or PER_DAY) - used)))
+        domains = due(db, now, max(0, min(per_pass, int(cfg.get('per_day') or (PAIRED_PER_DAY if paired else PER_DAY)) - used)))
     found = 0
     for domain in domains:
         try:
@@ -273,6 +278,21 @@ def step(connect, config, now, per_pass=PER_PASS):
             save(db, domain, 'found' if profile else 'none', profile, now)
         found += bool(profile)
     return found
+
+
+def readable_name(domain):
+    """A name to show for an organisation known only by its domain: "Remy" for remy.be, "Blue Fox" for blue-fox.io,
+    "KBC" for kbc.be (no vowels: an acronym)."""
+    label = registrable(str(domain or '').strip().lower().removeprefix('www.')).split('.')[0]
+    words = [w for w in re.split(r'[-_]+', label) if w]
+    if not words:
+        return str(domain or '')
+    return ' '.join(w.upper() if not re.search(r'[aeiouy0-9]', w) else w[:1].upper() + w[1:] for w in words)
+
+
+def website(domain):
+    """The website an email domain stands for: its own registrable domain (mail.remy.be is remy.be)."""
+    return 'https://' + registrable(str(domain or '').strip().lower().removeprefix('www.'))
 
 
 def summary(profile):

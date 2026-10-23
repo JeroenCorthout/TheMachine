@@ -163,6 +163,36 @@ class Enrichment(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Give a domain'):
             self.app.action('enrich', {'domain': 'not a domain'})
 
+    def test_an_organisation_from_an_email_domain_has_that_website_and_a_readable_name(self):
+        self.assertEqual([enrichment.readable_name(d) for d in ('remy.be', 'blue-fox.io', 'kbc.be', 'mail.remy.be', 'acme.co.uk')],
+                         ['Remy', 'Blue Fox', 'KBC', 'Remy', 'Acme'])
+        self.assertEqual(enrichment.website('mail.remy.be'), 'https://remy.be')
+        self.add(tg.mail(3, 'Ann <ann@remy.be>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Ann <ann@remy.be>', ('SENT',)),
+                 tg.mail(3, 'Lee <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee <lee@globex.com>', ('SENT',)))
+        self.build()
+        remy = self.node('org:remy.be')  # not looked up yet, or the service doesn't know it
+        self.assertEqual((remy['name'], remy['profile']), ('Remy', {'website': 'https://remy.be'}))
+        enrichment.step(self.store.connect, self.config, tg.NOW.isoformat())
+        self.build()
+        self.assertEqual(self.node('org:remy.be')['profile'], {'website': 'https://remy.be'})  # the service didn't know it: the domain stays the website
+        globex = self.node('org:globex.com')
+        self.assertEqual((globex['name'], globex['profile']['industry']), ('Globex', 'Manufacturing'))  # a looked-up name wins
+        with self.store.connect() as db:
+            graph.org_edit(db, 'org:remy.be', {'website': 'remy-accountants.be', 'name': ''}, tg.NOW.isoformat())
+        self.build()
+        self.assertEqual(self.node('org:remy.be')['profile']['website'], 'https://remy-accountants.be')  # the owner's own wins
+
+    def test_paired_with_the_network_organisations_get_hosteds_budget(self):
+        self.add(*[m for n in range(8) for m in (tg.mail(3, f'P{n} <p{n}@org{n}.example>', 'sam@acme.com'),
+                                                 tg.mail(2, 'Sam <sam@acme.com>', f'P{n} <p{n}@org{n}.example>', ('SENT',)))])
+        self.build()
+        now = tg.NOW.isoformat()
+        enrichment.step(self.store.connect, self.config, now)
+        self.assertEqual(len([p for p, _ in Service.seen if 'companies' in p]), enrichment.PER_PASS)
+        enrichment.step(self.store.connect, self.config, now, paired=True)
+        self.assertEqual(len([p for p, _ in Service.seen if 'companies' in p]), 8)  # the rest at once
+        self.assertGreater(enrichment.PAIRED_PER_DAY, enrichment.PER_DAY)
+
     def test_look_ups_go_to_people_the_owner_deals_with_not_cold_outreach_or_bulk(self):
         meeting = {'account_id': 'work', 'source_id': 'meet-hooli', 'kind': 'calendar.event', 'occurred_at': tg.at(4), 'title': 'Call', 'body': '',
                    'deleted': False, 'metadata': {'attendees': [{'email': 'sam@acme.com', 'self': True}, {'email': 'gav@hooli.example'}]}}
