@@ -35,6 +35,48 @@ class HomeScreenApp(unittest.TestCase):
         self.assertIn('id="report-problem" class="footer-link" href="https://github.com/Salesflare/TheMachine/issues/new"', page)
         self.assertIn("$('#report-problem').href=new URL('/support',state.manage_url).href", page)
 
+    def test_footer_offers_the_source_of_the_running_version(self):
+        # AGPL-3.0 section 13: people using the dashboard can get its source.
+        page = (a.ROOT / 'dashboard.html').read_text()
+        self.assertIn('id="source-code" class="footer-link" href="https://github.com/Salesflare/TheMachine"', page)
+        self.assertIn("$('#source-code').href=state.source_url", page)
+
+    def test_source_url_names_a_release_github_has_never_a_local_commit(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as root:
+            git = lambda *args: subprocess.run(['git', '-C', root, *args], check=True, capture_output=True)
+            commit = lambda m: git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', m)
+            git('init', '-q')
+            commit('x')
+            a._SOURCE_URL.clear()
+            self.assertEqual(a.source_url(root), a.SOURCE_REPO, 'a commit of its own: the repo, not a 404')
+            git('tag', 'release-20261101-0900')
+            a._SOURCE_URL.clear()
+            self.assertEqual(a.source_url(root), a.SOURCE_REPO + '/tree/release-20261101-0900')
+            commit('a local change on top')
+            git('tag', 'my-own-tag')
+            a._SOURCE_URL.clear()
+            self.assertEqual(a.source_url(root), a.SOURCE_REPO + '/tree/release-20261101-0900', 'the latest release it contains')
+        with tempfile.TemporaryDirectory() as root:  # an install that ports releases as its own commits
+            git = lambda *args: subprocess.run(['git', '-C', root, *args], check=True, capture_output=True)
+            commit = lambda m: git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', m)
+            git('init', '-q')
+            commit('Promise pages (OSS #83, release-20261023-1930)')
+            commit('A local fix')
+            a._SOURCE_URL.clear()
+            self.assertEqual(a.source_url(root), a.SOURCE_REPO + '/tree/release-20261023-1930', 'the release its last port names')
+        a._SOURCE_URL.clear()
+        self.assertEqual(a.source_url('/nonexistent-dir'), a.SOURCE_REPO)
+        a._SOURCE_URL.clear()
+
+    def test_source_url_right_after_boot(self):
+        # time.monotonic() counts from boot: under 10 minutes of uptime an empty cache must not look fresh.
+        from unittest import mock
+        a._SOURCE_URL.clear()
+        with mock.patch.object(a.time, 'monotonic', return_value=5.0):
+            self.assertEqual(a.source_url('/nonexistent-dir'), a.SOURCE_REPO)
+        a._SOURCE_URL.clear()
+
 
 if __name__ == '__main__':
     unittest.main()

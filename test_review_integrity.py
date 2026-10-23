@@ -37,6 +37,20 @@ class GraphFixes(unittest.TestCase):
         self.assertEqual(self.store.unnamed_text('r1'),first)
         with self.store.connect() as db:db.execute("UPDATE review_runs SET status='error' WHERE run_id='r1'")
         self.assertEqual(self.store.unnamed_text('r2'),first)
+    def test_board_check_offered_once_a_day_and_again_after_a_failed_review(self):
+        with self.store.connect() as db:
+            for name in ('Hire: designer','Hire: backend','Hire: support lead'):tg.graph.project_id(db,name,tg.at(0))
+            db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at) VALUES('r1','starting',?,?)",(tg.at(0),tg.at(0)))
+        first=self.store.boards_text('r1');self.assertIn('Hire: backend (project:',first)
+        self.assertEqual(self.store.boards_text('r1'),first)  # a retry of the same run sees it again
+        with self.store.connect() as db:db.execute("UPDATE review_runs SET status='ok',finished_at=? WHERE run_id='r1'",(tg.at(0),))
+        self.assertEqual(self.store.boards_text('r2'),'')  # checked today
+        with self.store.connect() as db:db.execute("UPDATE review_runs SET status='error' WHERE run_id='r1'")
+        self.assertEqual(self.store.boards_text('r2'),first)  # that review didn't finish
+        with self.store.connect() as db:db.execute("UPDATE board_offers SET offered_at='2000-01-01T00:00:00+00:00'")
+        self.assertEqual(self.store.boards_text('r3'),first)  # a day later
+        with self.store.connect() as db:db.execute("UPDATE projects SET closed_at=? WHERE name='Hire: backend'",(tg.at(0),));db.execute("DELETE FROM board_offers")
+        self.assertEqual(self.store.boards_text('r4'),'')  # fewer than three on no board
     def test_owner_clear_survives_rebuild_and_later_review(self):
         self.add(tg.mail(1,'Ann <ann@client.com>','sam@acme.com'));self.build()
         with self.store.connect() as db:tg.graph.set_role(db,'email:ann@client.com','friend','owner',tg.NOW.isoformat())

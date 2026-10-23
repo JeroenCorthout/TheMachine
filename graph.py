@@ -9,8 +9,13 @@ meeting more, a newsletter or mass mailing not at all. Card decisions teach it t
 and Mark done strengthen the people on the evidence, Not relevant weakens them.
 
 People are matched by identifiers only (email address, phone, Slack user, LinkedIn or X
-conversation, GitHub login), joined when Slack reports the user's email, when the same full name
-appears on two different channels, or when the owner or agent says so (merges). Projects are named
+conversation, GitHub login), joined on strong evidence only: Slack reports the user's email, the same
+full name is on two identities in one message or conversation, a lookup found the same LinkedIn
+profile for both, their WhatsApp number is in their own mail, the same full name appears on two
+different channels (one person with it per channel), or the owner or agent says so (merges). Weaker
+evidence (that name shared by two people on one channel, a similar name with the same company, people,
+project or role) is only offered as "Same person?" (graph_same); the owner's Merge or Not the same is
+kept in graph_merges, and Not the same also undoes a merge for good. Projects are named
 by the review agent and the owner, and spread to the rest of their threads; a signal that reads like
 a labelled one and shares a person with it is probably part of it too (weaker, until a review
 confirms). Threads that read alike and share people, but nobody named, are offered to a review as
@@ -26,11 +31,14 @@ from __future__ import annotations
 import collections
 import datetime as dt
 import email.utils
+import hashlib
+import hmac
 import json
 import math
 import operator
 import os
 import re
+import secrets
 import sqlite3
 import struct
 import unicodedata
@@ -44,6 +52,7 @@ CREATE TABLE IF NOT EXISTS event_projects(event_id INTEGER NOT NULL,project_id I
   source TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(event_id,project_id));
 CREATE TABLE IF NOT EXISTS identity_names(identifier TEXT PRIMARY KEY,name TEXT,email TEXT,checked_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_merges(a TEXT NOT NULL,b TEXT NOT NULL,same INTEGER NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(a,b));
+CREATE TABLE IF NOT EXISTS graph_same(a TEXT NOT NULL,b TEXT NOT NULL,why TEXT NOT NULL,score REAL NOT NULL,PRIMARY KEY(a,b));
 CREATE TABLE IF NOT EXISTS graph_nodes(id TEXT PRIMARY KEY,kind TEXT NOT NULL,name TEXT NOT NULL,strength REAL NOT NULL,
   last_at TEXT,signals INTEGER NOT NULL,gap_days REAL,quiet INTEGER NOT NULL DEFAULT 0,trend REAL,info TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_links(a TEXT NOT NULL,b TEXT NOT NULL,kind TEXT NOT NULL,strength REAL NOT NULL,last_at TEXT,PRIMARY KEY(a,b));
@@ -59,6 +68,13 @@ CREATE TABLE IF NOT EXISTS graph_role_asks(identifier TEXT PRIMARY KEY,run_id TE
 CREATE TABLE IF NOT EXISTS role_corrections(id INTEGER PRIMARY KEY,identifier TEXT NOT NULL,name TEXT NOT NULL,old_role TEXT NOT NULL,
   new_role TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS org_profiles(domain TEXT PRIMARY KEY,status TEXT NOT NULL,profile TEXT,fetched_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS person_profiles(identifier TEXT PRIMARY KEY,status TEXT NOT NULL,profile TEXT,fetched_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS person_photos(identifier TEXT PRIMARY KEY,key TEXT NOT NULL UNIQUE,type TEXT NOT NULL,data BLOB NOT NULL,saved_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS person_photo_tries(identifier TEXT PRIMARY KEY,tried_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS contact_photo_links(identifier TEXT PRIMARY KEY,url TEXT NOT NULL,chosen INTEGER NOT NULL,source TEXT NOT NULL,seen_at TEXT NOT NULL,tried_at TEXT);
+CREATE TABLE IF NOT EXISTS enrich_prefs(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS forgotten_people(digest TEXT PRIMARY KEY,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS forgotten_salt(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_relations(a TEXT NOT NULL,b TEXT NOT NULL,relation TEXT NOT NULL,source TEXT NOT NULL,event_id INTEGER,
   created_at TEXT NOT NULL,PRIMARY KEY(a,b));
 CREATE TABLE IF NOT EXISTS org_edits(domain TEXT PRIMARY KEY,fields TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -67,6 +83,14 @@ CREATE TABLE IF NOT EXISTS hidden_domains(domain TEXT PRIMARY KEY,hidden INTEGER
 CREATE TABLE IF NOT EXISTS person_orgs(identifier TEXT PRIMARY KEY,org TEXT NOT NULL,org_id TEXT,source TEXT NOT NULL,via TEXT,event_id INTEGER,
   quote TEXT,said_at TEXT,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_org_asks(identifier TEXT PRIMARY KEY,run_id TEXT,asked_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS boards(id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQUE COLLATE NOCASE,stages TEXT NOT NULL,source TEXT NOT NULL,
+  created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS project_moves(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL,board_id INTEGER,stage TEXT NOT NULL,reason TEXT,
+  event_id INTEGER,source TEXT NOT NULL,at TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS project_moves_project ON project_moves(project_id,at);
+CREATE TABLE IF NOT EXISTS board_offers(id INTEGER PRIMARY KEY CHECK(id=1),run_id TEXT,offered_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS board_suggestions(id INTEGER PRIMARY KEY,name TEXT NOT NULL,stages TEXT NOT NULL,about TEXT,projects TEXT NOT NULL,
+  reason TEXT,source TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',board_id INTEGER,created_at TEXT NOT NULL,decided_at TEXT);
 '''
 RECHECK_DAYS = 90       # a review's role is read again after this, when there was contact since
 HALF_LIFE = {'person': 60, 'pair': 45, 'project_person': 45, 'project': 21}
@@ -82,7 +106,7 @@ FREEMAIL = {'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.be', 'outlook
             'yahoo.com', 'yahoo.fr', 'icloud.com', 'me.com', 'mac.com', 'proton.me', 'protonmail.com', 'telenet.be', 'skynet.be',
             'gmx.com', 'gmx.de', 'web.de', 'aol.com', 'pandora.be', 'scarlet.be', 'proximus.be', 'yandex.com', 'zoho.com'}
 ROLE = re.compile(r'^(?:info|support|hello|hi|team|sales|billing|admin|office|contact|help|accounts?|finance|jobs|hr|press|legal|security|privacy|feedback)@')
-GENERIC_NAMES = {'you', 'linkedin member', 'x conversation', 'linkedin conversation', 'unknown'}
+GENERIC_NAMES = {'you', 'linkedin member', 'x conversation', 'linkedin conversation', 'unknown', 'unknown sender', 'unknown caller'}
 WEIGHTS = {'owner': 0.6, 'them': 0.3, 'met': 0.5}
 DECISION_WEIGHT = {'accept': 1.0, 'send': 1.0, 'complete': 1.0, 'other': 0.5, 'reject': -0.5}
 # Cosine between local embeddings (see embeddings.py). Meaning alone groups by genre (every partnership
@@ -92,6 +116,13 @@ UNNAMED = 0.75
 UNNAMED_DAYS = 45
 UNNAMED_KINDS = {'gmail.message', 'calendar.event', 'salesflare.email', 'salesflare.meeting', 'intercom.conversation', 'github.notification'}
 OPEN_CARD = ('pending', 'accepted', 'prepared', 'instructions', 'snoozed')
+# Boards: projects of one kind (partner listings, buyers, onboardings) in stages. Every board ends in this row too.
+STALLED = 'Stalled or declined'
+PROJECT_STAGE_COLUMNS = ('board_id INTEGER', 'stage TEXT', 'stage_reason TEXT', 'stage_event_id INTEGER', 'stage_by TEXT', 'stage_at TEXT',
+                         'next_step TEXT', 'org TEXT')
+BOARD_COLUMNS = ('about TEXT', 'side INTEGER NOT NULL DEFAULT 1', 'updated_at TEXT')
+MAX_STAGES = 8
+STUCK_DAYS = 10         # no reply for this long after the owner wrote: the tile says so
 
 
 def ensure(db):
@@ -101,12 +132,22 @@ def ensure(db):
         db.execute('ALTER TABLE graph_events ADD COLUMN probable INTEGER NOT NULL DEFAULT 0')
     if 'direct' not in {r[1] for r in db.execute('PRAGMA table_info(graph_events)')}:
         db.execute('ALTER TABLE graph_events ADD COLUMN direct INTEGER NOT NULL DEFAULT 0')
+    if 'source' not in {r[1] for r in db.execute('PRAGMA table_info(graph_merges)')}:  # who said it (2026-10-23): the owner, or a review (older rows)
+        db.execute('ALTER TABLE graph_merges ADD COLUMN source TEXT')
     have = {r[1] for r in db.execute('PRAGMA table_info(person_roles)')}
     for column in ('event_id INTEGER', 'quote TEXT', 'hints TEXT', 'checked_at TEXT'):  # a role's evidence and when it was last read
         if column.split()[0] not in have:
             db.execute('ALTER TABLE person_roles ADD COLUMN ' + column)
     if 'people_shown' not in {r[1] for r in db.execute('PRAGMA table_info(graph_role_asks)')}:  # the ask showed an organisation's people with their roles
         db.execute('ALTER TABLE graph_role_asks ADD COLUMN people_shown INTEGER NOT NULL DEFAULT 0')
+    have = {r[1] for r in db.execute('PRAGMA table_info(projects)')}
+    for column in PROJECT_STAGE_COLUMNS:  # a project's place on a board (2026-10-23): its stage, why it last moved and from which message
+        if column.split()[0] not in have:
+            db.execute('ALTER TABLE projects ADD COLUMN ' + column)
+    have = {r[1] for r in db.execute('PRAGMA table_info(boards)')}
+    for column in BOARD_COLUMNS:  # the owner's own boards (2026-10-24): which projects belong, and whether it has a Stalled row
+        if column.split()[0] not in have:
+            db.execute('ALTER TABLE boards ADD COLUMN ' + column)
 
 
 class Owner:
@@ -146,6 +187,7 @@ def bulk(address):
     return bool(BULK.search(address))
 
 
+DOMAIN_NAME = re.compile(r'[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}')  # "HelloTV.nl": a sender's domain, not a person's name
 SUFFIX = re.compile(r'\s+(?:[|/\-–—•·:@]|via|from|at|for)\s+.*$')
 DEGREE = re.compile(r'^(?:[A-Z]{2,6}|Ph\.?D\.?|MSc|BSc|Jr\.?|Sr\.?)$')
 
@@ -175,7 +217,7 @@ def plain_name(name):
     """Comparable full name: accents, case, punctuation and extra spaces removed; None unless it
     looks like a person's full name (two or more words, no address)."""
     name = person_name(name)
-    if not name or '@' in name or name.casefold() in GENERIC_NAMES:
+    if not name or '@' in name or name.casefold() in GENERIC_NAMES or DOMAIN_NAME.fullmatch(name):
         return None
     folded = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode().casefold()
     words = re.findall(r'[a-z]+', folded)
@@ -312,10 +354,133 @@ def thread_key(kind, m):
     return None, False
 
 
+# Same person? Why two identities were joined (strong evidence), as the person page says it.
+JOINED_WHY = {'owner': 'merged by you', 'agent': 'merged by a review', 'directory': 'their Slack profile has this address',
+              'message': 'same name, both on one message', 'thread': 'same name, both in one conversation',
+              'profile': 'the same LinkedIn profile', 'signature': 'this number is in their own email', 'name': 'same full name on two channels'}
+PHONE = re.compile(r'(?<![\w+])(?:\+|00)?\d[\d ()./-]{7,18}\d(?![\w])')
+QUOTED = re.compile(r'^(?:>|On .{4,200} wrote:\s*$|-{2,} ?(?:Original|Forwarded) |From: |Van: |Le .{4,200} a écrit|Am .{4,200} schrieb)', re.M)
+SIGNATURE_MAILS = 12     # recent mails read per address for a phone number in its own text
+SAME_BUCKET = 60         # more people than this with one first name: too common to compare
+
+
+def name_words(name, identifier=None):
+    """Folded words of a person's name; for an address with no name, of its local part when that reads as a full name
+    (jane.doe@ → jane doe). Empty when there is no name."""
+    name = person_name(name) if name else ''
+    if name and '@' not in name and not DOMAIN_NAME.fullmatch(name) and name.casefold() not in GENERIC_NAMES and name != shown_id(identifier or '', {}):
+        folded = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode().casefold()
+        return re.findall(r'[a-z]+', folded)
+    if identifier and identifier.startswith('email:'):
+        local = identifier[6:].split('@', 1)[0]
+        parts = re.split(r'[._-]', local.casefold())
+        if len(parts) >= 2 and all(re.fullmatch(r'[a-z]{2,}', p) for p in parts) and not ROLE.match(local + '@'):
+            return parts
+    return []
+
+
+def name_match(a, b):
+    """'same' (the same full name), 'similar' (the same first name, or one a short form of the other, and no other
+    surname: "Ann" and "Ann Lee", "Alex Lee" and "Alexander Lee", "Ann Lee" and "Ann Marie Lee") or None."""
+    if not a or not b:
+        return None
+    if a == b:
+        return 'same' if len(a) >= 2 else 'similar'
+    first = a[0] == b[0] or (min(len(a[0]), len(b[0])) >= 3 and (a[0].startswith(b[0]) or b[0].startswith(a[0])))
+    if not first:
+        return None
+    if len(a) >= 2 and len(b) >= 2 and a[-1] != b[-1]:
+        return None  # another surname: another person
+    return 'similar'
+
+
+def linkedin_key(url):
+    found = re.search(r'linkedin\.com/in/([^/?#\s]+)', str(url or ''), re.I)
+    return found[1].casefold() if found else None
+
+
+def own_text(body):
+    """A message's own text: without the quoted mail it answers or forwards, where other people's signatures are."""
+    body = str(body or '')
+    cut = QUOTED.search(body)
+    return body[:cut.start()] if cut else body
+
+
+def signature_pairs(db, senders, best, known):
+    """(email identifier, WhatsApp identifier) pairs where a WhatsApp number is in mail that address wrote itself (its
+    signature, "call me on ...") and both carry a matching name: a number alone could be a colleague's or an office's."""
+    phones = {}
+    for identifier in known:
+        if identifier.startswith('wa:') and identifier[3:].isdigit() and len(identifier) >= 12:
+            phones.setdefault(identifier[-9:], []).append(identifier)
+    wa_names = {i: name_words(best(i), i) for ids in phones.values() for i in ids}
+    wanted = {}
+    for identifier, mails in senders.items():
+        words = name_words(best(identifier), identifier)
+        if words and any(name_match(words, w) for w in wa_names.values()):
+            wanted[identifier] = [e for _, e in sorted(mails, reverse=True)[:SIGNATURE_MAILS]]
+    if not wanted:
+        return []
+    event_ids = sorted({e for ids in wanted.values() for e in ids})
+    bodies = {}
+    for start in range(0, len(event_ids), 500):
+        chunk = event_ids[start:start + 500]
+        bodies.update({r[0]: r[1] for r in db.execute(f"SELECT id,body FROM events WHERE id IN ({','.join('?' * len(chunk))})", chunk)})
+    pairs = []
+    for identifier, ids in sorted(wanted.items()):
+        words = name_words(best(identifier), identifier)
+        numbers = {re.sub(r'\D', '', p)[-9:] for e in ids for p in PHONE.findall(own_text(bodies.get(e))) if len(re.sub(r'\D', '', p)) >= 9}
+        for number in sorted(numbers):
+            for wa in phones.get(number, ()):
+                if name_match(words, wa_names[wa]):
+                    pairs.append((identifier, wa))
+    return pairs
+
+
+def likely_same(people, union, together, projects):
+    """Pairs of people who may be one, for the owner to Merge or keep apart: [(a, b, why, score)]. The same full name
+    is enough to ask (it was not joined because two people on one channel carry it); a similar name needs something
+    shared besides: the same company, people seen with both, a project, or the same role."""
+    buckets = collections.defaultdict(list)
+    for node, p in people.items():
+        if p['words']:
+            buckets[p['words'][0]].append(node)
+            if len(p['words'][0]) >= 3:
+                buckets[p['words'][0][:3]].append(node)  # "Alex" and "Alexander"
+    seen, out = set(), []
+    for members in buckets.values():
+        if len(members) > SAME_BUCKET:
+            continue
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                pair = tuple(sorted((a, b)))
+                if pair in seen or a == b:
+                    continue
+                seen.add(pair)
+                pa, pb = people[pair[0]], people[pair[1]]
+                match = name_match(pa['words'], pb['words'])
+                if not match or union.kept_apart(union.find(pair[0]), union.find(pair[1])):
+                    continue
+                shared = []
+                if pa['domains'] & pb['domains']:
+                    shared.append('both at ' + sorted(pa['domains'] & pb['domains'])[0])
+                if pa['role'] and pa['role'] == pb['role']:
+                    shared.append('the same role')
+                if together(pair[0]) & together(pair[1]):
+                    shared.append('with the same people')
+                if projects.get(pair[0], set()) & projects.get(pair[1], set()):
+                    shared.append('on the same project')
+                if match == 'same' and len(pa['words']) >= 2 or shared:
+                    why = ', '.join([('Same name' if match == 'same' else 'Similar name')] + shared)
+                    out.append((*pair, why, round(len(shared) + (2 if match == 'same' else 0) + min(pa['strength'], pb['strength']), 4)))
+    return sorted(out, key=lambda s: -s[3])[:300]
+
+
 class Union:
-    """Identifiers joined into people; a pair said to be different is never joined, directly or through others."""
+    """Identifiers joined into people; a pair said to be different is never joined, directly or through others.
+    Each join is kept as (a, b, why), so a person's page can say why they are one and undo it."""
     def __init__(self, apart=()):
-        self.parent, self.members, self.apart = {}, {}, set(apart)
+        self.parent, self.members, self.apart, self.edges = {}, {}, set(apart), []
 
     def find(self, x):
         if x not in self.parent:
@@ -325,15 +490,22 @@ class Union:
             x = self.parent[x]
         return x
 
-    def join(self, a, b):
+    def join(self, a, b, why=None):
+        first, second = a, b
         a, b = self.find(a), self.find(b)
-        if a == b or any(frozenset((x, y)) in self.apart for x in self.members[a] for y in self.members[b]):
-            return
+        if a == b or self.kept_apart(a, b):
+            return False
         # An email address names the node when there is one: stable and recognisable.
         if b.startswith('email:') and not a.startswith('email:'):
             a, b = b, a
         self.parent[b] = a
         self.members[a] |= self.members.pop(b)
+        self.edges.append((first, second, why))
+        return True
+
+    def kept_apart(self, a, b):
+        """True when someone said a member of one is not the same as a member of the other."""
+        return bool(self.apart) and any(frozenset((x, y)) in self.apart for x in self.members[a] for y in self.members[b])
 
 
 def parse_time(value):
@@ -483,6 +655,7 @@ def _build(db, config, now):
             wrote_to |= {a for _, a in addresses(m.get('to')) + addresses(m.get('cc'))}
 
     warmup = hidden(db)  # addresses there are a warm-up tool's traffic: nobody in the graph
+    gone = forgotten(db)  # people the owner deleted permanently: never added again
 
     # Who: identifiers per signal, joined into people.
     seen_message_ids = set()
@@ -491,6 +664,8 @@ def _build(db, config, now):
     appears = collections.defaultdict(set)  # identifier -> where they show up: a hint for a review, never a role
     owner_events = set()
     headlines = set()  # LinkedIn conversations whose person has a headline (read at view time: it stays sealed in the signal)
+    named_on = collections.defaultdict(lambda: collections.defaultdict(set))  # (message or conversation) -> full name -> identifiers
+    senders = collections.defaultdict(list)  # email identifier -> [(at, event id)] of mail it wrote: its own text may carry its number
     for event_id, account_id, kind, at, m in signals:
         if kind == 'gmail.message' and m.get('message-id'):
             if m['message-id'] in seen_message_ids:
@@ -512,12 +687,21 @@ def _build(db, config, now):
                 domain = addr.rsplit('@', 1)[1]
                 if kind == 'stripe.event' and m.get('customer_name') and domain not in FREEMAIL:
                     paying_names.setdefault(domain, str(m['customer_name']))
-        found = [t for t in touches(kind, m, owner, wrote_to) if not (t[0].startswith('email:') and t[0].rsplit('@', 1)[1] in warmup)]
+        found = [t for t in touches(kind, m, owner, wrote_to) if not (t[0].startswith('email:') and t[0].rsplit('@', 1)[1] in warmup) and not gone(t[0])]
         if not found:
             continue
         if kind == 'linkedin.message' and isinstance(m.get('headline'), str) and m['headline'].strip() and not m.get('group'):
             headlines.add('li:' + str(m['conversation_id']))
         per_event[event_id] = (kind, at, account_id, m, found)
+        key, exact = thread_key(kind, m)
+        for identifier, name, _, _ in found:
+            full = plain_name(name) if name and '@' not in str(name) else None
+            if full and full not in owner.names and not ROLE.match(identifier.split(':', 1)[-1]):
+                named_on[('message', event_id)][full].add(identifier)
+                if key and exact:
+                    named_on[('thread', account_id, key)][full].add(identifier)
+        if kind == 'gmail.message' and found[0][3] in ('them', 'seen') and found[0][0].startswith('email:'):
+            senders[found[0][0]].append((at, event_id))
         if any(role in ('owner', 'met') for _, _, _, role in found):
             owner_events.add(event_id)
         for identifier, name, _, _ in found:
@@ -525,35 +709,67 @@ def _build(db, config, now):
                 names[identifier][person_name(name)] += 1
             if identifier.startswith('x:') and m.get('screen_name') and not m.get('from_me'):
                 x_names[identifier] = m['screen_name']
-    merges = db.execute('SELECT a,b,same FROM graph_merges ORDER BY created_at').fetchall()
-    union = Union(frozenset((r['a'], r['b'])) for r in merges if not r['same'])
+    merges = db.execute('SELECT a,b,same,source FROM graph_merges ORDER BY created_at').fetchall()
+    union = Union(frozenset((r['a'], r['b'])) for r in merges if not r['same'])  # Not the same, and an undone merge
     known = {identifier for (_, _, _, _, found) in per_event.values() for identifier, _, _, _ in found}
     for identifier in sorted(known):
         union.find(identifier)
     for r in merges:
-        if r['same']:
-            union.join(r['a'], r['b'])
+        if r['same'] and not gone(r['a']) and not gone(r['b']):
+            union.join(r['a'], r['b'], 'owner' if r['source'] == 'owner' else 'agent')
     for r in db.execute('SELECT identifier,name,email FROM identity_names'):
+        if gone(r['identifier']) or (r['email'] and gone('email:' + r['email'].lower())):
+            continue
         if r['name']:
             names[r['identifier']][person_name(r['name'])] += 3
         if r['email'] and r['identifier'] in known:
-            union.join('email:' + r['email'].lower(), r['identifier'])
-    by_name = collections.defaultdict(set)
-    for identifier in known:
-        best = names[identifier].most_common(1)
-        full = plain_name(best[0][0]) if best else None
-        if full:
-            by_name[full].add(identifier)
-    for full, group in by_name.items():
-        if full in owner.names:
-            continue  # the owner, writing from another channel
-        spaces = collections.Counter(i.split(':', 1)[0] for i in group)
-        # The same full name on different channels is one person, unless it's ambiguous
-        # within a channel (two addresses, two chats) or someone said they differ.
-        if len(spaces) > 1 and all(c == 1 for c in spaces.values()):
+            union.join('email:' + r['email'].lower(), r['identifier'], 'directory')
+
+    def best(identifier):
+        top = names[identifier].most_common(1)
+        return top[0][0] if top else None
+    # Strong evidence, never a name alone: the same full name on two identities in one message (someone writing from
+    # work with their own address in CC) or one conversation, ...
+    for where, by_full in sorted(named_on.items(), key=lambda item: item[0][0] != 'message'):
+        for full, group in sorted(by_full.items()):
             group = sorted(group, key=lambda i: (not i.startswith('email:'), i))
             for other in group[1:]:
-                union.join(group[0], other)
+                union.join(group[0], other, where[0])
+    # ... the same LinkedIn profile, found for both by a lookup, and their WhatsApp number in mail they wrote themselves.
+    by_profile = collections.defaultdict(set)
+    for r in db.execute("SELECT identifier,profile FROM person_profiles WHERE status='found' AND profile IS NOT NULL"):
+        try:
+            url = linkedin_key(json.loads(r['profile']).get('linkedin_url')) if r['identifier'] in known else None
+        except (ValueError, AttributeError):
+            url = None
+        if url:
+            by_profile[url].add(r['identifier'])
+    for url, group in sorted(by_profile.items()):
+        group = sorted(group, key=lambda i: (not i.startswith('email:'), i))
+        for other in group[1:]:
+            union.join(group[0], other, 'profile')
+    for address, number in signature_pairs(db, senders, best, known):
+        union.join(address, number, 'signature')
+    by_name = collections.defaultdict(set)
+    for identifier in known:
+        full = plain_name(best(identifier))
+        if full:
+            by_name[full].add(identifier)
+    for full, group in sorted(by_name.items()):
+        if full in owner.names:
+            continue  # the owner, writing from another channel
+        spaces = collections.defaultdict(set)
+        for i in group:
+            spaces[i.split(':', 1)[0]].add(union.find(i))
+        # The same full name on different channels is one person, unless two people carry it on one channel
+        # (two addresses or two chats not shown to be one) or someone said they differ: then it is only a question.
+        if len(spaces) > 1 and all(len(roots) == 1 for roots in spaces.values()):
+            group = sorted(group, key=lambda i: (not i.startswith('email:'), i))
+            for other in group[1:]:
+                union.join(group[0], other, 'name')
+    joined = collections.defaultdict(list)
+    for a, b, why in union.edges:
+        joined[union.find(a)].append((a, b, why))
 
     # How strong: per day, capped; faded by age.
     day_weight = collections.defaultdict(float)
@@ -594,7 +810,7 @@ def _build(db, config, now):
         last_day[node] = max(last_day.get(node, day), day)
 
     # Projects: labels, spread to the rest of their threads.
-    projects = {r['id']: dict(r) for r in db.execute('SELECT id,name,created_at,closed_at FROM projects')}
+    projects = {r['id']: dict(r) for r in db.execute('SELECT id,name,created_at,closed_at,board_id,stage FROM projects')}
     labelled = collections.defaultdict(set)
     for r in db.execute('SELECT event_id,project_id FROM event_projects'):
         if r['project_id'] in projects:
@@ -680,10 +896,13 @@ def _build(db, config, now):
     related = db.execute("SELECT a,b,relation,source FROM graph_relations ORDER BY source='owner',created_at").fetchall()
     profiles = {r['domain']: json.loads(r['profile']) for r in db.execute("SELECT domain,profile FROM org_profiles WHERE profile IS NOT NULL AND status!='wrong'")}
     wrong = {r[0] for r in db.execute("SELECT domain FROM org_profiles WHERE status='wrong'")}
+    looked_up = {r['identifier']: r['profile'] for r in db.execute("SELECT identifier,profile FROM person_profiles WHERE status='found' AND profile IS NOT NULL")}
+    photos = {r['identifier']: r['key'] for r in db.execute('SELECT identifier,key FROM person_photos')}
     edits = {r['domain']: json.loads(r['fields']) for r in db.execute('SELECT domain,fields FROM org_edits')}
     stated_rows = {r['identifier']: dict(r) for r in db.execute('SELECT * FROM person_orgs')}
     stated = {}  # person node -> the statement of where they work, when no work address says it
     surnames = {n.split()[-1] for n in owner.names if len(n.split()) >= 2}
+    alike = {}  # person node -> what "Same person?" compares: name words, company domains, role
     for node, value in strength.items():
         if value < FLOOR:
             continue
@@ -718,11 +937,24 @@ def _build(db, config, now):
         hints = sorted(set().union(*(appears.get(i, ()) for i in group))) + (["an address at the owner's own domain"] if colleague else []) \
             + (["in the owner's Slack"] if any(i.startswith('slack:') for i in group) else []) \
             + (["shares the owner's surname"] if full and surnames & set(full.split()[1:]) else [])
+        person_profile = next((json.loads(looked_up[i]) for i in group if i in looked_up), None)
+        # Only a photo saved on this Machine shows (served by the dashboard), never the service's own link.
+        person_profile = {k: v for k, v in (person_profile or {}).items() if k not in ('photo', 'photo_gone')}
+        photo_key = next((photos[i] for i in group if i in photos), None)
+        if photo_key:
+            person_profile['photo'] = 'api/person-photo?p=' + photo_key
+        person_profile = person_profile or None
         info = {'ids': sorted({shown_id(i, x_names) for i in group}), 'org': ('org:' + domains[0]) if domains and not said_org else None,
                 'org_by': 'email' if domains and not said_org else None, 'has_headline': any(i in headlines for i in group),
                 'wrote': len(roles[node]['owner']), 'heard': len(roles[node]['them']), 'met': len(roles[node]['met']),
                 'accounts': sorted(accounts[node]), 'next_meeting': next_meeting[node].isoformat() if node in next_meeting else None,
-                'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk}
+                'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk,
+                'profile': person_profile}
+        if len(group) > 1:
+            info['joined'] = [{'a': x, 'b': y, 'a_shown': shown_id(x, x_names), 'b_shown': shown_id(y, x_names), 'why': JOINED_WHY.get(why, 'joined'),
+                               'by': why} for x, y, why in joined.get(node, ()) if why]
+        alike[node] = {'words': name_words(name, node if name == shown_id(node, x_names) else None), 'strength': value,
+                       'domains': set(domains), 'role': ' '.join(str(role).casefold().split()) if role else None}
         nodes.append((node, 'person', name[:200], round(value, 4), last_day[node].isoformat() if node in last_day else None,
                       len(node_events[node]), usual, int(quiet), None, info))
     # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
@@ -752,6 +984,27 @@ def _build(db, config, now):
             named_orgs[org_id].append((node, value, said_org['org']))
         infos[node].update(org=org_id, org_by=said_org['source'] if said_org['source'] == 'owner' else 'review', org_name=said_org['org'],
                            org_via=said_org['via'], org_event_id=said_org['event_id'], org_at=said_org['said_at'])  # the quote stays sealed
+    # Same person? Likely pairs for the owner to Merge or keep apart, on both pages and in People.
+    seen_with = {}
+
+    def together(node):
+        if node not in seen_with:
+            seen_with[node] = {p for _, e in node_events[node] for p in event_people.get(e, ())} - {node}
+        return seen_with[node]
+    on_projects = collections.defaultdict(set)
+    for (node, pid), value in project_people.items():
+        if value >= FLOOR:
+            on_projects[node].add(pid)
+    same_rows = likely_same(alike, union, together, on_projects)
+    for a, b, why, _ in same_rows:
+        for one, other in ((a, b), (b, a)):
+            asks = infos[one].setdefault('same', [])
+            if len(asks) < 3:
+                asks.append({'id': other, 'why': why})
+    names_now = {n[0]: n[2] for n in nodes}
+    for info in infos.values():
+        for ask in info.get('same', ()):
+            ask['name'] = names_now.get(ask['id'])
     nodes = [n[:9] + (json.dumps(n[9]),) if isinstance(n[9], dict) else n for n in nodes]
     kept = {n[0] for n in nodes}
     for org_id, people in named_orgs.items():
@@ -775,12 +1028,13 @@ def _build(db, config, now):
     two_weeks = current - dt.timedelta(days=14)
     for pid, project in projects.items():
         value, before = heat(pid, current), heat(pid, two_weeks)
-        if value < FLOOR and not project_events.get(pid):
+        if value < FLOOR and not project_events.get(pid) and not project['board_id']:  # on a board it stays, however quiet
             continue
         events_ = sorted(project_events.get(pid, ()))
         nodes.append(('project:' + str(pid), 'project', project['name'], round(value, 4), events_[-1][0].date().isoformat() if events_ else None,
                       len(events_), None, 0, round(value / before, 2) if before > FLOOR else None,
-                      json.dumps({'closed_at': project['closed_at'], 'created_at': project['created_at'], 'probable': sum(1 for e in events_ if e[2])})))
+                      json.dumps({'closed_at': project['closed_at'], 'created_at': project['created_at'], 'probable': sum(1 for e in events_ if e[2]),
+                                  'board_id': project['board_id'], 'stage': project['stage']})))
         kept.add('project:' + str(pid))
     for (node, pid), value in project_people.items():
         if value >= FLOOR and node in kept:
@@ -831,6 +1085,8 @@ def _build(db, config, now):
         db.execute('DELETE FROM graph_links')
         db.execute('DELETE FROM graph_events')
         db.execute('DELETE FROM graph_unnamed')
+        db.execute('DELETE FROM graph_same')
+        db.executemany('INSERT OR REPLACE INTO graph_same(a,b,why,score) VALUES(?,?,?,?)', same_rows)
         db.executemany('INSERT OR REPLACE INTO graph_nodes(id,kind,name,strength,last_at,signals,gap_days,quiet,trend,info) VALUES(?,?,?,?,?,?,?,?,?,?)', nodes)
         db.executemany('INSERT OR REPLACE INTO graph_links(a,b,kind,strength,last_at) VALUES(?,?,?,?,?)', links)
         # A confirmed label wins over a probable one for the same signal.
@@ -843,7 +1099,8 @@ def _build(db, config, now):
         db.execute('ROLLBACK')
         raise
     return {'people': sum(1 for n in nodes if n[1] == 'person'), 'projects': sum(1 for n in nodes if n[1] == 'project'),
-            'links': len(links), 'signals': len(signals), 'probable': len(probable), 'unnamed': len(unnamed_rows), 'took_ms': took}
+            'links': len(links), 'signals': len(signals), 'probable': len(probable), 'unnamed': len(unnamed_rows), 'same': len(same_rows),
+            'joined': sum(1 for _, _, why in union.edges if why in ('message', 'thread', 'profile', 'signature', 'name')), 'took_ms': took}
 
 
 # Reading.
@@ -862,7 +1119,8 @@ def node_view(row, links=None):
                     next_meeting=info.get('next_meeting'), colleague=info.get('colleague'), role=info.get('role'),
                     role_by=info.get('role_by'), role_id=info.get('role_id'), hints=info.get('hints', []),
                     seen_only=bool(info.get('seen_only')), relations=info.get('relations', []), org_by=info.get('org_by'),
-                    org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'))
+                    org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'),
+                    profile=info.get('profile'), joined=info.get('joined', []), same=info.get('same', []))
     elif row['kind'] == 'org':
         view.update(role=info.get('role'), role_by=info.get('role_by'), domain=info.get('domain'), profile=info.get('profile'),
                     about=enrichment.summary(info.get('profile')), edited=info.get('edited', []), wrong=bool(info.get('wrong')))
@@ -984,7 +1242,9 @@ def context_lines(db, event_ids, limit_chars=1500, skip_card=None):
             org = db.execute('SELECT name,info FROM graph_nodes WHERE id=?', (view['org'],)).fetchone() if view['org'] else None
             org_info = json.loads(org['info']) if org else {}
             org_bits = [b for b in (org_info.get('role'), enrichment.summary(org_info.get('profile'))) if b]
-            bits = ([view['role']] if view['role'] else ['no role yet']) + ([f"at {org['name']}" + (f" ({'; '.join(org_bits)})" if org_bits else '')] if org else []) \
+            title = (view.get('profile') or {}).get('title')
+            bits = ([view['role']] if view['role'] else ['no role yet']) + ([f'job title {title}'] if title else []) \
+                + ([f"at {org['name']}" + (f" ({'; '.join(org_bits)})" if org_bits else '')] if org else []) \
                 + [relation_text(r) for r in view['relations'][:2]] \
                 + [f"{view['closeness']} contact", f"last {'seen' if view['seen_only'] else 'contact'} {short_date(view['last_at'])}"]
             if view['usual_gap_days']:
@@ -1030,6 +1290,7 @@ def overview(db, limit=12):
             'whos_who': unconfirmed(db),
             'waiting': waiting(db),
             'warmup': hidden_list(db),
+            'same_person': same_people(db),
             'counts': counts(db)}
 
 
@@ -1053,10 +1314,30 @@ def headline(db, node_id):
     return None
 
 
-def detail(db, node_id, events=12):
+def resolve(db, node_id):
+    """A node by its id, or the person an identifier is now part of (an old link after a merge)."""
     row = db.execute('SELECT * FROM graph_nodes WHERE id=?', (node_id,)).fetchone()
+    if row or not re.fullmatch(r'(?:email|wa|slack|li|x|gh):\S+', str(node_id or '')):
+        return row
+    return db.execute("SELECT n.* FROM graph_nodes n, json_each(n.info,'$.identifiers') j WHERE n.kind='person' AND j.value=? LIMIT 1",
+                      (node_id,)).fetchone()
+
+
+def same_people(db, limit=30):
+    """Same person? The likely pairs the graph found, strongest first, for the review list in People."""
+    out = []
+    for r in db.execute('SELECT s.a,s.b,s.why FROM graph_same s JOIN graph_nodes x ON x.id=s.a JOIN graph_nodes y ON y.id=s.b '
+                        'ORDER BY s.score DESC LIMIT ?', (limit,)):
+        a, b = (node_view(db.execute('SELECT * FROM graph_nodes WHERE id=?', (i,)).fetchone()) for i in (r['a'], r['b']))
+        out.append({'a': a, 'b': b, 'why': r['why']})
+    return out
+
+
+def detail(db, node_id, events=12):
+    row = resolve(db, node_id)
     if not row:
         return None
+    node_id = row['id']
     view = node_view(row, neighbours(db, node_id, 20))
     rows = db.execute('SELECT event_id,probable FROM graph_events WHERE node_id=? ORDER BY at DESC LIMIT ?', (node_id, events)).fetchall()
     view['event_ids'] = [r[0] for r in rows]
@@ -1075,6 +1356,8 @@ def detail(db, node_id, events=12):
             said_org = db.execute(f"SELECT quote FROM person_orgs WHERE identifier IN ({','.join('?' for _ in ids)}) AND event_id=?",
                                   (*ids, view.get('org_event_id'))).fetchone()
             view['org_quote'] = said_org['quote'] if said_org else None
+    if row['kind'] == 'project':
+        view['board'] = project_moves(db, node_id)
     if row['kind'] == 'org':
         view['people_roles'] = [{'id': r['id'], 'name': r['name'], 'role': json.loads(r['info']).get('role')} for r in db.execute(
             "SELECT n.id,n.name,n.info FROM graph_links l JOIN graph_nodes n ON n.id=l.a WHERE l.b=? AND l.kind='member' ORDER BY n.strength DESC LIMIT 12", (node_id,))]
@@ -1483,6 +1766,10 @@ def rename(db, node_id, name, now):
             return {'node_id': node_id, 'name': name}
         db.execute('UPDATE OR IGNORE event_projects SET project_id=? WHERE project_id=?', (other['id'], row['id']))
         db.execute('DELETE FROM event_projects WHERE project_id=?', (row['id'],))
+        # Its place on a board goes along when the other has none; its moves join the other's.
+        cols = ','.join(f'{c.split()[0]}=(SELECT {c.split()[0]} FROM projects WHERE id=:old)' for c in PROJECT_STAGE_COLUMNS)
+        db.execute(f'UPDATE projects SET {cols} WHERE id=:new AND board_id IS NULL', {'old': row['id'], 'new': other['id']})
+        db.execute('UPDATE project_moves SET project_id=? WHERE project_id=?', (other['id'], row['id']))
         db.execute('DELETE FROM projects WHERE id=?', (row['id'],))
         return {'node_id': 'project:' + str(other['id']), 'name': other['name'], 'merged': True}
     if not db.execute("SELECT 1 FROM graph_nodes WHERE id=? AND kind IN ('person','org')", (node_id,)).fetchone():
@@ -1577,8 +1864,536 @@ def active_projects(db, limit=40):
     return names[:limit]
 
 
-def merge(db, a, b, same, now):
+def one_line(text, limit):
+    """Text as one tidy line; None when it is longer than limit (the caller says what fits)."""
+    text = re.sub(r'\s+', ' ', str(text or '')).strip()
+    return text if len(text) <= limit else None
+
+
+def board_row(db, name, stages, source, now):
+    """The board with this name, made with these stages (in order) when it is new. "Stalled or declined" is always
+    its last row. A board keeps the stages it was made with; its projects stand in them."""
+    name = one_line(name, 60)
+    if not name:
+        raise ValueError('A board name is a short label (up to 60 characters), like "Partner listings"')
+    row = db.execute('SELECT * FROM boards WHERE name=? COLLATE NOCASE', (name,)).fetchone()
+    if row:
+        return row
+    if source != 'owner':  # nothing is a board until the owner saves it
+        raise ValueError(f'No board named "{name}". Suggest one with graph suggest_board; it becomes a board once the owner saves it')
+    cleaned = []
+    for stage in stages if isinstance(stages, list) else ():
+        item = stage if isinstance(stage, dict) else {'name': stage}
+        title, hint = one_line(item.get('name'), 30), one_line(item.get('hint'), 80)
+        if not title or title.casefold() == STALLED.casefold() or title.casefold() in {c['name'].casefold() for c in cleaned}:
+            raise ValueError(f'Stages are distinct short names (up to 30 characters); "{STALLED}" is always there')
+        cleaned.append({'name': title, **({'hint': hint} if hint else {})})
+    if not 2 <= len(cleaned) <= 7:
+        raise ValueError(f'A new board needs stages: 2 to 7 names in order, like ["Contacted", "Agreed", "Live"]; "{STALLED}" is always there')
+    board_id = db.execute('INSERT INTO boards(name,stages,source,created_at) VALUES(?,?,?,?)', (name, json.dumps(cleaned), source, now)).lastrowid
+    return db.execute('SELECT * FROM boards WHERE id=?', (board_id,)).fetchone()
+
+
+def stage_names(board):
+    """A board's stages in order, with "Stalled or declined" last when the board has that row."""
+    return [s['name'] for s in json.loads(board['stages'])] + ([STALLED] if board['side'] else [])
+
+
+ORG_DOMAIN = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}')
+
+
+def set_stage(db, project, stage, source, now, board=None, stages=None, reason=None, event_id=None, next_step=None, org=None):
+    """Puts a project on a board, or moves it to another stage there. A review or agent move (source 'review' or
+    'agent') gives the message that shows it (event_id, which also labels it into the project) and why, in a short
+    clause; the owner's own move (source 'owner', a drag on the dashboard) needs neither and wins over the others
+    until a message newer than it moves the project again. An older message never undoes a newer move.
+    project: a name (made when new) or a project node id. Returns where it stands, with kept when nothing moved."""
+    owner = source == 'owner'
+    if str(project or '').startswith('project:'):
+        row = db.execute('SELECT * FROM projects WHERE id=?', (str(project).split(':', 1)[1],)).fetchone()
+        if not row:
+            raise ValueError('Unknown project')
+    else:
+        if owner:
+            raise ValueError('Move a project from its node_id')
+        row = db.execute('SELECT * FROM projects WHERE id=?', (project_id(db, project, now),)).fetchone()
+    if board:
+        target = board_row(db, board, stages, source, now)
+    elif row['board_id']:
+        target = db.execute('SELECT * FROM boards WHERE id=?', (row['board_id'],)).fetchone()
+    else:
+        target = None
+    if not target:
+        raise ValueError('Say which board the project is on (board; with stages when the board is new)')
+    names = stage_names(target)
+    wanted = one_line(stage, 40) or ''
+    match = next((n for n in names if n.casefold() == wanted.casefold()), None) if wanted else (
+        row['stage'] if row['board_id'] == target['id'] and row['stage'] else names[0])
+    if not match:
+        raise ValueError(f"Stages on {target['name']}: " + ', '.join(names))
+    at = now
+    if not owner:
+        found = db.execute('SELECT occurred_at FROM events WHERE id=? AND deleted=0', (int(event_id),)).fetchone() \
+            if str(event_id or '').isdigit() else None
+        if not found:
+            raise ValueError('A move gives the event_id of the message that shows it')
+        reason = one_line(reason, 160)
+        if not reason:
+            raise ValueError('reason: what happened, one short clause (up to 160 characters), like "Sam signed the order form"')
+        at, event_id = found['occurred_at'], int(event_id)
+        label(db, [event_id], row['name'], source, now)
+    else:
+        reason, event_id = None, None
+    moved = row['board_id'] != target['id'] or (row['stage'] or '').casefold() != match.casefold() or not row['stage_by']  # placing one the owner put on the board counts
+    kept = None
+    if moved and not owner:
+        if row['stage_by'] == 'owner' and row['stage_at'] and parse_time(at) <= parse_time(row['stage_at']):
+            kept = 'The owner moved it after this message'
+        elif row['stage_event_id']:
+            last = db.execute('SELECT occurred_at FROM events WHERE id=?', (row['stage_event_id'],)).fetchone()
+            if last and parse_time(at) < parse_time(last['occurred_at']):
+                kept = 'A later message moved it already'
+    if moved and not kept:
+        db.execute('INSERT INTO project_moves(project_id,board_id,stage,reason,event_id,source,at,created_at) VALUES(?,?,?,?,?,?,?,?)',
+                   (row['id'], target['id'], match, reason, event_id, source, at, now))
+        db.execute('UPDATE projects SET board_id=?,stage=?,stage_reason=?,stage_event_id=?,stage_by=?,stage_at=? WHERE id=?',
+                   (target['id'], match, reason, event_id, 'owner' if owner else 'review', at, row['id']))
+    if not owner and not kept and next_step is not None:
+        step = one_line(next_step, 120)
+        if step is None:
+            raise ValueError('next: the owner\'s next step in a few words (up to 120 characters)')
+        db.execute('UPDATE projects SET next_step=? WHERE id=?', (step or None, row['id']))
+    if org:
+        domain = re.sub(r'^(?:https?://)?(?:www\.)?', '', str(org).strip().lower()).split('/')[0]
+        if not ORG_DOMAIN.fullmatch(domain):
+            raise ValueError('org: the organisation\'s web domain, like "example.com"')
+        db.execute('UPDATE projects SET org=? WHERE id=?', (domain, row['id']))
+    return {'node_id': 'project:' + str(row['id']), 'project': row['name'], 'board': target['name'],
+            'stage': row['stage'] if kept else match, **({'kept': kept} if kept else {})}
+
+
+def boards_brief(db, limit=150):
+    """The boards and where each project on them stands, for a review to move them: [{board, stages, projects}]."""
+    out = []
+    for b in db.execute('SELECT * FROM boards ORDER BY id'):
+        rows = db.execute('SELECT name,stage FROM projects WHERE board_id=? AND closed_at IS NULL ORDER BY coalesce(stage_at,created_at) DESC LIMIT ?',
+                          (b['id'], limit)).fetchall()
+        sort = [r['name'] for r in db.execute('SELECT name FROM projects WHERE board_id=? AND closed_at IS NULL AND stage_by IS NULL ORDER BY name LIMIT 40', (b['id'],))]
+        out.append({'board': b['name'], 'stages': stage_names(b), 'projects': {r['name']: r['stage'] for r in rows},
+                    **({'about': b['about']} if b['about'] else {}), **({'to_sort': sort} if sort else {})})
+    return out
+
+
+def clean_stages(stages):
+    """[{name, hint?, was?}] from names or dicts: distinct short names, 1 to MAX_STAGES, never the Stalled row itself."""
+    cleaned = []
+    for stage in stages if isinstance(stages, list) else ():
+        item = stage if isinstance(stage, dict) else {'name': stage}
+        title, hint = one_line(item.get('name'), 30), one_line(item.get('hint'), 80)
+        if not title or title.casefold() == STALLED.casefold() or title.casefold() in {c['name'].casefold() for c in cleaned}:
+            raise ValueError(f'Stages are distinct short names (up to 30 characters); "{STALLED}" is its own option')
+        cleaned.append({'name': title, **({'hint': hint} if hint else {}), **({'was': str(item['was'])} if item.get('was') else {})})
+    if not 1 <= len(cleaned) <= MAX_STAGES:
+        raise ValueError(f'A board has 1 to {MAX_STAGES} stages, in order')
+    return cleaned
+
+
+def open_project_rows(db, ids):
+    """Projects by node id or name, open ones only, in the order given."""
+    out, seen = [], set()
+    for ref in ids if isinstance(ids, list) else ():
+        ref = str(ref or '')
+        row = db.execute('SELECT * FROM projects WHERE id=? AND closed_at IS NULL', (ref.split(':', 1)[1],)).fetchone() if ref.startswith('project:') and ref[8:].isdigit() \
+            else db.execute('SELECT * FROM projects WHERE name=? COLLATE NOCASE AND closed_at IS NULL', (ref.strip(),)).fetchone()
+        if row and row['id'] not in seen:
+            seen.add(row['id']); out.append(row)
+    return out
+
+
+def suggest_board(db, args, source, now):
+    """A review's suggestion: a board for a group of open projects of the same kind of work, with stages that fit
+    that work. It stays a suggestion until the owner saves it (save_board) or says not now."""
+    name = one_line(args.get('name'), 60)
+    if not name:
+        raise ValueError('name: what the projects are, a short label like "Partner listings"')
+    if db.execute('SELECT 1 FROM boards WHERE name=? COLLATE NOCASE', (name,)).fetchone() or \
+            db.execute('SELECT 1 FROM board_suggestions WHERE name=? COLLATE NOCASE', (name,)).fetchone():
+        raise ValueError(f'"{name}" is a board or was suggested already')
+    stages = [{k: v for k, v in s.items() if k != 'was'} for s in clean_stages(args.get('stages'))]
+    if len(stages) < 2:
+        raise ValueError('stages: 2 or more, in the order this kind of work goes')
+    rows = [r for r in open_project_rows(db, args.get('projects')) if not r['board_id']]
+    if len(rows) < 3:
+        raise ValueError('projects: 3 or more open projects on no board, the same kind of work')
+    about = one_line(args.get('about'), 200)
+    if not about:
+        raise ValueError('about: one sentence on which projects belong (up to 200 characters)')
+    sid = db.execute('INSERT INTO board_suggestions(name,stages,about,projects,reason,source,created_at) VALUES(?,?,?,?,?,?,?)',
+                     (name, json.dumps(stages), about, json.dumps([r['id'] for r in rows]), one_line(args.get('reason'), 160), source, now)).lastrowid
+    return {'suggestion_id': sid, 'name': name, 'projects': len(rows), 'status': 'suggested: it becomes a board once the owner saves it'}
+
+
+def board_suggestions(db):
+    """Open suggestions for the Projects page, newest first, with their projects still open and on no board."""
+    out = []
+    for r in db.execute("SELECT * FROM board_suggestions WHERE state='open' ORDER BY id DESC LIMIT 3").fetchall():
+        rows = [p for p in open_project_rows(db, ['project:' + str(i) for i in json.loads(r['projects'])]) if not p['board_id']]
+        if rows:
+            out.append({'id': r['id'], 'name': r['name'], 'stages': json.loads(r['stages']), 'about': r['about'], 'reason': r['reason'],
+                        'projects': [{'id': 'project:' + str(p['id']), 'name': p['name']} for p in rows]})
+    return out
+
+
+def dismiss_board_suggestion(db, suggestion_id, now):
+    found = db.execute("UPDATE board_suggestions SET state='dismissed',decided_at=? WHERE id=? AND state='open'", (now, int(suggestion_id or 0))).rowcount
+    if not found:
+        raise ValueError('That suggestion is gone')
+    return {'status': 'dismissed'}
+
+
+def save_board(db, args, now):
+    """The owner's board, new (from scratch or a suggestion) or edited: its name, stages in order (a renamed one
+    carries `was`, its old name), whether it has the Stalled row, which projects belong (about, a sentence) and the
+    projects on it. A project put on it waits for a review to place it by its messages (sorting); one taken off
+    leaves the board. A removed stage's projects go to the nearest earlier stage that stays; without the Stalled row
+    its projects leave the board. Returns the board and what moved, to tell the owner."""
+    name = one_line(args.get('name'), 60)
+    if not name:
+        raise ValueError('Give the board a name (up to 60 characters)')
+    stages, side = clean_stages(args.get('stages')), args.get('side') is not False
+    about = one_line(args.get('about'), 200)
+    if about is None:
+        raise ValueError('Say which projects belong in one sentence (up to 200 characters)')
+    board_id = int(args.get('board_id') or 0)
+    old = db.execute('SELECT * FROM boards WHERE id=?', (board_id,)).fetchone() if board_id else None
+    if board_id and not old:
+        raise ValueError('That board is gone')
+    clash = db.execute('SELECT id FROM boards WHERE name=? COLLATE NOCASE', (name,)).fetchone()
+    if clash and clash['id'] != board_id:
+        raise ValueError(f'There is a board called "{name}" already')
+    plain = [{k: v for k, v in s.items() if k != 'was'} for s in stages]
+    notes = []
+    if old:
+        db.execute('UPDATE boards SET name=?,stages=?,about=?,side=?,updated_at=? WHERE id=?', (name, json.dumps(plain), about or None, int(side), now, board_id))
+        before = [s['name'] for s in json.loads(old['stages'])]
+        renamed = {s['was'].casefold(): s['name'] for s in stages if s.get('was')}
+        kept = [n for n in before if n.casefold() in renamed]
+        for was in before:  # renamed stages carry their projects; removed ones hand them to the nearest earlier stage that stays
+            if was.casefold() in renamed:
+                if renamed[was.casefold()] != was:
+                    db.execute('UPDATE projects SET stage=? WHERE board_id=? AND stage=? COLLATE NOCASE', (renamed[was.casefold()], board_id, was))
+                continue
+            earlier = [n for n in kept if before.index(n) < before.index(was)]
+            to = renamed[earlier[-1].casefold()] if earlier else stages[0]['name']
+            rows = db.execute('SELECT id FROM projects WHERE board_id=? AND stage=? COLLATE NOCASE', (board_id, was)).fetchall()
+            for r in rows:
+                db.execute('INSERT INTO project_moves(project_id,board_id,stage,reason,event_id,source,at,created_at) VALUES(?,?,?,?,?,?,?,?)',
+                           (r['id'], board_id, to, f'{was} was removed', None, 'owner', now, now))
+                db.execute("UPDATE projects SET stage=?,stage_reason=?,stage_event_id=NULL,stage_by=coalesce(stage_by,'owner'),stage_at=? WHERE id=?",
+                           (to, f'{was} was removed', now, r['id']))
+            if rows:
+                notes.append({'from': was, 'to': to, 'count': len(rows)})
+        if old['side'] and not side:
+            gone = db.execute('UPDATE projects SET board_id=NULL,stage=NULL,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL '
+                              'WHERE board_id=? AND stage=?', (board_id, STALLED)).rowcount
+            if gone:
+                notes.append({'from': STALLED, 'to': None, 'count': gone})
+    else:
+        board_id = db.execute('INSERT INTO boards(name,stages,source,created_at,about,side,updated_at) VALUES(?,?,?,?,?,?,?)',
+                              (name, json.dumps(plain), 'owner', now, about or None, int(side), now)).lastrowid
+    names = [s['name'] for s in plain] + ([STALLED] if side else [])
+    if 'projects' in args:
+        wanted = open_project_rows(db, args.get('projects'))
+        ids = {r['id'] for r in wanted}
+        keep = f" AND id NOT IN ({','.join('?' * len(ids))})" if ids else ''
+        removed = db.execute('UPDATE projects SET board_id=NULL,stage=NULL,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL '
+                             'WHERE board_id=?' + keep, (board_id, *ids)).rowcount
+        added = 0
+        for r in wanted:  # on this board now (a project is on one board); a review places it by its messages
+            if r['board_id'] != board_id:
+                db.execute('UPDATE projects SET board_id=?,stage=?,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL WHERE id=?',
+                           (board_id, names[0], r['id']))
+                added += 1
+    else:
+        added = removed = 0
+    if args.get('suggestion_id'):
+        db.execute("UPDATE board_suggestions SET state='saved',board_id=?,decided_at=? WHERE id=?", (board_id, now, int(args['suggestion_id'])))
+    return {'board_id': board_id, 'name': name, 'added': added, 'removed': removed, 'moved': notes}
+
+
+def delete_board(db, board_id, now):
+    """The board goes; its projects stay, on no board, with their history."""
+    row = db.execute('SELECT * FROM boards WHERE id=?', (int(board_id or 0),)).fetchone()
+    if not row:
+        raise ValueError('That board is gone')
+    kept = db.execute('UPDATE projects SET board_id=NULL,stage=NULL,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL '
+                      'WHERE board_id=?', (row['id'],)).rowcount
+    db.execute('DELETE FROM boards WHERE id=?', (row['id'],))
+    db.execute("UPDATE board_suggestions SET state='dismissed' WHERE board_id=?", (row['id'],))
+    return {'deleted': row['name'], 'projects': kept}
+
+
+MESSAGE_KINDS = ('gmail.message', 'salesflare.email', 'linkedin.message', 'slack.message', 'whatsapp.message', 'intercom.conversation', 'x.dm',
+                 'ms_graph.message', 'outlook.message')
+
+
+def org_card(db, domain):
+    """An organisation's name and logo for a tile: the owner's edits over the enrichment service's profile."""
+    found = db.execute("SELECT name,info FROM graph_nodes WHERE id=?", ('org:' + domain,)).fetchone()
+    info = json.loads(found['info'] or '{}') if found else {}
+    profile = info.get('profile')
+    if profile is None:
+        row = db.execute("SELECT profile FROM org_profiles WHERE domain=? AND status='found'", (domain,)).fetchone()
+        edit = db.execute('SELECT fields FROM org_edits WHERE domain=?', (domain,)).fetchone()
+        profile = {**(json.loads(row['profile'] or '{}') if row else {}), **(json.loads(edit['fields'] or '{}') if edit else {})}
+    if info.get('wrong'):
+        profile = {}
+    logo = (profile or {}).get('logo')
+    return {'node_id': 'org:' + domain if found else None, 'name': found['name'] if found else (profile or {}).get('name') or domain,
+            'logo': logo if isinstance(logo, str) and logo.startswith('https://') else None}
+
+
+def boards(db, now):
+    """Every board with its stages and projects, for the Projects board view. Each project: its stage, why it last
+    moved and when (with the message), its next step, its organisation (logo from enrichment), how long it has been
+    in the stage, how long the other side hasn't answered the owner (no_reply_days, from its messages), and an open
+    card about it."""
+    out = []
+    today = parse_time(now)
+    for b in db.execute('SELECT * FROM boards ORDER BY id').fetchall():
+        rows = db.execute('SELECT * FROM projects WHERE board_id=? ORDER BY coalesce(stage_at,created_at) DESC', (b['id'],)).fetchall()
+        names, items = stage_names(b), []
+        for p in rows:
+            node = 'project:' + str(p['id'])
+            domain = p['org']
+            if not domain:  # the organisation most of its people are at, leaving out the owner's colleagues
+                weight = collections.Counter()
+                for r in db.execute("SELECT json_extract(n.info,'$.org') org,l.strength FROM graph_links l JOIN graph_nodes n ON n.id=l.a "
+                                    "WHERE l.b=? AND l.kind='project' AND n.kind='person' AND json_extract(n.info,'$.colleague') IS NOT 1", (node,)):
+                    if r['org'] and str(r['org']).startswith('org:') and not str(r['org']).startswith('org:named:'):
+                        weight[r['org'][4:]] += r['strength']
+                domain = weight.most_common(1)[0][0] if weight else None
+            mine_since = None  # the first of the owner's messages since the other side last wrote
+            for r in db.execute("SELECT e.occurred_at,(json_extract(e.metadata,'$.from_me') IS 1 OR EXISTS(SELECT 1 FROM json_each(e.metadata,'$.labels') "
+                                "WHERE value='SENT')) mine FROM graph_events g JOIN events e ON e.id=g.event_id WHERE g.node_id=? AND g.probable=0 "
+                                f"AND e.deleted=0 AND e.kind IN ({','.join('?' for _ in MESSAGE_KINDS)}) ORDER BY e.occurred_at", (node, *MESSAGE_KINDS)):
+                mine_since = (mine_since or r['occurred_at']) if r['mine'] else None
+            since = parse_time(p['stage_at'] or p['created_at'])
+            card = db.execute(f"SELECT s.id,s.title FROM suggestions s WHERE s.status IN ({','.join('?' for _ in OPEN_CARD)}) AND (s.project=? COLLATE NOCASE "
+                              "OR EXISTS(SELECT 1 FROM json_each(s.event_ids) j JOIN graph_events g ON g.event_id=j.value WHERE g.node_id=? AND g.probable=0)) "
+                              "ORDER BY s.created_at DESC LIMIT 1", (*OPEN_CARD, p['name'], node)).fetchone()
+            items.append({'id': node, 'name': p['name'], 'stage': p['stage'] if p['stage'] in names else names[0], 'reason': p['stage_reason'],
+                          'by': p['stage_by'], 'sorting': not p['stage_by'], 'at': p['stage_at'], 'event_id': p['stage_event_id'], 'next': p['next_step'],
+                          'first': not db.execute('SELECT 1 FROM project_moves WHERE project_id=? LIMIT 1 OFFSET 1', (p['id'],)).fetchone(),
+                          'days': max(0, (today - since).days), 'closed': bool(p['closed_at']),
+                          'no_reply_days': max(0, (today - parse_time(mine_since)).days) if mine_since else None,
+                          'org': org_card(db, domain) if domain else None, 'card': {'id': card['id'], 'title': card['title']} if card else None})
+        out.append({'id': b['id'], 'name': b['name'], 'about': b['about'], 'side': bool(b['side']),
+                    'stages': json.loads(b['stages']) + ([{'name': STALLED, 'side': True}] if b['side'] else []), 'projects': items,
+                    'stuck': sum(1 for i in items if (i['no_reply_days'] or 0) >= STUCK_DAYS and i['stage'] != STALLED)})
+    return out
+
+
+def project_moves(db, node_id, limit=8):
+    """A project's board, stage and its latest moves (newest first), for its page."""
+    row = db.execute('SELECT p.*,b.name board FROM projects p LEFT JOIN boards b ON b.id=p.board_id WHERE p.id=?',
+                     (str(node_id).split(':', 1)[1],)).fetchone()
+    if not row or not row['board_id']:
+        return None
+    moves = [dict(r) for r in db.execute('SELECT stage,reason,event_id,source,at FROM project_moves WHERE project_id=? ORDER BY at DESC,id DESC LIMIT ?',
+                                         (row['id'], limit))]
+    return {'board': row['board'], 'stage': row['stage'], 'next': row['next_step'], 'moves': moves,
+            'stages': stage_names(db.execute('SELECT * FROM boards WHERE id=?', (row['board_id'],)).fetchone())}
+
+
+def merge(db, a, b, same, now, source='agent'):
+    """Merge (same) or Not the same. Not the same on a pair that was joined undoes that join for good: the two are never
+    joined again, directly or through others, until someone merges them."""
     a, b = sorted((str(a), str(b)))
     if a == b or not all(re.fullmatch(r'(?:email|wa|slack|li|x|gh):\S+', i) for i in (a, b)):
         raise ValueError('Merge two different person ids from graph results (like email:… or wa:…)')
-    db.execute('INSERT OR REPLACE INTO graph_merges(a,b,same,created_at) VALUES(?,?,?,?)', (a, b, int(bool(same)), now))
+    gone = forgotten(db)
+    if gone(a) or gone(b):
+        raise ValueError('That person was deleted permanently')
+    said = db.execute('SELECT source FROM graph_merges WHERE a=? AND b=?', (a, b)).fetchone()
+    if said and said['source'] == 'owner' and source != 'owner':
+        raise ValueError('The owner already decided about these two; their word stays')
+    db.execute('INSERT OR REPLACE INTO graph_merges(a,b,same,created_at,source) VALUES(?,?,?,?,?)', (a, b, int(bool(same)), now, source))
+    db.execute('DELETE FROM graph_same WHERE a=? AND b=?', (a, b))
+
+
+# Delete permanently (the owner's right to have someone forgotten, GDPR art. 17): the person and what is tied to them
+# go; what stays is a keyed hash of each of their identifiers, so they are never added, looked up or learned again.
+class _Everyone:
+    def __contains__(self, item):
+        return True
+
+
+def _salt(db, create=False):
+    row = db.execute('SELECT salt FROM forgotten_salt WHERE id=1').fetchone()
+    if row or not create:
+        return row[0] if row else None
+    salt = secrets.token_hex(32)
+    db.execute('INSERT INTO forgotten_salt(id,salt) VALUES(1,?)', (salt,))
+    return salt
+
+
+def forgotten_digest(salt, identifier):
+    return hmac.new(bytes.fromhex(salt), ' '.join(str(identifier).split()).casefold().encode(), hashlib.sha256).hexdigest()
+
+
+def anyone_forgotten(db):
+    try:
+        return bool(db.execute('SELECT 1 FROM forgotten_people LIMIT 1').fetchone())
+    except sqlite3.OperationalError:
+        return False
+
+
+def forgotten(db):
+    """A check, identifier -> True when that person was deleted permanently. Cheap when nobody was."""
+    try:
+        digests = {r[0] for r in db.execute('SELECT digest FROM forgotten_people')}
+        salt = _salt(db) if digests else None
+    except sqlite3.OperationalError:
+        digests, salt = set(), None
+    if not digests or not salt:
+        return lambda identifier: False
+    return lambda identifier: forgotten_digest(salt, identifier) in digests
+
+
+def event_parties(kind, m, owner):
+    """(sender, others) of one signal as graph identifiers: who wrote it (None when the owner did or for a meeting)
+    and everyone else in it but the owner."""
+    found = touches(kind, m, owner, _Everyone())
+    roles = {role for _, _, _, role in found}
+    sender = None
+    if found and not roles & {'owner', 'met'} and kind not in ('calendar.event', 'salesflare.meeting', 'salesflare.email', 'owner.card'):
+        sender = found[0][0]
+    return sender, {t[0] for t in found}
+
+
+def from_forgotten(kind, m, owner, gone):
+    """True when a signal is from a deleted person, or they are the only other one in it."""
+    sender, others = event_parties(kind, m, owner)
+    return bool((sender and gone(sender)) or (others and all(gone(i) for i in others)))
+
+
+def _table(db, name):
+    return bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
+
+
+def _scrub(text, needles):
+    """Their names and addresses out of a text the owner keeps (a card, a draft, a promise)."""
+    if not isinstance(text, str) or not text:
+        return text
+    for needle in sorted(needles, key=len, reverse=True):
+        text = re.sub(r'(?<![\w@.])' + re.escape(needle) + r'(?![\w@])', 'someone', text, flags=re.IGNORECASE)
+    return text
+
+
+def mentions(text, needles):
+    return isinstance(text, str) and any(re.search(r'(?<![\w@.])' + re.escape(n) + r'(?![\w@])', text, re.IGNORECASE) for n in needles)
+
+
+def delete_person(db, node_id, config, now):
+    """Deletes a person permanently: their graph rows, links, aliases and addresses, looked-up details and photo link,
+    relationship scores, the messages they sent or that were only between them and the owner, the notes learned about
+    them. Cards that involve them stay, as the owner's own work, with their name and addresses taken out. Returns
+    {'identifiers', 'events', 'facts', 'cards', 'needles'}; the caller rebuilds the graph."""
+    row = db.execute("SELECT id,name,info FROM graph_nodes WHERE id=? AND kind='person'", (str(node_id or ''),)).fetchone()
+    if not row:
+        raise ValueError('Unknown person')
+    info = json.loads(row['info'] or '{}')
+    ids = sorted({str(i) for i in info.get('identifiers') or ()} | {row['id']})
+    for r in db.execute('SELECT a,b FROM graph_merges WHERE same=1').fetchall():  # aliases joined by hand
+        if r['a'] in ids or r['b'] in ids:
+            ids = sorted(set(ids) | {r['a'], r['b']})
+    emails = sorted({i.split(':', 1)[1].lower() for i in ids if i.startswith('email:')})
+    if emails and _table(db, 'identity_names'):  # their other channels, known by their address
+        ids = sorted(set(ids) | {r[0] for r in db.execute('SELECT identifier FROM identity_names WHERE lower(email) IN (%s)' % ','.join('?' * len(emails)), emails)})
+    names = {' '.join(str(row['name']).split())}
+    names |= {r[0] for r in db.execute('SELECT name FROM graph_names WHERE node_id IN (%s)' % ','.join('?' * len(ids)), ids)}
+    names |= {r[0] for r in db.execute('SELECT name FROM identity_names WHERE name IS NOT NULL AND identifier IN (%s)' % ','.join('?' * len(ids)), ids)}
+    full = {n for n in names if n and plain_name(n)}
+    needles = sorted(full | set(emails))
+    salt = _salt(db, create=True)
+    db.executemany('INSERT OR IGNORE INTO forgotten_people(digest,created_at) VALUES(?,?)', [(forgotten_digest(salt, i), now) for i in ids])
+    gone = forgotten(db)
+    owner = Owner(config or {})
+    # Messages they sent, or only between them and the owner.
+    dropped = []
+    if _table(db, 'events'):
+        for e in db.execute('SELECT id,kind,metadata FROM events').fetchall():
+            try:
+                m = json.loads(e['metadata'])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(m, dict) and from_forgotten(e['kind'], m, owner, gone):
+                dropped.append(e['id'])
+    marks = ','.join('?' * len(ids))
+    for table, column in (('event_vectors', 'event_id'), ('event_projects', 'event_id'), ('graph_events', 'event_id'), ('events', 'id')):
+        if _table(db, table):
+            db.executemany(f'DELETE FROM {table} WHERE {column}=?', [(i,) for i in dropped])
+    if dropped and _table(db, 'analyses'):
+        gone_events = set(dropped)
+        for review in db.execute('SELECT id,items FROM analyses').fetchall():
+            items = json.loads(review['items'] or '[]')
+            if any(isinstance(item, dict) and item.get('id') in gone_events for item in items):
+                for item in items:
+                    if isinstance(item, dict) and item.get('id') in gone_events:
+                        item['excluded'] = 'person_deleted'
+                db.execute('UPDATE analyses SET items=? WHERE id=?', (json.dumps(items), review['id']))
+    # The graph: them, their links and scores, aliases, roles, where they work, relations, looked-up details.
+    db.execute(f'DELETE FROM graph_nodes WHERE id IN ({marks})', ids)
+    db.execute(f'DELETE FROM graph_links WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    db.execute(f'DELETE FROM graph_events WHERE node_id IN ({marks})', ids)
+    db.execute(f'DELETE FROM graph_merges WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    if _table(db, 'graph_same'):
+        db.execute(f'DELETE FROM graph_same WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    db.execute(f'DELETE FROM graph_relations WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    for table in ('graph_names',):
+        db.execute(f'DELETE FROM {table} WHERE node_id IN ({marks})', ids)
+    for table in ('identity_names', 'person_roles', 'person_orgs', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'person_photos', 'person_photo_tries', 'contact_photo_links', 'role_corrections'):
+        if _table(db, table):
+            db.execute(f'DELETE FROM {table} WHERE identifier IN ({marks})', ids)
+    if emails:
+        db.executemany('DELETE FROM identity_names WHERE lower(email)=?', [(e,) for e in emails])
+    if _table(db, 'network_people'):
+        db.execute(f'DELETE FROM network_people WHERE node_id IN ({marks})', ids)
+        db.executemany('DELETE FROM network_people WHERE lower(email)=?', [(e,) for e in emails])
+    # Learned notes about them, or that name them.
+    facts = set()
+    if _table(db, 'fact_about'):
+        facts |= {r[0] for r in db.execute(f'SELECT fact_id FROM fact_about WHERE node_id IN ({marks})', ids)}
+    if _table(db, 'facts'):
+        facts |= {r['id'] for r in db.execute('SELECT id,text FROM facts').fetchall() if mentions(r['text'], needles)}
+        for table, column in (('fact_about', 'fact_id'), ('fact_vectors', 'fact_id'), ('facts', 'id')):
+            if _table(db, table):
+                db.executemany(f'DELETE FROM {table} WHERE {column}=?', [(f,) for f in facts])
+    # Cards stay as the owner's work, without their name or addresses.
+    cards = 0
+    if _table(db, 'suggestions'):
+        dropped_set = set(dropped)
+        for card in db.execute('SELECT id,title,body,event_ids FROM suggestions').fetchall():
+            try:
+                linked = bool(dropped_set & set(json.loads(card['event_ids'] or '[]')))
+            except (TypeError, ValueError):
+                linked = False
+            if not (linked or mentions(card['title'], needles) or mentions(card['body'], needles)):
+                continue
+            cards += 1
+            first = {n.split()[0] for n in full if len(n.split()[0]) > 1}  # on a card about them, "Hi Lee" too
+            card_needles = needles + sorted(first)
+            db.execute('UPDATE suggestions SET title=?,body=? WHERE id=?', (_scrub(card['title'], card_needles), _scrub(card['body'], card_needles), card['id']))
+            if _table(db, 'decisions'):
+                for d in db.execute('SELECT id,feedback FROM decisions WHERE suggestion_id=?', (card['id'],)).fetchall():
+                    db.execute('UPDATE decisions SET feedback=? WHERE id=?', (_scrub(d['feedback'], card_needles), d['id']))
+            if _table(db, 'draft_edits'):
+                for d in db.execute('SELECT id,before_subject,before_body,after_subject,after_body FROM draft_edits WHERE suggestion_id=?', (card['id'],)).fetchall():
+                    db.execute('UPDATE draft_edits SET before_subject=?,before_body=?,after_subject=?,after_body=? WHERE id=?',
+                               (*(_scrub(d[k], card_needles) for k in ('before_subject', 'before_body', 'after_subject', 'after_body')), d['id']))
+    if _table(db, 'promises'):
+        for pr in db.execute('SELECT id,who,what,note FROM promises').fetchall():
+            if mentions(pr['who'], needles) or mentions(pr['what'], needles) or mentions(pr['note'], needles):
+                db.execute('UPDATE promises SET who=?,what=?,note=? WHERE id=?', (_scrub(pr['who'], needles), _scrub(pr['what'], needles), _scrub(pr['note'], needles), pr['id']))
+    return {'identifiers': len(ids), 'events': len(dropped), 'facts': len(facts), 'cards': cards, 'needles': needles}

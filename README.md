@@ -138,7 +138,7 @@ Do it authorizes the offered task end to end; verified written instructions auth
 
 ## Organisation data (optional, enrichment)
 
-[Company enrichment](docs/intelligence.md#organisation-data-optional-enrichment).
+[Company enrichment](docs/intelligence.md#organisation-data-optional-enrichment), and [work contacts](docs/intelligence.md#people-data).
 
 ## Security model
 
@@ -195,7 +195,9 @@ Report ordinary bugs through the dashboard's [GitHub issue link](https://github.
 
 ## License
 
-MIT: [LICENSE](LICENSE). OpenClaw and optional components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Names, branding and the hosted service have separate terms: [TRADEMARKS.md](TRADEMARKS.md). Website: [themachine.computer](https://themachine.computer).
+Copyright (C) 2026 Salesflare. Open source under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`): [LICENSE](LICENSE).
+
+OpenClaw and optional components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Names, branding and the hosted service have separate terms: [TRADEMARKS.md](TRADEMARKS.md). Website: [themachine.computer](https://themachine.computer).
 
 ## Outlook reliability
 

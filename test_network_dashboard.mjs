@@ -22,6 +22,7 @@ const found={...base,network:{find:true,discoverable:true,asked:true,last:'2026-
  addresses:[{email:'sam@work.example',account:true,on:true,findable:true},{email:'sam.doe-with-a-long-address@personal-mail.example',account:false,on:true,findable:true},
   {email:'sam@other.example',account:false,on:false,findable:false}]}};
 const calls=[];let shown=ask;
+const firstCall=async()=>{for(let i=0;i<100&&!calls.length;i++)await new Promise(r=>setTimeout(r,50));return calls[0]};  // the call lands, also on a busy runner
 const server=createServer(async(req,res)=>{res.setHeader('Content-Type','application/json');
  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(req.url==='/api/status'){res.end(JSON.stringify({suggestions:[],connectors:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}}));return}
@@ -38,8 +39,8 @@ try{
   await page.goto('http://127.0.0.1:'+server.address().port);
   await page.locator('#net-ask').waitFor();
   assert.match(await page.locator('#net-ask').innerText(),/Which of your contacts have a Machine\?/);assert.match(await page.locator("#net-ask").innerText(),/Check my contacts/);
-  calls.length=0;await page.locator('#net-ask [data-net-do="find_on"]').click();await page.waitForTimeout(200);
-  assert.deepEqual(calls[0],{action:'fleet_network',args:{do:'find_on',email:'',relation:''}});
+  calls.length=0;await page.locator('#net-ask [data-net-do="find_on"]').click();
+  assert.deepEqual(await firstCall(),{action:'fleet_network',args:{do:'find_on',email:'',relation:''}});
   shown=found;await page.reload();await page.locator('#net-nia').waitFor();
   assert.equal(await page.locator('#net-ask').count(),0);
   assert.equal(await page.locator('#net-zed').count(),0);  // no reason, no card
@@ -47,8 +48,8 @@ try{
   assert.match(nia,/Nia North is on the Network/);assert.match(nia,/You meet .*Picnic/);assert.match(nia,/Friend or family/);
   assert.match(await page.locator('#net-samb').innerText(),/Open: Send the quote/);
   assert.equal(await page.locator('#net-samb [data-net-do="connect"]').count(),1);
-  calls.length=0;await page.locator('#net-nia [data-net-rel="family"]').click();await page.waitForTimeout(200);
-  assert.deepEqual(calls[0],{action:'fleet_network',args:{do:'connect',email:'nia@nia.example',relation:'family'}});
+  calls.length=0;await page.locator('#net-nia [data-net-rel="family"]').click();
+  assert.deepEqual(await firstCall(),{action:'fleet_network',args:{do:'connect',email:'nia@nia.example',relation:'family'}});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${scheme} ${width}px cards scroll sideways`);
   await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('[data-fleet-pane="network"]').click();await page.locator('#fleet-network').waitFor();
   const block=page.locator('#fleet-network');
@@ -58,12 +59,12 @@ try{
   assert.match(await block.locator('.net-addrs').innerText(),/Findable by/);
   assert.ok(await block.locator('[data-net-addr="sam@work.example"]').isDisabled());
   assert.equal(await block.locator('[data-net-addr="sam@other.example"]').isChecked(),false);
-  calls.length=0;await block.locator('[data-net-addr="sam.doe-with-a-long-address@personal-mail.example"]').click();await page.waitForTimeout(200);
-  assert.deepEqual(calls[0],{action:'fleet_network',args:{do:'address_off',email:'sam.doe-with-a-long-address@personal-mail.example'}});
-  calls.length=0;await block.locator('[data-net-toggle="discoverable_off"]').click();await page.waitForTimeout(200);
-  assert.deepEqual(calls[0],{action:'fleet_network',args:{do:'discoverable_off'}});
-  calls.length=0;await block.locator('[data-net-do="leave"]').click();await page.waitForTimeout(200);
-  assert.deepEqual(calls[0],{action:'fleet_network',args:{do:'leave',email:'',relation:''}});
+  calls.length=0;await block.locator('[data-net-addr="sam.doe-with-a-long-address@personal-mail.example"]').click();
+  assert.deepEqual(await firstCall(),{action:'fleet_network',args:{do:'address_off',email:'sam.doe-with-a-long-address@personal-mail.example'}});
+  calls.length=0;await block.locator('[data-net-toggle="discoverable_off"]').click();
+  assert.deepEqual(await firstCall(),{action:'fleet_network',args:{do:'discoverable_off'}});
+  calls.length=0;await block.locator('[data-net-do="leave"]').click();
+  assert.deepEqual(await firstCall(),{action:'fleet_network',args:{do:'leave',email:'',relation:''}});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${scheme} ${width}px Fleet tab scrolls sideways`);
   if(process.env.SHOTS)await page.screenshot({path:`${process.env.SHOTS}/network-${scheme}-${width}.png`,fullPage:true});
   assert.deepEqual(errors,[]);

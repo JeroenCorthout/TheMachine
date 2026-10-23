@@ -228,7 +228,8 @@ class WebUI:
 
 def catalog(config):
     """The sources this install can add, with what each asks for and how many are connected already. `broker`:
-    a hosted machine's control plane signs it in (its account page), not this install."""
+    a hosted machine's control plane signs it in (its account page), not this install. `account_page`: the part of
+    that page where a hosted machine connects it (a sign-in there), while it can also be set up here."""
     have = {}
     for account in config.get('accounts', []):
         have[account.get('service', 'gmail')] = have.get(account.get('service', 'gmail'), 0) + 1
@@ -239,7 +240,8 @@ def catalog(config):
         service = SERVICES.get(name, name)
         setup = setup_of(service) or {}
         found.append({'name': name, 'service': service, 'label': label(service), 'note': setup.get('note'), 'what': setup.get('what'),
-                      'connected': have.get(service, 0), 'broker': service in brokered or bool(setup.get('broker'))})
+                      'connected': have.get(service, 0), 'broker': service in brokered or bool(setup.get('broker')),
+                      **({'account_page': setup['account_page']} if isinstance(setup.get('account_page'), str) else {})})
     return found
 
 
@@ -826,6 +828,8 @@ def new_account(config, service, account_id=None, ui=None):
     options = boundaries(config, service)
     if service in ('android', 'whatsapp', 'gateway') and not same:
         pass  # keep the example's device boundary
+    elif setup_of(service).get('boundary') == 'workspace':
+        account['boundary'] = 'work'  # its check names the company after the workspace it connects (work:<name>)
     elif same or options:
         # Work (which company) or personal: the owner's own choice, which a Work Fleet's removal follows
         choice = ui.choose('Which part of your life is this account', [(b, scope_label(b)) for b in options]
@@ -1346,7 +1350,7 @@ def step_android(config, account, ui):
     nodes = android_nodes(tool(config, 'openclaw'))
     if not nodes:
         raise SetupError('No Android phone is paired with OpenClaw',
-                         'install the OpenClaw app on the phone, pair it with this Gateway (docs/getting-started.md, "Pairing your Android phone"), '
+                         'install the OpenClaw app on the phone, pair it with this Gateway (https://themachine.computer/help/android#connect-it), '
                          'allow notification access, then: assistant connect android')
     account['node_id'] = ui.choose('Which phone', [(n['nodeId'], f'{n.get("displayName") or n["nodeId"]}'
                                                    + ('' if n.get('connected') else ' (offline now)')) for n in nodes])
@@ -1565,6 +1569,99 @@ def disconnect(config_path, account_id):
     config['accounts'] = [a for a in config['accounts'] if a.get('id') != account_id]
     save(config_path, config)
     return account
+
+
+def enable_replies(config_path, account_id, token):
+    """Intercom replies for one account, from the owner's own Sign in with Intercom: the token goes in its own
+    credential file (<account>-reply, mode 600), apart from the read token, with the admin it belongs to (GET /me),
+    who is the only one replies go out as. Refused for an account from a Fleet grant: a shared token only reads.
+    Returns (admin id, name)."""
+    config = load(config_path)
+    account = next((a for a in config.get('accounts', []) if a.get('id') == account_id and a.get('service') == 'intercom'), None)
+    if not account:
+        raise SetupError('That Intercom account is not connected here')
+    a = assistant()
+    plugin = a.load_connector('intercom')
+    if plugin.received(account):
+        raise SetupError('A token shared through your Fleet only reads', 'sign in with Intercom yourself to reply')
+    try:
+        admin, name = plugin.reply_profile(config, account, token, a.CONNECTOR_HELPERS)
+    except a.SourceError as error:
+        raise SetupError(f'Intercom replies are not on: {error}', 'sign in with Intercom again, in the same workspace')
+    name_ = f'{account_id}-reply'
+    if name_ == account.get('credential'):
+        raise SetupError('The reply token needs its own credential file')
+    path = Path(config.setdefault('credentials', {}).setdefault(name_, str(data_dir(config) / f'{name_}.env'))).expanduser()
+    write_private(path, token.strip() + '\n')
+    account.update(reply_credential=name_, reply_admin_id=admin, reply_admin_name=name)
+    save(config_path, config)
+    return admin, name
+
+
+DELIVERED = {'intercom'}  # sources a sign-in started on the dashboard connects on a paired self-hosted Machine (fleet.SIGNIN_SOURCES)
+
+
+class AnswersUI(UI):
+    """onboarding.UI with the answers and keys a sign-in brought along: everything else takes its default, nothing is
+    approved, and nothing is printed (what it says could quote a key)."""
+    def __init__(self, answers=None, secrets=None):
+        super().__init__(interactive=True)
+        self.answers, self.secrets = dict(answers or {}), dict(secrets or {})
+
+    def _match(self, table, prompt):
+        return next((v for k, v in table.items() if k.lower() in str(prompt).lower()), None)
+
+    def say(self, text=''):
+        pass
+
+    def ask(self, prompt, default=''):
+        found = self._match(self.answers, prompt)
+        return str(found) if found not in (None, '') else default
+
+    def secret(self, prompt):
+        return str(self._match(self.secrets, prompt) or '')
+
+    def yes(self, prompt, default=True):
+        return False
+
+    def choose(self, prompt, options):
+        wanted = self._match(self.answers, prompt)
+        for value, label_ in options:
+            if wanted is not None and str(label_).lower() == str(wanted).lower():
+                return value
+        if self._match(self.secrets, prompt) and any(value is None for value, _ in options):
+            return None  # the key it brought beats the saved ones offered first
+        return options[0][0]
+
+
+def connect_delivered(config_path, args):
+    """A sign-in started on this Machine's dashboard, sealed for this paired self-hosted Machine (fleet.py connects_round):
+    {source, answers, secrets, replies?, another?}, as a hosted Machine's `connect` command. Only the sources in
+    DELIVERED, and only the key that source asks for. The connector checks the key first (Intercom: GET /me, its
+    workspace and admin) and keeps it in its private credential file. replies: the owner's own Sign in with Intercom,
+    which also replies as them (enable_replies checks their admin first). Returns {'ok', 'name', 'replies'?}."""
+    source = args.get('source') if isinstance(args, dict) else None
+    service = SERVICES.get(source, source)
+    if source not in DELIVERED or not setup_of(service).get('secret'):
+        raise SetupError('That source is not connected this way')
+    prompt = setup_of(service)['secret']
+    given = args.get('secrets') if isinstance(args.get('secrets'), dict) else {}
+    token = given.get(prompt)
+    if set(given) != {prompt} or not isinstance(token, str) or not 8 <= len(token) <= 512 or any(c.isspace() for c in token):
+        raise SetupError(f'No {prompt} came with it', 'sign in again from Connections, + Add')
+    answers = {k: v for k, v in (args.get('answers') or {}).items() if isinstance(k, str) and isinstance(v, str) and len(k) < 200 and len(v) < 200} \
+        if isinstance(args.get('answers'), dict) else {}
+    if args.get('another') is True:  # a new account next to the ones you have, not one of those again
+        answers['You already have'] = f'add another {label(service)} account'
+    account = connect(config_path, source, AnswersUI(answers, {prompt: token}), restart=False)
+    result = {'ok': True, 'name': account.get('workspace_name') or account.get('company') or label(service)}
+    if args.get('replies') is True and service == 'intercom':
+        try:
+            enable_replies(config_path, account['id'], token)
+            result['replies'] = True
+        except SetupError:
+            result['replies'] = False
+    return result
 
 
 # ---------------------------------------------------------------- service, first sync

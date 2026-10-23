@@ -1,17 +1,28 @@
 name: Tests and privacy checks
 
 on:
+  # Branches are tested through their pull request, so each push runs once (not once for the push and once for the PR)
   push:
+    branches: [main]
+    tags: ['release-*']
   pull_request:
+  workflow_dispatch:
   schedule:
     - cron: '17 5 * * 1'  # weekly, so a new OpenClaw release that breaks something shows up here
 
 permissions:
   contents: read
 
+# A new push to a pull request cancels its run still going: only the newest commit can be merged anyway.
+# main, tags and the weekly run are never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   tests:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -47,6 +58,18 @@ jobs:
       - name: Check whitespace
         run: git diff --check
 
+  help:
+    # The help articles (docs/help/, the help at themachine.computer/help) against the code: every connector, dashboard
+    # tab and Settings tab has one, and each names only buttons, routes and commands that still exist.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check the help articles
+        run: python3 scripts/help_check.py
+
   portable:
     # macOS runs natively under launchd; Windows runs The Machine inside WSL2 (Linux), so this checks the portable core.
     runs-on: ${{ matrix.os }}
@@ -54,7 +77,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # macOS runners are scarce (a few at once for the whole organisation), so a macOS job per pull request queued
+        # for hours and kept every run "in progress". macOS runs on main, release tags, the weekly run and on demand.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["windows-latest"]' || '["macos-latest", "windows-latest"]') }}
     defaults:
       run:
         shell: bash
@@ -94,6 +119,7 @@ jobs:
 
   secrets:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

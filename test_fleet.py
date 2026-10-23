@@ -480,6 +480,38 @@ class AccountLink(unittest.TestCase):
             self.assertIsNone(fleet.account_url(config), config)
 
 
+class AccountSummary(unittest.TestCase):
+    """Settings, Account on a paired self-hosted Machine: the control plane's summary for this Machine's token, only the
+    fields the tab shows, links only to the account's own host, never a hop, read at most once a minute."""
+    def test_only_what_the_tab_shows_and_links_to_the_account_only(self):
+        answer = {'email': 'sam@example.org', 'plan': None, 'fleets': [{'name': 'Family', 'role': 'member', 'people': 3}],
+                  'actions': ['account', 'fleet'], 'hop': True, 'token': 'not-for-the-dashboard',
+                  'links': {'account': 'https://cp.example.org/account', 'fleet': 'https://evil.example/account',
+                            'plan': 'http://cp.example.org/account', 'cancel': 'javascript:alert(1)'}}
+        relay = FakeRelay()
+        relay.call = lambda method, path, body=None, timeout=40: relay.calls.append((method, path)) or answer
+        with tempfile.TemporaryDirectory() as temp:
+            store = a.Store(Path(temp) / 'events.sqlite')
+            config = {'fleet': {'url': 'https://cp.example.org/api/fleet'}, 'credentials': {'fleet': '/t'}}
+            box = fleet.Fleet(store.connect, config, lambda: 'fd_x', relay=relay)
+            found = box.account()
+            self.assertEqual(relay.calls, [('GET', '/account')])
+            self.assertEqual(found['links'], {'account': 'https://cp.example.org/account'})
+            self.assertFalse(found['hop'])  # a self-hosted Machine's buttons are links, never signed-in hops
+            self.assertNotIn('token', found)
+            self.assertEqual(found['fleets'], answer['fleets'])
+            box.account()
+            self.assertEqual(len(relay.calls), 1)  # once a minute
+
+    def test_the_dashboard_gets_off_or_a_short_note(self):
+        import types
+        self.assertEqual(a.App.account_view(types.SimpleNamespace(fleet=None)), {'on': False})
+        class Away:
+            def account(self):
+                raise fleet.NetworkUnavailable('The Network is restarting; try again in a minute.')
+        self.assertEqual(a.App.account_view(types.SimpleNamespace(fleet=Away())), {'on': True, 'error': 'Can’t reach your account right now.'})
+
+
 class TwoNodes(unittest.TestCase):
     """The Network on two nodes (docs/network.md, Failover): a question goes to the second node only when the first surely
     didn't take it, an answer goes to the node that has its question, both mailboxes are looked into, acks go to both,

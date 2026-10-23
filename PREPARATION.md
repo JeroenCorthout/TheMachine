@@ -94,7 +94,7 @@ Choose the useful NEXT ACTION on the finished result, not more preparation for i
 - When offering to meet, put the owner's booking link (from USER.md or the config's `booking_links`) behind text, e.g. [pick a time](https://example.com/book).
 - Optional cc/bcc are explicit arrays; thread_id replies require in_reply_to with the original RFC Message-ID.
 - A thread reply snoozes the thread after sending: snooze_days defaults to 3; set 1-14 when another wait fits (e.g. they said they'd answer next week), or 0 when no answer is expected. It returns on a work day in the morning (the owner's work hours), or sooner if they reply.
-- Attach files with attachments:[<paths>]: save each file (e.g. an email attachment you saved) under the job's attachments folder or memory/assistant/ with a clear file name, at most 10 files and 18 MB together; the Send preview lists them. Never say an email needs an attachment-capable sender: put it in next_actions with its attachments.
+- Attach files with attachments:[<paths>]: save each file under the job's attachments folder or memory/assistant/ with a clear file name, at most 10 files and 18 MB together; the Send preview lists them. Never say an email needs an attachment-capable sender: put it in next_actions with its attachments.
 
 ### LinkedIn message
 
@@ -106,7 +106,7 @@ Reply to a post from this task's x.mention evidence with `{kind:x,label:Reply on
 
 ### WhatsApp message
 
-Reply in a chat from the task's whatsapp.message evidence: `{kind:whatsapp,label:Send reply,account_id:<task WhatsApp account>,chat_id:<its metadata.chat_id>,body:<message>}`. Plain text, no media, at most 4000 characters, short, the owner's WhatsApp voice (job message, else USER.md), no signature. Only existing chats, never a new number. It goes out from the owner's linked WhatsApp only after they tap Send now on the card; send_now does not apply to WhatsApp.
+`{kind:whatsapp,label:Send reply,account_id:<WhatsApp account>,chat_id:<task's metadata.chat_id>,body}`. If the owner talks to them on WhatsApp, switch from any channel: to_name:<name> instead of chat_id finds their chat. Short plain text in their WhatsApp voice. Existing chats only; never send_now. A Machine limit is never a question: with no chat, body:<the text>, needs:<what they can do>. Intercom alike: `{kind:intercom,account_id,conversation_id:<metadata.conversation_id>,body}`; if refused, use the body.
 
 ### Slack message, and handing a task to someone
 

@@ -37,7 +37,8 @@ class ZoomTests(unittest.TestCase):
         self.helpers = types.SimpleNamespace(SourceError=a.SourceError, now=lambda: NOW, iso=a.CONNECTOR_HELPERS.iso,
                                              credential=lambda config, name: 'app-token' if name == 'zoom-broker' else 1 / 0)
         self.listed = {'summaries': [{'meeting_uuid': UUID, 'summary_last_modified_time': '2026-10-23T08:50:00Z'}], 'next_page_token': ''}
-        self.summary, self.transcript, self.list_status = dict(SUMMARY), True, 200
+        self.summary, self.transcript, self.list_status, self.instances_status = dict(SUMMARY), True, 200, 200
+        self.previous = [{'id': 81234567890, 'start_time': '2026-10-23T08:00:00Z'}]
         self.calls, self.broker_calls = [], []
         patch('urllib.request.urlopen', side_effect=self.respond).start()
         self.addCleanup(patch.stopall)
@@ -63,8 +64,12 @@ class ZoomTests(unittest.TestCase):
         if url.path == '/v2/users/me':
             return Response(json.dumps({'id': 'h1', 'email': 'owner@acme.example'}).encode())
         if url.path == '/v2/users/me/meetings':
-            return Response(json.dumps({'meetings': [{'id': 81234567890, 'start_time': '2026-10-23T08:00:00Z'}]}).encode())
+            return Response(json.dumps({'meetings': self.previous}).encode())
+        if url.path == '/v2/past_meetings/81234567890':
+            return Response(json.dumps({'uuid': UUID, 'start_time': '2026-10-23T08:00:00Z'}).encode())
         if url.path == '/v2/past_meetings/81234567890/instances':
+            if self.instances_status != 200:
+                raise urllib.error.HTTPError(request.full_url, self.instances_status, 'no', {}, None)
             return Response(json.dumps({'meetings': [{'uuid': UUID, 'start_time': '2026-10-23T08:00:00Z'}]}).encode())
         encoded = urllib.parse.quote(urllib.parse.quote(UUID, safe=''), safe='')  # starts with / or holds //: twice
         if request.full_url == f'https://api.zoom.us/v2/meetings/{encoded}/meeting_summary':
@@ -126,6 +131,13 @@ class ZoomTests(unittest.TestCase):
         self.assertEqual(self.sync()['events'], 2)
         self.assertIn('/v2/past_meetings/81234567890/instances', self.calls)
         self.assertEqual(self.store.checkpoint('zoom')['mode'], 'past_meetings')
+
+    def test_without_the_instances_list_the_latest_instance_of_each_past_meeting_is_read(self):
+        self.list_status, self.instances_status = 403, 400
+        self.previous.append({'id': 99, 'type': 2, 'start_time': '2026-09-01T08:00:00Z'})  # a one-off from long before
+        self.assertEqual(self.sync()['events'], 2)
+        self.assertIn('/v2/past_meetings/81234567890', self.calls)
+        self.assertFalse([c for c in self.calls if c.startswith('/v2/past_meetings/99')])
 
     def test_a_download_link_off_zoom_is_never_followed_with_the_token(self):
         self.transcript = 'https://evil.example/steal'

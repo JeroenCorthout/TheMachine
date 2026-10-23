@@ -107,8 +107,11 @@ The installer offers to publish the dashboard on your tailnet (`tailscale serve`
 
 The dashboard installs as a phone app and notifies you of each card, result, reminder and the weekly recap. With it, Telegram is optional.
 
-- **Android (Chrome):** open the dashboard, tap ⋮ → **Add to Home screen** (or **Install app**). Open The Machine from your home screen, open **Settings** (the gear at the top) → **General** and tap the bell, then allow notifications.
-- **iPhone/iPad (iOS 16.4 or newer):** open the dashboard in Safari, tap **Share** → **Add to Home Screen**. Open The Machine from your Home Screen (not a Safari tab: iOS only allows notifications there), open **Settings** (the gear) → **General**, tap the bell and allow.
+- **Android (Chrome):** open the dashboard and tap **Install** on the card at the top of Suggestions (or ⋮ → **Install app**). Open The Machine from your home screen and tap **Turn on** on the next card, then allow notifications.
+- **iPhone/iPad (iOS 16.4 or newer):** open the dashboard in Safari, tap **Share** → **Add to Home Screen**. Open The Machine from your Home Screen (not a Safari tab: iOS only allows notifications there) and tap **Turn on**.
+- **A computer (Chrome, Edge):** **Install** puts The Machine in its own window, to pin to the taskbar or dock. Safari on a Mac: **File** → **Add to Dock**. Firefox can't install it, but notifications work in the tab.
+
+The cards show up after the first minute, one at a time, and **Not now** waits 14 days (a second one stops it on that device). The same controls stay in **Settings** → **General** → **This device**: install the app, notifications on or off with **Send a test**, and light mode. If notifications are blocked, it says where to allow them again in the browser's site settings.
 
 Turn Telegram off or on later with `assistant telegram off` / `assistant telegram on <your Telegram user ID>`.
 
@@ -138,7 +141,7 @@ One pass over the service, the OpenClaw bridge, your Telegram approval, every so
 
 - Add or redo a source: `assistant connect <source>`. With one already there it asks whether to redo it or add another (a second company, a partner's calendar); the new one reuses your client, keys and settings and follows your naming. `assistant connect` on its own also shows accounts this machine has that nothing reads yet.
 - Sending approved emails needs `gmail.send` on top of read-only access; add it with gog when you want it. Connecting never asks for more than read access.
-- Company facts next to each organisation (industry, size, location): add a key for an enrichment service you use (Apollo, People Data Labs, Hunter or any that looks companies up by domain). Only domains are sent. When a look-up gets a company wrong, Edit on its page fixes the details or clears them. See [Organisation data](../README.md#organisation-data-optional-enrichment).
+- Company facts next to each organisation (industry, size, location): add a key for an enrichment service you use (Apollo, People Data Labs, Hunter or any that looks companies up by domain). Only domains are sent. When a look-up gets a company wrong, Edit on its page fixes the details or clears them. See [Organisation data](../README.md#organisation-data-optional-enrichment). With a service that knows people too, people with a company address get a job title, photo and location ([People data](intelligence.md#people-data)).
 - Upgrade: inspect local changes, then `python3 scripts/release.py update` (it takes the newest signed release, and only if its signature checks out) and `./install.sh`. Preserve custom work; see [Operations](operations.md#update-and-rollback). Your config, data and secrets are kept.
 - Backups: on your own computer nothing backs up by itself. A nightly encrypted [restic](https://restic.net) backup of your home folder is enough: it holds `~/.openclaw` (workspace, memory, settings) and The Machine's data, including the message key `message-content.key` (without it, the messages can't be read; moved to your keyring with `assistant message-key to-keyring`, it is in your keyring instead, for GNOME in `~/.local/share/keyrings`). Leave out what an install makes again (`~/.npm`, `~/.cache`, `~/.local/lib`, `~/.openclaw/npm`, `node_modules`, model files such as `*.gguf`), and keep the repository password somewhere else. `assistant export --keys` makes a one-file copy too.
 

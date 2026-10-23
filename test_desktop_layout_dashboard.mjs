@@ -3,6 +3,21 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
+// The tagline is a quiet line over the cards, not a headline: about body size, muted, on one line where it fits, with
+// the count readable under it
+const quietTagline=async(page,label)=>{const q=await page.evaluate(()=>{const t=document.querySelector('#page-head .page-title'),c=getComputedStyle(t),sub=document.querySelector('#page-head .page-sub');
+  return {size:parseFloat(c.fontSize),lines:Math.round(t.getBoundingClientRect().height/parseFloat(c.lineHeight)),muted:c.color!==getComputedStyle(document.body).color,sub:sub&&parseFloat(getComputedStyle(sub).fontSize),below:sub&&sub.getBoundingClientRect().top>=t.getBoundingClientRect().bottom-1}});
+ assert.ok(q.size<=18,'the tagline is about body size '+label+': '+q.size);assert.equal(q.lines,1,'the tagline is one line '+label);assert.ok(q.muted,'the tagline is muted '+label);
+ assert.ok(q.sub>=13&&q.below,'the count is readable under it '+label)};
+
+// Graph folded shows its count in the same column as the other rows' counts, and its chevron is a toggle of its own,
+// right after the label with clear space on both sides; open, the rows under it carry the counts
+const foldedRow=async(page,label,tap)=>{const g=await page.evaluate(()=>{const r=q=>document.querySelector(q).getBoundingClientRect();
+   return {lab:r('[data-tab="people"] .nl'),fold:r('#graph-fold'),chev:r('#graph-fold svg'),count:r('#badge-people'),other:r('#badge-inbox'),text:document.querySelector('#badge-people').textContent}});
+ assert.equal(g.text,'1','the Graph count shows '+label);assert.ok(Math.abs(g.count.right-g.other.right)<=1,'the Graph count is in the rows\' column '+label+': '+g.count.right+' vs '+g.other.right);
+ assert.ok(g.chev.left-g.lab.right>=5&&g.count.left-g.chev.right>=24,'the chevron sits apart from the label and the count '+label+': '+JSON.stringify(g));
+ assert.ok(g.fold.width>=tap[0]&&g.fold.height>=tap[1],'the chevron has a tap target '+label+': '+g.fold.width+'x'+g.fold.height);
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('#graph-fold')).opacity==='1')};  // folded, the chevron shows (its fade can take a while on a busy computer)
 
 // The desktop layout (from 1024px): a fixed sidebar with the tabs as rows, the cards as a list by section (Done folded,
 // each fold remembered), a filter and a Work/Personal switch; the main area gets a title per tab. The sidebar folds to
@@ -21,7 +36,7 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(url.pathname==='/api/status'){res.end(JSON.stringify(state()));return}
  if(url.pathname==='/api/graph'){const n=(kind,name,i)=>({id:kind+':'+i,kind,name,strength:2-i/10,last_at:now,signals:9,ids:[]});
-  res.end(JSON.stringify({counts:{person:214,org:38,project:9},people:[n('person','Robin Example',1),n('person','Alex Example',2)],quiet:[],new:[],projects:[n('project','Garden plan',3)],orgs:[n('org','Example Ltd',4)],whos_who:[],waiting:0}));return}
+  res.end(JSON.stringify({counts:{person:214,org:38,project:9},people:[n('person','Robin Example',1),n('person','Alex Example',2)],quiet:[],new:[],projects:[n('project','Garden plan',3)],orgs:[n('org','Example Ltd',4)],whos_who:[],waiting:1}));return}
  if(url.pathname==='/api/action'){const r=JSON.parse(body);res.end(JSON.stringify(r.action==='card_chat'?history:{}));return}
  res.statusCode=url.pathname.startsWith('/brand/')?404:200;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -49,6 +64,7 @@ try{
   await scrolls(page,'inbox at 1440');assert.ok(Math.abs((await side(page)).top)<1,'the sidebar stays in place');
   // The main area has a title; the old filter row and tiles live in the sidebar instead
   assert.ok(await page.locator('#page-head .page-title').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));
+  await quietTagline(page,'at 1440');
   // The cards by section; Done starts folded with its count, opens, and stays open after a reload
   const done=page.locator('[data-side-fold="done"]');assert.equal(await done.getAttribute('aria-expanded'),'false');assert.match(await done.textContent(),/Done\s*12/);
   assert.equal(await page.locator('#side-cards a').count(),12);
@@ -57,7 +73,7 @@ try{
   await page.reload();await page.locator('#side-cards a').first().waitFor();assert.equal(await page.locator('#side-cards a').count(),20,'folds are remembered');
   // Long titles fade at the edge and keep the full name as a tooltip
   const a=page.locator('#side-cards a').first();  // the fade is measured on the next frame, once the fonts are in (slower on macOS)
-  await page.waitForFunction(()=>document.querySelector('#side-cards a')?.classList.contains('fade'),null,{timeout:5000}).catch(()=>{});assert.match(await a.getAttribute('class')||'',/fade/);assert.match(await a.getAttribute('title'),/does not fit the sidebar/);
+  await page.waitForFunction(()=>document.querySelector('#side-cards a')?.classList.contains('fade'));assert.match(await a.getAttribute('class')||'',/fade/);assert.match(await a.getAttribute('title'),/does not fit the sidebar/);
   // The filter narrows the list; Work/Personal switches it
   await page.locator('#side-find').fill('number 2');assert.ok((await page.locator('#side-cards a').allTextContents()).every(t=>t.includes('number 2')));
   await page.locator('#side-find').fill('nothing like this');assert.equal(await page.locator('.side-empty').textContent(),'No cards match.');
@@ -99,14 +115,17 @@ try{
   const names=await page.evaluate(()=>[...document.querySelectorAll('.app-side nav [data-tab]')].filter(b=>b.offsetParent).map(b=>b.getAttribute('aria-label')));
   assert.equal(names[0],'Suggestions · 4 ready · 8 to decide');assert.deepEqual(names.slice(1),['Calendar','Events','Graph','Feedback','Connections']);
   for(const q of ['#open-settings','#side-toggle','#live'])assert.ok(await page.locator(q).getAttribute('aria-label'),q+' has a name');
-  const row=page.locator('.app-side nav [data-tab="inbox"]');await row.hover();await page.waitForTimeout(120);assert.equal(await page.locator('#side-tip').isVisible(),false,'not at once on hover');
-  await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide');
+  // The delay is timed in the page, from the pointer arriving to the tip showing: a busy computer can only make it longer
+  await page.evaluate(()=>{window.tipTimes={};document.querySelector('#app-side').addEventListener('pointerover',()=>{tipTimes.over??=performance.now()},true);
+   new MutationObserver(()=>{if(!document.querySelector('#side-tip').hidden)tipTimes.shown??=performance.now()}).observe(document.querySelector('#side-tip'),{attributes:true,attributeFilter:['hidden']})});
+  const row=page.locator('.app-side nav [data-tab="inbox"]');await row.hover();
+  await page.locator('#side-tip').waitFor({state:'visible'});{const t=await page.evaluate(()=>tipTimes);assert.ok(t.shown-t.over>=250,'not at once on hover: '+JSON.stringify(t))}assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide · G then S');  // with its key
   const pos=await page.evaluate(()=>{const t=document.querySelector('#side-tip').getBoundingClientRect(),s=document.querySelector('#app-side').getBoundingClientRect(),r=document.querySelector('.app-side nav [data-tab="inbox"]').getBoundingClientRect();return {gap:t.left-s.right,mid:Math.abs((t.top+t.bottom)/2-(r.top+r.bottom)/2)}});
   assert.ok(pos.gap>=4&&pos.gap<=16&&pos.mid<2,JSON.stringify(pos));
   await page.screenshot({path:process.env.SHOT_DIR?process.env.SHOT_DIR+'/tip.png':'/dev/null'}).catch(()=>{});
   await page.mouse.move(900,500);await page.locator('#side-tip').waitFor({state:'hidden'});
   await page.locator('#open-settings').focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');
-  assert.equal(await page.locator('#side-tip').isVisible(),true,'at once on keyboard focus');assert.equal(await page.locator('#side-tip').textContent(),'Settings');
+  assert.equal(await page.locator('#side-tip').isVisible(),true,'at once on keyboard focus');assert.equal(await page.locator('#side-tip').textContent(),'Settings · G then ,');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#side-tip').isVisible(),false);
   await page.locator('body').click({position:{x:900,y:300}});await page.keyboard.press('Control+b');await page.waitForFunction(()=>document.documentElement.dataset.side==='open');
   assert.equal(await page.locator('#side-toggle').getAttribute('aria-label'),'Collapse sidebar');
@@ -145,16 +164,22 @@ try{
   assert.equal(await page.locator('#people-view .sub-tabs').count(),0,'no pills: the rows are the panes');
   assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations');assert.equal(await page.locator('#page-head .page-sub').textContent(),'38 organisations');
   assert.equal(await page.locator('#page-head .page-crumb').textContent(),'Graph');
-  await page.locator('.side-sub a[data-graph-sub="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');assert.equal(await lit(),'people');assert.equal(await page.locator('#page-head .page-sub').textContent(),'214 people');
+  // the row lights once the pane is drawn, a moment after the hash
+  await page.locator('.side-sub a[data-graph-sub="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');
+  await page.waitForFunction(()=>document.querySelector('.side-sub a[aria-current="page"]')?.dataset.graphSub==='people');assert.equal(await lit(),'people');
+  assert.equal(await page.locator('#page-head .page-sub').textContent(),'214 people');
   // Graph itself shows the overview as before, the pane it was on
   await tab(page,'events');assert.equal(new URL(page.url()).hash,'');assert.equal(await lit(),'');
   await page.locator('nav [data-tab="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');assert.equal(await lit(),'people');
   await page.locator('#graph-fold').click();assert.ok(!(await page.locator('#graph-sub').isVisible()));assert.equal(await page.locator('#graph-fold').getAttribute('aria-expanded'),'false');
   await page.reload();await page.locator('#task-'+cards[0].id).waitFor({state:'attached'});assert.ok(!(await page.locator('#graph-sub').isVisible()),'the fold is remembered');
+  await page.mouse.move(800,500);await page.locator('#badge-people:text("1")').waitFor();await foldedRow(page,'at 1440',[26,26]);
   await page.locator('#graph-fold').click();assert.ok(await page.locator('#graph-sub').isVisible());
   await page.locator('#side-toggle').click();assert.equal(await page.locator('.side-sub a[data-graph-sub="people"]').getAttribute('aria-label'),'People · 214');
   assert.ok(await page.locator('.side-sub .sq').first().isVisible());assert.ok(!(await page.locator('.side-sub .nl').first().isVisible()));
-  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Organisations · 38');
+  // hover once the sidebar has folded: a row still sliding moves out from under the pointer
+  await page.waitForFunction(()=>document.documentElement.dataset.side==='collapsed'&&!document.querySelector('#app-side').getAnimations({subtree:true}).length);
+  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible'});assert.equal(await page.locator('#side-tip').textContent(),'Organisations · 38 · G then O');
   await page.locator('#side-toggle').click();await context.close()}
  // A phone and a tablet: a slim top bar with the menu button and the page's title; the sidebar is a drawer
  const touch=(page,from,to)=>page.evaluate(([from,to])=>{const el=document.elementFromPoint(from[0],from[1]),t=(x,y)=>new Touch({identifier:1,target:el,clientX:x,clientY:y});
@@ -162,7 +187,7 @@ try{
   for(let i=1;i<=6;i++){const x=from[0]+(to[0]-from[0])*i/6,y=from[1]+(to[1]-from[1])*i/6;el.dispatchEvent(new TouchEvent('touchmove',{bubbles:true,touches:[t(x,y)],changedTouches:[t(x,y)]}))}
   el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,touches:[],changedTouches:[t(...to)]}))},[from,to]);
  const isOpen=page=>page.evaluate(()=>document.documentElement.dataset.drawer==='open');
- const settle=page=>page.waitForTimeout(350);
+ const settle=async page=>{await page.waitForTimeout(60);await page.waitForFunction(()=>['#app-side','#drawer-scrim'].every(q=>!document.querySelector(q).getAnimations().length));await page.waitForTimeout(40)};  // the slide is over, also on a busy machine
  // On a phone the whole drawer scrolls as one column (the nav, the cards, then Browser and Settings), with no scroll area
  // inside it: a finger swipe up from the nav reaches Settings and the last card
  {const {context,page}=await open(390,700);
@@ -181,11 +206,34 @@ try{
  for(const [w,h] of [[390,844],[360,740],[430,932],[900,1100]]){const {context,page}=await open(w,h);
   assert.ok(await page.locator('#drawer-open').isVisible(),'the menu button at '+w);assert.ok(!(await page.locator('#app-side').isVisible()),'the drawer is closed at '+w);
   // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
-  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#page-head .page-title')}});
+  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#suggestions')}});
    assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
-   assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
-  assert.ok(await page.locator('#page-head .page-title').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
-  for(const t of TABS){await tab(page,t);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
+   assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);
+   // ☰ and + are 44px boxes whose glyphs sit on the cards' gutters, like the chat header's ‹ and ⋯
+   if(w<861){const g=await page.evaluate(()=>{const r=e=>e.getBoundingClientRect(),q=s=>document.querySelector(s),ink=el=>{const rs=[...el.querySelectorAll('svg :is(path,rect,line,circle)')].map(r),k=r(el.querySelector('svg')).width/24*0.8;return {l:Math.min(...rs.map(x=>x.left))-k,r:Math.max(...rs.map(x=>x.right))+k}};
+     const card=r(q('#suggestions article'));return {m:r(q('#drawer-open')).width,p:r(q('#new-card-top')).width,ml:ink(q('#drawer-open')).l-card.left,pr:ink(q('#new-card-top')).r-card.right}});
+    assert.ok(g.m===44&&g.p===44&&Math.abs(g.ml)<=0.5&&Math.abs(g.pr)<=0.5,'the top bar glyphs on the gutters at '+w+': '+JSON.stringify(g))}assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
+  {const q=await page.evaluate(()=>{const t=document.querySelector('#page-head .page-title'),s=document.querySelector('#page-head .page-sub'),h=[...document.querySelectorAll('[id^="section-"]')].find(n=>n.getBoundingClientRect().height>0);
+    return {tag:t.getBoundingClientRect().width,named:t.textContent.length>0,sub:s&&s.getBoundingClientRect().height,head:h&&h.getBoundingClientRect().top,bar:document.querySelector('#topbar').getBoundingClientRect().bottom}});
+   assert.ok(q.tag<=1&&q.named,'no tagline on a phone, still there for screen readers, at '+w);assert.ok(!q.sub,'no counts line over the cards on a phone (the section heads carry them) at '+w);
+   assert.ok(q.head>=q.bar+12&&q.head<=q.bar+64,'the first section head sits calmly under the top bar at '+w+': '+(q.head-q.bar))}
+  assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
+  // Search: a search icon in the top bar, left of the +; a tap opens the palette (cards and commands in one field);
+  // Esc closes it and gives focus back to the icon, a picked card opens its chat; the icon is on every page
+  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {t:r('#topbar-title'),f:r('#find-open'),p:r('#new-card-top'),bar:r('#topbar')}});
+   assert.ok(b.f.width>=40&&b.f.left>b.t.right&&b.f.right<=b.p.left+1&&b.p.right>=b.bar.right-14,'the search icon sits left of the + at '+w+': '+JSON.stringify(b))}
+  const palItems=()=>page.locator('#pal-list .pal-item .pal-label').allTextContents();
+  await page.locator('#find-open').click();await page.locator('#palette[open]').waitFor();assert.equal(await page.evaluate(()=>document.activeElement.id),'pal-q','the field has focus');
+  assert.equal(await page.locator('#pal-q').getAttribute('placeholder'),'Search or type a command');
+  await page.keyboard.type('number 7');await page.waitForFunction(t=>[...document.querySelectorAll('#pal-list .pal-label')].some(e=>e.textContent===t),cards[7].title);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'search fits at '+w);
+  await page.keyboard.press('Escape');assert.ok(!(await page.locator('#palette[open]').count())&&await page.evaluate(()=>document.activeElement.id)==='find-open','Esc closes it');
+  await page.locator('#find-open').click();await page.keyboard.type('new');assert.ok((await palItems()).includes('New card'),'commands in the same field');
+  await page.locator('#pal-q').fill('number 4');await page.waitForFunction(t=>[...document.querySelectorAll('#pal-list .pal-label')].some(e=>e.textContent===t),cards[4].title);
+  await page.locator('#pal-list .pal-item',{hasText:cards[4].title}).first().click();await page.locator('#chat-log').waitFor();
+  assert.equal(new URL(page.url()).hash,'#chat='+cards[4].id,'a pick opens its chat');assert.ok(!(await page.locator('#palette[open]').count()));
+  await page.goBack();await page.locator('#suggestions .chat-layout').waitFor({state:'detached'});
+  for(const t of TABS){await tab(page,t);assert.ok(await page.locator('#find-open').isVisible(),'the search icon on every page: '+t+' at '+w);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
   await tab(page,'inbox');await page.evaluate(()=>scrollTo(0,0));
   // The menu button opens it: nearly the full width, the rest of the page inert, focus on its ✕, the rows and the cards in it, Settings at the bottom
   await page.locator('#drawer-open').click();await settle(page);assert.ok(await isOpen(page));
@@ -193,6 +241,12 @@ try{
    settings:document.querySelector('#open-settings').getBoundingClientRect().bottom,wide:document.documentElement.scrollWidth<=innerWidth,label:document.querySelector('#side-toggle').getAttribute('aria-label')}});
   assert.equal(Math.round(d.x),0);assert.ok(d.w>=Math.min(w*.8,360)&&d.w<=w*.9,'drawer width '+d.w);assert.ok(d.inert,'the page behind is inert');assert.equal(d.focus,'side-toggle');assert.ok(d.settings>h-120,'Settings at the bottom');assert.ok(d.wide);
   assert.equal(await page.locator('[data-side-fold="done"]').getAttribute('aria-expanded'),'false');assert.ok(await page.locator('#side-cards a').first().isVisible());
+  assert.ok(!(await page.locator('#side-search').isVisible()),'no search field in the drawer');
+  await page.locator('#graph-fold').click();assert.ok(!(await page.locator('#graph-sub').isVisible()));await foldedRow(page,'at '+w,[40,44]);
+  {const g=await page.evaluate(()=>{const r=q=>document.querySelector(q).getBoundingClientRect();return {lab:r('[data-tab="people"] .nl'),chev:r('#graph-fold'),count:getComputedStyle(document.querySelector('#badge-people')).display}});
+   await page.locator('#graph-fold').click();assert.ok(await page.locator('#graph-sub').isVisible());
+   const o=await page.evaluate(()=>({chev:document.querySelector('#graph-fold').getBoundingClientRect(),count:getComputedStyle(document.querySelector('#badge-people')).display}));
+   assert.ok(Math.abs(o.chev.left-g.chev.left)<1,'open, the chevron stays put at '+w);assert.equal(o.count,'none','open, the rows carry the counts at '+w)}
   const rows=await page.locator('.app-side nav button[data-tab]:not([hidden])').evaluateAll(b=>b.map(x=>x.getBoundingClientRect().height));assert.ok(rows.every(x=>x>=44),'rows are a thumb high: '+rows);
   // Esc closes it and gives focus back; so do ✕, the shade and back, and none leaves an entry on the history
   await page.keyboard.press('Escape');await settle(page);assert.ok(!(await isOpen(page)));assert.equal(await page.evaluate(()=>document.activeElement.id),'drawer-open');assert.ok(!(await page.evaluate(()=>document.querySelector('main').inert)));
@@ -223,8 +277,10 @@ try{
   await page.locator('#drawer-open').click();await settle(page);assert.equal(await page.locator('.side-sub a[aria-current="page"]').getAttribute('data-graph-sub'),'projects');await page.keyboard.press('Escape');await settle(page);
   await page.goBack();await settle(page);assert.ok(await page.locator('#inbox').isVisible(),'back from a Graph row goes back to Suggestions');
   // Resized to a computer with the drawer open: the sidebar is a column again and nothing stays inert
-  if(w===900){await page.locator('#drawer-open').click();await settle(page);await page.setViewportSize({width:1280,height:900});await settle(page);
-   assert.ok(!(await isOpen(page)));assert.ok(!(await page.evaluate(()=>document.querySelector('main').inert)));assert.ok(await page.locator('#side-cards').isVisible())}
+  if(w===900){await page.locator('#drawer-open').click();await settle(page);await page.setViewportSize({width:1280,height:900});
+   // the width change reaches the page a frame or more later
+   await page.waitForFunction(()=>document.documentElement.dataset.drawer!=='open');await settle(page);
+   assert.ok(!(await page.evaluate(()=>document.querySelector('main').inert)));assert.ok(await page.locator('#side-cards').isVisible())}
   await context.close()}
  assert.deepEqual(errors,[]);
 }finally{await browser?.close();server.close()}

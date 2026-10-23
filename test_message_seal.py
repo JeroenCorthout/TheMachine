@@ -504,7 +504,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
         """A new table or column whose name says it may hold message text has to be sealed (message_seal.DERIVED) or
         listed here with the reason it is not a message."""
         not_messages = {
-            'events.content_hash': 'a hash', 'milestones.detail': 'a count or a first-look state (first_cards_report)', 'facts.text': 'a learned fact', 'rule_changes.text': 'a learned rule',
+            'events.content_hash': 'a hash', 'promise_log.detail': 'an event kind, a source, a date or an id (promise_logged)', 'milestones.detail': 'a count or a first-look state (first_cards_report)', 'facts.text': 'a learned fact', 'rule_changes.text': 'a learned rule',
             'decisions.feedback': "the owner's feedback", 'decision_annotations.reason': 'a status reason',
             'profile_runs.draft': 'profile notes (USER.md)', 'skills.body': 'a skill', 'skills.description': 'a skill',
             'skills.note': 'a skill', 'skill_hints.summary': 'a skill hint', 'tool_approval_proposals.title': 'a proposal',
@@ -522,6 +522,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
             'voice_merges.merged_text': 'the same learned channel voice, retained only for undo',
             'suggestions.title_source': 'who wrote the title: auto or user',
             'skill_clusters.description': 'a skill suggested from learned notes', 'skill_clusters.body': 'a skill suggested from learned notes',
+            'board_suggestions.state': 'open, saved or dismissed',
         }
         sealed = {f'{t}.{c}' for t, cs in message_seal.DERIVED.items() for c in cs} | {f'{t}.{c}' for t, c, _ in message_seal.DERIVED_JSON}
         sealed |= {'events.title', 'events.body', 'events.metadata'}

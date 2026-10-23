@@ -44,6 +44,13 @@ def groups(states):
     return [g for g, s in (('work', 'fleet'), ('family', 'family'), ('friends', 'friends')) if s in states]
 
 
+try:
+    from zoneinfo import ZoneInfo
+    BRUSSELS = ZoneInfo('Europe/Brussels')  # the sandbox owner's timezone (config 'timezone')
+except Exception:  # no tz database (Windows without tzdata): winter time is close enough for made-up meetings
+    BRUSSELS = dt.timezone(dt.timedelta(hours=1))
+
+
 def stamp(minutes_ago, base):
     return (base - dt.timedelta(minutes=minutes_ago)).isoformat()
 
@@ -82,8 +89,18 @@ def make_config(directory, fixture, states, port, network_port):
     return config, path
 
 
+def working_hours(start, duration, slot):
+    """The same day (a weekend moves to Friday or Monday), on a round half hour between 09:00 and 18:00 in Brussels,
+    so a meeting reads like one whenever the sandbox starts. `slot` picks the half hour."""
+    local = start.astimezone(BRUSSELS)
+    day = local.date() + dt.timedelta(days={5: -1, 6: 1}.get(local.weekday(), 0))
+    latest = (18 * 60 - duration) // 30  # the last half hour it still ends by 18:00
+    minutes = 9 * 60 + 30 * (slot % (latest - 18 + 1))
+    return dt.datetime.combine(day, dt.time(minutes // 60, minutes % 60), BRUSSELS).astimezone(dt.timezone.utc)
+
+
 def calendar_meta(meta, base):
-    start = base - dt.timedelta(minutes=meta['start_minutes_ago'])
+    start = working_hours(base - dt.timedelta(minutes=meta['start_minutes_ago']), meta['duration_minutes'], meta['start_minutes_ago'])
     end = start + dt.timedelta(minutes=meta['duration_minutes'])
     out = {k: v for k, v in meta.items() if k not in ('start_minutes_ago', 'duration_minutes', 'attendees', 'organizer')}
     return {**out, 'start': {'dateTime': start.isoformat()}, 'end': {'dateTime': end.isoformat()}, 'end_at': end.isoformat(), 'all_day': False,
@@ -116,9 +133,10 @@ def load(directory, states, port=8870, network_port=8871, fixture_path=HERE / 'f
         for e in events:
             meta = calendar_meta(e['metadata'], base) if e['kind'] == 'calendar.event' else e['metadata']
             body = e['body']
+            at = meta['start']['dateTime'] if e['kind'] == 'calendar.event' else stamp(e['minutes_ago'], base)
             db.execute('INSERT INTO events(account_id,source_id,kind,occurred_at,title,body,metadata,deleted,content_hash,version,analyzed_version,ingested_at) '
                        'VALUES(?,?,?,?,?,?,?,0,?,1,?,?)',
-                       (e['account_id'], 'sandbox:' + e['key'], e['kind'], stamp(e['minutes_ago'], base), e['title'], body, json.dumps(meta),
+                       (e['account_id'], 'sandbox:' + e['key'], e['kind'], at, e['title'], body, json.dumps(meta),
                         hashlib.sha256((e['title'] + body).encode()).hexdigest(), 0 if fresh else 1, stamp(max(e['minutes_ago'], 0) - 1, base)))
             ids[e['key']] = db.execute('SELECT last_insert_rowid()').fetchone()[0]
         for account in config['accounts']:
@@ -135,12 +153,41 @@ def load(directory, states, port=8870, network_port=8871, fixture_path=HERE / 'f
         if not fresh:
             load_cards(db, fixture, ids, base)
             load_reviews(db, ids, base, assistant)
+            load_boards(db, fixture, ids, base)
     if not fresh:
         with store.connect() as db:
+            load_job(db, fixture, base)
+            db.commit()  # graph.build opens its own transaction
             graph.build(db, config, base.isoformat())
             load_roles(db, base)
             load_skills(db, states, fixture, base)
+        load_logins(directory, fixture)
     return config, config_path
+
+
+def load_job(db, fixture, base):
+    """A card handed to Claude Code earlier, with its result: the card's job block (agent_jobs.py)."""
+    import agent_jobs
+    job = fixture.get('agent_job')
+    if not job:
+        return
+    db.executescript(agent_jobs.SCHEMA)
+    card_id = hashlib.sha256(job['card'].encode()).hexdigest()[:16]
+    at = stamp(40, base)
+    db.execute('INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,session_id,summary,files,turns,created_at,updated_at,started_at,finished_at) '
+               'VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?)',
+               ('sandbox-job-1', card_id, job['tool'], 'local', 'result', 'Answer the question on the card.', 'sandbox-session', job['summary'],
+                json.dumps([{'path': f} for f in job['files']]), stamp(55, base), at, stamp(54, base), at))
+
+
+def load_logins(directory, fixture):
+    """Connections > Sign-ins: sites the browser signs back in to. Made-up sites; the password is a placeholder."""
+    import browser_login
+    import message_seal
+    message_seal.load_key(directory / 'events.sqlite', create=True)  # the app makes it at start too; sealed in-process, no openssl
+    logins = browser_login.LoginStore(directory)
+    for entry in fixture.get('saved_logins', []):
+        logins.save(entry['site'], entry['username'], 'sandbox-placeholder')
 
 
 def load_roles(db, base):
@@ -179,6 +226,7 @@ def load_skills(db, states, fixture, base):
 
 
 def load_cards(db, fixture, ids, base):
+    import graph
     for name in fixture['projects']:
         db.execute('INSERT OR IGNORE INTO projects(name,created_at) VALUES(?,?)', (name, stamp(30 * 24 * 60, base)))
     for card in fixture['cards']:
@@ -195,6 +243,8 @@ def load_cards(db, fixture, ids, base):
                     int(bool(card.get('urgent'))), f"Source: {card['source']} · {(base - dt.timedelta(minutes=card['minutes_ago'])).strftime('%a %-d %b')}",
                     card.get('project')))
         db.execute('INSERT INTO deliveries(suggestion_id,status,updated_at) VALUES(?,?,?)', (card_id, 'sent', created))
+        if card.get('project'):  # Graph > Projects: the card's thread carries its project, as a review labels it
+            graph.label(db, event_ids, card['project'], 'review', created)
         if card.get('choice'):
             db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
                        ('d' + card_id, card_id, card['choice'], '', 'dashboard', stamp(max(card['minutes_ago'] - 30, 1), base)))
@@ -206,6 +256,30 @@ def load_cards(db, fixture, ids, base):
         db.execute('INSERT OR IGNORE INTO promises(direction,who,what,due,check_at,event_id,account_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
                    (p['direction'], p['who'], p['what'], due, (base + dt.timedelta(days=p['due_days'] or 1)).isoformat(), ids[p['event']], account,
                     p['status'], stamp(2 * 24 * 60, base), stamp(60, base)))
+
+
+def load_boards(db, fixture, ids, base):
+    """Graph > Projects > Board: each project labelled with its messages and moved through its stages by them, as a review
+    would (graph.set_stage), one dragged by hand; their organisations' names as an enrichment service would give them."""
+    import graph
+    for board in fixture.get('boards') or ():
+        if board.get('suggestion'):  # projects on no board yet, and a review's suggestion of a board for them
+            sug = board['suggestion']
+            for p in sug['projects']:
+                graph.label(db, [ids[k] for k in p['events'] if k in ids], p['name'], 'review', base.isoformat())
+            graph.suggest_board(db, {**sug, 'projects': [p['name'] for p in sug['projects']]}, 'review', base.isoformat())
+            continue
+        graph.save_board(db, {'name': board['name'], 'stages': board['stages'], 'about': board.get('about', '')}, base.isoformat())  # the owner saved it
+        for p in board['projects']:
+            graph.label(db, [ids[k] for k in p['events'] if k in ids], p['name'], 'review', base.isoformat())
+            for i, m in enumerate(p['moves']):
+                graph.set_stage(db, p['name'], m['stage'], 'review', base.isoformat(), board=board['name'], stages=board['stages'], reason=m['reason'],
+                                event_id=ids[m['event']], next_step=p['next'] if i == len(p['moves']) - 1 else None, org=p['org'])
+            if p.get('by_hand'):
+                node = 'project:' + str(db.execute('SELECT id FROM projects WHERE name=?', (p['name'],)).fetchone()[0])
+                graph.set_stage(db, node, p['by_hand']['stage'], 'owner', stamp(p['by_hand']['days_ago'] * 24 * 60, base))
+            db.execute("INSERT OR IGNORE INTO org_profiles(domain,status,profile,fetched_at) VALUES(?,'found',?,?)",
+                       (p['org'], json.dumps({'name': p['org_name'], 'industry': 'Software'}), base.isoformat()))
 
 
 def load_reviews(db, ids, base, assistant):

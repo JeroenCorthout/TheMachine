@@ -28,6 +28,9 @@ how messages stay reliable, and where it's going.
 - **Your own addresses.** A self-hosted Machine tells the Network the mail addresses of its work accounts (so teammates'
   Machines know who knows whom) and its dashboard's https address when you set `dashboard_host`, so your Account page
   can link to your dashboard. Without `dashboard_host` it sends no dashboard address.
+- **Your account in Settings.** A paired Machine asks the Network for your account in short (`GET /api/fleet/account`:
+  your email, your Fleets as counts, and links to the account's pages), at most once a minute, and only for its own
+  token's owner. Its buttons are plain links: no token on your Machine opens a signed-in account page.
 - **Moving your Machine.** `assistant export --keys` carries `network-keys.json` (encrypted with your passphrase) and
   `assistant import` puts it back, so your teammates and friends see the same Machine. An export without keys leaves
   them out: the import makes a new Network identity, and your teammates and friends see a key-change notice once.
