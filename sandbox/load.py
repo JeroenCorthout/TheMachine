@@ -141,7 +141,32 @@ def load(directory, states, port=8870, network_port=8871, fixture_path=HERE / 'f
             graph.build(db, config, base.isoformat())
             load_roles(db, base)
             load_skills(db, states, fixture, base)
+            if 'fleet' in states:
+                load_share(db)
     return config, config_path
+
+
+def load_share(db):
+    """The Shared Graph (shared_graph.py): the reviews' call on each Work email thread, as they would have made it.
+    Client threads go to the team; one about something personal to the client stays private (its existence only)."""
+    import shared_graph
+    shared_graph.ensure(db)
+    calls, sensitive = [], None
+    for row in db.execute("SELECT id,title,metadata FROM events WHERE account_id='work-gmail' AND kind='gmail.message' ORDER BY occurred_at DESC"):
+        meta = json.loads(row['metadata'] or '{}')
+        people = shared_graph.addresses(meta)
+        if not people:
+            continue
+        if all(a.endswith('@lumenlabs.example') for a in people):
+            calls.append({'event_id': row['id'], 'share': 'internal'})
+            continue
+        who = str(meta.get('from') or '').split('<')[0].strip().split(' ')[0] or 'They'
+        if sensitive is None and 'lumenlabs' not in str(meta.get('from') or ''):
+            sensitive = row['id']
+            calls.append({'event_id': row['id'], 'share': 'sensitive'})
+            continue
+        calls.append({'event_id': row['id'], 'share': 'client', 'line': f"{who} wrote about {' '.join(str(row['title'] or '').split())[:80]}"})
+    shared_graph.judge(db, calls)
 
 
 def load_roles(db, base):

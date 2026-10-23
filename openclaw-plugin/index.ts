@@ -204,6 +204,8 @@ export default definePluginEntry({
           if (!/^agent:main:assistant-review-skills-[a-f0-9]{32}$/.test(key)) throw new Error('Only the Find my skills turn reports skills');
           args._skills_session = key;
         }
+        // A review's graph calls carry its session, so a thread's Team or Only you by hand stays the owner's (shared_graph.py).
+        if (params.action === 'graph' && isolatedReview) args._review_session = key;
         if (['begin_analysis', 'finish_analysis'].includes(params.action)) {
           args._review_session = key;
           const run = currentReviewRun(key);

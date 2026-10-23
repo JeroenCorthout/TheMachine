@@ -70,6 +70,15 @@ never has it, and never needs it.
   next directory, within about 10 minutes. Intercom's API doesn't say what a token may do, so use a dedicated
   Intercom app with read permissions only. Code: `shared_connectors.py` and `fleet_trust.py`.
 
+## Shared Graph
+
+A Work Fleet's Graph (records, short timelines, client threads) travels as blobs: signed by the publishing Machine,
+encrypted with a fresh key per blob, that key sealed to each confirmed member's Machine. Members are confirmed by an
+admin's Machine like shared connectors' admins (`member` statements in `fleet_trust.py`). The CP keeps the sealed blobs
+as a replica for Machines that were away; it can't read, change or add to them, and addresses inside are keyed hashes
+it can't reverse. Someone who left gets nothing new and a new Fleet key goes round. Details:
+[Shared Graph](shared-graph.md). Code: `shared_graph.py`.
+
 ## Reliability
 
 - Every question has an id; a retry never asks twice, and your Machine never acts on the same question twice.

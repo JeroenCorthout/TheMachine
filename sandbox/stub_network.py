@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import network_crypto as nc  # noqa: E402
+import stub_graph  # noqa: E402
 
 ANSWER_AFTER = 3  # seconds before a teammate's Machine answers
 
@@ -41,6 +42,8 @@ class Network:
         self.peers = {}  # each simulated teammate's and friend's Machine: its private keys
         self.sent = {}  # what this Machine asked, by question id: (kind, member id), to seal the answer for it
         self.notices = {n['id']: {**n, 'at': now()} for n in self.net['notices']}
+        self.trust = []  # signed trust statements (fleet_trust.py), as Machines post them
+        self.graph = []  # the Shared Graph blobs waiting for this Machine (stub_graph.py)
 
     # -- sealing, as the simulated Machines do
     def peer(self, member_id):
@@ -90,7 +93,8 @@ class Network:
                 group = self.net[kind]
                 fleets.append({'id': group['id'], 'kind': kind, 'name': group['name'], 'asks': ['relationships', 'meeting', 'brief', 'anything',
                                'intro', 'handoff', 'followup', 'skill'] if kind == 'work' else ['availability', 'todo', 'event', 'skill'], 'me': {'member_id': self.net['owner']['member_id'], 'role': 'owner'},
-                               'members': [self.me()] + [self.member(m) for m in group['team']]})
+                               'members': [self.me()] + [self.member(m) for m in group['team']],
+                               **({'trust': list(self.trust)} if kind == 'work' else {})})
         if 'friends' in self.groups:
             fleets.append({'id': self.net['friends']['id'], 'kind': 'friends', 'name': 'Friends', 'username': self.net['owner']['username'],
                            'asks': ['availability', 'skill'], 'me': {'member_id': self.net['owner']['member_id'], 'role': 'owner'},
@@ -158,7 +162,7 @@ class Network:
                 if not (self.keys and (self.inbox['asks'] or self.inbox['answers'])) and not self.inbox['notices']:
                     self.lock.wait(wait)
                 found, self.inbox = self.handed_out(self.inbox)
-            return {**found, 'ack': True}
+            return {**found, 'ack': True, 'graph': len(self.graph)}
         if method == 'POST' and path in ('/ack', '/answer'):
             if path == '/answer':
                 self.answered.append(self.opened(body))
@@ -182,6 +186,20 @@ class Network:
             status = 'confirmed' if body.get('choice') == 'confirm' else 'declined'
             notice.update(status=status, version=notice['version'] + 1, buttons=[], outcome='Confirmed' if status == 'confirmed' else 'Declined')
             return {'status': status, 'notice': notice}
+        if method == 'POST' and path == '/trust':
+            self.trust.append(body['item'])
+            return {'ok': True}
+        if method == 'POST' and path == '/graph':  # this Machine's blobs: the teammates' Machines take its graph key and publish theirs
+            blob = body.get('blob') or {}
+            if body.get('op') == 'put' and blob.get('header', {}).get('kind') == 'key' and not self.graph and self.keys:
+                key = stub_graph.open_key(self, blob, self.net['owner']['member_id'])
+                if key:
+                    self.graph = stub_graph.blobs(self, body['fleet'], self.net['owner']['member_id'], key)
+            return {'ok': True}
+        if method == 'GET' and path == '/graph':
+            after = int((query.get('after') or ['0'])[0] or 0)
+            items = [{**b, 'cursor': n} for n, b in enumerate(self.graph, 1) if n > after]
+            return {'items': items, 'cursor': len(self.graph), 'more': False}
         if method == 'POST' and path == '/delivery':
             return {'delivery': {i: {'delivered': True} for i in body.get('ids', [])}}
         if method == 'POST' and path == '/claims':

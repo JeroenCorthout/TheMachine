@@ -116,7 +116,7 @@ class SharedConnectors:
         return self.meta('shared_prompts', []) or []
 
     def _prompt(self, kind, group, service, member, **extra):
-        if kind in ('admin', 'successor') and [group['id'], member.get('member_id'), (ft.keys_of(member) or {}).get('fp')] in (self.meta('trust_declined', []) or []):
+        if kind in ('admin', 'successor', 'member') and [group['id'], member.get('member_id'), (ft.keys_of(member) or {}).get('fp')] in (self.meta('trust_declined', []) or []):
             return
         prompts = self._prompts()
         key = (kind, group['id'], service, member.get('member_id'))
@@ -220,7 +220,7 @@ class SharedConnectors:
                 state = self._state(prompt['fleet'], prompt['service'])
                 state.setdefault('declined', []).append(prompt['member'])
                 self._set_state(prompt['fleet'], prompt['service'], state)
-            elif prompt['kind'] in ('admin', 'successor'):  # not asked again for these keys
+            elif prompt['kind'] in ('admin', 'successor', 'member'):  # not asked again for these keys
                 self.set_meta('trust_declined', (self.meta('trust_declined', []) or [])[-200:] + [[prompt['fleet'], prompt['member'], prompt.get('fp')]])
             return {'ok': True, 'done': False}
         keys = ft.keys_of(member)
@@ -229,10 +229,15 @@ class SharedConnectors:
         trusted, _ = self.trust(group)
         if me['member_id'] not in trusted:
             raise ValueError('Only a confirmed admin can do that')
-        if prompt['kind'] in ('admin', 'successor'):
+        if prompt['kind'] in ('admin', 'successor', 'member'):  # member: their Machine gets the team's Graph (shared_graph.py)
             item = ft.sign(self._private(), ft.statement(prompt['kind'], group['id'], member['member_id'], keys['sign'], me['member_id']))
             self.relay.call('POST', '/trust', {'fleet': group['id'], 'item': item}, timeout=30)
             self.directory(refresh=True)
+            if prompt['kind'] == 'member':  # their Machine gets the graph key and what this one shares, now
+                try:
+                    self.graph_round(force=True)
+                except (ValueError, OSError, KeyError, TypeError) as error:
+                    LOG.info('shared graph after a member OK error=%s', type(error).__name__)
             return {'ok': True, 'done': True}
         state = self._state(prompt['fleet'], prompt['service'])
         state.setdefault('approved', {})[member['member_id']] = {'fp': keys['fp'], 'at': _now(), 'name': prompt['name']}

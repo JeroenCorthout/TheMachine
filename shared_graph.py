@@ -1,0 +1,1201 @@
+"""The Shared Graph: a Work Fleet's Machines share their Work records, timelines and client email with each other,
+sealed Machine to Machine (docs/shared-graph.md). Mixed into fleet.Fleet, next to shared_connectors.SharedConnectors.
+
+What goes, per thread, judged by the review by meaning (share_threads), with the owner's hand choice winning:
+- client (someone outside the company, at an organisation on the Graph or with a work domain): the whole email;
+- sensitive client: only a neutral line that it exists ("Private thread with Lee, 12 Oct");
+- internal (colleagues only): nothing, also not by hand;
+- personal: nothing, not even that it exists. Personal accounts are never read for this.
+Records (people, organisations, projects with their board) go when they are Work, unless Keep private (share_private).
+
+How it goes: every blob is encrypted with a fresh key, signed by this Machine, and that key is sealed
+(network_crypto.seal) for each member a confirmed admin vouched for (fleet_trust.members). The Network keeps the
+blobs (a replica for when a Machine is off) and can't read, change or replay them. Addresses inside records are keyed
+hashes with the Fleet graph key, which only the members' Machines have; a confirmed admin's Machine makes it, seals
+it the same way, and makes a new one when someone leaves."""
+from __future__ import annotations
+
+import collections
+import datetime as dt
+import hashlib
+import hmac
+import json
+import logging
+import re
+import secrets
+import time
+
+import fleet_trust as ft
+import graph
+import network_crypto as nc
+
+LOG = logging.getLogger('personal-assistant')
+TAG = b'tm-shared-graph/1\n'
+KINDS = ('key', 'snapshot', 'delta', 'mail')
+VERDICTS = ('client', 'sensitive', 'internal', 'personal')
+HANDS = ('team', 'private')
+ROUND_EVERY = 300           # publish and fetch, at most this often
+SNAPSHOT_EVERY = 86400      # a full snapshot at least daily
+START_AFTER = 86400         # the first share waits a day after the owner was told (or until Share now)
+MAIL_DAYS = 90              # client threads this recent
+MAX_RECORDS = 3000
+MAX_THREADS = 400
+MAX_MESSAGES = 30           # per thread
+MAX_BODY = 20000            # characters of one message
+TIMELINE = 12               # lines per record
+MAIL_KINDS = ('gmail.message', 'ms_graph.message', 'outlook.message', 'salesflare.email', 'intercom.conversation')
+HEX = re.compile(r'[a-f0-9]{32}')
+ADDRESS = re.compile(r'[^@\s<>",;]+@[^@\s<>",;]+\.[^@\s<>",;]+')
+SCHEMA = '''
+CREATE TABLE IF NOT EXISTS share_threads(thread TEXT PRIMARY KEY,verdict TEXT,hand TEXT,hand_at TEXT,event_id INTEGER,at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS share_lines(event_id INTEGER PRIMARY KEY,thread TEXT,line TEXT NOT NULL,at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS share_private(node_id TEXT PRIMARY KEY,at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS share_out(fleet TEXT NOT NULL,kind TEXT NOT NULL,key TEXT NOT NULL,hash TEXT NOT NULL,at TEXT NOT NULL,
+  PRIMARY KEY(fleet,kind,key));
+CREATE TABLE IF NOT EXISTS team_records(fleet TEXT NOT NULL,member TEXT NOT NULL,rid TEXT NOT NULL,kind TEXT NOT NULL,body TEXT NOT NULL,
+  at TEXT NOT NULL,PRIMARY KEY(fleet,member,rid));
+CREATE TABLE IF NOT EXISTS team_mail(fleet TEXT NOT NULL,member TEXT NOT NULL,tag TEXT NOT NULL,seq INTEGER NOT NULL,body TEXT NOT NULL,
+  at TEXT NOT NULL,PRIMARY KEY(fleet,member,tag));
+CREATE TABLE IF NOT EXISTS team_sources(fleet TEXT NOT NULL,member TEXT NOT NULL,name TEXT,sign TEXT,snapshot INTEGER NOT NULL DEFAULT 0,
+  seq INTEGER NOT NULL DEFAULT 0,threads TEXT NOT NULL DEFAULT '[]',left_at TEXT,at TEXT NOT NULL,PRIMARY KEY(fleet,member));
+CREATE TABLE IF NOT EXISTS team_pending(id TEXT PRIMARY KEY,item TEXT NOT NULL,at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS team_blobs(id TEXT PRIMARY KEY,fleet TEXT NOT NULL,member TEXT NOT NULL,kind TEXT NOT NULL,dk TEXT NOT NULL,
+  header TEXT NOT NULL,sha TEXT NOT NULL,at TEXT NOT NULL);
+'''
+
+
+PENDING_DAYS = 7           # a blob from a teammate this Machine doesn't know as confirmed yet waits this long
+
+
+class Later(ValueError):
+    """Not now: from a teammate whose confirmation this Machine hasn't seen yet. Kept and tried again."""
+
+
+def ensure(db):
+    db.executescript(SCHEMA)
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
+
+
+def canon(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+
+
+def keyed(key, value):
+    """A keyed hash: an address or domain as teammates' Machines can match it and the Network can't enumerate it."""
+    return hmac.new(nc.unb64(key, 32) if isinstance(key, str) else key, str(value).strip().lower().encode(), hashlib.sha256).hexdigest()[:32]
+
+
+# ---------------------------------------------------------------- blobs
+def _keys(dk, nonce, header):
+    return nc._hkdf(dk, nonce, b'tm-shared-graph/1' + canon(header))
+
+
+def encrypt(dk, header, body):
+    nonce = secrets.token_bytes(16)
+    keys = _keys(dk, nonce, header)
+    ct = nc._stream(keys[:32], nonce, canon(body))
+    return nonce + hmac.new(keys[32:], canon(header) + nonce + ct, hashlib.sha256).digest() + ct
+
+
+def decrypt(dk, header, data):
+    if len(data) < 48:
+        raise nc.SealError('not a blob')
+    nonce, mac, ct = data[:16], data[16:48], data[48:]
+    keys = _keys(dk, nonce, header)
+    if not hmac.compare_digest(hmac.new(keys[32:], canon(header) + nonce + ct, hashlib.sha256).digest(), mac):
+        raise nc.SealError('changed on the way')
+    try:
+        return json.loads(nc._stream(keys[:32], nonce, ct))
+    except ValueError:
+        raise nc.SealError('not readable') from None
+
+
+def digest(header, data):
+    return hashlib.sha256(canon(header) + data).hexdigest()
+
+
+def _signed(header, data):
+    return TAG + canon(header) + hashlib.sha256(data).digest()
+
+
+def wrap_context(header, wrapper, member):
+    return {'p': 'graph', 'k': header['kind'], 'f': wrapper, 't': member, 'r': header['id']}
+
+
+def make(private, header, body, recipients):
+    """A blob: header in the clear, the body encrypted with a fresh key, signed by this Machine, and that key sealed for
+    each recipient ({member id: their public keys})."""
+    dk = secrets.token_bytes(32)
+    data = b'' if body is None else encrypt(dk, header, body)  # None: a mail tombstone, no longer shared (an empty blob)
+    h = digest(header, data)
+    wraps = {mid: nc.seal({'dk': nc.b64(dk), 'h': h}, private, keys, wrap_context(header, header['from'], mid)) for mid, keys in recipients.items()}
+    return {'header': header, 'ct': nc.b64(data), 'sig': nc.b64(nc.ed25519_sign(nc.unb64(private['sign'], 32), _signed(header, data))),
+            'wraps': wraps}, nc.b64(dk)
+
+
+def rewrap(private, header, data_b64, dk, from_sign, by, recipients):
+    """An admin's Machine seals a blob's key again, for members who joined after its publisher left."""
+    h = digest(header, nc.unb64(data_b64))
+    return {mid: nc.seal({'dk': dk, 'h': h, 'from_key': from_sign}, private, keys, wrap_context(header, by, mid)) for mid, keys in recipients.items()}
+
+
+def open_blob(item, private, me, wrapper_keys, sender_sign):
+    """(header, body, dk) of a blob for this Machine, or SealError. wrapper_keys: the public keys of whoever sealed the
+    wrap (the publisher, or an admin re-sealing); sender_sign: the publisher's sign key (base64), or None to take the
+    one the admin vouched for inside the wrap."""
+    header, wrap = item.get('header'), item.get('wrap')
+    if not isinstance(header, dict) or header.get('v') != 1 or header.get('kind') not in KINDS or not HEX.fullmatch(str(header.get('id'))):
+        raise nc.SealError('not a blob header')
+    data = nc.unb64(item.get('ct'))
+    inner = nc.open_sealed(wrap, private, wrapper_keys, wrap_context(header, item.get('by') or header['from'], me))
+    if not isinstance(inner, dict) or inner.get('h') != digest(header, data):
+        raise nc.SealError('the key is for another blob')
+    sign = sender_sign or inner.get('from_key')
+    if not isinstance(sign, str) or not nc.ed25519_verify(nc.unb64(sign, 32), _signed(header, data), nc.unb64(item.get('sig'), 64)):
+        raise nc.SealError('not signed by its publisher')
+    dk = nc.unb64(inner.get('dk'), 32)
+    if not data:
+        if header['kind'] != 'mail':
+            raise nc.SealError('empty')
+        return header, {}, inner['dk']
+    return header, decrypt(dk, header, data), inner['dk']
+
+
+# ---------------------------------------------------------------- threads: what the review said and the owner chose
+def thread_of(kind, metadata, event_id):
+    key, _ = graph.thread_key(kind, metadata or {})
+    return key or f'ev:{event_id}'
+
+
+def judge(db, team, at=None):
+    """The review's per-thread call (finish_analysis team): [{event_id, share, line}]. share: client, sensitive, internal
+    or personal, judged by meaning; line: one short line of what happened, for the timeline, never the text itself.
+    The owner's hand choice stays."""
+    stamp = at or now()
+    kept = 0
+    for item in team or ():
+        if not isinstance(item, dict) or not str(item.get('event_id') or '').isdigit():
+            raise ValueError('team is [{"event_id", "share", "line"}]')
+        row = db.execute('SELECT id,kind,metadata FROM events WHERE id=?', (int(item['event_id']),)).fetchone()
+        if not row:
+            continue
+        verdict = item.get('share')
+        if verdict not in VERDICTS:
+            raise ValueError('share: ' + ', '.join(VERDICTS))
+        thread = thread_of(row['kind'], json.loads(row['metadata'] or '{}'), row['id'])
+        db.execute('INSERT INTO share_threads(thread,verdict,event_id,at) VALUES(?,?,?,?) ON CONFLICT(thread) DO UPDATE SET '
+                   'verdict=CASE WHEN share_threads.verdict IN (\'sensitive\',\'personal\') AND excluded.verdict=\'client\' THEN share_threads.verdict '
+                   'ELSE excluded.verdict END,event_id=excluded.event_id,at=excluded.at', (thread, verdict, row['id'], stamp))
+        line = graph.one_line(item.get('line'), 160)
+        if line and verdict == 'client':
+            db.execute('INSERT OR REPLACE INTO share_lines(event_id,thread,line,at) VALUES(?,?,?,?)', (row['id'], thread, line, stamp))
+        elif verdict != 'client':
+            db.execute('DELETE FROM share_lines WHERE thread=?', (thread,))
+        kept += 1
+    return kept
+
+
+def set_hand(db, event_id, choice):
+    """The owner's choice for a thread: team, private, or None for the review's call again."""
+    if choice not in (*HANDS, None):
+        raise ValueError('Choose team or private')
+    row = db.execute('SELECT id,kind,metadata FROM events WHERE id=?', (int(event_id),)).fetchone()
+    if not row:
+        raise ValueError('Unknown message')
+    thread = thread_of(row['kind'], json.loads(row['metadata'] or '{}'), row['id'])
+    db.execute('INSERT INTO share_threads(thread,hand,hand_at,event_id,at) VALUES(?,?,?,?,?) ON CONFLICT(thread) DO UPDATE SET '
+               'hand=excluded.hand,hand_at=excluded.hand_at', (thread, choice, now() if choice else None, row['id'], now()))
+    return thread
+
+
+def keep_private(db, node_id, on=True):
+    if not db.execute('SELECT 1 FROM graph_nodes WHERE id=?', (str(node_id),)).fetchone():
+        raise ValueError('Not in the graph')
+    if on:
+        db.execute('INSERT OR REPLACE INTO share_private(node_id,at) VALUES(?,?)', (str(node_id), now()))
+    else:
+        db.execute('DELETE FROM share_private WHERE node_id=?', (str(node_id),))
+    return bool(on)
+
+
+def addresses(metadata):
+    found = []
+    for field in ('from', 'to', 'cc'):
+        value = metadata.get(field)
+        for part in value if isinstance(value, list) else [value]:
+            found += [a.lower() for a in ADDRESS.findall(str(part or ''))]
+    return found
+
+
+def outside(address, internal):
+    domain = address.rsplit('@', 1)[-1]
+    return not any(domain == d or domain.endswith('.' + d) for d in internal)
+
+
+class Scope:
+    """What this Machine may share with one Work Fleet: its accounts, its own domains, who is private."""
+
+    def __init__(self, db, accounts, internal, mine):
+        self.accounts, self.internal, self.mine = set(accounts), set(internal), {m.lower() for m in mine}
+        self.private = {r[0] for r in db.execute('SELECT node_id FROM share_private')}
+        self.private_ids = set()
+        self.org_of = {}
+        for row in db.execute("SELECT id,kind,info FROM graph_nodes WHERE kind IN ('person','org')"):
+            info = json.loads(row['info'] or '{}')
+            ids = {row['id'], *info.get('identifiers', [])}
+            if row['kind'] == 'person':
+                for i in ids:
+                    if str(i).startswith('email:') and info.get('org'):
+                        self.org_of[i[6:].lower()] = info['org']
+                if row['id'] in self.private or (info.get('org') and info['org'] in self.private):
+                    self.private_ids |= {i[6:].lower() for i in ids if str(i).startswith('email:')}
+            elif row['id'] in self.private and info.get('domain'):
+                self.private_ids.add('@' + info['domain'])
+
+    def private_address(self, address):
+        return address in self.private_ids or '@' + address.rsplit('@', 1)[-1] in self.private_ids
+
+    def client_address(self, address):
+        """Someone outside the company, with a work domain or at an organisation on the Graph."""
+        if address in self.mine or not outside(address, self.internal):
+            return False
+        return address.rsplit('@', 1)[-1] not in graph.FREEMAIL or bool(self.org_of.get(address))
+
+
+def visibility(db, scope, event):
+    """A thread's visibility for one Fleet: None (not shared at all, no label: another account or personal), 'internal'
+    (colleagues only, never re-shared), 'team' (the whole thread), 'line' (sensitive: that it exists), 'private'
+    (Only you: by hand, or nobody outside who is a client), 'pending' (Only you until the review judged it), 'personal'
+    (the review found it is the owner's own life: nothing of it goes, not even that it exists)."""
+    if event['account_id'] not in scope.accounts:
+        return None
+    metadata = event['metadata'] if isinstance(event['metadata'], dict) else json.loads(event['metadata'] or '{}')
+    people = addresses(metadata)
+    if any(scope.private_address(a) for a in people):
+        return 'private'
+    row = db.execute('SELECT verdict,hand FROM share_threads WHERE thread=?', (thread_of(event['kind'], metadata, event['id']),)).fetchone()
+    verdict, hand = (row['verdict'], row['hand']) if row else (None, None)
+    if verdict == 'personal' and not hand:
+        return 'personal'
+    if people and not any(outside(a, scope.internal) and a not in scope.mine for a in people):
+        return 'internal'
+    if hand == 'private':
+        return 'private'
+    if hand == 'team':
+        return 'team'
+    if not any(scope.client_address(a) for a in people) and event['kind'] != 'intercom.conversation':
+        return 'private'
+    return {'client': 'team', 'sensitive': 'line', 'internal': 'internal'}.get(verdict, 'pending')
+
+
+def label(view):
+    """The dashboard's label for a thread: Team, Only you, or none."""
+    return None if view in (None, 'internal') else 'team' if view == 'team' else 'only_you'
+
+
+# ---------------------------------------------------------------- what this Machine shares
+def _first_name(name):
+    return (str(name or '').split() or [''])[0][:40]
+
+
+def _who(metadata, scope):
+    for a in addresses(metadata):
+        if outside(a, scope.internal) and a not in scope.mine:
+            raw = str(metadata.get('from') or '')
+            if a in raw.lower() and '<' in raw:
+                return _first_name(raw.split('<', 1)[0].strip().strip('"')) or a.split('@')[0]
+            return a.split('@')[0].split('.')[0].capitalize()
+    return ''
+
+
+def private_line(who, at):
+    when = graph.parse_time(at)
+    day = f'{when.day} {when:%b}' if when else ''
+    return ('Private thread with ' + who if who else 'Private thread') + (', ' + day if day else '')
+
+
+def _events(db, accounts, since):
+    if not accounts:
+        return []
+    return db.execute(f"SELECT id,account_id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 AND occurred_at>=? "
+                      f"AND account_id IN ({','.join('?' * len(accounts))}) ORDER BY occurred_at", (since, *accounts)).fetchall()
+
+
+def collect(db, scope, key, secret, today=None):
+    """Everything this Machine shares with one Fleet: (records {rid: record}, threads {tag: body}). key: the Fleet graph
+    key (hashes); secret: this Machine's own (record ids and thread tags)."""
+    today = today or dt.datetime.now(dt.timezone.utc)
+    since = (today - dt.timedelta(days=MAIL_DAYS)).isoformat()
+    rid = lambda local: keyed(secret, 'record|' + local)
+    keys = key if isinstance(key, list) else [key]
+    key = keys[0]
+    every = lambda value: [keyed(k, value) for k in keys]  # with every graph key held: teammates on another one still match
+    views, threads, by_thread = {}, collections.defaultdict(list), {}
+    for e in _events(db, sorted(scope.accounts), (today - dt.timedelta(days=graph.HORIZON_DAYS)).isoformat()):
+        e = dict(e)
+        e['metadata'] = json.loads(e['metadata'] or '{}')
+        view = visibility(db, scope, e)
+        views[e['id']] = view
+        if view in ('team', 'line') and e['occurred_at'] >= since:
+            thread = thread_of(e['kind'], e['metadata'], e['id'])
+            threads[thread].append(e)
+            by_thread[e['id']] = thread
+    lines = {r['event_id']: r['line'] for r in db.execute('SELECT event_id,line FROM share_lines')}
+    out_threads = {}
+    for thread, items in list(threads.items())[-MAX_THREADS:]:
+        tag = keyed(secret, 'thread|' + thread)
+        last = items[-1]
+        if views[last['id']] == 'line':
+            out_threads[tag] = {'tag': tag, 'private': True, 'at': last['occurred_at'], 'line': private_line(_who(last['metadata'], scope), last['occurred_at'])}
+            continue
+        if last['kind'] not in MAIL_KINDS:
+            continue
+        messages = [{'at': e['occurred_at'], 'from': str(e['metadata'].get('from') or '')[:200], 'to': str(e['metadata'].get('to') or '')[:500],
+                     'cc': str(e['metadata'].get('cc') or '')[:500], 'body': str(e['body'] or '')[:MAX_BODY],
+                     'attachments': [{'name': str(a.get('name') or '')[:120], 'size': a.get('size') if isinstance(a.get('size'), int) else None}
+                                     for a in (e['metadata'].get('attachments') or []) if isinstance(a, dict)][:20]}
+                    for e in items[-MAX_MESSAGES:]]
+        out_threads[tag] = {'tag': tag, 'subject': str(items[0]['title'] or '')[:200], 'at': last['occurred_at'], 'messages': messages}
+
+    def thread_tags(node_id):
+        tags = []
+        for (event_id,) in db.execute('SELECT event_id FROM graph_events WHERE node_id=? AND probable=0 ORDER BY at DESC', (node_id,)):
+            if views.get(event_id) == 'team' and event_id in by_thread:
+                tag = keyed(secret, 'thread|' + by_thread[event_id])
+                if tag in out_threads and tag not in tags:
+                    tags.append(tag)
+        return tags[:40]
+
+    def timeline(node_id):
+        found = []
+        for (event_id, at) in db.execute('SELECT event_id,at FROM graph_events WHERE node_id=? AND probable=0 ORDER BY at DESC LIMIT 200', (node_id,)):
+            view = views.get(event_id)
+            if view == 'team' and lines.get(event_id):
+                found.append({'at': at, 'line': lines[event_id]})
+            elif view == 'line' and event_id in by_thread:
+                tag = keyed(secret, 'thread|' + by_thread[event_id])
+                if not any(x.get('tag') == tag for x in found):
+                    found.append({'at': at, 'line': out_threads.get(tag, {}).get('line') or 'Private thread', 'tag': tag, 'private': True})
+            if len(found) >= TIMELINE:
+                break
+        return found
+
+    def work(node_id):
+        """(shared, last): a record goes when one of its threads is shared, or it is a client the review hasn't judged
+        every thread of yet; not when its threads are only sensitive, internal or kept to the owner by hand."""
+        seen = [(views.get(r[0]), r[1]) for r in db.execute('SELECT event_id,at FROM graph_events WHERE node_id=? AND probable=0', (node_id,))]
+        seen = [(v, at) for v, at in seen if v in ('team', 'pending')]
+        return bool(seen), max((at for _, at in seen), default=None)
+
+    records = {}
+    people = {}
+    for row in db.execute("SELECT * FROM graph_nodes WHERE kind='person' ORDER BY strength DESC LIMIT ?", (MAX_RECORDS,)):
+        info = json.loads(row['info'] or '{}')
+        emails = sorted({i[6:].lower() for i in [row['id'], *info.get('identifiers', [])] if str(i).startswith('email:')})
+        if (row['id'] in scope.private or not emails or info.get('colleague') or any(not outside(e, scope.internal) or e in scope.mine for e in emails)
+                or str(info.get('role') or '').lower() == 'automated sender' or any(graph.bulk(e) for e in emails)
+                or (info.get('org') and info['org'] in scope.private)):
+            continue
+        ok, last = work(row['id'])
+        if not ok:
+            continue
+        org = db.execute('SELECT name,info FROM graph_nodes WHERE id=?', (info['org'],)).fetchone() if info.get('org') else None
+        org_domain = json.loads(org['info'] or '{}').get('domain') if org else None
+        kept = db.execute('SELECT 1 FROM graph_names WHERE node_id IN (SELECT value FROM json_each(?))', (json.dumps([row['id'], *info.get('identifiers', [])]),)).fetchone()
+        domains = sorted({e.rsplit('@', 1)[1] for e in emails} - graph.FREEMAIL)
+        r = rid(row['id'])
+        people[row['id']] = [h for e in emails for h in every('email:' + e)]
+        records[r] = {'r': r, 't': 'person', 'name': row['name'], 'name_hand': bool(kept), 'role': info.get('role'), 'role_hand': info.get('role_by') == 'owner',
+                      'org': {'name': org['name'], **({'d': keyed(key, 'domain:' + org_domain)} if org_domain else {})} if org else None,
+                      'org_hand': info.get('org_by') == 'owner', 'ids': people[row['id']], 'd': [h for d in domains for h in every('domain:' + d)],
+                      'score': round(row['strength'], 3), 'last': (last or row['last_at'] or '')[:10], 'timeline': timeline(row['id']),
+                      'threads': thread_tags(row['id'])}
+    shared_orgs = {json.loads(db.execute('SELECT info FROM graph_nodes WHERE id=?', (p,)).fetchone()['info']).get('org') for p in people}
+    for row in db.execute("SELECT * FROM graph_nodes WHERE kind='org'"):
+        info = json.loads(row['info'] or '{}')
+        domain = info.get('domain')
+        if row['id'] not in shared_orgs or row['id'] in scope.private or not domain or domain in graph.FREEMAIL or not outside('x@' + domain, scope.internal):
+            continue
+        r = rid(row['id'])
+        records[r] = {'r': r, 't': 'org', 'name': row['name'], 'name_hand': 'name' in (info.get('edited') or []), 'role': info.get('role'),
+                      'role_hand': info.get('role_by') == 'owner', 'd': every('domain:' + domain), 'score': round(row['strength'], 3),
+                      'last': (row['last_at'] or '')[:10]}
+    tiles = {t['id']: t for b in graph.boards(db, today.isoformat()) for t in b['projects']}
+    for row in db.execute("SELECT n.*,p.id pid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages "
+                          "FROM graph_nodes n JOIN projects p ON 'project:'||p.id=n.id LEFT JOIN boards b ON b.id=p.board_id "
+                          "WHERE n.kind='project' AND p.closed_at IS NULL"):
+        if row['id'] in scope.private:
+            continue
+        ok, last = work(row['id'])
+        if not ok:
+            continue
+        linked = [l['a'] if l['b'] == row['id'] else l['b'] for l in db.execute('SELECT a,b FROM graph_links WHERE (a=? OR b=?) AND kind=?',
+                                                                                  (row['id'], row['id'], 'project'))]
+        if any(p in scope.private for p in linked):
+            continue
+        r = rid(row['id'])
+        tile = tiles.get(row['id']) or {}
+        domain = row['porg'] or (str((tile.get('org') or {}).get('node_id') or '')[4:] or None)
+        org = graph.org_card(db, domain) if domain else None
+        records[r] = {'r': r, 't': 'project', 'name': row['name'], 'score': round(row['strength'], 3), 'last': (last or '')[:10],
+                      'board': row['board'], 'stages': graph.stage_names({'stages': row['stages']}) if row['board'] else None,
+                      'stage': row['stage'] if row['board'] else None, 'stage_hand': row['stage_by'] == 'owner', 'stage_at': row['stage_at'],
+                      'why': row['stage_reason'], 'next': row['next_step'],
+                      'org': {'name': org['name'], 'd': keyed(key, 'domain:' + domain)} if org else None,
+                      'people': sorted({h for p in linked for h in people.get(p, [])}), 'timeline': timeline(row['id']), 'threads': thread_tags(row['id'])}
+    week = (today - dt.timedelta(days=7)).isoformat()
+    recent = {}
+    for thread, items in threads.items():
+        if items[-1]['occurred_at'] >= week:
+            recent[thread] = views[items[-1]['id']]
+    held_private = {r['thread'] for r in db.execute("SELECT thread FROM share_threads WHERE hand='private' AND hand_at>=?", (week,))}
+    stats = {'threads': sum(1 for v in recent.values() if v == 'team'), 'held': sum(1 for v in recent.values() if v == 'line') + len(held_private),
+             'people': sum(1 for r in records.values() if r['t'] == 'person'), 'orgs': sum(1 for r in records.values() if r['t'] == 'org'),
+             'projects': sum(1 for r in records.values() if r['t'] == 'project')}
+    return records, out_threads, stats
+
+
+# ---------------------------------------------------------------- the team's view: Mine plus what teammates shared
+def pick(candidates):
+    """The value of one field among sources: one set by hand wins (the newest hand), else the closest source's."""
+    candidates = [c for c in candidates if c.get('value') not in (None, '')]
+    if not candidates:
+        return None
+    hand = [c for c in candidates if c.get('hand')]
+    best = max(hand or candidates, key=lambda c: (c.get('score') or 0, c.get('at') or ''))
+    return best
+
+
+def pick_stage(candidates):
+    """A tile's stage: the newest move by hand, else the newest move a message showed (stages are facts with dates)."""
+    candidates = [c for c in candidates if c.get('value')]
+    if not candidates:
+        return None
+    hand = [c for c in candidates if c.get('hand')]
+    return max(hand or candidates, key=lambda c: (c.get('at') or '', c.get('score') or 0))
+
+
+class SharedGraph:
+    """Mixed into fleet.Fleet: the rounds, the owner's controls and the team's view."""
+
+    # -- keys and members
+    def _graph_db(self):
+        with self.connect() as db:
+            ensure(db)
+
+    def graph_secret(self):
+        found = self.meta('graph_secret')
+        if not found:
+            found = nc.b64(secrets.token_bytes(32))
+            self.set_meta('graph_secret', found)
+        return found
+
+    def graph_keys(self, fleet):
+        return self.meta('graph_keys:' + fleet, {}) or {}
+
+    def graph_key(self, fleet):
+        """(kv, key) of the newest Fleet graph key this Machine has, else (None, None)."""
+        keys = self.graph_keys(fleet)
+        if not keys:
+            return None, None
+        kv = max(keys, key=lambda k: (keys[k]['at'], k))
+        return kv, keys[kv]['key']
+
+    def confirmed(self, group):
+        """(confirmed members {id: sign key}, trusted admins {id: key}, waiting [ids]) for a Work Fleet entry."""
+        trusted, _ = self.trust(group)
+        found, waiting, pins = ft.members(group, trusted, self.meta('graph_members:' + group['id']))
+        self.set_meta('graph_members:' + group['id'], pins)
+        return found, trusted, waiting
+
+    def _public(self, group, mid):
+        m = next((x for x in group.get('members', []) if x.get('member_id') == mid), None)
+        return m.get('keys') if m and m.get('keys') and nc.check_keys(m['keys']) else None
+
+    def _seq(self, fleet):
+        seq = max(int(time.time() * 1000), int(self.meta('graph_seq:' + fleet, 0) or 0) + 1)
+        self.set_meta('graph_seq:' + fleet, seq)
+        return seq
+
+    def _header(self, group, me, kind, to, **extra):
+        return {'v': 1, 'fleet': group['id'], 'from': me['member_id'], 'id': secrets.token_hex(16), 'seq': self._seq(group['id']),
+                'kind': kind, 'at': now(), 'to': sorted(to), **extra}
+
+    def _put(self, group, me, kind, body, to, **extra):
+        recipients = {mid: keys for mid in to if (keys := self._public(group, mid))}
+        if not recipients:
+            return None
+        header = self._header(group, me, kind, recipients, **extra)
+        blob, _ = make(self._private(), header, body, recipients)
+        self.relay.call('POST', '/graph', {'op': 'put', 'fleet': group['id'], 'blob': blob}, timeout=60)
+        return header
+
+    # -- every round
+    def graph_round(self, force=False):
+        """For each Work Fleet: ask the owner about members to confirm, keep the graph key current, publish what changed,
+        and take what teammates published. Never anything for someone outside the Fleet."""
+        if not self._private():
+            return
+        stamp = time.monotonic()
+        if not force and stamp - self.last.get('graph', -1e9) < ROUND_EVERY:
+            return
+        self.last['graph'] = stamp
+        self._graph_db()
+        groups = [g for g in (self.directory().get('fleets') or []) if g.get('kind') == 'work' and g.get('id')]
+        self._graph_forget(groups)
+        for group in groups:
+            me = self._me_in(group)
+            if not me:
+                continue
+            try:
+                self._graph_fleet(group, me)
+            except Exception as error:  # noqa: BLE001 - away, or a Network from before: the next round tries again
+                LOG.warning('shared graph round fleet=%s error=%s', group['id'], type(error).__name__)
+        try:
+            self.graph_fetch()
+        except Exception as error:  # noqa: BLE001
+            LOG.warning('shared graph fetch error=%s', type(error).__name__)
+
+    def _graph_fleet(self, group, me):
+        found, trusted, waiting = self.confirmed(group)
+        members = {m['member_id']: m for m in group.get('members', []) if m.get('member_id')}
+        if me['member_id'] in trusted:
+            for mid in waiting:
+                if mid != me['member_id'] and ft.keys_of(members[mid]):
+                    self._prompt('member', group, '', members[mid])
+            self._drop_prompts(lambda p: p['kind'] == 'member' and p['fleet'] == group['id'] and (p['member'] in found or p['member'] not in members))
+            self._graph_keys_round(group, me, found)
+        if me['member_id'] not in found:
+            return
+        start = self.meta('graph_start:' + group['id'])
+        if not start:
+            self.set_meta('graph_start:' + group['id'], (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=START_AFTER)).isoformat(timespec='seconds'))
+            return
+        if start > now():
+            return
+        self.graph_publish(group, me, found)
+
+    def _graph_keys_round(self, group, me, found):
+        """A confirmed admin's Machine: make the first graph key, seal it for members who don't have it, and make a new
+        one when someone it was sealed for is gone."""
+        fleet = group['id']
+        keys = self.graph_keys(fleet)
+        kv, key = self.graph_key(fleet)
+        others = sorted(set(found) - {me['member_id']})
+        sent = set(keys.get(kv, {}).get('to', [])) if kv else set()
+        if not kv or (sent - set(found) - {me['member_id']}):
+            kv, key = secrets.token_hex(8), nc.b64(secrets.token_bytes(32))
+            keys[kv] = {'key': key, 'at': now(), 'by': me['member_id'], 'to': []}
+            sent = set()
+        missing = [m for m in others if m not in sent]
+        if missing or not keys[kv].get('to'):
+            header = self._put(group, me, 'key', {'kv': kv, 'key': key}, others) if others else None
+            keys[kv]['to'] = sorted(set(keys[kv].get('to', [])) | set(header['to'] if header else []))
+        self.set_meta('graph_keys:' + fleet, keys)
+
+    def graph_publish(self, group, me, found):
+        """Publishes what changed since the last round: a snapshot when the recipients or the key changed, or daily;
+        else a delta; and each client thread that changed as its own mail blob."""
+        fleet = group['id']
+        kv, key = self.graph_key(fleet)
+        if not kv:
+            return
+        to = sorted(set(found) - {me['member_id']})
+        if not to:
+            return
+        with self.connect() as db:
+            ensure(db)
+            scope = Scope(db, self.fleet_accounts(fleet), self.internal(fleet), self.my_emails())
+            others = [k['key'] for kv_, k in sorted(self.graph_keys(fleet).items(), key=lambda x: x[1]['at'], reverse=True) if kv_ != kv][:3]
+            records, threads, stats = collect(db, scope, [key, *others], self.graph_secret())
+            before = {(r['kind'], r['key']): r['hash'] for r in db.execute('SELECT kind,key,hash FROM share_out WHERE fleet=?', (fleet,))}
+        state = self.meta('graph_out:' + fleet, {}) or {}
+        hashes = {rid: hashlib.sha256(canon(r)).hexdigest() for rid, r in records.items()}
+        thread_hashes = {tag: hashlib.sha256(canon(t)).hexdigest() for tag, t in threads.items()}
+        new_people = state.get('to') != to or state.get('kv') != kv
+        snapshot = new_people or not state.get('snapshot_at') or time.time() - state.get('snapshot_at', 0) > SNAPSHOT_EVERY
+        changed = [rid for rid, h in hashes.items() if before.get(('record', rid)) != h]
+        removed = [k for (kind, k) in before if kind == 'record' and k not in hashes]
+        if snapshot:
+            header = self._put(group, me, 'snapshot', {'kv': kv, 'records': list(records.values()), 'threads': sorted(threads)}, to, kv=kv)
+            if header:
+                state.update(snapshot_at=time.time(), to=to, kv=kv, last=header['seq'])
+        elif changed or removed or set(thread_hashes) != {k for (kind, k) in before if kind == 'thread'}:
+            header = self._put(group, me, 'delta', {'kv': kv, 'prev': state.get('last'), 'records': [records[r] for r in changed], 'removed': removed,
+                                                     'threads': sorted(threads)}, to, kv=kv)
+            if header:
+                state['last'] = header['seq']
+        else:
+            header = True
+        if not header:
+            return
+        sent_threads = 0
+        for tag, body in threads.items():
+            if not new_people and before.get(('thread', tag)) == thread_hashes[tag]:
+                continue
+            self._put(group, me, 'mail', body, to, tag=tag)
+            sent_threads += 1
+        for (kind, tag) in before:
+            if kind == 'thread' and tag not in threads:
+                self._put(group, me, 'mail', None, to, tag=tag)  # no longer shared: gone from the replica and the team
+        with self.connect() as db:
+            db.execute('DELETE FROM share_out WHERE fleet=?', (fleet,))
+            db.executemany('INSERT INTO share_out(fleet,kind,key,hash,at) VALUES(?,?,?,?,?)',
+                           [(fleet, 'record', k, h, now()) for k, h in hashes.items()] + [(fleet, 'thread', k, h, now()) for k, h in thread_hashes.items()])
+        self.set_meta('graph_out:' + fleet, state)
+        self.set_meta('graph_week:' + fleet, {**stats, 'at': now()})
+
+    # -- receiving
+    def graph_fetch(self):
+        with self.connect() as db:
+            ensure(db)
+            waiting = db.execute('SELECT id,item,at FROM team_pending ORDER BY at').fetchall()
+        expired = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=PENDING_DAYS)).isoformat()
+        for row in waiting:
+            try:
+                self.graph_take(json.loads(row['item']))
+            except Later:
+                if row['at'] >= expired:
+                    continue
+            except (nc.SealError, ValueError, KeyError, TypeError):
+                pass
+            with self.connect() as db:
+                db.execute('DELETE FROM team_pending WHERE id=?', (row['id'],))
+        cursor = int(self.meta('graph_cursor', 0) or 0)
+        for _ in range(20):
+            found = self.relay.call('GET', f'/graph?after={cursor}&limit=50', timeout=60)
+            for item in found.get('items') or []:
+                try:
+                    self.graph_take(item)
+                except Later:
+                    with self.connect() as db:
+                        db.execute('INSERT OR IGNORE INTO team_pending(id,item,at) VALUES(?,?,?)',
+                                   (str((item.get('header') or {}).get('id')) + ':' + str(item.get('by')), json.dumps(item), now()))
+                except (nc.SealError, ValueError, KeyError, TypeError) as error:
+                    LOG.warning('shared graph blob dropped member=%s reason=%s', (item.get('header') or {}).get('from'), error)
+                cursor = max(cursor, int(item.get('cursor') or 0))
+            self.set_meta('graph_cursor', cursor)
+            if not found.get('more'):
+                break
+
+    def graph_take(self, item):
+        """One blob, taken only when everything checks out (module docstring)."""
+        header = item.get('header') or {}
+        group = next((g for g in (self.directory().get('fleets') or []) if g.get('id') == header.get('fleet') and g.get('kind') == 'work'), None)
+        me = group and self._me_in(group)
+        if not me:
+            raise ValueError('not a Work Fleet of this Machine')
+        found, trusted, _ = self.confirmed(group)
+        sender, by = header.get('from'), item.get('by') or header.get('from')
+        if by != sender:  # re-sealed by an admin, for a publisher who left
+            if by not in trusted or sender in found:
+                raise ValueError('re-sealed by someone who is not a confirmed admin')
+            opened = open_blob(item, self._private(), me['member_id'], self._public(group, by), None)
+        else:
+            if me['member_id'] not in (header.get('to') or []):
+                raise ValueError('not for this Machine')
+            with self.connect() as db:
+                ensure(db)
+                source = db.execute('SELECT * FROM team_sources WHERE fleet=? AND member=?', (group['id'], sender)).fetchone()
+            if sender in found:
+                keys = self._public(group, sender)
+            elif source and source['left_at'] and str(header.get('at') or '') < source['left_at'] and source['sign']:
+                keys = self._pinned(sender)
+            elif sender in {m.get('member_id') for m in group.get('members', [])}:
+                raise Later('not from a confirmed member yet')
+            else:
+                raise ValueError('not from a confirmed member')
+            if not keys:
+                raise ValueError('no keys for the sender')
+            opened = open_blob(item, self._private(), me['member_id'], keys, keys['sign'])
+        header, body, dk = opened
+        if header['kind'] == 'key' and (sender not in trusted and by == sender):
+            raise ValueError('a graph key from someone who is not a confirmed admin')
+        self._apply(group, header, body, dk, item)
+
+    def _pinned(self, mid):
+        with self.connect() as db:
+            row = db.execute('SELECT keys FROM network_pins WHERE member_id=?', (mid,)).fetchone()
+        return json.loads(row['keys']) if row else None
+
+    def _apply(self, group, header, body, dk, item):
+        fleet, sender, kind, seq = group['id'], header['from'], header['kind'], int(header['seq'])
+        name = next((str(m.get('label') or m.get('name') or '') for m in group.get('members', []) if m.get('member_id') == sender), '')
+        if not isinstance(body, dict):
+            raise ValueError('not a blob body')
+        with self.connect() as db:
+            ensure(db)
+            row = db.execute('SELECT * FROM team_sources WHERE fleet=? AND member=?', (fleet, sender)).fetchone()
+            if not row:
+                sign = (self._public(group, sender) or {}).get('sign')
+                db.execute('INSERT INTO team_sources(fleet,member,name,sign,at) VALUES(?,?,?,?,?)', (fleet, sender, name[:80], sign, now()))
+                row = db.execute('SELECT * FROM team_sources WHERE fleet=? AND member=?', (fleet, sender)).fetchone()
+            elif name and name != row['name']:
+                db.execute('UPDATE team_sources SET name=? WHERE fleet=? AND member=?', (name[:80], fleet, sender))
+            db.execute('INSERT OR IGNORE INTO team_blobs(id,fleet,member,kind,dk,header,sha,at) VALUES(?,?,?,?,?,?,?,?)',
+                       (header['id'], fleet, sender, kind, dk, json.dumps(header), digest(header, nc.unb64(item['ct'])), now()))
+            if kind == 'key':
+                kv, key = body.get('kv'), body.get('key')
+                if isinstance(kv, str) and re.fullmatch(r'[a-f0-9]{16}', kv) and isinstance(key, str):
+                    nc.unb64(key, 32)
+                    row = db.execute('SELECT value FROM fleet_meta WHERE key=?', ('graph_keys:' + fleet,)).fetchone()
+                    keys = (json.loads(row[0]) if row else None) or {}
+                    if kv not in keys:  # the same connection: set_meta's own would wait for this one
+                        keys[kv] = {'key': key, 'at': header['at'], 'by': sender, 'to': header.get('to', [])}
+                        db.execute('INSERT OR REPLACE INTO fleet_meta(key,value) VALUES(?,?)', ('graph_keys:' + fleet, json.dumps(keys)))
+                return
+            if kind == 'snapshot':
+                if seq <= row['snapshot']:
+                    raise ValueError('an older snapshot')
+                db.execute('DELETE FROM team_records WHERE fleet=? AND member=?', (fleet, sender))
+                self._records(db, fleet, sender, body.get('records'), header)
+                db.execute('UPDATE team_sources SET snapshot=?,seq=?,threads=?,at=? WHERE fleet=? AND member=?',
+                           (seq, seq, json.dumps(self._tags(body)), now(), fleet, sender))
+                db.execute('DELETE FROM team_mail WHERE fleet=? AND member=? AND tag NOT IN (SELECT value FROM json_each(?))',
+                           (fleet, sender, json.dumps(self._tags(body))))
+            elif kind == 'delta':
+                if body.get('prev') != row['seq'] or seq <= row['seq']:
+                    raise ValueError('a delta out of order: waits for the next snapshot')
+                self._records(db, fleet, sender, body.get('records'), header)
+                for rid in body.get('removed') or []:
+                    db.execute('DELETE FROM team_records WHERE fleet=? AND member=? AND rid=?', (fleet, sender, str(rid)))
+                db.execute('UPDATE team_sources SET seq=?,threads=?,at=? WHERE fleet=? AND member=?', (seq, json.dumps(self._tags(body)), now(), fleet, sender))
+                db.execute('DELETE FROM team_mail WHERE fleet=? AND member=? AND tag NOT IN (SELECT value FROM json_each(?))',
+                           (fleet, sender, json.dumps(self._tags(body))))
+            elif kind == 'mail':
+                tag = header.get('tag')
+                if not HEX.fullmatch(str(tag)):
+                    raise ValueError('mail without a tag')
+                old = db.execute('SELECT seq FROM team_mail WHERE fleet=? AND member=? AND tag=?', (fleet, sender, tag)).fetchone()
+                if old and old['seq'] >= seq:
+                    raise ValueError('older mail')
+                if not body:
+                    db.execute('DELETE FROM team_mail WHERE fleet=? AND member=? AND tag=?', (fleet, sender, tag))
+                else:
+                    db.execute('INSERT OR REPLACE INTO team_mail(fleet,member,tag,seq,body,at) VALUES(?,?,?,?,?,?)',
+                               (fleet, sender, tag, seq, json.dumps(_clean_mail(body, tag)), header['at']))
+
+    @staticmethod
+    def _tags(body):
+        return [t for t in body.get('threads') or [] if isinstance(t, str) and HEX.fullmatch(t)][:MAX_THREADS]
+
+    def _records(self, db, fleet, sender, records, header):
+        for r in (records or [])[:MAX_RECORDS]:
+            if not isinstance(r, dict) or r.get('t') not in ('person', 'org', 'project') or not HEX.fullmatch(str(r.get('r'))):
+                continue
+            r['kv'] = header.get('kv')
+            db.execute('INSERT OR REPLACE INTO team_records(fleet,member,rid,kind,body,at) VALUES(?,?,?,?,?,?)',
+                       (fleet, sender, r['r'], r['t'], json.dumps(_clean_record(r)), header['at']))
+
+    def _graph_forget(self, groups):
+        """A Fleet this Machine is no longer in: what it got from it goes. A teammate who left: kept (the Fleet's), marked."""
+        ids = {g['id'] for g in groups if self._me_in(g)}
+        with self.connect() as db:
+            ensure(db)
+            for (fleet,) in db.execute('SELECT DISTINCT fleet FROM team_sources').fetchall():
+                if fleet not in ids:
+                    for table in ('team_records', 'team_mail', 'team_sources', 'team_blobs', 'share_out'):
+                        db.execute(f'DELETE FROM {table} WHERE fleet=?', (fleet,))
+                    for key in ('graph_keys:', 'graph_out:', 'graph_members:', 'graph_start:', 'graph_week:'):
+                        db.execute('DELETE FROM fleet_meta WHERE key=?', (key + fleet,))
+            for group in groups:
+                now_in = {m.get('member_id') for m in group.get('members', [])}
+                for row in db.execute('SELECT member FROM team_sources WHERE fleet=? AND left_at IS NULL', (group['id'],)).fetchall():
+                    if row['member'] not in now_in:
+                        db.execute('UPDATE team_sources SET left_at=? WHERE fleet=? AND member=?', (now(), group['id'], row['member']))
+        for group in groups:
+            me = self._me_in(group)
+            if me:
+                try:
+                    self._graph_rewrap(group, me)
+                except Exception as error:  # noqa: BLE001
+                    LOG.info('shared graph rewrap error=%s', type(error).__name__)
+
+    def _graph_rewrap(self, group, me):
+        """A confirmed admin's Machine re-seals what someone who left shared, for members who joined since (it stays with
+        the Fleet). Only blobs still current: their latest snapshot and mail."""
+        found, trusted, _ = self.confirmed(group)
+        if me['member_id'] not in trusted:
+            return
+        with self.connect() as db:
+            gone = db.execute('SELECT member,sign,snapshot FROM team_sources WHERE fleet=? AND left_at IS NOT NULL AND sign IS NOT NULL',
+                              (group['id'],)).fetchall()
+            blobs = []
+            for g in gone:
+                for b in db.execute("SELECT * FROM team_blobs WHERE fleet=? AND member=? AND kind IN ('snapshot','mail')", (group['id'], g['member'])):
+                    header = json.loads(b['header'])
+                    if b['kind'] == 'snapshot' and header['seq'] != g['snapshot']:
+                        continue
+                    blobs.append((b, header, g['sign']))
+        done = self.meta('graph_rewrapped:' + group['id'], {}) or {}
+        for b, header, sign in blobs:
+            want = sorted(set(found) - {me['member_id']} - set(header.get('to', [])) - set(done.get(b['id'], [])))
+            recipients = {mid: keys for mid in want if (keys := self._public(group, mid))}
+            if not recipients:
+                continue
+            wraps = {mid: nc.seal({'dk': b['dk'], 'h': b['sha'], 'from_key': sign}, self._private(), keys, wrap_context(header, me['member_id'], mid))
+                     for mid, keys in recipients.items()}
+            self.relay.call('POST', '/graph', {'op': 'wrap', 'fleet': group['id'], 'id': b['id'], 'wraps': wraps}, timeout=60)
+            done[b['id']] = sorted(set(done.get(b['id'], [])) | set(recipients))
+        self.set_meta('graph_rewrapped:' + group['id'], done)
+
+    # -- the owner's controls
+    def graph_share_now(self, fleet):
+        self.set_meta('graph_start:' + fleet, now())
+        self.graph_round(force=True)
+        return {'ok': True}
+
+    # -- the team's view
+    def team_sources(self):
+        with self.connect() as db:
+            ensure(db)
+            return {(r['fleet'], r['member']): dict(r) for r in db.execute('SELECT * FROM team_sources')}
+
+    def team_items(self, db, kind):
+        """Teammates' records of one kind, as [(fleet, member, record)]."""
+        ensure(db)
+        return [(r['fleet'], r['member'], json.loads(r['body'])) for r in db.execute('SELECT * FROM team_records WHERE kind=?', (kind,))]
+
+    def hash_index(self, db):
+        """{hash: local node id} for this Machine's own people (by address) and organisations (by domain), with every
+        graph key it holds."""
+        index = {}
+        keys = [k['key'] for ref in self.work_fleets() for k in self.graph_keys(ref).values()]
+        if not keys:
+            return index
+        for row in db.execute("SELECT id,kind,info FROM graph_nodes WHERE kind IN ('person','org')"):
+            info = json.loads(row['info'] or '{}')
+            values = (['email:' + i[6:].lower() for i in [row['id'], *info.get('identifiers', [])] if str(i).startswith('email:')]
+                      if row['kind'] == 'person' else (['domain:' + info['domain']] if info.get('domain') else []))
+            for key in keys:
+                for v in values:
+                    index.setdefault(keyed(key, v), row['id'])
+        return index
+
+    def team_graph(self, db, kinds=('person', 'org', 'project')):
+        """The team's entities: [{key, kind, local (node id or None), sources: [(fleet, member, record)]}], matched by
+        hashed address, hashed domain, or board and name."""
+        index = self.hash_index(db)
+        names = {(f, m): (s.get('name') or '', bool(s.get('left_at'))) for (f, m), s in self.team_sources().items()}
+        local_projects = {row['name'].casefold(): row['id'] for row in db.execute("SELECT id,name FROM graph_nodes WHERE kind='project'")}
+        groups, by_hash = {}, {}
+        for kind in kinds:
+            for fleet, member, r in self.team_items(db, kind):
+                if kind == 'person':
+                    hashes = list(r.get('ids') or [])
+                elif kind == 'org':
+                    hashes = r.get('d') if isinstance(r.get('d'), list) else [r['d']] if r.get('d') else []
+                else:
+                    hashes = ['project:' + str(r.get('name') or '').casefold()]
+                local = next((index[h] for h in hashes if h in index), None)
+                if kind == 'project':
+                    local = local_projects.get(str(r.get('name') or '').casefold())
+                key = local or next((by_hash[h] for h in hashes if h in by_hash), None) or f'team:{kind}:{r["r"]}'
+                for h in hashes:
+                    by_hash.setdefault(h, key)
+                entry = groups.setdefault(key, {'key': key, 'kind': kind, 'local': local, 'sources': []})
+                entry['sources'].append({'fleet': fleet, 'member': member, 'name': names.get((fleet, member), ('', False))[0],
+                                         'left': names.get((fleet, member), ('', False))[1], 'record': r})
+        return list(groups.values())
+
+    # -- the owner's view of it (dashboard, chat)
+    def _kept_groups(self):
+        """The Work Fleets from the directory this Machine keeps: no call, and no write while a caller holds the database."""
+        return [g for g in ((self.meta('directory') or {}).get('fleets') or []) if g.get('kind') == 'work' and g.get('id')]
+
+    def scopes(self, db):
+        """{fleet: Scope} for each Work Fleet this Machine is in."""
+        found = {}
+        for group in self._kept_groups():
+            if group.get('kind') == 'work' and group.get('id') and self._me_in(group):
+                found[group['id']] = Scope(db, self.fleet_accounts(group['id']), self.internal(group['id']), self.my_emails())
+        return found
+
+    def thread_labels(self, db, rows):
+        """{event id: {'share': 'team' | 'only_you', 'fixed': bool, 'why'}} for messages in a Work Fleet's accounts;
+        nothing for the rest (Personal). fixed: colleagues only, never shared, so no switch."""
+        scopes = self.scopes(db)
+        out = {}
+        for r in rows:
+            for scope in scopes.values():
+                view = visibility(db, scope, {'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'metadata': r['metadata']})
+                if view is None:
+                    continue
+                hand = db.execute('SELECT hand FROM share_threads WHERE thread=?', (thread_of(r['kind'], r['metadata'] if isinstance(r['metadata'], dict)
+                                                                                                else json.loads(r['metadata'] or '{}'), r['id']),)).fetchone()
+                out[r['id']] = {'share': label(view) or 'only_you', 'fixed': view == 'internal',
+                                'why': {'personal': 'Personal', 'internal': 'Only colleagues', 'line': 'Private: the team sees only that it exists', 'pending': 'Not looked at yet',
+                                        'private': 'By hand' if hand and hand['hand'] == 'private' else 'Nobody outside', 'team': 'By hand' if hand and hand['hand'] == 'team' else 'Client'}[view]}
+                break
+        return out
+
+    def is_private(self, db, node_id):
+        ensure(db)
+        return bool(db.execute('SELECT 1 FROM share_private WHERE node_id=?', (node_id,)).fetchone())
+
+    def sharing(self):
+        """Per Work Fleet: confirmed or waiting, when sharing starts, and this week's counts. For the dashboard card."""
+        out = []
+        for group in self._kept_groups():
+            me = self._me_in(group)
+            if not me:
+                continue
+            found, trusted, waiting = self.confirmed(group)
+            prompts = [{k: p.get(k) for k in ('id', 'name', 'email', 'fp')} for p in self._prompts() if p['kind'] == 'member' and p['fleet'] == group['id']]
+            out.append({'fleet': group['id'], 'name': str(group.get('name') or '')[:80], 'confirmed': me['member_id'] in found,
+                        'start': self.meta('graph_start:' + group['id']), 'week': self.meta('graph_week:' + group['id']),
+                        'waiting': len([m for m in waiting if m != me['member_id']]), 'admin': me['member_id'] in trusted, 'prompts': prompts})
+        return out
+
+    def _mine_shared(self, db):
+        """Local node ids this Machine shares with a Fleet now (published), {node id: fleet}."""
+        secret = self.graph_secret()
+        out_keys = {r['key'] for r in db.execute("SELECT key FROM share_out WHERE kind='record'")}
+        if not out_keys:
+            return set()
+        return {r['id'] for r in db.execute("SELECT id FROM graph_nodes") if keyed(secret, 'record|' + r['id']) in out_keys}
+
+    def team_overview(self, db, mine):
+        """The Team view: the owner's shared records and teammates' ones, merged, with 'via <name>'. mine: graph.overview."""
+        ensure(db)
+        entries = self.team_graph(db)
+        shared = self._mine_shared(db)
+        local = {}
+        for r in db.execute('SELECT * FROM graph_nodes WHERE id IN (SELECT value FROM json_each(?))',
+                            (json.dumps(sorted(shared | {e['local'] for e in entries if e['local']})),)):
+            local[r['id']] = graph.node_view(r)
+        people, orgs, projects, seen = [], [], [], set()
+        for e in entries:
+            view = dict(local.get(e['local']) or {})
+            rec = resolve(e, None)
+            item = view or {'id': e['key'], 'kind': e['kind'], 'name': rec['name'] or '?', 'strength': round(rec['score'], 2), 'last_at': rec['last'],
+                            'signals': 0, 'team_only': True, 'role': rec['role'], 'closeness': graph.closeness(rec['score'])}
+            if e['kind'] == 'project' and not view:
+                item.update(state='active', people=[])
+            if e['kind'] == 'person' and not view and rec.get('org'):
+                item['org_name'] = rec['org'].get('name')
+            if view and '@' in str(item.get('name') or '') and rec.get('name') and '@' not in rec['name']:
+                item['name'] = rec['name']  # only an address here; a teammate knows their name
+                item['role'] = item.get('role') or rec.get('role')
+            item['via'] = via(e['sources'])
+            item['strength'] = max(item.get('strength') or 0, round(rec['score'], 2))
+            seen.add(item['id'])
+            {'person': people, 'org': orgs, 'project': projects}[e['kind']].append(item)
+        for node_id, view in local.items():
+            if node_id in seen or node_id not in shared:
+                continue
+            {'person': people, 'org': orgs, 'project': projects}.get(view['kind'], []).append(view)
+        key = lambda n: -(n.get('strength') or 0)
+        return {'team': True, 'people': sorted(people, key=key)[:60], 'orgs': sorted(orgs, key=key)[:30], 'projects': sorted(projects, key=key)[:40],
+                'quiet': [], 'new': [], 'boards': self.team_boards(db, entries, shared), 'counts': {'person': len(people), 'org': len(orgs), 'project': len(projects)},
+                'sharing': self.sharing()}
+
+    def team_boards(self, db, entries, shared):
+        """Shared Boards: the team's pipelines. A tile per project, with its owner (the closest), its stage (the newest
+        move by hand, else the newest a message showed) and who moved it."""
+        mine = {b['name'].casefold(): b for b in graph.boards(db, now())}
+        boards = {}
+        for name, b in mine.items():
+            projects = [dict(p, mine=True) for p in b['projects'] if p['id'] in shared]
+            boards[name] = {'name': b['name'], 'stages': b['stages'], 'projects': projects, 'stuck': 0, 'team': True}
+        names = {(f, m): (s.get('name') or '') for (f, m), s in self.team_sources().items()}
+        for e in entries:
+            if e['kind'] != 'project':
+                continue
+            mine_tile = next((p for b in boards.values() for p in b['projects'] if p['id'] == e['local']), None)
+            local_record = None
+            if mine_tile:
+                local_record = {'stage': mine_tile['stage'], 'stage_hand': mine_tile['by'] == 'owner', 'stage_at': mine_tile['at'], 'board': None,
+                                'score': next((n['strength'] for n in [graph.node_view(r) for r in db.execute('SELECT * FROM graph_nodes WHERE id=?', (e['local'],))]), 0)}
+            rec = resolve(e, local_record)
+            board_name = next((s['record'].get('board') for s in e['sources'] if s['record'].get('board')), None)
+            if not board_name:
+                continue
+            board = boards.get(board_name.casefold())
+            if not board:
+                stages = next((s['record'].get('stages') for s in e['sources'] if s['record'].get('stages')), None) or [graph.STALLED]
+                board = boards[board_name.casefold()] = {'name': board_name, 'stages': [{'name': x} for x in stages if x != graph.STALLED] + [{'name': graph.STALLED, 'side': True}],
+                                                         'projects': [], 'stuck': 0, 'team': True}
+            names_ok = [x['name'] for x in board['stages']]
+            stage = rec.get('stage') if rec.get('stage') in names_ok else names_ok[0]
+            mover = names.get(next(((s['fleet'], s['member']) for s in e['sources'] if s['member'] == rec.get('stage_by')), None), '')
+            since = graph.parse_time(rec.get('stage_at')) if rec.get('stage_at') else None
+            days = max(0, (dt.datetime.now(dt.timezone.utc) - since).days) if since else 0
+            best = max(e['sources'], key=lambda s: s['record'].get('score') or 0)['record']
+            tile = {'id': e['local'] or e['key'], 'name': rec['name'], 'stage': stage, 'reason': rec.get('why') or best.get('why'),
+                    'by': 'owner' if rec.get('stage_hand') else 'review', 'mover': _first_name(mover) if rec.get('stage_by') else None,
+                    'at': rec.get('stage_at'), 'event_id': None, 'next': rec.get('next'), 'first': False, 'days': days, 'closed': False,
+                    'no_reply_days': None, 'org': {'name': (rec.get('org') or {}).get('name'), 'logo': None} if rec.get('org') else None, 'card': None,
+                    'owner': rec.get('owner'), 'owner_name': rec.get('owner_name'), 'fleet': e['sources'][0]['fleet'], 'via': via(e['sources']),
+                    'team_only': not e['local']}
+            if mine_tile:
+                mine_tile.update(owner=tile['owner'], owner_name=tile['owner_name'], via=tile['via'], fleet=tile['fleet'], stage=stage if rec.get('stage_by') else mine_tile['stage'])
+            else:
+                board['projects'].append(tile)
+        return [b for b in boards.values() if b['projects']]
+
+    def team_section(self, db, entry):
+        """What teammates shared about one entity: sources, timeline lines and client threads, each with whose it is."""
+        lines, threads = [], []
+        for s in entry['sources']:
+            who = _first_name(s['name']) or 'a teammate'
+            for x in s['record'].get('timeline') or []:
+                lines.append({**x, 'via': who})
+            for tag in s['record'].get('threads') or []:
+                row = db.execute('SELECT body FROM team_mail WHERE fleet=? AND member=? AND tag=?', (s['fleet'], s['member'], tag)).fetchone()
+                if row:
+                    body = json.loads(row['body'])
+                    if not body.get('private'):
+                        threads.append({'id': f"{s['fleet']}:{s['member']}:{tag}", 'subject': body.get('subject'), 'at': body.get('at'),
+                                        'messages': len(body.get('messages') or []), 'via': who})
+        lines.sort(key=lambda x: str(x.get('at') or ''), reverse=True)
+        threads.sort(key=lambda x: str(x.get('at') or ''), reverse=True)
+        people = [{'member': s['member'], 'fleet': s['fleet'], 'name': _first_name(s['name']), 'left': s['left'],
+                   'score': s['record'].get('score') or 0} for s in sorted(entry['sources'], key=lambda s: -(s['record'].get('score') or 0))]
+        return {'via': via(entry['sources']), 'people': people, 'timeline': lines[:24], 'threads': threads[:20]}
+
+    def team_for(self, db, node_id):
+        ensure(db)
+        entry = next((e for e in self.team_graph(db) if node_id in (e['local'], e['key'])), None)
+        if not entry:
+            return None, None
+        return entry, self.team_section(db, entry)
+
+    def team_detail(self, db, key):
+        """A record only teammates have, opened from the Team view."""
+        entry, section = self.team_for(db, key)
+        if not entry:
+            raise ValueError('Not in the graph')
+        rec = resolve(entry)
+        org = rec.get('org') or {}
+        return {'id': entry['key'], 'kind': entry['kind'], 'name': rec['name'] or '?', 'role': rec['role'], 'team_only': True, 'links': [], 'recent': [],
+                'probable_ids': [], 'last_at': rec['last'], 'strength': round(rec['score'], 2), 'closeness': graph.closeness(rec['score']), 'signals': 0,
+                'org_name': org.get('name'), 'state': 'active', 'stage': rec.get('stage'), 'board': rec.get('board'), 'next': rec.get('next'), 'team': section}
+
+    def team_thread(self, db, thread_id):
+        """A client thread a teammate shared, in full: subject, messages with their text and the names of attachments."""
+        ensure(db)
+        fleet, member, tag = (str(thread_id).split(':') + ['', '', ''])[:3]
+        row = db.execute('SELECT body FROM team_mail WHERE fleet=? AND member=? AND tag=?', (fleet, member, tag)).fetchone()
+        if not row:
+            raise ValueError('Not shared with you')
+        body = json.loads(row['body'])
+        if body.get('private'):
+            raise ValueError('Only the people on it read this one')
+        source = db.execute('SELECT name,left_at FROM team_sources WHERE fleet=? AND member=?', (fleet, member)).fetchone()
+        return {**body, 'via': _first_name(source['name']) if source else '', 'left': bool(source and source['left_at'])}
+
+    def held_back(self, db, days=7):
+        """This week's Work threads that didn't go to the team as a whole (sensitive, or Only you by hand), to look over."""
+        ensure(db)
+        scopes = self.scopes(db)
+        since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
+        found = {}
+        for fleet, scope in scopes.items():
+            for e in _events(db, sorted(scope.accounts), since):
+                e = dict(e)
+                e['metadata'] = json.loads(e['metadata'] or '{}')
+                view = visibility(db, scope, e)
+                if view not in ('line', 'private'):
+                    continue
+                hand = db.execute('SELECT hand FROM share_threads WHERE thread=?', (thread_of(e['kind'], e['metadata'], e['id']),)).fetchone()
+                if view == 'private' and not (hand and hand['hand'] == 'private'):
+                    continue
+                found[thread_of(e['kind'], e['metadata'], e['id'])] = {'event_id': e['id'], 'title': str(e['title'] or '')[:200], 'at': e['occurred_at'],
+                                                                        'with': _who(e['metadata'], scope), 'share': 'only_you',
+                                                                        'why': 'By hand' if view == 'private' else 'Private: the team sees only that it exists'}
+        return sorted(found.values(), key=lambda x: x['at'], reverse=True)[:100]
+
+    def graph_ask(self, fleet_ref, member_id, about, note):
+        """Ask <name>: a handoff to the teammate closest to someone, about them. Inside the Fleet only."""
+        import fleet_requests
+        group = next((g for g in (self.directory().get('fleets') or []) if g.get('id') == fleet_ref and g.get('kind') == 'work'), None)
+        if not group or not self.member(fleet_ref, member_id):
+            raise ValueError('Not someone in that Fleet')
+        question = fleet_requests.parse('handoff', {'title': 'About ' + str(about or '')[:80], 'summary': str(note or '').strip()[:1000], 'contact': ''})
+        if not question:
+            raise ValueError('Say what you need from them')
+        return self.ask('handoff', question, context='graph:' + secrets.token_hex(8), fleet=fleet_ref, to=[member_id])
+
+def via(sources):
+    """'via Sam', 'via Sam and Kim', 'via Sam (left)'."""
+    names = []
+    for s in sorted(sources, key=lambda s: -(s['record'].get('score') or 0)):
+        n = _first_name(s['name']) or 'a teammate'
+        n += ' (left)' if s['left'] else ''
+        if n not in names:
+            names.append(n)
+    if not names:
+        return ''
+    return 'via ' + (names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1])
+
+
+def resolve(entry, local=None):
+    """One entity's fields from every source (this Machine's own node first, as a source with its own score): by hand
+    wins, else the closest."""
+    cands = []
+    if local:
+        cands.append({'record': local, 'score': local.get('score') or 0, 'who': None})
+    cands += [{'record': s['record'], 'score': s['record'].get('score') or 0, 'who': s} for s in entry['sources']]
+    out = {}
+    for field in ('name', 'role', 'org', 'next', 'board', 'why'):
+        best = pick([{'value': c['record'].get(field), 'hand': c['record'].get(field + '_hand'), 'score': c['score']} for c in cands])
+        out[field] = best['value'] if best else None
+    stage = pick_stage([{'value': c['record'].get('stage'), 'hand': c['record'].get('stage_hand'), 'at': c['record'].get('stage_at'),
+                         'score': c['score'], 'who': c['who'], 'board': c['record'].get('board')} for c in cands if c['record'].get('board')])
+    if stage:
+        out.update(stage=stage['value'], stage_hand=bool(stage['hand']), stage_at=stage['at'], stage_board=stage['board'],
+                   stage_by=(stage['who'] or {}).get('member'))
+    owner = max(cands, key=lambda c: c['score']) if cands else None
+    out['owner'] = (owner['who'] or {}).get('member') if owner else None
+    out['owner_name'] = _first_name((owner['who'] or {}).get('name')) if owner and owner['who'] else None
+    out['score'] = max((c['score'] for c in cands), default=0)
+    out['last'] = max((str(c['record'].get('last') or '') for c in cands), default='') or None
+    return out
+
+
+def _clean_text(value, chars):
+    return ' '.join(str(value).split())[:chars] if isinstance(value, (str, int, float)) and str(value).strip() else None
+
+
+def _clean_record(r):
+    """A teammate's record in a fixed form: short text, hashes and numbers only."""
+    text = lambda k, n: _clean_text(r.get(k), n)
+    hashes = lambda v: [h for h in (v if isinstance(v, list) else [v]) if isinstance(h, str) and HEX.fullmatch(h)][:40]
+    org = r.get('org') if isinstance(r.get('org'), dict) else None
+    out = {'r': r['r'], 't': r['t'], 'name': text('name', 100) or '?', 'name_hand': r.get('name_hand') is True, 'role': text('role', 80),
+           'role_hand': r.get('role_hand') is True, 'score': float(r['score']) if isinstance(r.get('score'), (int, float)) else 0.0,
+           'last': text('last', 10), 'kv': text('kv', 16),
+           'timeline': [{'at': _clean_text(x.get('at'), 25), 'line': _clean_text(x.get('line'), 160), **({'private': True} if x.get('private') else {}),
+                         **({'tag': x['tag']} if HEX.fullmatch(str(x.get('tag'))) else {})}
+                        for x in (r.get('timeline') or [])[:TIMELINE] if isinstance(x, dict) and _clean_text(x.get('line'), 160)]}
+    if org:
+        out['org'] = {'name': _clean_text(org.get('name'), 100), **({'d': hashes(org['d'] if isinstance(org.get('d'), list) else [org.get('d')])} if org.get('d') else {})}
+        out['org_hand'] = r.get('org_hand') is True
+    out['threads'] = hashes(r.get('threads'))[:40] if r['t'] != 'org' else []
+    if r['t'] == 'person':
+        out.update(ids=hashes(r.get('ids')), d=hashes(r.get('d')))
+    elif r['t'] == 'org':
+        out['d'] = hashes(r.get('d'))
+    else:
+        stages = [s for s in (r.get('stages') or []) if _clean_text(s, 40)][:8] if isinstance(r.get('stages'), list) else None
+        out.update(board=text('board', 60), stages=[_clean_text(s, 40) for s in stages] if stages else None, stage=text('stage', 40),
+                   stage_hand=r.get('stage_hand') is True, stage_at=text('stage_at', 25), why=text('why', 160), next=text('next', 120),
+                   people=hashes(r.get('people')))
+    return out
+
+
+def _clean_mail(body, tag):
+    if body.get('private'):
+        return {'tag': tag, 'private': True, 'at': _clean_text(body.get('at'), 25), 'line': _clean_text(body.get('line'), 120) or 'Private thread'}
+    messages = []
+    for m in (body.get('messages') or [])[:MAX_MESSAGES]:
+        if isinstance(m, dict):
+            messages.append({'at': _clean_text(m.get('at'), 25), 'from': _clean_text(m.get('from'), 200), 'to': _clean_text(m.get('to'), 500),
+                             'cc': _clean_text(m.get('cc'), 500), 'body': str(m.get('body') or '')[:MAX_BODY],
+                             'attachments': [{'name': _clean_text(a.get('name'), 120), 'size': a.get('size') if isinstance(a.get('size'), int) else None}
+                                             for a in (m.get('attachments') or [])[:20] if isinstance(a, dict)]})
+    return {'tag': tag, 'subject': _clean_text(body.get('subject'), 200), 'at': _clean_text(body.get('at'), 25), 'messages': messages}

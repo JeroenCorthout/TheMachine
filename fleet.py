@@ -59,6 +59,7 @@ import friends
 import discovery
 import network
 import shared_connectors
+import shared_graph
 import skills
 
 LOG = logging.getLogger('personal-assistant')
@@ -1536,7 +1537,8 @@ def brief_text(view, today=None, hidden=()):
 
 # ---------------------------------------------------------------- the Fleet on this Machine
 
-class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, family.Family, shared_connectors.SharedConnectors):
+class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, family.Family, shared_connectors.SharedConnectors,
+            shared_graph.SharedGraph):
     def __init__(self, connect, config, token, relay=None):
         self.connect, self.config = connect, config
         self.relay = relay or NetworkClient(settings(config)['url'], token, endpoints(config), connect=connect)
@@ -1568,6 +1570,7 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         self.last['removals'] = None
         with self.connect() as db:
             ensure(db)
+            shared_graph.ensure(db)
 
     # -- state
     def meta(self, key, default=None):
@@ -2638,6 +2641,10 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                 self.shared_round()  # shared connectors (shared_connectors.py): send, ask the owner, drop what stopped
             except (ValueError, OSError, KeyError, TypeError, Off) as error:  # Off: a Network from before, without shared connectors
                 LOG.error('shared connectors error=%s', type(error).__name__)
+            try:
+                self.graph_round()  # the Shared Graph (shared_graph.py): confirm members, keys, publish and take, at most every 5 minutes
+            except (ValueError, OSError, KeyError, TypeError, Off) as error:
+                LOG.error('shared graph error=%s', type(error).__name__)
         with self.connect() as db:  # a question still to tell the owner about: come back sooner
             if wait and self.untold(db):
                 wait = min(wait, NOTIFY_SETTLE)
@@ -2647,7 +2654,17 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         # shared: the shared connectors' stamp seen last; the inbox answers at once when a share stops or its token is
         # replaced, so this Machine looks again now instead of at its next directory (it still checks what it keeps)
         seen = self.meta('shared_stamp') or '-'
-        found = self.relay.call('GET', f'/inbox?wait={int(wait)}&notices=1&ack=1&shared={seen}', timeout=wait + 15)
+        graph_seen = self.meta('graph_stamp')
+        found = self.relay.call('GET', f'/inbox?wait={int(wait)}&notices=1&ack=1&shared={seen}&graph={graph_seen if graph_seen is not None else "-"}',
+                                timeout=wait + 15)
+        if isinstance(found.get('graph'), int) and found['graph'] != graph_seen:
+            # graph: the newest Shared Graph blob for this Machine on the Network; a newer one is taken now
+            self.set_meta('graph_stamp', found['graph'])
+            if graph_seen is None or found['graph'] > graph_seen:
+                try:
+                    self.graph_fetch()
+                except (ValueError, OSError, KeyError, TypeError, Unavailable, Off) as error:
+                    LOG.error('shared graph fetch error=%s', type(error).__name__)
         if isinstance(found.get('shared'), str) and found['shared'] != seen:
             self.set_meta('shared_stamp', found['shared'])
             self.last['shared'] = time.monotonic()

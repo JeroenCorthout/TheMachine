@@ -9,6 +9,8 @@ by Machine keys, in a chain that starts at the Fleet owner's key:
 - admin: an admin this Machine trusts signs {t: admin, fleet, member, key, by} after their owner's OK.
 - successor: the owner's Machine signs {t: successor, ...} after their owner's OK, for the member who takes the Fleet
   over if they delete their account. It only counts once that member is the owner and the signer is gone.
+- member: a trusted admin signs {t: member, fleet, member, key, by} after their owner's OK, so that member's Machine
+  gets the team's Graph (shared_graph.py). Trusted admins are members too.
 
 An admin is trusted when they are an owner or admin in the directory now, with the very key a trusted admin vouched
 for (or the pinned root key). The trusted set is pinned between rounds. Being demoted or leaving drops someone at once;
@@ -27,7 +29,7 @@ import network_crypto as nc
 
 TAG = b'tm-fleet-trust/1\n'
 ADMIN_ROLES = ('owner', 'admin')
-KINDS = ('root', 'admin', 'successor', 'grant')
+KINDS = ('root', 'admin', 'successor', 'member', 'grant')
 GRANT_ID = re.compile(r'[a-f0-9]{32}')
 
 
@@ -107,6 +109,24 @@ def admins(group, pins=None):
                 grew = True
     unconfirmed = sorted(admin_now - set(trusted))
     return trusted, unconfirmed, {'root': root, 'admins': trusted} if root else {'admins': trusted}
+
+
+def members(group, trusted, pins=None):
+    """The members of one directory Fleet entry this Machine trusts with the team's Graph: the trusted admins, and
+    members a trusted admin vouched for ('member'), each in the directory now with the very key vouched for. pins: the
+    members kept last round ({member: key}), so someone vouched for by an admin who left since stays confirmed.
+    Returns (confirmed {member: sign key}, waiting [member ids with keys, not confirmed], new pins)."""
+    fleet = group.get('id')
+    current = {m.get('member_id'): k['sign'] for m in group.get('members', []) if m.get('member_id') and (k := keys_of(m))}
+    found = {mid: key for mid, key in (pins or {}).items() if current.get(mid) == key}
+    found.update({mid: key for mid, key in trusted.items() if current.get(mid) == key})
+    for item in group.get('trust') or []:
+        s = item.get('s') if isinstance(item, dict) else None
+        if (isinstance(s, dict) and s.get('t') == 'member' and s.get('fleet') == fleet and s.get('by') in trusted
+                and s.get('member') in current and s.get('key') == current[s['member']] and verified(item, trusted[s['by']])):
+            found[s['member']] = s['key']
+    waiting = sorted(mid for mid in current if mid not in found)
+    return found, waiting, dict(found)
 
 
 def statement(kind, fleet, member, key, by):

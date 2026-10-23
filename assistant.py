@@ -46,6 +46,7 @@ import mail_attachments
 import message_seal
 import enrichment
 import fleet
+import shared_graph
 import agent_jobs
 import mimetypes
 import work_removal
@@ -449,6 +450,9 @@ OWNER_ACTIONS |= FLEET_REQUEST_ACTIONS
 # Shared connectors (shared_connectors.py): sharing, OKs, replacing and stopping, from the owner's dashboard only.
 SHARE_ACTIONS = {'fleet_share', 'fleet_share_ok', 'fleet_share_replace', 'fleet_share_stop'}
 OWNER_ACTIONS |= SHARE_ACTIONS
+# The Shared Graph (shared_graph.py): a thread's Team or Only you, Keep private, Share now and Ask <name>, the owner's own.
+GRAPH_SHARE_ACTIONS = {'graph_share', 'graph_private', 'graph_share_now', 'graph_ask'}
+OWNER_ACTIONS |= GRAPH_SHARE_ACTIONS
 FRIEND_ACTIONS = {'fleet_friend', 'fleet_availability', 'fleet_network'}  # fleet_network: finding people on the Network (discovery.py)
 OWNER_ACTIONS |= FRIEND_ACTIONS
 # Family (family.py): asking when everyone is free, proposing a to-do or a plan. The owner's own, from their dashboard.
@@ -3429,7 +3433,7 @@ class Store:
                   'next_row_offset': row_offset + len(shown) if row_offset + len(shown) < len(views) else None}
         return {'analysis_id': analysis_id, 'page': int(page), 'pages': pages, **result}
 
-    def finish_analysis(self, analysis_id, summary='', owner_session=None, owner_run=None, reviewed_ids=None, projects=None, stages=None):
+    def finish_analysis(self, analysis_id, summary='', owner_session=None, owner_run=None, reviewed_ids=None, projects=None, stages=None, team=None):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM analyses WHERE id=?', (analysis_id,)).fetchone()
@@ -3467,6 +3471,15 @@ class Store:
                         raise ValueError('A move\'s event_id must belong to this batch')
                     moved.append(graph.set_stage(db, m.get('project'), m.get('stage'), 'review', now(), board=m.get('board'), stages=m.get('stages'),
                                                  reason=m.get('reason'), event_id=m['event_id'], next_step=m.get('next'), org=m.get('org')))
+            if team is not None:
+                # The Shared Graph (shared_graph.py): each Work thread in this batch judged by meaning as client, sensitive,
+                # internal or personal, with one short line of what happened. The owner's own Team or Only you stays.
+                if not isinstance(team, list) or not all(isinstance(t, dict) and str(t.get('event_id') or '').isdigit() for t in team):
+                    raise ValueError('team is [{"event_id", "share", "line"}]')
+                if not {int(t['event_id']) for t in team} <= {i['id'] for i in items}:
+                    raise ValueError('A team event_id must belong to this batch')
+                shared_graph.ensure(db)
+                shared_graph.judge(db, team)
             for item in items:
                 if item.get('excluded'):
                     continue
@@ -9234,6 +9247,30 @@ def recap_graph_lines(store):
     return out
 
 
+def recap_share_lines(store, config):
+    """The Shared Graph's line in the weekly report: what went to each Work Fleet and how much was held back, with a link
+    to look over the held-back ones (shared_graph.py)."""
+    out = []
+    with store.connect() as db:
+        rows = db.execute("SELECT key,value FROM fleet_meta WHERE key LIKE 'graph_week:%'").fetchall() if db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='fleet_meta'").fetchone() else []
+        directory = db.execute("SELECT value FROM fleet_meta WHERE key='directory'").fetchone() if rows else None
+    names = {f.get('id'): f.get('name') for f in (json.loads(directory['value']) or {}).get('fleets', [])} if directory else {}
+    host = str(config.get('dashboard_host') or '')
+    for row in rows:
+        week, fleet_id = json.loads(row['value']) or {}, row['key'].split(':', 1)[1]
+        if fleet_id not in names:
+            continue
+        held = week.get('held') or 0
+        n = lambda k, one, many: f"{week.get(k, 0)} {one if week.get(k, 0) == 1 else many}"
+        line = (f"• Shared with {names[fleet_id] or 'your team'}: {n('threads', 'thread', 'threads')}, {n('people', 'person', 'people')}, "
+                f"{n('projects', 'project', 'projects')}. {held} held back.")
+        if held and host:
+            line += f" [Review]({'https://' + host + config.get('dashboard_path', '/') + '#graph=held'})"
+        out.append(line)
+    return out
+
+
 def weekly_recap(store, config, current=None, usage=None):
     """Friday recap: what the assistant suggested, what the owner did, what it cost, what's noisy."""
     current = current or dt.datetime.fromisoformat(now())
@@ -9305,7 +9342,7 @@ def weekly_recap(store, config, current=None, usage=None):
                   f"• To you: {count('theirs', 'kept', 'answered')} came through, {count('theirs', 'open', 'card')} still waiting"]
         if late:
             lines.append(f"• {late} past {'its' if late == 1 else 'their'} date")
-    alive = recap_graph_lines(store)
+    alive = recap_graph_lines(store) + recap_share_lines(store, config)
     if alive:
         lines += ['', '**People and projects**', *alive]
     learned = store.behaviour(7)
@@ -9489,6 +9526,7 @@ With the assistant_signals tool: call status, then ONE begin_analysis with accou
 Save only genuinely useful, distinct suggestions with suggest; the service delivers them. A card's agent_work in status is what Claude Code or Codex did (or is doing) on it, the latest truth of what was done: when you update a card, start from there and never offer work it reports done as the next step. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
 Boards: projects of one kind (partner listings, buyers, onboardings), one project per counterpart, stand in stages; begin_analysis boards lists them with each project's stage. When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new board also takes stages (its columns in order; "Stalled or declined" is always there). The owner's own move stands until a newer message changes things.
+Team: when begin_analysis lists team (Work messages, shared with the owner's Work Fleet by default), add finish_analysis team ([{{"event_id", "share", "line"}}]) for each of those threads, judged by what the conversation is, never by words in it: client (someone outside the company, about work with them: the whole thread goes to the teammates), sensitive (about a client but private to the people on it: a personal matter, health, a dispute about one person, something confidential to one person; teammates see only that it exists), internal (only colleagues) or personal (the owner's own life, not work; never shared). line is one short line of what happened, in your own words ("Lee asked for the renewal quote"), never quoted text. When unsure between client and sensitive, choose sensitive. The owner's own Team or Only you always wins.
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
 Meeting notes (a Zoom summary or transcript) are that meeting's own record: use them for follow-ups on it, its next steps and who took them on, with the notes and the calendar event as evidence.
@@ -10179,10 +10217,17 @@ class App:
                 with self.store.connect() as db:
                     result['projects'] = graph.active_projects(db)  # reuse these names in finish_analysis and suggest
                     result['boards'] = graph.boards_brief(db)  # projects of one kind in stages, moved with finish_analysis stages
+                team = self.team_accounts()
+                if team:  # Work messages the Shared Graph needs a call on (finish_analysis team)
+                    with self.store.connect() as db:
+                        row = db.execute('SELECT items FROM analyses WHERE id=?', (result['analysis_id'],)).fetchone()
+                        ids = [i['id'] for i in json.loads(row['items']) if not i.get('excluded')] if row else []
+                        result['team'] = [r[0] for r in db.execute(f"SELECT id FROM events WHERE id IN ({','.join('?' * len(ids))}) AND account_id IN "
+                                                                   f"({','.join('?' * len(team))}) ORDER BY id", (*ids, *team))] if ids else []
             return result
         if name == 'finish_analysis':
             return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
-                                             args.get('stages'))
+                                             args.get('stages'), args.get('team'))
         if name == 'graph':
             return self.graph_action(args)
         if name == 'enrich':  # the CLI: status, or one domain now
@@ -10398,6 +10443,8 @@ class App:
                 renamed = graph.rename(db, args.get('node_id'), args.get('name'), now())
             self.graph_build()
             return renamed
+        if name in GRAPH_SHARE_ACTIONS:
+            return self.graph_share_action(name, args, owner_dashboard)
         if name == 'graph_stage':
             if not owner_dashboard:
                 raise ValueError('Only the owner moves a project by hand, on the dashboard; reviews use finish_analysis stages')
@@ -13142,9 +13189,52 @@ class App:
         rows = self.store.events([a['id'] for a in self.config['accounts']], event_ids=list(event_ids)) if event_ids else []
         return [f"{r['id']} ({r['account_id']}) {source_line([r])[8:]} · {clamp(' '.join(r['title'].split()), 100)}" for r in sorted(rows, key=lambda r: r['occurred_at'], reverse=True)]
 
+    def graph_share_action(self, name, args, owner_dashboard=False):
+        """The owner's Shared Graph controls, from the dashboard (and Telegram's owner chat through graph share)."""
+        if not getattr(self, 'fleet', None):
+            raise ValueError('Join a Work Fleet to share with your team')
+        with self.store.connect() as db:
+            shared_graph.ensure(db)
+            if name == 'graph_share':  # a thread's Team or Only you; None for the review's call again
+                choice = {'team': 'team', 'only_you': 'private', 'private': 'private', 'auto': None}.get(str(args.get('share') or ''), False)
+                if choice is False:
+                    raise ValueError('Choose team or only_you')
+                row = db.execute('SELECT id,account_id,kind,metadata FROM events WHERE id=?', (int(args.get('event_id') or 0),)).fetchone()
+                label = self.fleet.thread_labels(db, [dict(row)]).get(row['id']) if row else None
+                if not label:
+                    raise ValueError('Only messages in a Work account are shared with your team')
+                if label['fixed'] and choice == 'team':
+                    raise ValueError('Only colleagues are on this thread, so it stays with the people on it')
+                shared_graph.set_hand(db, row['id'], choice)
+                return {'ok': True, 'label': self.fleet.thread_labels(db, [dict(row)]).get(row['id'])}
+            if name == 'graph_private':  # Keep private on a person, organisation or project: it and its threads stay here
+                return {'ok': True, 'private': shared_graph.keep_private(db, str(args.get('node_id') or ''), args.get('private') is not False)}
+        if name == 'graph_share_now':
+            return self.fleet.graph_share_now(str(args.get('fleet') or ''))
+        if name == 'graph_ask':
+            return self.fleet.graph_ask(str(args.get('fleet') or ''), str(args.get('member_id') or ''), str(args.get('about') or ''), str(args.get('note') or ''))
+        raise ValueError('Unknown action')
+
+    def team_accounts(self):
+        """The accounts whose messages a Work Fleet's Shared Graph may carry (fleet.fleet_accounts per Work Fleet)."""
+        if not getattr(self, 'fleet', None):
+            return []
+        try:
+            return sorted({a for ref in self.fleet.work_fleets() for a in self.fleet.fleet_accounts(ref)})
+        except (ValueError, KeyError, TypeError, sqlite3.Error):
+            return []
+
     def graph_action(self, args, source='agent'):
         """People and projects for the agent: look up, explore around, label, merge and say who someone is."""
         changed = False
+        if 'share' in args or 'keep_private' in args:
+            # The owner in chat: "keep this thread to me", "share it with the team", "keep Acme private". Never a review's
+            # own call (finish_analysis team is), so a message in a batch can't share itself.
+            if args.get('_review_session'):
+                raise ValueError('A review judges threads with finish_analysis team; Team or Only you by hand is the owner\'s')
+            if 'share' in args:
+                return self.graph_share_action('graph_share', {'event_id': args.get('event_id'), 'share': args['share']})
+            return self.graph_share_action('graph_private', {'node_id': args.get('node_id'), 'private': args['keep_private'] is not False})
         with self.store.connect() as db:
             if args.get('merge') or args.get('different'):
                 pair = args.get('merge') or args.get('different')
@@ -13202,6 +13292,9 @@ class App:
                 guessed = set(found['probable_ids'])
                 found['recent'] = [line + (' (probably part of it)' if int(line.split(' ', 1)[0]) in guessed else '')
                                    for line in self.graph_event_lines(found.pop('event_ids'))]
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name='share_threads'").fetchone() and db.execute('SELECT 1 FROM share_threads LIMIT 1').fetchone():
+                    found['team_hint'] = ('When the owner asks: graph event_id + share (only_you, team or auto) for a thread, '
+                                          'node_id + keep_private true to keep this out of the team\'s Graph.')
                 return graph.with_fleet(db, found, marks)
             if args.get('query'):
                 hits = graph.find(db, args['query'], limit, also={k: m['name'] for k, m in marks.items() if m['name']})
@@ -13418,7 +13511,25 @@ class App:
                     node = urllib.parse.parse_qs(path.query).get('node', [''])[0]
                     query = urllib.parse.parse_qs(path.query).get('q', [''])[0]
                     try:
-                        if query.strip():
+                        params = urllib.parse.parse_qs(path.query)
+                        view, team_node, thread = params.get('view', [''])[0], node.startswith('team:'), params.get('thread', [''])[0]
+                        if thread and app.fleet:  # a client thread a teammate shared, in full
+                            with app.store.connect() as db:
+                                self.output(200, app.fleet.team_thread(db, thread))
+                        elif view == 'held' and app.fleet:  # this week's held-back threads, from the weekly report
+                            with app.store.connect() as db:
+                                self.output(200, {'held': app.fleet.held_back(db)})
+                        elif team_node and app.fleet:
+                            with app.store.connect() as db:
+                                self.output(200, app.fleet.team_detail(db, node))
+                        elif view == 'team' and app.fleet and not query.strip():
+                            mine = app.graph_action({'limit': 15})
+                            with app.store.connect() as db:
+                                found = app.fleet.team_overview(db, mine)
+                                found['held'] = app.fleet.held_back(db)
+                            found.update(whos_who=mine.get('whos_who'), waiting=mine.get('waiting'), warmup=[])
+                            self.output(200, found)
+                        elif query.strip():
                             self.output(200, app.graph_action({'query': query, 'limit': 20}))
                         elif node:
                             found = app.graph_action({'node_id': node, 'limit': 10, 'events': 120})  # a run of chat messages is one row
@@ -13427,11 +13538,28 @@ class App:
                                                 'source_url': r['metadata'].get('source_url'), 'probable': r['id'] in found['probable_ids'],
                                                 **event_glance(r, app.config['accounts'])}
                                                for r in sorted(rows, key=lambda r: r['occurred_at'], reverse=True)]
+                            if app.fleet:  # the Shared Graph: each Work thread's Team or Only you, Keep private, what teammates know
+                                try:
+                                    with app.store.connect() as db:
+                                        labels = app.fleet.thread_labels(db, rows)
+                                        for r in found['recent']:
+                                            if r['id'] in labels:
+                                                r['share'] = labels[r['id']]
+                                        if labels or app.fleet.is_private(db, node):
+                                            found['keep_private'] = app.fleet.is_private(db, node)
+                                        found['team'] = app.fleet.team_for(db, node)[1]
+                                except (sqlite3.Error, ValueError, KeyError, TypeError) as error:
+                                    LOG.info('shared graph detail error=%s', type(error).__name__)
                             self.output(200, found)
                         else:
                             found = app.graph_action({'limit': 15})
                             with app.store.connect() as db:
                                 found['boards'] = graph.boards(db, now())  # the Projects board view
+                                if app.fleet:
+                                    try:
+                                        found['sharing'] = app.fleet.sharing()  # the Shared Graph: Mine or Team, and when sharing starts
+                                    except (sqlite3.Error, ValueError, KeyError, TypeError):
+                                        pass
                             self.output(200, found)
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'Not in the graph'})
@@ -13602,7 +13730,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_stage','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_stage','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

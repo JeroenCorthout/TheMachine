@@ -157,6 +157,29 @@ def seed_network(app, net, fixture):
                         time.sleep(0.5)
             threading.Thread(target=ask, daemon=True).start()
         threading.Thread(target=seed_brief, args=(app, fixture), daemon=True).start()
+        threading.Thread(target=seed_graph, args=(app,), daemon=True).start()
+
+
+def seed_graph(app):
+    """The Shared Graph (shared_graph.py): this Machine, the Fleet's owner, confirms Priya's and Tomasz's Machines as it
+    would on its owner's OK, so their Machines get its graph key and share theirs. Its own sharing starts in a day."""
+    for _ in range(40):
+        try:
+            app.fleet.directory(refresh=True)
+            app.fleet.shared_round()
+            app.fleet.directory(refresh=True)
+            app.fleet.graph_round(force=True)
+            prompts = [p for p in app.fleet._prompts() if p['kind'] == 'member']
+            if prompts:
+                for p in prompts:
+                    app.fleet.share_ok(p['id'], 'yes')
+                app.fleet.directory(refresh=True)
+                app.fleet.graph_round(force=True)
+                app.fleet.graph_fetch()
+                return
+        except Exception as error:  # noqa: BLE001 - the Fleet still starting up
+            print('sandbox graph seed waiting:', type(error).__name__, error, file=sys.stderr, flush=True)
+        time.sleep(0.5)
 
 
 def seed_brief(app, fixture):
