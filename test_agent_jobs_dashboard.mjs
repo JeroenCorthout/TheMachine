@@ -120,7 +120,7 @@ try{
  // The same block in the card chat looks like it does on the card: chips, the header with Open in Codex on the right,
  // quiet text buttons, at 1280 and 390 without awkward wraps.
  const twin={...card,id:'c1c1c1c1c1c1c1c1'};state.suggestions.push(twin);
- for(const width of [1280,390]){await page.setViewportSize({width,height:900});await page.goto(base+'#chat='+twin.id);await page.reload();
+ for(const width of [1280,390,300]){await page.setViewportSize({width,height:900});await page.goto(base+'#chat='+twin.id);await page.reload();
   const b=page.locator('.chat-agent .agent-result');await b.waitFor({timeout:10000});
   const look=await b.evaluate(el=>{const r=n=>n.getBoundingClientRect(),q=s=>el.querySelector(s),name=q('.agent-head .dm'),app=q('.agent-head a.agent-app'),cs=n=>getComputedStyle(n);
    const line=n=>{const h=parseFloat(cs(n).lineHeight)||parseFloat(cs(n).fontSize)*1.4;return r(n).height<h*1.6};
@@ -135,10 +135,10 @@ try{
   assert.ok(look.wide,width)}
  state.suggestions.pop();
  // The card's header keeps one row too: where "Open in Codex" doesn't fit next to the name it reads "Open".
- for(const [width,label] of [[1280,'Open in Codex ↗'],[390,'Open ↗']]){await page.setViewportSize({width,height:900});await page.goto(base);await page.reload();
+ for(const [width,label] of [[1280,'Open in Codex ↗'],[390,'Open ↗'],[300,'Open ↗']]){await page.setViewportSize({width,height:900});await page.goto(base);await page.reload();
   const h=c.locator('.agent-result .agent-head');await h.waitFor();await page.waitForTimeout(100);
   const r=await h.evaluate(el=>{const a=el.querySelector('a.agent-app'),n=el.firstElementChild;return {same:Math.abs(a.getBoundingClientRect().top-n.getBoundingClientRect().top)<4,label:a.innerText.trim(),aria:a.getAttribute('aria-label')}});
-  assert.deepEqual(r,{same:true,label,aria:'Open in Codex'},width)}
+  assert.deepEqual(r,{same:true,label,aria:'Open in Codex'},String(width))}
  await page.setViewportSize({width:1280,height:900});await page.goto(base);await c.waitFor();
  // Without the tools on this Machine, no Hand to buttons.
  delete card.agent_job;state.agent_tools=[];await page.evaluate(()=>refresh());
