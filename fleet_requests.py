@@ -49,6 +49,17 @@ NOTE_CHARS = 160  # the optional short note with an answer ("Not mine", "Already
 BACK_DAYS = 7  # a handoff declined this recently brings its card back, also when the answer came before this version
 FOLLOWUP_DAYS = 2  # a meeting that ended this long ago still gets a follow-up split proposed
 KEY = re.compile(r'[0-9a-f]{64}')
+# A handoff carries the card's own sources (its emails or messages), so the teammate can read what it is about on their
+# own Machine. Only that card's evidence, within these limits: the whole question is sealed into one envelope the
+# relay keeps under 100 KB.
+SOURCES = 3
+SOURCE_CHARS = 6000
+SOURCES_CHARS = 12000
+CARRIED = {'gmail.message': 'email', 'salesflare.email': 'email', 'fleet.email': 'email',
+           'slack.message': 'message', 'whatsapp.message': 'message', 'fleet.message': 'message'}
+# Google Groups and similar lists rewrite From for DMARC: "'Stripe Alerts' via Team <team@acme.example>". The address
+# is then the list's inbox, never the sender; the name before " via " is who wrote.
+VIA = re.compile(r"^\s*['\"]?(.+?)['\"]?\s+via\s+\S.*$", re.I)
 DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 OPEN = ('pending', 'accepted', 'prepared', 'instructions', 'snoozed')
 SPLIT_SHOWN_DAYS = 7
@@ -60,6 +71,53 @@ def ensure(db):
 
 def _day(value):
     return value[:10] if isinstance(value, str) and DAY.fullmatch(value[:10]) else None
+
+
+def sender(value):
+    """Who wrote a message, from its From header: (name, address). A list's rewritten From ("X via List") gives X and
+    no address, since that address is the list's own inbox."""
+    found = graph.addresses(value)
+    name, address = found[0] if found else (str(value or '').strip(), '')
+    via = VIA.match(name or '')
+    if via:
+        return fleet.clean(via[1], 120), ''
+    return fleet.clean(name or address, 120), address
+
+
+def carried_text(text, chars):
+    """A source's text as data: printable characters and line breaks only, blank runs folded, at most `chars`."""
+    kept = ''.join(c if c.isprintable() or c == '\n' else ' ' for c in str(text or '') if c not in '\u200b\u200c\u200d\u2060\ufeff\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069')
+    lines = [' '.join(line.split()) for line in kept.split('\n')]
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip()[:chars]
+
+
+def sentences(*parts):
+    """Parts of a message joined as plain sentences, with a full stop between them where one is missing."""
+    parts = [' '.join(str(p).split()) for p in parts if p and str(p).strip()]
+    return ' '.join(p if n == len(parts) - 1 or p[-1] in '.!?…' else p + '.' for n, p in enumerate(parts))
+
+
+def parse_sources(value):
+    """The sources a handoff carries, in their fixed form; anything else in them is dropped."""
+    out, budget = [], SOURCES_CHARS
+    for item in (value if isinstance(value, list) else [])[:SOURCES]:
+        if not isinstance(item, dict) or item.get('kind') not in ('email', 'message'):
+            continue
+        body = carried_text(item.get('body'), min(SOURCE_CHARS, budget))
+        when = item.get('when') if isinstance(item.get('when'), str) else ''
+        try:
+            when = dt.datetime.fromisoformat(when).isoformat() if when else ''
+        except ValueError:
+            when = ''
+        if not body or not when:
+            continue
+        budget -= len(body)
+        out.append({'kind': item['kind'], 'from': fleet.clean(item.get('from'), 120) or 'Unknown sender', 'when': when,
+                    'subject': fleet.clean(item.get('subject'), 200), 'body': body,
+                    **({'clipped': True} if item.get('clipped') or len(carried_text(item.get('body'), SOURCE_CHARS + 1)) > len(body) else {})})
+        if budget <= 0:
+            break
+    return out
 
 
 def parse(kind, question):
@@ -79,9 +137,10 @@ def parse(kind, question):
             return None
         contact = str(question.get('contact') or '').strip().lower()
         messages = [m for m in question.get('messages') or [] if isinstance(m, str) and KEY.fullmatch(m)][:5]
+        sources = parse_sources(question.get('sources'))
         return {'title': title, 'summary': summary, **({'contact': contact} if fleet.EMAIL.fullmatch(contact) else {}),
                 **({'when': _day(question.get('when'))} if _day(question.get('when')) else {}),
-                **({'messages': messages} if messages else {})}
+                **({'messages': messages} if messages else {}), **({'sources': sources} if sources else {})}
     if kind != 'followup':
         return None
     key, items, when = question.get('meeting'), question.get('items'), _day(question.get('when'))
@@ -308,11 +367,15 @@ class Requests:
             if same:  # they already have a card on it: the handoff joins that card instead of making a second one
                 return self.make_card(kind='handoff', ask_id=row['id'], name=sender, title=f'{sender} handed you: {question["title"]}'[:90],
                                       body=f'{sender} handed this to you too, through your Fleet. Their summary, as they wrote it: “{summary}”',
-                                      evidence=[], into=same)
-            return self.make_card(kind='handoff', ask_id=row['id'], name=sender, title=f'{sender} handed you: {question["title"]}'[:90],
-                                  body=(f'{sender} handed this to you through your Fleet. Their summary, as they wrote it: “{summary}”'
+                                      evidence=[], into=same, **({'carried': question['sources']} if question.get('sources') else {}))
+            # Task first: what they ask of you, in their words; then the contact; the sources it was built from are the
+            # card's own sources (copies on this Machine, readable offline), never links into their mailbox.
+            first = sender.split()[0] if sender else 'A teammate'
+            carried = question.get('sources') or []
+            return self.make_card(kind='handoff', ask_id=row['id'], name=sender, title=question['title'][:90],
+                                  body=(f'{first} asks you to take this on: “{summary}”'
                                         + (f' Contact: {question["contact"]}.' if question.get('contact') else '')),
-                                  evidence=evidence, due=question.get('when'))
+                                  evidence=evidence, due=question.get('when'), **({'carried': carried} if carried else {}))
         mine = '; '.join(text and [text] or [p['what'] for p in question['parts'] if p['mine']])
         others = '; '.join(f"{p['name']}: {p['what']}" for p in question['parts'] if not p['mine'])
         card = self.make_card(kind='followup', ask_id=row['id'], name=sender, title=f'Follow up: {mine}'[:90],
@@ -332,8 +395,9 @@ class Requests:
         return self.ask('intro', question, fleet=fleet_ref, to=[member_id])
 
     def handoff_draft(self, card_id):
-        """What a handoff of this card would send, for the owner to read and edit first: its title, a summary from the
-        card, the outside contact on its email (if any) and its due date; and who in each Work Fleet can take it."""
+        """What a handoff of this card would send, for the owner to read and edit first: its title, what the teammate is
+        asked to do, the outside contact on its email (if any), its due date and the sources that go along; and who in
+        each Work Fleet can take it."""
         with self.connect() as db:
             card = db.execute('SELECT * FROM suggestions WHERE id=?', (str(card_id),)).fetchone()
             if not card:
@@ -343,15 +407,28 @@ class Requests:
                                'ORDER BY occurred_at DESC', (json.dumps(ids),)).fetchall()
             givers = {(r['fleet'], r['member_id']) for r in db.execute(
                 "SELECT fleet,member_id FROM fleet_requests WHERE card_id=? AND kind='handoff'", (card['id'],))}
+            note = db.execute("SELECT feedback FROM decisions WHERE suggestion_id=? AND choice='other' AND source IN ('dashboard','telegram') "
+                              "AND trim(feedback)<>'' ORDER BY rowid DESC LIMIT 1", (card['id'],)).fetchone()
+            prep = db.execute('SELECT status preparation_status,reason preparation_reason,error preparation_error,questions preparation_questions '
+                              'FROM preparations WHERE suggestion_id=?', (card['id'],)).fetchone()
         mine = self.my_emails()
         team = {e for ref in self.work_fleets() for m in self.teammates(ref) for e in m.get('emails', [])}
-        contact = next((a for m in mails for _, a in graph.addresses(json.loads(m['metadata'] or '{}').get('from'))
+        # The contact is who wrote: their Reply-To when there is one, never a list's rewritten From (its own inbox).
+        def writers(meta):
+            return [a for _, a in graph.addresses(meta.get('reply-to'))] + ([sender(meta.get('from'))[1]] if sender(meta.get('from'))[1] else [])
+        contact = next((a for m in mails for a in writers(json.loads(m['metadata'] or '{}'))
                         if a not in mine | team and not graph.bulk(a)), '')
         # What goes to them is the message itself: the handoff text the card's preparation wrote for a teammate (or its
-        # hand-off message to them), never the card's own account of what The Machine did ("Drafted a handoff...").
+        # hand-off message to them), never the card's own account of what The Machine did ("Drafted a handoff...") nor
+        # its latest chat reply. Without one, what they are asked to do: the card's next step (its Needs you line), then
+        # the owner's own note. The card's sources go along, so the context is what it was built from.
         ready = self.handoff_text(card)
-        # A Fleet handoff is plain text on their side: a Markdown link goes as its words and the URL.
-        summary = next_actions.body_text(ready['body']) if ready else next_actions.body_text(re.sub(r'[*`#>]', '', card['body'] or ''))
+        if ready:  # a Fleet handoff is plain text on their side: a Markdown link goes as its words and the URL
+            task, mine_note = next_actions.body_text(ready['body']), ''
+        else:
+            task = (self.card_task or (lambda row: row.get('title') or ''))({**dict(card), **(dict(prep) if prep else {})})
+            mine_note = ' '.join(str(note['feedback']).split()) if note else ''
+        summary = sentences(task, mine_note)
         first = lambda m: not (ready and self.is_person(m, ready))  # the teammate that text is for comes first, so it's the default
         fleets = [f for f in [{'id': ref, 'name': self.fleets()[ref].get('name'),
                    'members': sorted(({'member_id': m['member_id'], 'name': fleet.label(m), '_first': first(m)} for m in self.teammates(ref)
@@ -363,7 +440,37 @@ class Requests:
             for m in f['members']:
                 m.pop('_first')
         return {'suggestion_id': card['id'], 'title': fleet.clean(card['title'], 120), 'summary': fleet.clean(summary, 1000),
-                'contact': contact, 'due': card['due'] if 'due' in card.keys() else None, 'fleets': fleets}
+                'task': fleet.clean(task, 1000), 'note': fleet.clean(mine_note, 600),
+                'contact': contact, 'due': card['due'] if 'due' in card.keys() else None, 'fleets': fleets,
+                'sources': [{'label': s['label'], 'kind': s['kind']} for s in self.handoff_sources(card['id'])]}
+
+    def handoff_sources(self, card_id):
+        """The card's own emails and messages, as a handoff carries them: who wrote, when, the subject and the text
+        (cut to SOURCE_CHARS, SOURCES_CHARS in all). Only this card's evidence, never anything else of the mailbox.
+        Each has a label for the form ("Email from Stripe Alerts · Fri 23 Oct")."""
+        with self.connect() as db:
+            card = db.execute('SELECT event_ids FROM suggestions WHERE id=?', (str(card_id),)).fetchone()
+            ids = json.loads(card['event_ids'] or '[]') if card else []
+            rows = {r['id']: r for r in db.execute('SELECT id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 AND id IN '
+                                                   '(SELECT value FROM json_each(?))', (json.dumps(ids),))}
+        out, budget = [], SOURCES_CHARS
+        for event_id in ids:
+            r = rows.get(event_id)
+            if not r or r['kind'] not in CARRIED or len(out) >= SOURCES or budget <= 0:
+                continue
+            meta = json.loads(r['metadata'] or '{}')
+            name, address = sender(meta.get('from'))
+            who = fleet.clean(meta.get('sender_display'), 120) if r['kind'].startswith('fleet.') or not meta.get('from') else \
+                (f'{name} <{address}>' if address and name and name != address else name or address)
+            text = carried_text(r['body'], SOURCE_CHARS + 1)
+            body = text[:min(SOURCE_CHARS, budget)]
+            budget -= len(body)
+            when = dt.datetime.fromisoformat(r['occurred_at'])
+            out.append({'kind': CARRIED[r['kind']], 'from': who or 'Unknown sender', 'when': when.isoformat(),
+                        'subject': fleet.clean(r['title'], 200), 'body': body,
+                        **({'clipped': True} if len(text) > len(body) or meta.get('truncated') else {}),
+                        'label': f"{CARRIED[r['kind']].capitalize()} from {name or who or 'someone'} · {when.astimezone(self.local_now().tzinfo).strftime('%a %-d %b')}"})
+        return out
 
     @staticmethod
     def is_person(member, action):
@@ -420,8 +527,10 @@ class Requests:
                 "or email to them (delegate:true) can be a second choice. Your result says you prepared a handoff to them "
                 "through The Machine. Anyone else gets a Slack message or email as usual.")
 
-    def hand_off(self, card_id, fleet_ref, member_id, title, summary, contact=None):
-        """Hand a card to a teammate, with the summary exactly as the owner read and edited it. Their card says how it went."""
+    def hand_off(self, card_id, fleet_ref, member_id, title, summary, contact=None, sources=True):
+        """Hand a card to a teammate, with the summary exactly as the owner read and edited it and the card's sources
+        (handoff_sources): all of them (True), none (False) or those the owner kept, by their place in the draft's list.
+        Their card says how it went."""
         with self.connect() as db:
             latest = db.execute('SELECT id FROM decisions WHERE suggestion_id=? ORDER BY rowid DESC LIMIT 1', (str(card_id),)).fetchone()
             expected = latest['id'] if latest else None
@@ -446,6 +555,13 @@ class Requests:
         keys = self.message_keys(card_id, fleet_ref)
         if keys:
             question['messages'] = keys
+        found = self.handoff_sources(card_id) if sources else []
+        if isinstance(sources, list):
+            keep = {n for n in sources if isinstance(n, int) and not isinstance(n, bool)}
+            found = [x for n, x in enumerate(found) if n in keep]
+        carried = parse_sources(found)
+        if carried:
+            question['sources'] = carried
         sent = self.ask('handoff', question, context='handoff:' + str(card_id), fleet=fleet_ref, to=[member_id])
         if self.wait_card:  # it's with them now: the card leaves Ready and waits under Later until their Machine answers
             try:

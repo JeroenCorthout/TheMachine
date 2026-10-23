@@ -26,7 +26,7 @@ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','applica
  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(req.url==='/api/status'){res.end(JSON.stringify(state));return}
  if(req.url==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
-  if(call.action==='fleet_handoff_draft'){res.end(JSON.stringify({suggestion_id:'c1',title:'Send Sam the pricing',summary:'Sam asked for pricing.',contact:'sam@client.example',due:null,
+  if(call.action==='fleet_handoff_draft'){res.end(JSON.stringify({suggestion_id:'c1',title:'Send Sam the pricing',summary:'Sam asked for pricing.',contact:'sam@client.example',due:null,task:'Send Sam the pricing',note:'',sources:[{label:'Email from Sam Lee · Thu 22 Oct',kind:'email'}],
    fleets:[{id:FL,name:'Acme',members:[{member_id:'p',name:'Pat'}]}]}));return}
   if(call.action==='fleet_handoff')card.fleet_handoff={name:'Pat',stage:'asked'};
   if(['fleet_decide','fleet_split_adjust'].includes(call.action)){view.waiting=view.waiting.filter(x=>x.id!==call.args.id);state.fleet.waiting=view.waiting.length+1}
@@ -42,12 +42,19 @@ try{
  // Hand off from a work card: the summary is shown to read and edit first, and only that goes.
  await page.locator('#task-c1 .more-actions>summary').click();await page.locator('[data-fleet-handoff="c1"]').click();  // Hand off waits under More
  const form=page.locator('.fleet-handoff-form');await form.waitFor();
- assert.equal(await form.locator('textarea').inputValue(),'Sam asked for pricing.');
- await form.locator('textarea').fill('Sam wants pricing for 40 seats.');
+ assert.equal(await form.locator('textarea[name=task]').inputValue(),'Send Sam the pricing');  // the task leads, to edit
+ await form.locator('textarea[name=task]').fill('Sam wants pricing for 40 seats.');
+ await form.locator('textarea[name=note]').fill('He is a big account.');
+ // What goes along shows as chips (the contact, the card's sources), each with a quiet × to leave it out
+ assert.deepEqual(await form.locator('.agent-get').allTextContents(),['Contact: sam@client.example×','Email from Sam Lee · Thu 22 Oct×']);
+ assert.equal(await form.locator('input[type=checkbox]').count(),0);
+ await form.getByRole('button',{name:'Leave out Email from Sam Lee · Thu 22 Oct'}).click();
+ assert.deepEqual(await form.locator('.agent-get').allTextContents(),['Contact: sam@client.example×']);
+ assert.equal(await form.locator('textarea[name=task]').inputValue(),'Sam wants pricing for 40 seats.');  // kept through the re-render
  await form.locator('button.primary').click();
  await page.getByText('Handed off to Pat, waiting for an answer').waitFor();
  assert.equal(await page.getByText('is on it').count(),0);  // a claim without a teammate's name says nothing
- assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats.',contact:'sam@client.example'}});
+ assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats. He is a big account.',contact:'sam@client.example',sources:[]}});
  // Requests wait as cards under Suggestions (tagged Fleet, Work) with Accept, their words shown as text; the Suggestions
  // badge counts them and the Fleet tab has no badge.
  const intro=page.locator('#suggestions #fleet-q_'+'1'.repeat(16));await intro.waitFor();

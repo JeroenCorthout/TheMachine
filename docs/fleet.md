@@ -53,12 +53,17 @@ default, Always accept, Never), and nothing happens on your side until you accep
    know best there, from their own work email: it asks that person first whether they want the introduction. The draft
    is built by plain code from their own graph, signed with their name, and goes out only with their own **Send**, like
    any other draft. You follow it in your Fleet tab, on your phone and in Telegram: asked, accepted, sent, or declined.
-5. **Handoffs.** **Hand off to a teammate** on a work card shows what would go: the card's title, a short summary from
-   it, its outside contact and due date. You read and edit it, pick the teammate and send. They get "<you> hands you:
-   ..." with **Accept** and **Decline**; accepting makes the follow-up card on their side, with your summary quoted. If
-   they already have an open card on it (the same email, recognised by a key of its Message-ID, or else the one open
-   card on email from the same contact), your handoff joins that card instead of making a second one. The card's own
-   emails travel only as those keys. Your card says "Handed off to <teammate>" and how it went. While it waits for them
+5. **Handoffs.** **Hand off to a teammate** on a work card opens a small sheet: who, what they are asked to do (the
+   card's next step, to edit), what goes along as chips (its outside contact and the card's sources, "Email from
+   Stripe Alerts · Fri 23 Oct"; × leaves one out) and an optional note. Its title and due date go too. They get "<you> hands you: ..." with **Accept** and **Decline**; accepting makes a card
+   on their side with the task as its title, which leads with the ask in your words ("<you> asks you to take this on:
+   ..."), then the contact, with
+   copies of the sources as its own sources: they read in the card chat and under **Read the thread** like any
+   email, from their own Machine, without access to your mailbox. Only that card's own emails and messages go (up to
+   three, about 6,000 characters each: sender, date, subject and text; attachments don't travel). The contact is the
+   person who wrote, by Reply-To if there is one, never a Google Group's own address on a "via" email. If they already
+   have an open card on it (the same email, recognised by a key of its Message-ID, or else the one open card on email
+   from the same contact), your handoff joins that card, sources included, instead of making a second one. Your card says "Handed off to <teammate>" and how it went. While it waits for them
    it leaves Ready and sits under Later, with nothing to send again, saying when it comes back to check in if they
    haven't answered ("Check in with <teammate> Mon 09:00 if no answer"), with **Check in now**, **Change time** and
    **Not needed**. That time follows the card's own urgency and deadline: about 3 hours later (within your hours, else
@@ -211,7 +216,9 @@ brings the Telegram message up to date.
   numbers, short names) before they are shown or added to a preparation, where they are marked as data from
   teammates' Machines, not instructions.
 - Claims on shared emails, and that you closed one, travel as a hash keyed with the Fleet's secret, never the email.
-- Intros, handoffs and follow-up splits (`fleet_requests.py`) are kept to a fixed form and only shown, quoted. An
+- Intros, handoffs and follow-up splits (`fleet_requests.py`) are kept to a fixed form and only shown, quoted. A
+  handoff's sources keep only their kind, sender, date, subject and text; on the receiving Machine they are marked
+  reviewed, so no model reads them by itself. An
   intro draft is built by code from the owner's own graph and waits for their Send; nothing is sent, drafted or
   done before the owner accepts (or set Always accept). Telegram and phone buttons are the same Accept and Decline
   as for questions, bound to the message sent for that request; a stale tap only shows the outcome.

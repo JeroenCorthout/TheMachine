@@ -30,6 +30,15 @@ The CLIs keep their own sign-ins. The Machine never reads, copies or stores a Cl
   uses `codex exec`, and the job only shows on the card. Nothing is approved for you: a command that needs approval is
   declined. If the job's thread is open in the Codex app, a follow-up from the card goes on in a copy of the thread
   (`thread/fork`), which shows in the app too. If even that is refused, the card says to carry on in Codex.
+- **On your other devices**: with remote connections on in the Codex app on this computer, **Open in Codex** from
+  another device opens the thread on this computer through that connection (`codex://threads/<id>?hostId=...`). The
+  job keeps running here. A plain thread link would look for it on the device you clicked it on.
+- **Restarts**: on Linux, Codex's app server runs in a systemd user unit of its own. It keeps The Machine's own
+  hardening (NoNewPrivileges, PrivateTmp, UMask) and environment, and it listens on loopback behind a token that only
+  the job folder holds. An update that restarts The Machine doesn't stop the job: The Machine picks it up again when
+  it is back. Claude Code background sessions run on by themselves too.
+- **Try again** carries on in the job's own thread or session, where it left off. It starts again from the brief only
+  when that thread is gone. The card says in plain words why a job stopped.
 
 ## On a hosted Machine
 
@@ -53,9 +62,10 @@ Coding agents**.
 
 ```json
 {"agents": {"claude": {"command": "claude", "config_dir": "~/.claude-other", "background": true},
-            "codex": {"command": "codex", "app_server": true},
+            "codex": {"command": "codex", "app_server": true, "detach": true},
             "max_parallel": 2, "timeout_minutes": 30}}
 ```
 
 `config_dir` points the jobs' Claude Code at another config folder, such as another account, and only for jobs.
+`"detach": false` keeps Codex's app server a child of The Machine, so a restart stops the job.
 `"claude": false` or `"codex": false` hides that action. `"agents": false` turns both off.

@@ -28,7 +28,7 @@ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','applica
   res.end('{}');return}
  res.statusCode=404;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
-const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--host-resolver-rules=MAP machine.test 127.0.0.1']});
 try{
  const page=await (await browser.newContext({viewport:{width:390,height:900}})).newPage();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -67,7 +67,7 @@ try{
  assert.equal(await c.locator('[data-agent-cancel]').count(),1);
  // The result comes back: the card follows it without a full refresh.
  const long='Rewrote the reply in [draft.md](/home/owner/.local/share/agent-jobs/aj_1/work/draft.md) and added [summary.md](/home/owner/.local/share/agent-jobs/aj_1/work/summary.md).\n\n## Details\n- Kept the tone of `/tmp/x/notes.txt`\n- Checked the numbers';
- card.agent_job={...job,status:'result',summary:long,url:'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75',app:'Open in Codex',can_follow_up:true,draft_updated:true,
+ card.agent_job={...job,status:'result',summary:long,url:'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75',url_elsewhere:'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75?hostId=remote-control%3Aenv_0123abcd',app:'Open in Codex',can_follow_up:true,draft_updated:true,
   files:[{path:'summary.md',size:20},{path:'draft.md',size:20}],has_diff:true,finished_at:new Date().toISOString()};
  await c.locator('.agent-result').waitFor({timeout:10000});
  const text=await c.locator('.agent-result').innerText();
@@ -75,6 +75,11 @@ try{
  assert.match(text,/Rewrote the reply in draft\.md and added summary\.md\./);
  assert.match(text,/Updated the draft below/);
  assert.equal(await c.locator('.agent-result a.agent-app').getAttribute('href'),'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75');
+ // From another device (not this computer's own address) the link opens the thread on this computer through the Codex
+ // app's remote connection, where a plain link would look for it on that device.
+ {const other=await (await browser.newContext()).newPage();await other.goto('http://machine.test:'+server.address().port);
+  const link=other.locator('#task-c1 .agent-result a.agent-app');await link.waitFor({timeout:10000});
+  assert.equal(await link.getAttribute('href'),'codex://threads/01a16539-9d4a-7d83-9620-9203de5acb75?hostId=remote-control%3Aenv_0123abcd');await other.close()}
  assert.equal(await c.locator('.agent-result .agent-files').count(),0);  // both files are already in the line
  const chips=c.locator('.agent-result .agent-line a.agent-file');
  assert.deepEqual(await chips.allInnerTexts(),['draft.md','summary.md']);

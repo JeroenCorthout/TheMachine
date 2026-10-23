@@ -6585,6 +6585,8 @@ SOURCE_KIND = {'gmail.message': 'email', 'calendar.event': 'calendar', 'slack.me
                'android.notification': 'phone', 'whatsapp.message': 'WhatsApp',
                'gateway.alert': 'OpenClaw'}
 SOURCE_KIND['fleet.request'] = 'Fleet'
+SOURCE_KIND['fleet.email'] = 'email'  # a copy a teammate's handoff carried (fleet_requests.handoff_sources)
+SOURCE_KIND['fleet.message'] = 'message'
 
 
 AGENT_DB = Path.home() / '.openclaw/agents/main/agent/openclaw-agent.sqlite'
@@ -7422,7 +7424,8 @@ def source_line(rows):
     who = re.sub(r'\s*<[^>]+>', '', str(who)).strip().strip('"') or None
     when = dt.datetime.fromisoformat(first['occurred_at']).astimezone(local_tz()).strftime('%a %-d %b')
     line = 'Source: ' + source_kind(first['kind']) + (f' from {who}' if who else '') + f' · {when}'
-    return line + (f' (+{len(rows) - 1} more)' if len(rows) > 1 else '')
+    more = [r for r in rows[1:] if r['kind'] != 'fleet.request']  # a Fleet request's own event is the card's text, not another source
+    return line + (f' (+{len(more)} more)' if more else '')
 
 
 def delivery_time(when, digest_at='08:30', current=None, work=False, urgent=False):
@@ -9052,6 +9055,7 @@ class App:
             self.fleet.hours = {'local_now': lambda: dt.datetime.now(local_tz()), 'work_day': is_work_day, 'in_hours': in_hours,
                                 'morning': lambda: WORK_HOURS['morning']}
             self.fleet.search = lambda accounts, query, limit: self.related(accounts, query=query, limit=limit)[0]
+            self.fleet.card_task = card_task  # a handoff leads with what the teammate is asked to do, never a chat reply
             self.fleet.notify_brief = self.fleet_notify_brief
             self.fleet.remove_work = self.fleet_remove_work
         # Skills (skills.py): the owner's how-tos, written to the OpenClaw workspace; shared ones come in through the Fleet.
@@ -10090,7 +10094,7 @@ class App:
         message_id = str(result.get('messageId') or '')
         return message_id if re.fullmatch(r'\d+', message_id) else None
 
-    def fleet_card(self, kind, ask_id, name, title, body, evidence, action=None, due=None, into=None, family=False, via=None):
+    def fleet_card(self, kind, ask_id, name, title, body, evidence, action=None, due=None, into=None, family=False, via=None, carried=()):
         """A card for a Fleet request the owner accepted (fleet_requests.py), made from this Machine's own data. Its
         first evidence is a Fleet event on one of the owner's work accounts, marked reviewed so no model reads it by
         itself; an intro also gets its double-opt-in draft, which goes out only with the owner's own Send. A Family's
@@ -10112,15 +10116,28 @@ class App:
                        "VALUES(?,?,'fleet.request',?,?,?,?,0,?,1,1,?)",
                        (account, source_id, stamp, title, body, json.dumps(meta), hashlib.sha256((title + body).encode()).hexdigest(), stamp))
             event_id = db.execute('SELECT id FROM events WHERE account_id=? AND source_id=?', (account, source_id)).fetchone()[0]
+            # A handoff's sources (fleet_requests.parse_sources): copies of the emails or messages the card was built from,
+            # saved here so they read like any card's sources, offline. Marked reviewed: no model reads them by itself.
+            copies = []
+            first = name.split()[0] if name else 'a teammate'
+            for n, src in enumerate(carried):
+                cid = source_id + ':' + str(n)
+                db.execute('INSERT OR IGNORE INTO events(account_id,source_id,kind,occurred_at,title,body,metadata,deleted,content_hash,version,analyzed_version,ingested_at) '
+                           'VALUES(?,?,?,?,?,?,?,0,?,1,1,?)',
+                           (account, cid, 'fleet.email' if src['kind'] == 'email' else 'fleet.message', src['when'], src['subject'] or '(no subject)',
+                            src['body'], json.dumps({'sender_display': f"{src['from']}, via {first}", 'from': src['from'], 'carried_by': name,
+                                                     'fleet_kind': kind, **({'truncated': True} if src.get('clipped') else {})}),
+                            hashlib.sha256((src['subject'] + src['body']).encode()).hexdigest(), stamp))
+                copies.append(db.execute('SELECT id FROM events WHERE account_id=? AND source_id=?', (account, cid)).fetchone()[0])
         if into:  # a handoff on something the owner already has a card on: it joins that card, with their summary
             with self.store.connect() as db:
                 row = db.execute('SELECT event_ids,body FROM suggestions WHERE id=?', (into,)).fetchone()
                 ids = json.loads(row['event_ids'] or '[]')
                 if event_id not in ids:
                     db.execute('UPDATE suggestions SET event_ids=?,body=? WHERE id=?',
-                               (json.dumps([*ids, event_id]), ((row['body'] or '') + '\n\n' + body[:700])[:2400], into))
+                               (json.dumps([*ids, *[c for c in copies if c not in ids], event_id]), ((row['body'] or '') + '\n\n' + body[:700])[:2400], into))
             return into
-        card = self.store.suggest('fleet:' + str(ask_id), title[:90], body[:700], [event_id, *[e for e in evidence if e != event_id]], when='now',
+        card = self.store.suggest('fleet:' + str(ask_id), title[:90], body[:700], [*copies, event_id, *[e for e in evidence if e != event_id]], when='now',
                                   work=not family and account in fleet.work_accounts(self.config), due=due)
         if action and not card.get('duplicate'):
             with self.store.connect() as db:
@@ -10268,7 +10285,8 @@ class App:
                                       str(args.get('summary') or ''))
         if name == 'fleet_handoff':
             return self.fleet.hand_off(str(args.get('suggestion_id') or ''), str(args.get('fleet') or ''), str(args.get('member_id') or ''),
-                                       str(args.get('title') or ''), str(args.get('summary') or ''), str(args.get('contact') or '') or None)
+                                       str(args.get('title') or ''), str(args.get('summary') or ''), str(args.get('contact') or '') or None,
+                                       sources=args['sources'] if isinstance(args.get('sources'), list) else args.get('sources') is not False)  # all, none or those kept
         if name == 'fleet_handoff_mine':  # Do it myself, on a card a teammate handed back
             return self.fleet.handoff_mine(str(args.get('suggestion_id') or ''))
         if name == 'fleet_split':  # send a follow-up split as the owner filled it in

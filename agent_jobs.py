@@ -25,6 +25,7 @@ folder, readable only by the owner's account. Config (`agents` in config.json, a
 """
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import hashlib
 import json
@@ -35,9 +36,14 @@ import re
 import secrets
 import shutil
 import signal
+import socket
+import sqlite3
+import struct
 import subprocess
+import sys
 import threading
 import time
+import urllib.parse
 
 LOG = logging.getLogger('personal-assistant')
 TOOLS = {'claude': 'Claude Code', 'codex': 'Codex'}
@@ -238,6 +244,13 @@ def kill(proc):
             pass
 
 
+# Why a job stopped, in plain words, and what Try again does about it.
+RESTARTED = 'The Machine restarted (an update, or the computer) while it worked on this, which stopped it. Try again carries on where it left off.'
+# What Try again tells a session that stopped during the handoff itself.
+CARRY_ON = ('You were stopped before you finished (The Machine restarted or the run was cut off). Carry on with the task '
+            'from where you left off, then end with the summary it asks for.')
+
+
 class Stopped(Exception):
     def __init__(self, kind, message):
         super().__init__(message)
@@ -327,7 +340,7 @@ class Local:
         if getattr(proc, 'cancelled', False):
             raise Stopped('cancelled', 'Cancelled')
         if getattr(proc, 'timed_out', False):
-            raise Stopped('timeout', f'Stopped after {round(timeout / 60)} minutes')
+            raise Stopped('timeout', f'It ran longer than its {round(timeout / 60)}-minute limit, so it was stopped')
         if state['error'] or proc.returncode:
             raise Stopped('failed', state['error'] or self.stderr_hint(transcript) or f'{TOOLS[job["tool"]]} stopped (exit {proc.returncode})')
         return state['session'], state['summary']
@@ -524,7 +537,7 @@ class BackgroundClaude:
                 if time.time() - started > timeout:
                     handle.timed_out = True
                     stop_proc(handle)
-                    raise Stopped('timeout', f'Stopped after {round(timeout / 60)} minutes')
+                    raise Stopped('timeout', f'It ran longer than its {round(timeout / 60)}-minute limit, so it was stopped')
                 e = self.entry(short=short)
                 if e is None:
                     raise Stopped('failed', 'The Claude Code session is gone')
@@ -579,18 +592,251 @@ def desktop_codex():
     return next((p for p in DESKTOP_CODEX if os.path.isfile(p) and os.access(p, os.X_OK)), None)
 
 
+class StdioLines:
+    """The app server's stdio (`--listen stdio://`): one JSON-RPC message per line."""
+    def __init__(self, proc):
+        self.proc = proc
+
+    def send(self, message):
+        self.proc.stdin.write((json.dumps(message) + '\n').encode())
+        self.proc.stdin.flush()
+
+    def readline(self):
+        return self.proc.stdout.readline()
+
+
+class AppSocket:
+    """The app server's WebSocket on loopback (`--listen ws://127.0.0.1:<port>`, `--ws-auth capability-token`): just
+    enough of a client for its JSON-RPC text messages. `readline()` gives one message and b'' once it is closed."""
+    def __init__(self, port, token, timeout=10):
+        self.sock = socket.create_connection(('127.0.0.1', int(port)), timeout)
+        self.buf, self.lock = b'', threading.Lock()
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.sock.sendall((f'GET / HTTP/1.1\r\nHost: 127.0.0.1:{int(port)}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+                           f'Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {token}\r\n\r\n').encode())
+        while b'\r\n\r\n' not in self.buf:
+            chunk = self.sock.recv(4096)
+            if not chunk or len(self.buf) > 65536:
+                self.close()
+                raise OSError('the app server did not answer')
+            self.buf += chunk
+        head, self.buf = self.buf.split(b'\r\n\r\n', 1)
+        if b' 101 ' not in head.split(b'\r\n', 1)[0] + b' ':
+            self.close()
+            raise OSError('the app server refused the connection')
+        self.sock.settimeout(None)
+
+    def take(self, n):
+        while len(self.buf) < n:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise EOFError
+            self.buf += chunk
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def frame(self, op, data):
+        mask, n = os.urandom(4), len(data)
+        size = bytes([0x80 | n]) if n < 126 else bytes([0xFE]) + struct.pack('>H', n) if n < 65536 else bytes([0xFF]) + struct.pack('>Q', n)
+        masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+        with self.lock:
+            self.sock.sendall(bytes([0x80 | op]) + size + mask + masked)
+
+    def send(self, message):
+        self.frame(1, json.dumps(message).encode())
+
+    def readline(self):
+        parts = []
+        try:
+            while True:
+                first, second = self.take(2)
+                n = second & 0x7F
+                if n == 126:
+                    n = struct.unpack('>H', self.take(2))[0]
+                elif n == 127:
+                    n = struct.unpack('>Q', self.take(8))[0]
+                if n > TRANSCRIPT_MAX:
+                    return b''
+                mask = self.take(4) if second & 0x80 else None
+                data = self.take(n)
+                if mask:
+                    data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+                op = first & 0x0F
+                if op == 8:
+                    return b''
+                if op == 9:
+                    self.frame(10, data)
+                    continue
+                if op == 10:
+                    continue
+                parts.append(data)
+                if first & 0x80:
+                    return b''.join(parts) + b'\n'
+        except (EOFError, OSError, struct.error, ValueError):
+            return b''
+
+    def close(self):
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+# The service's own hardening that its jobs keep when they run in a unit of their own (systemctl show names).
+HARDENING = ('NoNewPrivileges', 'PrivateTmp', 'UMask', 'ProtectSystem', 'ProtectHome', 'PrivateDevices', 'RestrictSUIDSGID',
+             'LockPersonality', 'RestrictRealtime', 'ProtectKernelTunables', 'ProtectControlGroups')
+# What systemd sets for each unit by itself: not carried over into the job's unit.
+UNIT_ENV = re.compile(r'(INVOCATION_ID|JOURNAL_STREAM|SYSTEMD_EXEC_PID|MANAGERPID|MANAGERPIDFDID|NOTIFY_SOCKET|WATCHDOG_\w+|LISTEN_\w+|'
+                      r'MEMORY_PRESSURE_\w+|MAINPID|SERVICE_RESULT|EXIT_CODE|EXIT_STATUS|MONITOR_\w+|TRIGGER_\w+)')
+LISTENING = re.compile(rb'listening on: ws://127\.0\.0\.1:(\d{2,5})\b')
+SERVER_FILE = 'app-server.json'
+
+
+def own_unit():
+    """The systemd user service The Machine runs as (personal-assistant.service), or None when it runs otherwise."""
+    try:
+        lines = Path('/proc/self/cgroup').read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        path = line.split(':', 2)[-1]
+        name = path.rstrip('/').rsplit('/', 1)[-1]
+        if '/user@' in path and re.fullmatch(r'[A-Za-z0-9_.@-]+\.service', name):
+            return name
+    return None
+
+
+def can_detach():
+    """Whether a job's app server can run in a systemd user unit of its own (Linux, with The Machine itself a user service)."""
+    return sys.platform.startswith('linux') and bool(shutil.which('systemd-run') and shutil.which('systemctl') and own_unit())
+
+
+def systemctl(*args, timeout=10):
+    return subprocess.run(['systemctl', '--user', *args], capture_output=True, text=True, timeout=timeout)
+
+
+def hardening(unit):
+    """The service's own hardening (NoNewPrivileges, PrivateTmp, UMask, ...) as systemd-run properties."""
+    try:
+        out = systemctl('show', unit, *[f'--property={name}' for name in HARDENING]).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = {}
+    for line in out.splitlines():
+        name, _, value = line.partition('=')
+        if name in HARDENING and re.fullmatch(r'[A-Za-z0-9:-]{1,20}', value):
+            found[name] = value
+    return found if found else None
+
+
+def unit_active(unit):
+    try:
+        return systemctl('is-active', unit).stdout.strip() in ('active', 'activating', 'reloading')
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def stop_unit(unit):
+    try:
+        systemctl('stop', '--no-block', unit)
+    except (OSError, subprocess.SubprocessError) as error:
+        LOG.warning('agent job unit stop error=%s', type(error).__name__)
+
+
+def read_server(folder):
+    """A job's detached app server, as start_detached wrote it in the job folder: {unit, port, token}, or None."""
+    try:
+        found = json.loads((Path(folder) / SERVER_FILE).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(found, dict) or not re.fullmatch(r'the-machine-job-[A-Za-z0-9_-]{1,80}\.service', str(found.get('unit') or '')) \
+            or not isinstance(found.get('port'), int) or not re.fullmatch(r'[A-Za-z0-9_-]{32,128}', str(found.get('token') or '')):
+        return None
+    return found
+
+
+def start_detached(server, job, work, folder, err, timeout):
+    """The app server in a systemd user unit of its own (systemd-run --user), outside The Machine's service, so a
+    restart of The Machine (an update) doesn't stop the job: recover() connects to it again. The unit gets the
+    service's own hardening and environment (names on the command line, values from systemd-run's own environment),
+    so the job runs with the same permissions as before. It listens on loopback only, behind a capability token that
+    only the job folder holds. None when it can't start that way: the job then runs as a child of the service."""
+    unit_of_service = own_unit()
+    props = hardening(unit_of_service) if unit_of_service else None
+    if props is None:
+        return None
+    token = secrets.token_urlsafe(32)
+    unit = f'the-machine-job-{job["id"]}-{int(job.get("turns") or 1)}-{secrets.token_hex(3)}.service'
+    out_path = Path(folder) / 'app-server.out'
+    out_path.write_bytes(b'')
+    os.chmod(out_path, 0o600)
+    env = {**os.environ, 'NO_COLOR': '1'}
+    argv = ['systemd-run', '--user', '--quiet', '--collect', f'--unit={unit}', f'--working-directory={work}',
+            f'--property=RuntimeMaxSec={int(timeout) + 120}', '--property=KillMode=control-group',
+            f'--property=StandardOutput=append:{out_path}', f'--property=StandardError=append:{err}',
+            *[f'--property={k}={v}' for k, v in sorted(props.items())],
+            *[f'--setenv={k}' for k in sorted(env) if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', k) and not UNIT_ENV.fullmatch(k)],
+            '--', server, 'app-server', '--listen', 'ws://127.0.0.1:0', '--ws-auth', 'capability-token',
+            '--ws-token-sha256', hashlib.sha256(token.encode()).hexdigest()]
+    try:
+        started = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as error:
+        LOG.info('agent job detach error=%s', type(error).__name__)
+        return None
+    if started.returncode != 0:
+        LOG.info('agent job detach exit=%s', started.returncode)
+        return None
+    end = time.time() + 30
+    while time.time() < end:
+        port = None
+        for path in (err, out_path):  # its banner goes to stderr
+            try:
+                port = port or LISTENING.search(Path(path).read_bytes()[-65536:])
+            except OSError:
+                pass
+        if port:
+            live = {'unit': unit, 'port': int(port.group(1)), 'token': token}
+            path = Path(folder) / SERVER_FILE
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as f:
+                json.dump(live, f)
+            return live
+        if not unit_active(unit):
+            break
+        time.sleep(0.2)
+    stop_unit(unit)
+    return None
+
+
 class AppServerCodex:
-    """A turn through `codex app-server` (stdio, Codex's documented app-server protocol): the thread is an ordinary
-    Codex thread named after the card, so it shows up in the Codex app next to the owner's own threads, opens with
-    codex://threads/<id> and can be continued there. `codex exec` threads are hidden from that list.
+    """A turn through `codex app-server` (Codex's documented app-server protocol): the thread is an ordinary Codex
+    thread named after the card, so it shows up in the Codex app next to the owner's own threads (and, with the app's
+    remote connections on, in the Codex app on their other devices), opens with codex://threads/<id> and can be
+    continued there. `codex exec` threads are hidden from that list.
 
     It runs the app-server that ships with the Codex app when the app is installed (`server`): the app opens threads
-    written by its own version, while a newer or older CLI's threads can show as an endless spinner there."""
-    def __init__(self, command, server=None):
+    written by its own version, while a newer or older CLI's threads can show as an endless spinner there.
+
+    On Linux, with The Machine itself a systemd user service, the app server runs in a unit of its own
+    (start_detached) and the turn talks to it over its loopback WebSocket, so an update that restarts The Machine
+    doesn't stop the job; elsewhere it is a child process on stdio."""
+    def __init__(self, command, server=None, detach=False):
         self.command = command  # the CLI, for the `codex exec` fallback
         self.server = server or command
+        self.detach = detach
 
     def run(self, job, prompt, resume, folder, transcript, timeout, on_progress, on_session, procs):
+        live = None
+        if self.detach and job.get('id'):
+            live = start_detached(self.server, job, folder, Path(transcript).parent, str(transcript) + '.err', timeout)
+        if live:
+            return self.attached(job, live, transcript, timeout, procs,
+                                 lambda chan, flags, log, state: self.talk(chan, flags, log, state, job, prompt, resume, folder, on_progress,
+                                                                           on_session, timeout))
         with open(transcript, 'ab') as log, open(str(transcript) + '.err', 'ab') as err:
             proc = subprocess.Popen([self.server, 'app-server', '--listen', 'stdio://'], cwd=folder, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=err, start_new_session=True, env={**os.environ, 'NO_COLOR': '1'})
@@ -600,7 +846,7 @@ class AppServerCodex:
             timer.start()
             state = {'size': 0, 'n': 0, 'summary': '', 'error': '', 'status': None}
             try:
-                return self.talk(proc, log, state, job, prompt, resume, folder, on_progress, on_session, timeout)
+                return self.talk(StdioLines(proc), proc, log, state, job, prompt, resume, folder, on_progress, on_session, timeout)
             finally:
                 timer.cancel()
                 procs.pop(job['id'], None)
@@ -611,13 +857,42 @@ class AppServerCodex:
                     except OSError:
                         pass
 
-    def talk(self, proc, log, state, job, prompt, resume, folder, on_progress, on_session, timeout):
-        def send(message):
-            proc.stdin.write((json.dumps(message) + '\n').encode())
-            proc.stdin.flush()
+    def attached(self, job, live, transcript, timeout, procs, work):
+        """`work(chan, flags, log, state)` with the job's detached app server. When it is done (or cancelled, or timed
+        out) the unit stops; when The Machine itself stops first, the unit runs on and recover() rejoins it."""
+        folder = Path(transcript).parent
+        try:
+            chan = AppSocket(live['port'], live['token'])
+        except OSError:
+            stop_unit(live['unit'])
+            (folder / SERVER_FILE).unlink(missing_ok=True)
+            raise Stopped('failed', 'I could not reach the Codex app server I started') from None
+        flags = Handle(lambda: (stop_unit(live['unit']), chan.close()))
+        procs[job['id']] = flags
+        timer = threading.Timer(timeout, lambda: (setattr(flags, 'timed_out', True), stop_proc(flags)))
+        timer.daemon = True
+        timer.start()
+        state = {'size': 0, 'n': 0, 'summary': '', 'error': '', 'status': None}
+        try:
+            with open(transcript, 'ab') as log:
+                return work(chan, flags, log, state)
+        finally:
+            timer.cancel()
+            procs.pop(job['id'], None)
+            chan.close()
+            stop_unit(live['unit'])
+            (folder / SERVER_FILE).unlink(missing_ok=True)
 
+    def rejoin(self, job, live, transcript, timeout, on_progress, procs):
+        """After The Machine restarted: the job's turn, from its app server that ran on. It follows a turn still going
+        and takes the answer of one that ended meanwhile."""
+        return self.attached(job, live, transcript, timeout, procs,
+                             lambda chan, flags, log, state: self.follow(chan, flags, log, state, job, on_progress, timeout))
+
+    @staticmethod
+    def rpc(chan, flags, log, state, on_progress, timeout, name='Codex'):
         def read():
-            raw = proc.stdout.readline()
+            raw = chan.readline()
             if not raw:
                 return None
             if state['size'] < TRANSCRIPT_MAX:
@@ -632,7 +907,7 @@ class AppServerCodex:
         def call(method, params):
             state['n'] += 1
             want = state['n']
-            send({'jsonrpc': '2.0', 'id': want, 'method': method, 'params': params})
+            chan.send({'jsonrpc': '2.0', 'id': want, 'method': method, 'params': params})
             while True:
                 m = read()
                 if m is None:
@@ -641,27 +916,48 @@ class AppServerCodex:
                     if m.get('error'):
                         raise ValueError(str((m['error'] or {}).get('message') or 'error')[:300])
                     return m.get('result') or {}
-                self.handle(m, send, state, on_progress)
+                AppServerCodex.handle(m, chan.send, state, on_progress)
 
         def stopped():
-            if getattr(proc, 'cancelled', False):
+            if getattr(flags, 'cancelled', False):
                 return Stopped('cancelled', 'Cancelled')
-            if getattr(proc, 'timed_out', False):
-                return Stopped('timeout', f'Stopped after {round(timeout / 60)} minutes')
+            if getattr(flags, 'timed_out', False):
+                return Stopped('timeout', f'It ran longer than its {round(timeout / 60)}-minute limit, so it was stopped')
             return None
 
+        def until_done():
+            while state['status'] is None:
+                m = read()
+                if m is None:
+                    raise EOFError
+                AppServerCodex.handle(m, chan.send, state, on_progress)
+        return read, call, stopped, until_done
+
+    @staticmethod
+    def outcome(state, stopped, thread_id):
+        if stopped():
+            raise stopped()
+        if state['status'] != 'completed':
+            raise Stopped('cancelled' if state['status'] == 'interrupted' else 'failed',
+                          state['error'] or ('It was interrupted' if state['status'] == 'interrupted' else 'Codex ended the turn without finishing it'))
+        return thread_id, state['summary']
+
+    def talk(self, chan, flags, log, state, job, prompt, resume, folder, on_progress, on_session, timeout):
+        read, call, stopped, until_done = self.rpc(chan, flags, log, state, on_progress, timeout)
         try:
             call('initialize', {'clientInfo': {'name': 'the_machine', 'title': 'The Machine', 'version': '1'}})
         except (EOFError, ValueError, OSError):
             raise stopped() or NoAppServer() from None
         try:
-            send({'jsonrpc': '2.0', 'method': 'initialized'})
+            chan.send({'jsonrpc': '2.0', 'method': 'initialized'})
             # The owner's own ~/.codex config decides model, sandbox and approvals: nothing is passed to change them.
             forked = False
             if resume:
                 try:
                     thread = call('thread/resume', {'threadId': resume})
                 except ValueError as error:
+                    if re.search(r'no rollout found|not found|no such thread|unknown thread', str(error), re.I):
+                        raise Stopped('gone', 'Its Codex thread is gone, so it can’t carry on there. Hand it off again to start over.') from None
                     if 'active writer' not in str(error):
                         raise
                     # The thread is open in the Codex app, which holds it while it is: carry on in a copy of it
@@ -682,19 +978,35 @@ class AppServerCodex:
                 name = job_name(job)
                 call('thread/name/set', {'threadId': thread_id, 'name': name})
             call('turn/start', {'threadId': thread_id, 'input': [{'type': 'text', 'text': prompt}]})
-            while state['status'] is None:
-                m = read()
-                if m is None:
-                    raise EOFError
-                self.handle(m, send, state, on_progress)
+            until_done()
         except (EOFError, OSError, ValueError) as error:
             raise stopped() or Stopped('failed', state['error'] or (str(error) if isinstance(error, ValueError) else '') or
-                                        Local.stderr_hint(log.name) or 'Codex stopped') from None
-        if stopped():
-            raise stopped()
-        if state['status'] != 'completed':
-            raise Stopped('cancelled' if state['status'] == 'interrupted' else 'failed', state['error'] or f'Codex {state["status"]}')
-        return thread_id, state['summary']
+                                        Local.stderr_hint(log.name) or 'Codex closed before it finished, without saying why') from None
+        return self.outcome(state, stopped, thread_id)
+
+    def follow(self, chan, flags, log, state, job, on_progress, timeout):
+        read, call, stopped, until_done = self.rpc(chan, flags, log, state, on_progress, timeout)
+        thread_id = str(job.get('session_id') or '')
+        if not thread_id:
+            raise Stopped('restart', RESTARTED)
+        try:
+            call('initialize', {'clientInfo': {'name': 'the_machine', 'title': 'The Machine', 'version': '1'}})
+            chan.send({'jsonrpc': '2.0', 'method': 'initialized'})
+            thread = call('thread/resume', {'threadId': thread_id}).get('thread') or {}
+            turns = [t for t in thread.get('turns') or [] if isinstance(t, dict)]
+            last = turns[-1] if turns else {}
+            if str(last.get('status') or '') == 'inProgress':
+                on_progress('Carrying on after The Machine restarted')
+                until_done()
+            else:  # it ended while The Machine was down: its answer is in the thread
+                state['status'] = str(last.get('status') or 'failed')
+                error = last.get('error') if isinstance(last.get('error'), dict) else {}
+                state['error'] = str(error.get('message') or '')[:500]
+                said = [str(i.get('text') or '').strip() for i in last.get('items') or [] if isinstance(i, dict) and i.get('type') == 'agentMessage']
+                state['summary'] = next((t for t in reversed(said) if t), '')
+        except (EOFError, OSError, ValueError):
+            raise stopped() or Stopped('restart', RESTARTED) from None
+        return self.outcome(state, stopped, thread_id)
 
     @staticmethod
     def handle(m, send, state, on_progress):
@@ -853,6 +1165,39 @@ def app_link(runner, session):
 
 
 APP_LINK = re.compile(r'(https://\S+|codex://threads/[0-9a-f-]{36})')
+_HOST = {'at': 0.0, 'found': None}
+
+
+def codex_host_id(home=None):
+    """This computer as the Codex app on the owner's other devices knows it, when the Codex app here has remote
+    connections on: `remote-control:<environment id>` from the app's own state (read only). None otherwise."""
+    if home is None and time.monotonic() - _HOST['at'] < 60:
+        return _HOST['found']
+    base = Path(home or os.environ.get('CODEX_HOME') or Path.home() / '.codex')
+    found = None
+    for path in sorted(base.glob('state_*.sqlite'), key=lambda p: int(re.sub(r'\D', '', p.stem) or 0), reverse=True):
+        try:
+            with sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=1) as db:
+                row = db.execute('SELECT environment_id FROM remote_control_enrollments WHERE remote_control_enabled=1 '
+                                 'AND environment_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1').fetchone()
+        except sqlite3.Error:
+            continue
+        if row and re.fullmatch(r'[A-Za-z0-9_-]{4,128}', str(row[0] or '')):
+            found = 'remote-control:' + row[0]
+        break
+    if home is None:
+        _HOST.update(at=time.monotonic(), found=found)
+    return found
+
+
+def elsewhere_link(url, host=None):
+    """The Codex app link that opens the thread on this computer from the owner's other devices: a plain
+    codex://threads/<id> opens it on the device it is clicked on, where a thread The Machine just started isn't
+    known yet ("no rollout found"). With ?hostId= the app opens it on this computer through its remote connection."""
+    host = host or codex_host_id()
+    if not host or not re.fullmatch(r'codex://threads/[0-9a-f-]{36}', str(url or '')):
+        return None
+    return url + '?' + urllib.parse.urlencode({'hostId': host})
 
 
 # ------------------------------------------------------------------ the jobs
@@ -895,7 +1240,7 @@ class AgentJobs:
         out['draft_updated'] = bool(row['draft_updated'])
         out['can_follow_up'] = bool(row['session_id']) and row['place'] != 'cloud'
         url = row['url'] if APP_LINK.fullmatch(row['url'] or '') else None
-        out.update(name=TOOLS.get(row['tool'], row['tool']), files=files, has_diff=bool(row['diff']), url=url,
+        out.update(name=TOOLS.get(row['tool'], row['tool']), files=files, has_diff=bool(row['diff']), url=url, url_elsewhere=elsewhere_link(url),
                    app=('Open in Codex' if url.startswith('codex://') else 'Open in Codex cloud' if row['place'] == 'cloud'
                         else 'Open in Claude' if 'claude.ai' in url else 'Open') if url else None,
                    links=list(dict.fromkeys(URL.findall(row['summary'] or '')))[:10], ask=asks[-1]['text'] if asks else None)
@@ -995,18 +1340,21 @@ class AgentJobs:
         return self.get(row['id'])
 
     def retry(self, job_id):
-        """A job that failed before it had a session: the same brief again, as a new turn."""
+        """A job that stopped: it carries on in its own session (thread) when it has one, with the change asked last
+        or, for the handoff itself, a note to carry on where it left off. Without a session, or when its thread is
+        gone, the brief runs again from the start."""
         with self.connect() as db:
             row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (str(job_id),)).fetchone()
         if not row or row['status'] not in ('failed', 'cancelled'):
             raise ValueError('Nothing to try again')
         self.tool(row['tool'])
         asks = json.loads(row['asks'] or '[]')
-        prompt, resume = (asks[-1]['text'], row['session_id']) if asks and row['session_id'] else (row['brief'], None)
+        resume = row['session_id'] if row['place'] == 'local' or asks else None
+        prompt = (asks[-1]['text'] if asks else CARRY_ON) if resume else row['brief']
         with self.connect() as db:
             db.execute("UPDATE agent_jobs SET status='sent',progress=NULL,error=NULL,error_kind=NULL,outcome=NULL,updated_at=?,started_at=NULL,finished_at=NULL WHERE id=?",
                        (now(), row['id']))
-        self.launch(row['id'], prompt, resume=resume)
+        self.launch(row['id'], prompt, resume=resume, fresh=None if asks else row['brief'])
         return self.get(row['id'])
 
     def cancel(self, job_id):
@@ -1118,14 +1466,17 @@ class AgentJobs:
                 home = own.get('config_dir') if isinstance(own.get('config_dir'), str) else None
                 return BackgroundClaude(command, home) if own.get('background', True) is not False else LocalClaude(command, home)
             server = None if own.get('command') else desktop_codex()
-            return AppServerCodex(command, server) if own.get('app_server', True) is not False else LocalCodex(command, bool(shutil.which('git')))
+            if own.get('app_server', True) is False:
+                return LocalCodex(command, bool(shutil.which('git')))
+            return AppServerCodex(command, server, detach=own.get('detach', True) is not False and can_detach())
         import agent_remote  # phase 2: the owner's paired computer (Claude) or Codex cloud
         return agent_remote.runner(row, command, own, self)
 
-    def launch(self, job_id, prompt, resume):
-        threading.Thread(target=self.turn, args=(job_id, prompt, resume), daemon=True, name='agent-job').start()
+    def launch(self, job_id, prompt, resume, fresh=None):
+        threading.Thread(target=self.turn, args=(job_id, prompt, resume, fresh), daemon=True, name='agent-job').start()
 
-    def turn(self, job_id, prompt, resume):
+    def turn(self, job_id, prompt, resume, fresh=None):
+        """One turn. `fresh`: the brief to start over with when the session it resumes is gone (Try again)."""
         with self.limit:
             with self.connect() as db:
                 row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (job_id,)).fetchone()
@@ -1138,7 +1489,15 @@ class AgentJobs:
                                ('waiting' if row['place'] == 'remote' else 'running', now(), now(), job_id))
                 turn_no = row['turns']
                 transcript = self.folder(job_id) / f'turn-{turn_no}.jsonl'
-                session, summary = self.run_turn(runner, row, prompt, resume, transcript)
+                try:
+                    session, summary = self.run_turn(runner, row, prompt, resume, transcript)
+                except Stopped as stop:
+                    if stop.kind != 'gone' or not fresh:
+                        raise
+                    with self.connect() as db:
+                        db.execute('UPDATE agent_jobs SET session_id=NULL,url=NULL WHERE id=?', (job_id,))
+                    self.progress(job_id, 'Its thread was gone, so it starts again from the brief')
+                    session, summary = self.run_turn(runner, row, fresh, None, transcript)
             except Stopped as stop:
                 self.finish(job_id, 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind)
                 return
@@ -1286,7 +1645,15 @@ class AgentJobs:
                 if found and found.get('id'):
                     threading.Thread(target=self.rewatch, args=(runner, dict(row), found['id']), daemon=True, name='agent-job').start()
                     continue
-            self.finish(row['id'], 'failed', error='The Machine restarted while it ran. Try again.', error_kind='restart')
+            live = read_server(self.folder(row['id'])) if row['tool'] == 'codex' else None
+            if live and row['session_id'] and unit_active(live['unit']):
+                # Its Codex app server ran on in a unit of its own: follow the turn there again.
+                threading.Thread(target=self.rejoin, args=(dict(row), live), daemon=True, name='agent-job').start()
+                continue
+            if live:
+                stop_unit(live['unit'])
+                (self.folder(row['id']) / SERVER_FILE).unlink(missing_ok=True)
+            self.finish(row['id'], 'failed', error=RESTARTED, error_kind='restart')
         for row in waiting:
             asks = json.loads(row['asks'] or '[]')
             self.launch(row['id'], asks[-1]['text'] if asks and row['session_id'] else row['brief'], row['session_id'] if asks else None)
@@ -1297,6 +1664,26 @@ class AgentJobs:
                 continue
             if hasattr(runner, 'resume_watch'):
                 runner.resume_watch(row)
+
+    def rejoin(self, row, live):
+        job_id = row['id']
+        with self.limit:
+            try:
+                runner = self.runner(row)
+                if not isinstance(runner, AppServerCodex):
+                    raise Stopped('restart', RESTARTED)
+                started = dt.datetime.fromisoformat(row['started_at']).timestamp() if row['started_at'] else time.time()
+                left = max(60, self.timeout - (time.time() - started))
+                transcript = self.folder(job_id) / f'turn-{row["turns"]}.jsonl'
+                session, summary = runner.rejoin(self.named(row), live, transcript, left, lambda line: self.progress(job_id, line), self.procs)
+            except Stopped as stop:
+                self.finish(job_id, 'cancelled' if stop.kind == 'cancelled' else 'failed', error=str(stop)[:500], error_kind=stop.kind)
+                return
+            except Exception as error:  # noqa: BLE001 - a job never takes the service down
+                LOG.error('agent job rejoin error=%s', type(error).__name__)
+                self.finish(job_id, 'failed', error='Something went wrong following it after a restart', error_kind='internal')
+                return
+            self.result(job_id, session, summary)
 
     def rewatch(self, runner, row, short):
         try:

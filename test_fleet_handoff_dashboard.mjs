@@ -42,10 +42,10 @@ try{
  assert.equal(await c.locator('[data-fleet-handoff]').count(),1);  // no second, generic Hand off
  await primary.first().click();
  const form=page.locator('.fleet-handoff-form');await form.waitFor();
- assert.equal(await form.locator('textarea').inputValue(),TEXT);
+ assert.equal(await form.locator('textarea[name=task]').inputValue(),TEXT);
  await form.locator('button.primary').click();
  await page.waitForTimeout(300);
- assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'k',title:'Export leaks rows',summary:TEXT,contact:''}});
+ assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'k',title:'Export leaks rows',summary:TEXT,contact:'',sources:[]}});
  // Handed off: under Later, saying to whom, with nothing to send again.
  await page.locator('#later-list>summary').click();
  const later=page.locator('#later-list #task-c1');await later.waitFor();

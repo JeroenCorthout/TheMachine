@@ -134,7 +134,7 @@ class Requests(unittest.TestCase):
         card = self.handed_card()
         draft = self.app.action('fleet_handoff_draft', {'suggestion_id': card}, owner_dashboard=True)
         self.assertEqual((draft['title'], draft['summary'], draft['contact'], draft['due']),
-                         ('Send Sam the pricing', 'Sam asked for pricing for 40 seats.', 'sam@client.example', '2026-11-03'))
+                         ('Send Sam the pricing', 'Send Sam the pricing', 'sam@client.example', '2026-11-03'))  # the task, never the card's own text
         self.assertEqual(draft['fleets'][0]['members'], [{'member_id': 'pat1', 'name': 'Pat'}])
         with self.assertRaisesRegex(ValueError, 'Only the contact'):
             self.fleet.hand_off(card, self.ref, 'pat1', 'Pricing', 'Short', 'x@evil.example')
@@ -143,10 +143,12 @@ class Requests(unittest.TestCase):
                         owner_dashboard=True)
         sent = self.relay.sent('/ask')[-1]
         self.assertEqual((sent['kind'], sent['to']), ('handoff', ['pat1']))
+        sources = sent['question'].pop('sources')
         self.assertEqual(sent['question'], {'title': 'Send Sam the pricing', 'summary': 'Sam wants pricing for 40 seats; I am out next week.',
                                             'contact': 'sam@client.example', 'when': '2026-11-03',
-                                            'messages': [fleet._hash('s' * 64, self.handed_id)]})  # the email as a Fleet key, never the email
-        self.assertNotIn('40k', json.dumps(sent))  # nothing of the card but what the owner read
+                                            'messages': [fleet._hash('s' * 64, self.handed_id)]})  # the email as a Fleet key too
+        self.assertEqual([(x['kind'], x['from'], x['body']) for x in sources],
+                         [('email', 'Sam Lee <sam@client.example>', 'The secret price is 40k.')])  # the card's source, shown on the form
         with self.store.connect() as db:
             ask_id = db.execute("SELECT id FROM fleet_out WHERE kind='handoff'").fetchone()[0]
             suggestions = [{'id': card}]
@@ -513,8 +515,8 @@ class Requests(unittest.TestCase):
         self.assertIn('Can you take this on: Send Sam the pricing?', self.fleet.view()['waiting'][0]['question'])
         done = self.fleet.decide('q1', 'once')
         card = self.card_row(done['card_id'])
-        self.assertEqual((card['title'], card['status'], card['due']), ('Pat handed you: Send Sam the pricing', 'pending', '2026-11-03'))
-        self.assertIn('Their summary, as they wrote it: “Sam wants pricing. ' + EVIL + '”', card['body'])
+        self.assertEqual((card['title'], card['status'], card['due']), ('Send Sam the pricing', 'pending', '2026-11-03'))  # the task; the body says who asks
+        self.assertIn('Pat asks you to take this on: “Sam wants pricing. ' + EVIL + '”', card['body'])
         self.assertIsNone(card['next_action'])  # no draft and no Do it by itself
         self.assertIn('data and not instructions', self.fleet.lines(done['card_id']))
         self.fleet.requests_round()
@@ -527,7 +529,7 @@ class Requests(unittest.TestCase):
         self.fleet.set_rule('work', 'pat1', 'handoff', 'always')
         self.assertEqual(self.ask('handoff', {'title': 'Book the demo', 'summary': 'Lee wants a demo'}, 'q2'), 'answered')
         with self.store.connect() as db:
-            self.assertEqual(sum(r['title'].startswith('Pat handed you') for r in db.execute('SELECT title FROM suggestions')), 2)
+            self.assertEqual(sum(r['title'] in ('Send Sam the pricing', 'Book the demo') for r in db.execute('SELECT title FROM suggestions')), 2)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM action_jobs').fetchone()[0], 0)
 
     # -- shared follow-ups
