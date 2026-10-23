@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS person_profiles(identifier TEXT PRIMARY KEY,status TE
 CREATE TABLE IF NOT EXISTS person_photos(identifier TEXT PRIMARY KEY,key TEXT NOT NULL UNIQUE,type TEXT NOT NULL,data BLOB NOT NULL,saved_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS person_photo_tries(identifier TEXT PRIMARY KEY,tried_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS contact_photo_links(identifier TEXT PRIMARY KEY,url TEXT NOT NULL,chosen INTEGER NOT NULL,source TEXT NOT NULL,seen_at TEXT NOT NULL,tried_at TEXT);
+CREATE TABLE IF NOT EXISTS person_facts(identifier TEXT NOT NULL,field TEXT NOT NULL,value TEXT NOT NULL,rank INTEGER NOT NULL,source TEXT NOT NULL,seen_at TEXT NOT NULL,PRIMARY KEY(identifier,field));
 CREATE TABLE IF NOT EXISTS enrich_prefs(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS forgotten_people(digest TEXT PRIMARY KEY,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS forgotten_salt(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT NOT NULL);
@@ -898,6 +899,7 @@ def _build(db, config, now):
     wrong = {r[0] for r in db.execute("SELECT domain FROM org_profiles WHERE status='wrong'")}
     looked_up = {r['identifier']: r['profile'] for r in db.execute("SELECT identifier,profile FROM person_profiles WHERE status='found' AND profile IS NOT NULL")}
     photos = {r['identifier']: r['key'] for r in db.execute('SELECT identifier,key FROM person_photos')}
+    facts = enrichment.people_facts(db)  # what connectors read about them (job title, place, links, time zone)
     edits = {r['domain']: json.loads(r['fields']) for r in db.execute('SELECT domain,fields FROM org_edits')}
     stated_rows = {r['identifier']: dict(r) for r in db.execute('SELECT * FROM person_orgs')}
     stated = {}  # person node -> the statement of where they work, when no work address says it
@@ -940,6 +942,7 @@ def _build(db, config, now):
         person_profile = next((json.loads(looked_up[i]) for i in group if i in looked_up), None)
         # Only a photo saved on this Machine shows (served by the dashboard), never the service's own link.
         person_profile = {k: v for k, v in (person_profile or {}).items() if k not in ('photo', 'photo_gone')}
+        person_profile = enrichment.with_facts(person_profile, [facts[i] for i in group if i in facts])
         photo_key = next((photos[i] for i in group if i in photos), None)
         if photo_key:
             person_profile['photo'] = 'api/person-photo?p=' + photo_key
@@ -960,7 +963,7 @@ def _build(db, config, now):
     # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
     def org_name(domain):
         return (named.get('org:' + domain) or crm_names.get(domain) or paying_names.get(domain)
-                or ({**(profiles.get(domain) or {}), **edits.get(domain, {})}).get('name') or domain)
+                or ({**(profiles.get(domain) or {}), **edits.get(domain, {})}).get('name') or enrichment.readable_name(domain))
     by_org_name = {}
     for domain in sorted(members):
         by_org_name.setdefault(folded_words(org_name(domain)), domain)
@@ -1018,7 +1021,8 @@ def _build(db, config, now):
     for domain, people in members.items():
         total = sum(v for _, v in people)
         role, role_by = said.get('org:' + domain, (None, None))
-        profile = {**(profiles.get(domain) or {}), **edits.get(domain, {})} or None  # what the owner wrote wins
+        # What the owner wrote wins; the email domain is the website when nothing else says one.
+        profile = {'website': enrichment.website(domain), **(profiles.get(domain) or {}), **edits.get(domain, {})}
         nodes.append(('org:' + domain, 'org', org_name(domain)[:200], round(total, 4),
                       max((last_day[p].isoformat() for p, _ in people if p in last_day), default=None), len(people), None, 0, None,
                       json.dumps({'domain': domain, 'role': role, 'role_by': role_by, 'paying': domain in paying_names, 'profile': profile,
@@ -1348,6 +1352,9 @@ def detail(db, node_id, events=12):
         view.update(role_quote=said['quote'], role_event_id=said['event_id'], role_set_at=said['created_at'][:10])
     if row['kind'] == 'person':
         view['headline'] = headline(db, node_id) if json.loads(row['info'] or '{}').get('has_headline') else None
+        own = enrichment.view_facts(db, json.loads(row['info'] or '{}').get('identifiers') or [node_id])  # their own words
+        view['headline'] = view['headline'] or (own.get('headline') or {}).get('text')
+        view['bio'] = own.get('bio')
         if view.get('org'):
             org = db.execute('SELECT name FROM graph_nodes WHERE id=?', (view['org'],)).fetchone()
             view['org_name'] = org['name'] if org else None
@@ -2374,7 +2381,7 @@ def delete_person(db, node_id, config, now):
     db.execute(f'DELETE FROM graph_relations WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
     for table in ('graph_names',):
         db.execute(f'DELETE FROM {table} WHERE node_id IN ({marks})', ids)
-    for table in ('identity_names', 'person_roles', 'person_orgs', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'person_photos', 'person_photo_tries', 'contact_photo_links', 'role_corrections'):
+    for table in ('identity_names', 'person_roles', 'person_orgs', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'person_photos', 'person_photo_tries', 'contact_photo_links', 'person_facts', 'role_corrections'):
         if _table(db, table):
             db.execute(f'DELETE FROM {table} WHERE identifier IN ({marks})', ids)
     if emails:

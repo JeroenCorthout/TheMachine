@@ -84,7 +84,7 @@ class Graph(unittest.TestCase):
         with self.store.connect() as db:
             people = {r['id'] for r in db.execute("SELECT id FROM graph_nodes WHERE kind='person'")}
         self.assertEqual(people, {'email:ann@client.com'})
-        self.assertEqual(self.node('org:client.com')['name'], 'client.com')
+        self.assertEqual(self.node('org:client.com')['name'], 'Client')  # a readable name from the domain until a lookup
 
     def test_owner_messages_weigh_more_a_burst_is_one_day_and_it_fades(self):
         self.add(*[chat(1, '00000000001', 'Bea Burst', hour=h) for h in range(10)],
@@ -512,7 +512,7 @@ class Graph(unittest.TestCase):
         self.app.graph_action({'node_id': 'org:client.com', 'role': 'customer', 'event_id': pat_id, 'quote': 'look after the renewal'})
         self.assertEqual(self.node('org:client.com')['role'], 'customer')
         with self.store.connect() as db:
-            self.assertIn('- Kim (kim@client.com): no role yet; at client.com (customer); ', graph.context_lines(db, [kim_id]))
+            self.assertIn('- Kim (kim@client.com): no role yet; at Client (customer); ', graph.context_lines(db, [kim_id]))
         # How two people are related, as a link both ways; the owner's word stays and the owner can remove it.
         self.app.graph_action({'node_id': 'email:ann@client.com', 'related_to': 'email:kim@client.com', 'relation': 'assistant of'})
         self.assertEqual([(r['a_name'], r['relation'], r['b_name']) for r in self.node('email:kim@client.com')['relations']], [('Ann Assist', 'assistant of', 'Kim')])
@@ -679,10 +679,10 @@ class StatedOrganisations(unittest.TestCase):
         self.app.graph_action({'node_id': node, 'org': 'Globex', 'event_id': later, 'quote': 'Engineering at Globex'})
         found = self.app.graph_action({'node_id': node})
         self.assertEqual((found['org'], found['org_name'], found['org_by'], found['org_via'], found['org_at'], found['org_event_id']),
-                         ('org:globex.ai', 'globex.ai', 'review', 'LinkedIn headline', at(5), later))
+                         ('org:globex.ai', 'Globex', 'review', 'LinkedIn headline', at(5), later))
         self.assertIn(('li:c-robin', 'member'), [(l['id'], l['link']) for l in self.app.graph_action({'node_id': 'org:globex.ai'})['links']])
         with self.store.connect() as db:
-            self.assertIn('at globex.ai', graph.context_lines(db, [later]))
+            self.assertIn('at Globex', graph.context_lines(db, [later]))
         self.assertNotIn('Where they work', self.store.role_text('run3', limit=10))
 
     def test_an_organisation_only_a_source_states_stands_on_its_own_and_is_never_looked_up(self):
@@ -818,7 +818,7 @@ class Boards(unittest.TestCase):
             item, = board['projects']
             self.assertEqual((item['id'], item['stage'], item['first'], item['days']), (node, 'Contacted', True, 9))
             self.assertEqual(item['no_reply_days'], 1)  # counted from the owner's first message after Ann's answer
-            self.assertEqual(item['org']['name'], 'partner.example')
+            self.assertEqual(item['org']['name'], 'Partner')
             self.assertEqual(item['card']['id'], card['id'])
             self.assertEqual(graph.boards_brief(db)[0]['board'], 'Listings')
             # A project on a board keeps its node in the graph

@@ -95,7 +95,16 @@ async () => {
     for (const m of (t.extended_entities || t.entities || {}).media || []) if (m.url) text = text.split(m.url).join('').trim() + ' [' + (m.type || 'media') + ']';
     return text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
   };
-  const out = {account: {id: target.id, screen_name: target.screen_name}, mentions: [], dms: [], state: {...(P.state || {})}};
+  const out = {account: {id: target.id, screen_name: target.screen_name}, mentions: [], dms: [], profiles: {}, state: {...(P.state || {})}};
+  // What their profile says, from the user objects these answers carry anyway (no extra request): bio, place, website, photo.
+  const keep = (id, u) => {
+    if (!id || id === target.id || !u || out.profiles[id]) return;
+    let bio = u.description || '';
+    for (const x of ((u.entities || {}).description || {}).urls || []) if (x.url && x.expanded_url) bio = bio.split(x.url).join(x.expanded_url);
+    out.profiles[id] = {screen_name: u.screen_name || '', bio, location: u.location || '',
+      website: ((((u.entities || {}).url || {}).urls || []).map(x => x.expanded_url).find(Boolean)) || '',
+      photo: u.default_profile_image ? '' : (u.profile_image_url_https || '')};
+  };
   try {
     await switchTo(target.id);
     // Mentions and replies: the Notifications → Mentions tab. Reading doesn't mark them seen.
@@ -115,6 +124,7 @@ async () => {
         if (at < sinceMs) continue;
         if (newer(t.id_str, top)) top = t.id_str;
         const u = users[t.user_id_str] || {}, parent = t.in_reply_to_status_id_str && tweets[t.in_reply_to_status_id_str];
+        keep(t.user_id_str, users[t.user_id_str]);
         out.mentions.push({id: t.id_str, at, text: expand(t), lang: t.lang, conversation_id: t.conversation_id_str,
           author: {id: t.user_id_str, name: u.name || '', screen_name: u.screen_name || '', followers: u.followers_count || 0, verified: !!(u.verified || u.ext_is_blue_verified)},
           reply_to: t.in_reply_to_status_id_str ? {id: t.in_reply_to_status_id_str, screen_name: t.in_reply_to_screen_name || '', to_account: t.in_reply_to_user_id_str === target.id,
@@ -142,6 +152,7 @@ async () => {
       if (!m || +m.time < P.since) continue;
       const c = convs[e.message.conversation_id] || {};
       const others = (c.participants || []).map(p => p.user_id).filter(id => id !== target.id);
+      if (c.type !== 'GROUP_DM') others.forEach(id => keep(id, dmUsers[id]));
       out.dms.push({id: m.id, at: +m.time, conversation_id: e.message.conversation_id, from_me: m.sender_id === target.id, from: person(m.sender_id),
         with: c.name || others.map(id => person(id).name || '@' + person(id).screen_name).join(', ') || person(m.sender_id === target.id ? m.recipient_id : m.sender_id).name,
         group: c.type === 'GROUP_DM', request: c.trusted === false, text: expand(m) + (m.attachment ? (m.text ? ' ' : '') + '[attachment]' : '')});
