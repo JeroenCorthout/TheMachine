@@ -1414,6 +1414,19 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 .cal-note{margin:4px 0 0;color:var(--c-text-3);font-size:var(--fs-sm)}.cal-note a{color:var(--c-text-2)}
 .cal-clear{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:8px;padding:40px 16px 24px;text-align:center}.cal-clear img{width:64px;height:64px;object-fit:contain}.cal-clear strong{display:block;margin-top:6px;font:var(--fw-heading) var(--fs-xl)/1.25 var(--serif);color:var(--text)}.cal-clear span{display:block;color:var(--c-text-3);font-size:var(--fs-sm)}
 .cal-mode{display:none}
+/* The Calendar's header stays on top while the days scroll: Today (quiet when this week is on show), ‹ ›, the week */
+body:has(#calendar:not([hidden])) #page-head{position:sticky;top:0;z-index:30;margin:-10px -10px 18px;padding:10px;background:var(--bg)}
+@media(max-width:1023px){body:has(#calendar:not([hidden])) #page-head{top:calc(52px + env(safe-area-inset-top))}}
+.cal-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;min-width:0}
+.cal-nav{display:flex;align-items:center;gap:2px;min-width:0}
+.cal-nav button{min-height:34px;margin:0;padding:0 14px;border:1px solid var(--c-line);border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--text);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer}
+@media(hover:hover){.cal-nav button:hover{background:var(--c-hover)}}
+.cal-nav .cal-today{margin-right:6px}.cal-nav .cal-today.now{border-color:transparent;color:var(--c-text-3)}
+.cal-nav .cal-step{width:34px;padding:0 0 3px;border-color:transparent;border-radius:50%;color:var(--c-text-2);font-size:22px}
+.cal-range{margin-left:8px;color:var(--text);font:var(--fw-medium) var(--fs-md)/1.2 var(--sans);white-space:nowrap}
+.cal-block.cal-empty{margin-bottom:14px}.cal-empty .cal-day{margin:0}.cal-none{margin-left:auto;color:var(--c-text-3);font:400 var(--fs-sm)/1 var(--sans)}
+.cal-wk{margin:4px 0 14px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans);letter-spacing:.04em;text-transform:uppercase}
+.cal-more{display:flex;justify-content:center;margin:-8px 0 12px}.cal-more button{min-height:34px;color:var(--c-text-2)}
 @media(max-width:560px){.cal-item{grid-template-columns:50px 8px minmax(0,1fr) auto;column-gap:10px}.cal-end .chip{display:none}.cal-prep{display:inline;color:var(--c-text-2)}}
 @media(min-width:1024px){
   .cal-mode{display:inline-flex;align-self:center;margin-left:auto;padding:3px;gap:2px;border-radius:var(--r-sm);background:var(--c-sunken)}
@@ -3187,35 +3200,53 @@ $('#graph-sub').addEventListener('click',e=>{const a=e.target.closest('a[data-gr
 // The counts come with the Graph; fetch it once at the start so the rows show them before it is opened
 setTimeout(()=>{if(!graphCounts)request('api/graph').then(g=>graphCountsSet(g?.counts)).catch(()=>{})},1500);
 
-// Calendar: the next seven days as an agenda (Today, Tomorrow, then each day), and on a computer also as a week grid.
-// It holds the meetings from the connected calendars, each with its card if one is about it, cards due or coming back
-// that day, handoff check-ins and promises with a date. Read-only: viewing sends or changes nothing. A row opens its
-// card's chat, the Promises list, or the meeting in its own calendar.
-const CAL_DAYS=7;let calMeetings=null,calFetched=0,calFailed=false,calFetching=null,calReturn=false;
+// Calendar: an agenda that runs on through the days (later ones load as you scroll down, earlier ones as you scroll up
+// or tap Earlier days), and on a computer also the calendar week, Monday to Sunday, as seven columns. It holds the
+// meetings from the connected calendars, each with its card if one is about it, cards due or coming back that day,
+// handoff check-ins and promises with a date. Read-only: viewing sends or changes nothing. A row opens its card's chat,
+// the promise's page, or the meeting in its own calendar. Meetings load one calendar week (Monday to Monday) per ask
+// and are kept for a minute. Today, ‹ › and the view switch stay on top; t, ← → (or k j), a and w do the same. The
+// address holds the view and its week (#calendar?view=week&date=2026-10-26), so back and forward work.
+const CAL_BACK=26,CAL_AHEAD=52;  // how many weeks the agenda runs back and ahead of this one
+let calWeeks=new Map(),calMeetings=null,calReturn=false,calRouting=false,calBusy=null,calMoreFailed={},calUp=false,calLastY=0;
 let calMode=sideStore.get('cal-mode')==='week'?'week':'agenda';
-const calDay=n=>{const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()+n);return d};
+const calMid=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x};
+const calAdd=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);x.setHours(0,0,0,0);return x};  // by calendar days, also over a clock change
+const calOf=k=>{const [y,m,d]=String(k).split('-').map(Number);return new Date(y,m-1,d)};
+const calMonday=d=>{const x=calMid(d);return calAdd(x,-((x.getDay()+6)%7))};
+const calDay=n=>calAdd(calMid(new Date()),n);
+let calAt=calMonday(new Date()),calFrom=calDay(0),calTo=calDay(7);  // the week on show (its Monday), and the agenda's days [from, to)
 const calWeek=()=>calMode==='week'&&DESK.matches;
-function calFetch(force){if(calFetching)return calFetching;if(!force&&calMeetings&&Date.now()-calFetched<60000)return Promise.resolve();
- const q='from='+encodeURIComponent(calDay(0).toISOString())+'&to='+encodeURIComponent(calDay(CAL_DAYS).toISOString());
- return calFetching=request('api/calendar?'+q).then(r=>{calMeetings=Array.isArray(r?.meetings)?r.meetings:[];calFailed=false;calFetched=Date.now()})
-  .catch(()=>{calFailed=true;calMeetings=calMeetings||[]}).finally(()=>{calFetching=null})}
+const calRange=()=>calWeek()?[calAt,calAdd(calAt,7)]:[calFrom,calTo];
+const calMondays=(from,to)=>{const out=[];for(let d=calMonday(from);d<to;d=calAdd(d,7))out.push(d);return out};
+function calFetchWeek(mon,force){const k=localDay(mon),w=calWeeks.get(k);if(w?.loading)return w.loading;
+ if(w&&!w.failed&&!force&&Date.now()-w.at<60000)return Promise.resolve();
+ const q='from='+encodeURIComponent(mon.toISOString())+'&to='+encodeURIComponent(calAdd(mon,7).toISOString());
+ const loading=request('api/calendar?'+q).then(r=>{calWeeks.set(k,{meetings:Array.isArray(r?.meetings)?r.meetings:[],failed:false,at:Date.now()})})
+  .catch(()=>{calWeeks.set(k,{meetings:w?.meetings||[],failed:true,at:Date.now()})}).finally(calUnion);
+ calWeeks.set(k,{meetings:w?.meetings||null,failed:!!w?.failed,at:w?.at||0,loading});return loading}
+// Every loaded week's meetings, each once (one that runs over a Monday comes in both weeks)
+function calUnion(){const seen=new Set(),all=[];let any=false;for(const w of calWeeks.values()){if(!w.meetings)continue;any=true;for(const m of w.meetings)if(!seen.has(m.id)){seen.add(m.id);all.push(m)}}calMeetings=any?all:null}
+const calFailedIn=(a,b)=>calMondays(a,b).some(d=>calWeeks.get(localDay(d))?.failed);
+function calFetch(force){const [a,b]=calRange(),weeks=[...calMondays(a,b)],now=calMonday(new Date());if(!weeks.some(d=>+d===+now))weeks.push(now);return Promise.all(weeks.map(d=>calFetchWeek(d,force)))}
 async function calendarView(force){calRender();await calFetch(force);calRender()}
-// Everything with a date this week, by local day ('overdue' for due dates already past)
-function calItems(){const days=[...Array(CAL_DAYS)].map((_,i)=>localDay(calDay(i))),week=new Set(days),today=days[0],now=Date.now(),out=[],seen=new Set();
+// Everything with a date in [from, to), by local day ('overdue' for due dates already past, when today is in it)
+function calItems(from=calDay(0),to=calDay(1)){const days=[];for(let d=calMid(from);d<to;d=calAdd(d,1))days.push(localDay(d));
+ const week=new Set(days),today=localDay(new Date()),withToday=week.has(today),now=Date.now(),out=[],seen=new Set();
  const open=(state.suggestions||[]).filter(s=>!closed(s)),cardFor=id=>open.find(s=>eventIds(s).map(Number).includes(Number(id)));
  // Someone else's event on a calendar shared with the owner shows, marked as theirs, and never carries a card
  for(const m of calMeetings||[]){const s=m.shared?null:cardFor(m.id),a=new Date(m.start),b0=new Date(m.end);if(isNaN(a))continue;const b=isNaN(b0)||b0<=a?new Date(a.getTime()+1):b0;
   // All day, or a day or more (a trip): on every day it covers, as All day with its dates, never as times
   if(m.all_day||b-a>=864e5){const first=localDay(a),last=localDay(new Date(b-1)),span=first!==last?[first,last]:null;
-   for(let i=0;i<CAL_DAYS;i++)if(a<calDay(i+1)&&b>calDay(i))out.push({day:days[i],kind:'meeting',allDay:true,at:0,m,s,span,promises:[]});if(s)seen.add(s.id);continue}
-  const day=localDay(a)<today?today:localDay(a);if(!week.has(day))continue;if(s)seen.add(s.id);
+   for(const k of days){const d=calOf(k);if(a<calAdd(d,1)&&b>d)out.push({day:k,kind:'meeting',allDay:true,at:0,m,s,span,promises:[]})}if(s)seen.add(s.id);continue}
+  let day=localDay(a);if(day<days[0]&&b>from)day=days[0];if(!week.has(day))continue;if(s)seen.add(s.id);  // one still going at the start shows on the first day
   out.push({day,kind:'meeting',at:a.getTime(),m,s,past:b.getTime()<now,promises:[]})}
  for(const s of open){if(seen.has(s.id))continue;
   if(s.status==='snoozed'&&s.snoozed_until){const d=new Date(s.snoozed_until),day=localDay(d);if(week.has(day))out.push({day,kind:s.handoff_wait?'checkin':'back',at:d.getTime(),s});continue}
-  if(s.due&&(s.due<today||week.has(s.due)))out.push({day:s.due<today?'overdue':s.due,kind:'due',at:-1,s})}
+  if(s.due&&(s.due<today?withToday:week.has(s.due)))out.push({day:s.due<today?'overdue':s.due,kind:'due',at:-1,s})}
  // One row per promise: said by both sides it is a plan made together, shown as the owner's ("With …"); one about a
  // meeting that day with the same person rides on that meeting's row
- const said=new Map();for(const p of state.promises||[]){if(p.state!=='open'||!p.due||!(p.due<today||week.has(p.due)))continue;
+ const said=new Map();for(const p of state.promises||[]){if(p.state!=='open'||!p.due||!(p.due<today?withToday:week.has(p.due)))continue;
   const k=[p.who,p.what].map(v=>calNorm(v).split(/\s+/).join(' ')).join('\n'),was=said.get(k);
   if(!was){said.set(k,{...p});continue}if(was.direction!==p.direction)was.together=true;if(p.direction==='mine')Object.assign(was,{...p,together:was.together||p.together})}
  for(const p of said.values()){const on=p.due>=today&&out.find(it=>it.kind==='meeting'&&!it.m.shared&&it.day===p.due&&calWith(p,it.m));
@@ -3246,33 +3277,91 @@ function calRow(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.hre
  return `<${tag} class="cal-item k-${x.tone}${it.past?' past':''}"${attrs}><span class="cal-time">${esc(x.time)}</span><span class="cal-dot" aria-hidden="true"></span><span class="cal-main"><span class="cal-title">${x.owner?`<span class="cal-owner">${esc(x.owner)}</span> `:''}${esc(x.title)}</span>${x.sub||x.prep?`<span class="cal-sub">${x.prep?`<span class="cal-prep">${esc(x.prep)}${x.sub?' · ':''}</span>`:''}${esc(x.sub)}</span>`:''}${(x.said||[]).map(t=>`<span class="cal-sub cal-said">${esc(t)}</span>`).join('')}</span><span class="cal-end">${x.badge||''}${x.url?'<span class="cal-go" aria-label="Opens in its calendar">↗</span>':x.href?'<span class="cal-go" aria-hidden="true">›</span>':''}</span></${tag}>`}
 function calChip(it){const x=calParts(it),tag=x.href||x.url?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:'';
  return `<${tag} class="cal-chip k-${x.tone}${it.past?' past':''}"${attrs} title="${esc([x.owner,x.title].filter(Boolean).join(' ')+(x.sub?' · '+x.sub:'')+(x.said||[]).map(t=>' · '+t).join(''))}"><span class="t">${esc(x.owner||x.time)}</span><span class="n">${esc(x.title)}</span></${tag}>`}
-const calName=(k,i)=>i===0?'Today':i===1?'Tomorrow':new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'long'});
-const calDate=k=>new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}).replace(/,/g,'');
-function calHead(){const a=calDay(0),b=calDay(CAL_DAYS-1),range=calDate(localDay(a))+' to '+calDate(localDay(b));
- return `<div><h2 class="page-title">Calendar</h2><p class="page-sub">${esc(range)}</p></div><div class="cal-mode" role="group" aria-label="View">${[['agenda','Agenda'],['week','Week']].map(([v,t])=>`<button type="button" data-cal-mode="${v}" aria-pressed="${calMode===v}">${t}</button>`).join('')}</div>`}
-function calRender(){const box=$('#calendar-view');if(!box||!state)return;const {days,items}=calItems(),byDay=k=>items.filter(i=>i.day===k),late=byDay('overdue'),week=calWeek();
+const calDate=k=>calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}).replace(/,/g,'');
+const calMon=d=>d.toLocaleDateString(CHAT_LOCALE,{month:'short'}).replace(/\.$/,'');
+// A calendar week as "26 Oct – 1 Nov 2026" (the year once, or on both sides when it changes)
+function calSpan(a){const b=calAdd(a,6);
+ return a.getFullYear()!==b.getFullYear()?`${a.getDate()} ${calMon(a)} ${a.getFullYear()} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`:
+  a.getMonth()!==b.getMonth()?`${a.getDate()} ${calMon(a)} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`:`${a.getDate()} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`}
+function calHead(){const now=+calAt===+calMonday(new Date());
+ return `<div class="cal-head"><h2 class="page-title">Calendar</h2><div class="cal-nav"><button type="button" class="cal-today${now?' now':''}" data-cal-go="0" title="Today (t)">Today</button>`+
+  `<button type="button" class="cal-step" data-cal-go="-1" aria-label="Previous week" title="Previous week (←)">‹</button><button type="button" class="cal-step" data-cal-go="1" aria-label="Next week" title="Next week (→)">›</button>`+
+  `<span class="cal-range">${esc(calSpan(calAt))}</span></div></div><div class="cal-mode" role="group" aria-label="View">${[['agenda','Agenda','a'],['week','Week','w']].map(([v,t,k])=>`<button type="button" data-cal-mode="${v}" aria-pressed="${calMode===v}" title="${t} (${k})">${t}</button>`).join('')}</div>`}
+const calHash=()=>'#calendar?view='+calMode+'&date='+localDay(calAt);
+function calPush(replace){const h=calHash();if(location.hash===h)return;history[replace?'replaceState':'pushState'](null,'',location.pathname+location.search+h)}
+const calName=k=>{const t=localDay(new Date());return k===t?'Today':k===localDay(calDay(1))?'Tomorrow':k===localDay(calDay(-1))?'Yesterday':calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'long'})};
+const calMoreRow=dir=>{const end=dir==='up'?calFrom<=calAdd(calMonday(new Date()),-7*CAL_BACK):calTo>=calAdd(calMonday(new Date()),7*CAL_AHEAD);if(end)return '';
+ return `<div class="cal-more" data-cal-more="${dir}"><button type="button" class="quiet">${calMoreFailed[dir]?'Couldn’t load. Try again':dir==='up'?'Earlier days':'Later days'}</button></div>`};
+// The sticky header's bottom edge: rows under it are out of sight
+const calEdge=()=>{const h=$('#page-head');return h&&!h.hidden?Math.max(0,h.getBoundingClientRect().bottom):0};
+function calAnchor(box){const edge=calEdge();for(const el of box.querySelectorAll('[data-day]')){const r=el.getBoundingClientRect();if(r.bottom>edge)return {day:el.dataset.day,top:r.top}}return null}
+function calRender(){const box=$('#calendar-view');if(!box||!state)return;const week=calWeek(),[from,to]=calRange(),{days,items}=calItems(from,to),byDay=k=>items.filter(i=>i.day===k),late=byDay('overdue'),today=localDay(new Date());
  $('#calendar').classList.toggle('week',week);
- const cals=(state.connectors||[]).some(c=>['calendar','outlook_calendar'].includes(c.service));
- const note=calFailed?'<p class="cal-note">Meetings couldn’t load. Cards and promises are here.</p>':!cals?'<p class="cal-note">No calendar connected, so no meetings yet. <a href="#connections">Connections</a></p>':'';
+ const cals=(state.connectors||[]).some(c=>['calendar','outlook_calendar'].includes(c.service)),failed=calFailedIn(from,to);
+ const note=failed?'<p class="cal-note">Meetings couldn’t load. Cards and promises are here.</p>':!cals?'<p class="cal-note">No calendar connected, so no meetings yet. <a href="#connections">Connections</a></p>':'';
+ const lateBlock=late.length?`<section class="cal-block late" aria-label="Overdue"><h3 class="cal-day"><span>Overdue</span><span class="count">${late.length}</span></h3>${late.map(calRow).join('')}</section>`:'';
  let html='';
- if(!items.length&&calMeetings)html=`<div class="all-clear cal-clear"><img src="brand/avatar.png" alt="" width="64" height="64"><div><strong>A clear week</strong><span>Meetings, due cards and promises show here.</span></div></div>`;
- else if(week){html=(late.length?`<section class="cal-block late" aria-label="Overdue"><h3 class="cal-day"><span>Overdue</span><span class="count">${late.length}</span></h3>${late.map(calRow).join('')}</section>`:'')+
-  `<div class="cal-week">${days.map((k,i)=>{const d=new Date(k+'T12:00'),list=byDay(k);return `<div class="cal-col${i===0?' today':''}"><div class="cal-col-head"><span>${i===0?'Today':esc(d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}).replace(/[,.]/g,''))}</span><b>${d.getDate()}</b></div>${list.map(calChip).join('')||'<span class="cal-free">Free</span>'}</div>`}).join('')}</div>`}
- else html=(late.length?[['overdue','Overdue','']]:[]).concat(days.map((k,i)=>[k,calName(k,i),calDate(k)])).map(([k,name,date])=>{const list=byDay(k);
-  return `<section class="cal-block${k==='overdue'?' late':''}" aria-label="${esc(name)}"><h3 class="cal-day"><span>${esc(name)}</span>${date&&name!==date?`<small>${esc(k===days[0]||k===days[1]?date:date.replace(/^\S+\s/,''))}</small>`:''}${list.length?`<span class="count">${list.length}</span>`:''}</h3>${list.map(calRow).join('')||'<p class="cal-free">Nothing planned</p>'}</section>`}).join('');
- html+=note;if(!calMeetings&&!items.length)html='<p class="cal-note">Loading…</p>';if(box.innerHTML!==html)box.innerHTML=html;
+ if(week)html=lateBlock+`<div class="cal-week">${days.map(k=>{const d=calOf(k),list=byDay(k),on=k===today;return `<div class="cal-col${on?' today':''}${k<today?' gone':''}" data-day="${k}"><div class="cal-col-head"><span>${on?'Today':esc(d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}).replace(/[,.]/g,''))}</span><b>${d.getDate()}</b></div>${list.map(calChip).join('')||'<span class="cal-free">Free</span>'}</div>`}).join('')}</div>`;
+ else if(!items.length&&calMeetings&&!failed)html=`<div class="all-clear cal-clear"><img src="brand/avatar.png" alt="" width="64" height="64"><div><strong>A clear week</strong><span>Meetings, due cards and promises show here.</span></div></div>`+calMoreRow('down');
+ else html=calMoreRow('up')+days.map((k,i)=>{const list=byDay(k),name=calName(k),date=calDate(k),mark=i&&calOf(k).getDay()===1?`<p class="cal-wk">${esc(calSpan(calOf(k)))}</p>`:'';
+  return mark+(k===today?lateBlock:'')+`<section class="cal-block${list.length?'':' cal-empty'}" data-day="${k}" aria-label="${esc(name+' '+date)}"><h3 class="cal-day"><span>${esc(name)}</span><small>${esc(/^(Today|Tomorrow|Yesterday)$/.test(name)?date:date.replace(/^\S+\s/,''))}</small>${list.length?`<span class="count">${list.length}</span>`:'<span class="cal-none">Nothing planned</span>'}</h3>${list.map(calRow).join('')}</section>`}).join('')+calMoreRow('down');
+ html+=note;if(!calMeetings&&!items.length)html='<p class="cal-note">Loading…</p>';
+ // Earlier days coming in above, or a week's meetings arriving, never move what is on screen
+ const keep=!week&&!$('#calendar').hidden?calAnchor(box):null;
+ if(box.innerHTML!==html){box.innerHTML=html;if(keep){const el=box.querySelector(`[data-day="${keep.day}"]`),d=el?el.getBoundingClientRect().top-keep.top:0;if(Math.abs(d)>.5)scrollBy(0,d)}calObserve(box)}
  calBadge();pageHead()}
 // The row's count: what is on today, also before the Calendar is opened (its meetings come once, a moment after the start)
-function calBadge(){if(!state)return;const {days,items}=calItems(),n=items.filter(i=>i.day===days[0]).length,b=$('#badge-calendar');if(b&&b.textContent!==(n?String(n):''))b.textContent=n?String(n):''}
+function calBadge(){if(!state)return;const {items}=calItems(),n=items.filter(i=>i.day===localDay(new Date())).length,b=$('#badge-calendar');if(b&&b.textContent!==(n?String(n):''))b.textContent=n?String(n):''}
 setTimeout(()=>calFetch().then(calBadge),2000);
-// A row opens its card's chat (back returns here), the Promises list, or the meeting in a new tab; the view toggle is
-// remembered on this device.
-$('#calendar').addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;const href=a.getAttribute('href');e.preventDefault();
+// More days: a week at a time, below as you near the end, above as you scroll up to the top; a tap does it too, and
+// is the way back when a week couldn't load
+async function calMore(dir){if(calBusy)return calBusy;const up=dir==='up',a=up?calMonday(calAdd(calFrom,-1)):calTo,b=up?calFrom:calAdd(calMonday(calTo),7);  // up to a Monday, on to the next
+ if(!calMoreRow(dir))return;const btn=$(`#calendar-view [data-cal-more="${dir}"] button`);if(btn){btn.disabled=true;btn.textContent='Loading…'}
+ calBusy=(async()=>{await Promise.all(calMondays(a,b).map(d=>calFetchWeek(d)));calMoreFailed[dir]=calFailedIn(a,b);if(!calMoreFailed[dir]){if(up)calFrom=a;else calTo=b}calRender()})().finally(()=>{calBusy=null});return calBusy}
+const calIO=window.IntersectionObserver?new IntersectionObserver(es=>{for(const e of es){const dir=e.target.dataset.calMore;if(!e.isIntersecting||calMoreFailed[dir]||dir==='up'&&!calUp)continue;calMore(dir)}},{rootMargin:'300px 0px'}):null;
+function calObserve(box){if(!calIO)return;calIO.disconnect();box.querySelectorAll('[data-cal-more]').forEach(el=>calIO.observe(el))}
+const calUpSeen=()=>{const el=$('#calendar-view [data-cal-more="up"]');return el&&el.getBoundingClientRect().bottom>-300};
+// Which way the agenda moves, and its week in the header and the address as it scrolls
+let calScrollTick=0,calUrlTimer=0;
+addEventListener('scroll',()=>{if($('#calendar').hidden||calScrollTick)return;calScrollTick=requestAnimationFrame(()=>{calScrollTick=0;const y=scrollY;calUp=y<calLastY;calLastY=y;if(calWeek())return;
+ const top=calAnchor($('#calendar-view'));if(!top)return;const mon=calMonday(calOf(top.day));if(+mon===+calAt)return;calAt=mon;pageHead();clearTimeout(calUrlTimer);calUrlTimer=setTimeout(()=>{if(!$('#calendar').hidden)calPush(true)},300)})},{passive:true});
+// At the very top a page can't scroll up, so a wheel or a pull down there asks for earlier days
+let calTouchY=null;
+addEventListener('wheel',e=>{if(e.deltaY<0&&!$('#calendar').hidden&&!calWeek()&&calUpSeen()){calUp=true;calMore('up')}},{passive:true});
+addEventListener('touchstart',e=>{calTouchY=e.touches[0]?.clientY??null},{passive:true});
+addEventListener('touchmove',e=>{if(calTouchY==null||$('#calendar').hidden||calWeek())return;if(e.touches[0].clientY-calTouchY>40&&calUpSeen()){calTouchY=null;calUp=true;calMore('up')}},{passive:true});
+// Bring a day to the top of the agenda, under the header (Today brings Overdue along when there is one)
+function calScrollTo(day){const k=localDay(day),box=$('#calendar-view');let el=box.querySelector(`[data-day="${k}"]`);if(!el)return;
+ if(k===localDay(new Date())){const prev=el.previousElementSibling;if(prev?.classList.contains('late'))el=prev}
+ const h=$('#page-head'),off=h&&!h.hidden?h.offsetHeight+(parseFloat(getComputedStyle(h).top)||0):0;calLastY=Math.max(0,scrollY+el.getBoundingClientRect().top-off-8);calUp=false;scrollTo({top:calLastY})}
+// Show a week: Week draws it; the agenda keeps its days when the week is next to them, or starts again from it
+async function calShow(mon,push=true){calAt=mon;if(push!==null)calPush(!push);const thisWeek=+mon===+calMonday(new Date()),day=thisWeek?calDay(0):mon;
+ if(!calWeek()){const end=calAdd(mon,7);if(day<calAdd(calFrom,-7)||mon>calTo){calFrom=day;calTo=calAdd(day,7)}else{if(day<calFrom)calFrom=day;if(end>calTo)calTo=end}calMoreFailed={}}
+ calRender();await calFetch();calRender();if(!calWeek())calScrollTo(day)}
+const calGo=n=>calShow(n?calAdd(calAt,7*n):calMonday(new Date()));
+function calSetMode(v){if(calMode===v)return;calMode=v;sideStore.set('cal-mode',v);calShow(calAt)}
+// Back and forward, and a shared link: #calendar?view=week&date=2026-10-26
+function calRoute(){const m=/^#calendar\?(.*)$/.exec(location.hash);if(!m)return;const q=new URLSearchParams(m[1]),v=q.get('view'),k=q.get('date')||'';
+ const d=/^\d{4}-\d{2}-\d{2}$/.test(k)?calOf(k):null,mon=d&&!isNaN(d)?calMonday(d):calMonday(new Date());if(v==='week'||v==='agenda')calMode=v;
+ if($('#calendar').hidden){calRouting=true;try{showTab('calendar')}finally{calRouting=false}}
+ else if(+mon===+calAt&&$('#calendar').classList.contains('week')===calWeek())return;
+ calShow(mon,null)}
+addEventListener('popstate',calRoute);addEventListener('hashchange',calRoute);setTimeout(calRoute);
+// Keys on a computer, in one small map: t Today, ← → or k j a week, a Agenda, w Week
+const CAL_KEYS={t:()=>calGo(0),arrowleft:()=>calGo(-1),k:()=>calGo(-1),arrowright:()=>calGo(1),j:()=>calGo(1),a:()=>calSetMode('agenda'),w:()=>calSetMode('week')};
+addEventListener('keydown',e=>{if($('#calendar').hidden||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||e.defaultPrevented||drawerIs()||document.querySelector('dialog[open]')||e.target.closest?.('textarea,input,select,[contenteditable]'))return;
+ const f=CAL_KEYS[e.key.toLowerCase()];if(f){e.preventDefault();f()}});
+// A row opens its card's chat (back returns here), the promise's page, or the meeting in a new tab; the view is
+// remembered on this device, and the Calendar always opens on this week
+$('#calendar').addEventListener('click',e=>{const more=e.target.closest('[data-cal-more] button');if(more){const dir=more.parentElement.dataset.calMore;calMoreFailed[dir]=false;calUp=dir==='up';calMore(dir);return}
+ const a=e.target.closest('a[href^="#"]');if(!a||e.ctrlKey||e.metaKey||e.shiftKey)return;const href=a.getAttribute('href');e.preventDefault();
  if(href.startsWith('#chat=')){calReturn=true;chatGo(href.slice(6));return}
- if(href.startsWith('#promise/')){if(location.hash!=='#calendar')history.replaceState(null,'',location.pathname+location.search+'#calendar');location.hash=href;return} // Back returns to the Calendar
+ if(href.startsWith('#promise/')){calPush(true);location.hash=href;return}  // back returns to this week of the Calendar
  if(href==='#connections')showTab('health')});
-$('#page-head').addEventListener('click',e=>{const b=e.target.closest('[data-cal-mode]');if(!b)return;calMode=b.dataset.calMode;sideStore.set('cal-mode',calMode);calRender()});
-$('nav').addEventListener('click',e=>{if(e.target.closest('button')?.dataset.tab==='calendar')calendarView(true)});
+$('#page-head').addEventListener('click',e=>{const b=e.target.closest('[data-cal-mode],[data-cal-go]');if(!b)return;if(b.dataset.calMode)calSetMode(b.dataset.calMode);else calGo(Number(b.dataset.calGo))});
+$('nav').addEventListener('click',e=>{const t=e.target.closest('button')?.dataset.tab;
+ if(t==='calendar'){if(!calRouting&&(e.isTrusted||!/^#calendar\?/.test(location.hash))){calAt=calMonday(new Date());calFrom=calDay(0);calTo=calDay(7);calMoreFailed={};calUp=false;calPush(true);scrollTo({top:0})}calendarView(true)}
+ else if(t&&/^#calendar\?/.test(location.hash))history.replaceState(null,'',location.pathname+location.search)});
 DESK.addEventListener?.('change',()=>{if(!$('#calendar').hidden)calRender()});
 addEventListener('hashchange',()=>{if(calReturn&&!/^#chat=/.test(location.hash)&&!chatId){calReturn=false;showTab('calendar')}});
 // A title over the main area on a computer: the tagline on Suggestions, else the tab's name
