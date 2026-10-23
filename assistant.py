@@ -2927,6 +2927,33 @@ class Store:
                 row['metadata']['app_name'] = android_app_name(row['metadata'].get('package_name', 'Unknown app'))
         return rows
 
+    def calendar(self, account_ids, start, end):
+        """Meetings that overlap [start, end), for the dashboard's Calendar: read-only, slim rows, soonest first."""
+        start, end = (dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')) for v in (start, end))
+        if start.tzinfo is None or end.tzinfo is None or not dt.timedelta(0) < end - start <= dt.timedelta(days=15):
+            raise ValueError('Use a window of at most 15 days, with time zones')
+        start, end = start.astimezone(dt.timezone.utc).isoformat(), end.astimezone(dt.timezone.utc).isoformat()
+        if not account_ids:
+            return []
+        with self.connect() as db:
+            rows = db.execute("SELECT id,account_id,title,occurred_at,metadata FROM events WHERE kind='calendar.event' AND deleted=0 "
+                              'AND account_id IN (' + ','.join('?' for _ in account_ids) + ') AND occurred_at<? '
+                              "AND coalesce(json_extract(metadata,'$.end_at'),occurred_at)>? ORDER BY occurred_at,id LIMIT 300",
+                              (*account_ids, end, start)).fetchall()
+        result = []
+        for r in rows:
+            m = json.loads(r['metadata'])
+            attendees = [a for a in m.get('attendees') or [] if isinstance(a, dict)]
+            me = next((a for a in attendees if a.get('self')), {})
+            if me.get('responseStatus') == 'declined':
+                continue  # a meeting the owner said no to isn't on their day
+            url = m.get('source_url')
+            result.append({'id': r['id'], 'account_id': r['account_id'], 'title': str(r['title'])[:300], 'start': r['occurred_at'],
+                           'end': m.get('end_at') or r['occurred_at'], 'all_day': bool(m.get('all_day')),
+                           'location': str(m.get('location') or '')[:200], 'guests': sum(1 for a in attendees if not a.get('self')),
+                           'url': url if isinstance(url, str) and urllib.parse.urlsplit(url).scheme == 'https' else None})
+        return result
+
     def review_context(self, owner_session, owner_run=None):
         # No source content here: this is a small durable recovery hint, not recall.
         with self.connect() as db:
@@ -13184,6 +13211,13 @@ class App:
                         self.output(200, app.action('events', {'account_ids': args.get('account', []), 'query': query, 'semantic': bool(query.strip()), 'full': True}))
                     except (ValueError, sqlite3.OperationalError):
                         self.output(400, {'error': 'Select accounts and use a valid search'})
+                elif path.path == '/api/calendar':  # the Calendar tab: meetings in a window, read-only
+                    args = urllib.parse.parse_qs(path.query)
+                    try:
+                        self.output(200, {'meetings': app.store.calendar([a['id'] for a in app.config['accounts']],
+                                                                         args.get('from', [''])[0], args.get('to', [''])[0])})
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(400, {'error': 'Ask for a window of at most 15 days'})
                 elif path.path == '/api/fleet':
                     if not getattr(app, 'fleet', None):
                         self.output(200, {'on': False})

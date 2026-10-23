@@ -9,6 +9,10 @@
 - **iPhone/iPad (iOS 16.4 or newer, Safari):** open the dashboard, tap **Share** → **Add to Home Screen**, open The Machine from your Home Screen (notifications only work there, not in a Safari tab), open **Settings** (the gear) → **General** and tap the bell.
 - Turn Telegram off or back on any time: `assistant telegram off`, `assistant telegram on <your Telegram user ID>`. `--remove-bot` with off also deletes the bot and its token from OpenClaw. Without Telegram, **Change** is typed on the dashboard card.
 
+### Calendar
+
+The **Calendar** tab shows the next seven days: meetings from your connected calendars (with their prep card when there is one), cards due or coming back that day, handoff check-ins and promises with a date. Overdue cards and promises come first. A row opens its card's chat, the Promises list, or the meeting in its own calendar. Looking changes nothing. On a computer, **Week** shows the same days as columns.
+
 ### Work hours
 
 One setting for when The Machine works with you: on the dashboard under **Settings** (the gear at the top) → **Work hours** (phone-friendly), with `assistant hours`, or as `work_hours` in `config.json`.

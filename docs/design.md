@@ -65,12 +65,16 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   is 768px. No tab sets its own width, and the page keeps the scrollbar's room (`scrollbar-gutter: stable`), so a
   short tab like Events doesn't shift or look narrower than a long one.
 - **Sidebar**: one component for every width. From 1024px it is a column on the left: the tabs as quiet rows with
-  icons, Find a card, the cards by section (Done folded), and Browser, Settings and the status at the bottom; it folds
+  icons (Suggestions, Calendar, Events, Graph, Feedback, Connections), Find a card, the cards by section (Done folded), and Browser, Settings and the status at the bottom; it folds
   to icons (Ctrl/⌘+B). Graph has its own rows, People, Organisations and Projects, each a coloured square and a count,
   under a fold that is remembered; a row opens that pane and the address keeps it (`#graph=orgs`). Below 1024px the
   same sidebar is a drawer under a slim top bar with a menu button: a swipe from the left edge or All tasks in a chat
   also opens it, and ✕, the shade, Esc, back or a swipe to the left closes it, as does picking a row. Each page has a
   serif title in the column.
+- **Calendar**: the next seven days, read-only. An agenda by day (Overdue, Today, Tomorrow, then each weekday), one
+  row per item: the time (or Due, All day), a tone dot (a ring for a meeting, amber due, orange overdue, lavender coming
+  back or a check-in, mint a promise), the title and one quiet line. A meeting's card shows as a chip (in the line on a
+  phone). On a computer a Week toggle shows seven columns instead; the choice is kept on the device.
 - **Sub-tabs** (Fleet, Graph, Connections): a row of round pills under the tabs, the current one tinted, with a count
   (orange when something needs you). It scrolls and fades like the tabs on a phone. Each pane is drawn at once and
   shown one at a time; the choice is kept, and links open one (`#graph=roles`). On the Graph the address follows the pane.

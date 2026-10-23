@@ -18,7 +18,7 @@ const out = args.out || '/tmp/machine-shots';
 const widths = (args.widths || '390,1280').split(',').map(Number);
 const themes = (args.themes || 'light,dark').split(',');
 const PAGES = {
-  suggestions: {tab: 'inbox'}, events: {tab: 'events'}, graph: {tab: 'people'}, fleet: {tab: 'fleet'},
+  suggestions: {tab: 'inbox'}, calendar: {tab: 'calendar'}, events: {tab: 'events'}, graph: {tab: 'people'}, fleet: {tab: 'fleet'},
   feedback: {tab: 'feedback'}, connections: {tab: 'health'}, settings: {click: '#open-settings'},
 };
 const pages = (args.pages || Object.keys(PAGES).join(',')).split(',');
