@@ -19,11 +19,12 @@ const server=createServer(async(req,res)=>{const url=new URL(req.url,'http://fix
  res.statusCode=url.pathname.startsWith('/brand/')?404:200;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const base='http://127.0.0.1:'+server.address().port+'/';
-const errors=[];let browser;
+const errors=[];let browser;const T0=Date.UTC(2026,9,23,9);
 const open=async(opts={})=>{const phone=opts.phone;const context=await browser.newContext({viewport:phone?{width:390,height:844}:{width:1440,height:900},isMobile:!!phone,hasTouch:!!phone,reducedMotion:opts.still?'reduce':'no-preference'});
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
- await page.clock.install();await page.goto(base);await page.locator(phone?'#topbar img':'#page-head .page-avatar').waitFor({state:phone?'visible':'attached'});
+ // The clock is paused from the start: only run() moves time, so a busy computer never stretches a blink or starts one unseen
+ await page.clock.install({time:T0});await page.clock.pauseAt(T0+1000);await page.goto(base);await page.locator(phone?'#topbar img':'#page-head .page-avatar').waitFor({state:phone?'visible':'attached'});
  // Log every frame swap with the (fake) time, and the mascot's size at that moment
  await page.evaluate(()=>{window.swaps=[];new MutationObserver(ms=>{for(const m of ms){const r=m.target.getBoundingClientRect();
   const t=m.target;swaps.push({who:t.classList.contains('page-avatar')?'page':t.closest('#topbar')?'top':'side',shut:m.target.getAttribute('src').includes('blink'),at:performance.now(),w:r.width,h:r.height})}})
