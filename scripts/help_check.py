@@ -66,7 +66,6 @@ FEATURES = {
 }
 # Features that exist in the code but have no article yet, each with the reason. Keep this short.
 PENDING = {
-    'connector:zoom': 'Connect Zoom needs the hosted sign-in (control plane pull request 37), not merged yet',
 }
 # Where app text may live: the dashboard and the code that writes what it shows.
 TEXT_FILES = ('dashboard.html', '*.py', '*.mjs', 'connectors/*.py', 'integrations/*.py', 'openclaw-plugin/*.ts', 'install.sh')
