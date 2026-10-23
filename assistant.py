@@ -3058,11 +3058,12 @@ class Store:
         already answered; automated mail last. Newest first within each. The full first look reviews the rest."""
         own = {str(a.get('email', '')).lower() for a in self.accounts if '@' in str(a.get('email', ''))}
         marks = ','.join('?' for _ in accounts)
-        # The whole window, what already happened first: upcoming appointments or a burst of newsletters must not crowd
-        # out the mail that waits on the owner. The cap only guards a runaway import.
+        # The whole window, what already happened first (newest first), then what is coming (soonest first): upcoming
+        # appointments or a burst of newsletters must not crowd out the mail that waits on the owner. The cap only
+        # guards a runaway import.
         found = [dict(r) for r in db.execute(f'SELECT * FROM events WHERE account_id IN ({marks}) AND analyzed_version<version AND deferrals<? '
-                                             'AND occurred_at>=? ORDER BY occurred_at>?,occurred_at DESC,id DESC LIMIT 5000',
-                                             (*accounts, SET_ASIDE_AFTER, since, now()))]
+                                             'AND occurred_at>=? ORDER BY occurred_at>?,CASE WHEN occurred_at>? THEN occurred_at END,occurred_at DESC,id DESC LIMIT 5000',
+                                             (*accounts, SET_ASIDE_AFTER, since, *(now(),) * 2))]
 
         def rank(row):
             m = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'] or '{}')
@@ -3098,7 +3099,7 @@ class Store:
                     waiting += 1
                     if waiting >= limit:
                         break
-        ranked = sorted(range(len(found)), key=lambda i: (ranks[i], i))  # stable: newest first within a rank
+        ranked = sorted(range(len(found)), key=lambda i: (ranks[i], i))  # stable: newest, then soonest, first within a rank
         return [found[i] for i in ranked[:limit]]
 
     def conversation_context(self, rows, limit=4, hours=48):

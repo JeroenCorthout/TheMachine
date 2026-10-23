@@ -10,8 +10,8 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const started=new Date(Date.now()-60e3).toISOString();
 const run={run_id:'r1',status:'running',started_at:started,preview:1,auto:1,window_hours:48,planned:20,done_count:4,account_ids:['gmail'],steps:[]};
-let cards=[],statusCalls=0;
-const live=()=>({runs:[run],queue:null,first_look:null,cards:{count:cards.length,newest:cards.at(-1)?.created_at||null}});
+let cards=[],statusCalls=0,running=true;
+const live=()=>({runs:running?[run]:[],queue:null,first_look:null,cards:{count:cards.length,newest:cards.at(-1)?.created_at||null}});
 const card={id:'c1',title:'Send Sam the pricing',body:'Sam asked for pricing.',status:'pending',event_ids:[1],scope:'work',created_at:new Date().toISOString()};
 const state=()=>({suggestions:cards,promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:live(),
  connectors:[{id:'gmail',email:'pat@example.com',service:'gmail'}]});
@@ -38,9 +38,9 @@ try{
  assert.equal(statusCalls-before,1);  // one refresh for it, not one per look
  await page.waitForTimeout(5500);
  assert.equal(statusCalls-before,1);  // nothing new: no further refresh
- // Typing: the next card waits until the owner is done
+ // Typing: the next card waits until the owner is done, also when the review ends meanwhile
  await page.evaluate(()=>{const t=document.createElement('textarea');t.id='typing';document.body.append(t);t.focus()});
- cards=[card,{...card,id:'c2',title:'Book the venue',created_at:new Date(Date.now()+1000).toISOString()}];
+ cards=[card,{...card,id:'c2',title:'Book the venue',created_at:new Date(Date.now()+1000).toISOString()}];running=false;
  await page.waitForTimeout(5500);
  assert.equal(await page.locator('#suggestions article', {hasText:'Book the venue'}).count(),0);
  await page.evaluate(()=>document.getElementById('typing').blur());

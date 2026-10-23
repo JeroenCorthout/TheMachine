@@ -247,6 +247,20 @@ class FastFirstLook(unittest.TestCase):
             names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
         self.assertEqual(names[claim['events'][0]['id']], 'ask')
 
+    def test_of_the_upcoming_appointments_the_soonest_come_first(self):
+        a.Store.accounts = [{'id': 'work', 'service': 'gmail', 'email': 'me@example.com'}]
+        self.addCleanup(setattr, a.Store, 'accounts', [])
+        at = lambda days: (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).isoformat()
+        events = [{'account_id': 'work', 'source_id': f'in{d}', 'kind': 'calendar.event', 'occurred_at': at(d), 'title': 'Sync',
+                   'body': 'Meeting', 'metadata': {}, 'deleted': False} for d in (30, 1, 9)]
+        self.store.commit_page('work', {}, events + [self.mail('ask', 'Sam <sam@example.org>', hours_ago=3)])
+        self.step(Runner('admitted'))
+        run = self.runs()[0]
+        claim = self.store.begin_analysis(['work'], 40, a.REVIEW_SESSION_PREFIX + run['run_id'], run['run_id'])
+        with self.store.connect() as db:
+            names = {i: s for i, s in db.execute('SELECT id,source_id FROM events')}
+        self.assertEqual([names[e['id']] for e in claim['events']], ['ask', 'in1', 'in9', 'in30'])
+
     def test_first_look_cards_that_want_a_draft_get_one_once_reviews_are_on(self):
         self.store.commit_page('work', {}, [signal('m1'), signal('m2'), signal('m3')])
         self.step(Runner('admitted'))
