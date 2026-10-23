@@ -63,6 +63,14 @@ VIA = re.compile(r"^\s*['\"]?(.+?)['\"]?\s+via\s+\S.*$", re.I)
 DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 OPEN = ('pending', 'accepted', 'prepared', 'instructions', 'snoozed')
 SPLIT_SHOWN_DAYS = 7
+# Silent acceptance: the owner acts on a waiting handoff (a message they sent, a call they joined) before they tap
+# Accept. The review judges that by meaning (handoff_on_it); the teammate hears "on it", where and when, and the name of
+# who they talked to only when the teammate knows them already (the handoff's contact or someone in the Fleet). It
+# travels as an accept with a `silent` mark, so an older Machine reads a plain accept.
+ON_IT = {'gmail.message': 'email', 'outlook.message': 'email', 'slack.message': 'Slack', 'whatsapp.message': 'WhatsApp',
+         'linkedin.message': 'LinkedIn', 'teams.message': 'Teams', 'calendar.event': 'a call', 'outlook_calendar.event': 'a call'}
+WHERE = set(ON_IT.values())
+WAITING_DAYS = 14  # handoffs waiting this long or less are offered to the review
 
 
 def ensure(db):
@@ -159,7 +167,34 @@ def clean_answer(kind, answer):
         return None
     what = fleet.clean(answer.get('what'), 200) if kind == 'followup' and answer['stage'] == 'adjusted' and isinstance(answer.get('what'), str) else ''
     note = fleet.clean(answer.get('note'), NOTE_CHARS) if answer['stage'] in ('accepted', 'adjusted', 'declined') and isinstance(answer.get('note'), str) else ''
-    return {'stage': answer['stage'], **({'what': what} if what else {}), **({'note': note} if note else {})}
+    silent = clean_silent(answer) if kind == 'handoff' and answer['stage'] == 'accepted' and answer.get('silent') is True else None
+    return {'stage': answer['stage'], **({'what': what} if what else {}), **({'note': note} if note else {}), **(silent or {})}
+
+
+def clean_silent(answer):
+    """A silent acceptance's where and when (and with whom, only a first name), in their fixed form; None if not valid."""
+    if answer.get('where') not in WHERE or not isinstance(answer.get('at'), str):
+        return None
+    try:
+        at = dt.datetime.fromisoformat(answer['at'])
+    except ValueError:
+        return None
+    if at.tzinfo is None:
+        return None
+    who = fleet.clean(answer.get('with'), 40) if isinstance(answer.get('with'), str) else ''
+    who = who.split()[0] if who else ''
+    return {'silent': True, 'where': answer['where'], 'at': at.isoformat(timespec='minutes'), **({'with': who} if who else {})}
+
+
+def how_text(where, who, at=None, tz=None):
+    """How the owner took a handoff on: "talked to Sam on Slack, Fri 10:12", "emailed Sam", "had a call"."""
+    what = ((f'emailed {who}' if who else 'wrote by email') if where == 'email' else
+            (f'talked to {who} in a call' if who else 'had a call') if where == 'a call' else
+            (f'talked to {who} on {where}' if who else f'wrote on {where}'))
+    if at:
+        when = dt.datetime.fromisoformat(at).astimezone(tz)
+        what += ', ' + when.strftime('%a\u00a0%H:%M')
+    return what
 
 
 def question_text(kind, question):
@@ -169,7 +204,7 @@ def question_text(kind, question):
         return f"An intro to someone at {question.get('about', '?')}" + (f" (their note: “{question['note']}”)" if question.get('note') else '')
     if kind == 'handoff':
         return (f"Can you take this on: {question.get('title', '?')}? Their summary: “{question.get('summary', '')}”"
-                + (f" Contact: {question['contact']}." if question.get('contact') else '') + (f" Due {question['when']}." if question.get('when') else ''))
+                + (f"\n   Contact: {question['contact']}." if question.get('contact') else '') + (f" Due {question['when']}." if question.get('when') else ''))
     parts = question.get('parts') or [{'name': 'a teammate', 'what': i['what']} for i in question.get('items', [])]
     return (f"Follow-ups from {question.get('title') or 'the meeting'} on {question.get('when', '?')}: "
             + '; '.join(f"{'you' if p.get('mine') else p.get('name') or 'a teammate'}: {p['what']}" for p in parts))
@@ -242,6 +277,8 @@ class Requests:
     from this Machine's own evidence (and a draft, for an intro); tell(text, anchor) tells the owner how their own
     request went (phone, Telegram)."""
     make_card = tell = close_card = None
+    drop_card = None  # drops a card made for a silent acceptance that could not be told (assistant.py)
+    own_event = None  # whether an event is the owner's own doing: a message they sent, a call they joined (assistant.py)
     wait_card = wake_card = None  # a handed-off card waits under Later until their Machine answers (assistant.py)
 
     # -- a teammate asks this owner
@@ -373,8 +410,7 @@ class Requests:
             first = sender.split()[0] if sender else 'A teammate'
             carried = question.get('sources') or []
             return self.make_card(kind='handoff', ask_id=row['id'], name=sender, title=question['title'][:90],
-                                  body=(f'{first} asks you to take this on: “{summary}”'
-                                        + (f' Contact: {question["contact"]}.' if question.get('contact') else '')),
+                                  body=f'{first} asks you to take this on: “{summary}”',
                                   evidence=evidence, due=question.get('when'), **({'carried': carried} if carried else {}))
         mine = '; '.join(text and [text] or [p['what'] for p in question['parts'] if p['mine']])
         others = '; '.join(f"{p['name']}: {p['what']}" for p in question['parts'] if not p['mine'])
@@ -631,7 +667,8 @@ class Requests:
                     db.execute('UPDATE fleet_splits SET parts=?,updated_at=? WHERE id=?', (json.dumps(parts), fleet.now(), split['id']))
         if row['kind'] == 'handoff' and stage in ('accepted', 'adjusted', 'done') and self.close_card and str(row['context'] or '').startswith('handoff:'):
             try:  # it's theirs now: the owner's card is done, saying to whom (Undo or Reopen bring it back)
-                self.close_card(row['context'][8:], f"Handed off to {row['name']}", 'fleet-handoff-' + str(row['id']))
+                self.close_card(row['context'][8:], self.on_it_line(row['name'], answer) if (answer or {}).get('silent') else f"Handed off to {row['name']}",
+                                'fleet-handoff-' + str(row['id']))
             except ValueError as error:
                 LOG.info('fleet handoff close skipped error=%s', error)
         elif row['kind'] == 'handoff' and stage in ('declined', 'expired'):
@@ -642,7 +679,10 @@ class Requests:
                 'followup': 'their part of the follow-ups', 'todo': f"the to-do: {question.get('title')}",
                 'event': f"the plan: {question.get('title')}"}[row['kind']]
         note = f" Their note: “{answer['note']}”" if (answer or {}).get('note') else ''
-        said = {'accepted': f"{row['name']} {'is in for' if row['kind'] == 'event' else 'accepted'} {what}.{note}", 'adjusted': f"{row['name']} accepted {what}, changed to: “{(answer or {}).get('what', '')}”.{note}",
+        if (answer or {}).get('silent'):
+            stage = 'on_it'
+        said = {'on_it': f"{self.on_it_line(row['name'], answer)}: {what}." if stage == 'on_it' else '',
+                'accepted': f"{row['name']} {'is in for' if row['kind'] == 'event' else 'accepted'} {what}.{note}", 'adjusted': f"{row['name']} accepted {what}, changed to: “{(answer or {}).get('what', '')}”.{note}",
                 'sent': f"{row['name']} sent the intro email for {what}.", 'declined': f"{row['name']} declined {what}.{note}",
                 'done': f"{row['name']} marked {what} done.", 'expired': f"{row['name']} didn't get to {what} in time."}.get(stage)
         if said:
@@ -650,6 +690,11 @@ class Requests:
                 self.tell(said, row['id'])
             except Exception as error:
                 LOG.warning('fleet tell error=%s', type(error).__name__)
+
+    def on_it_line(self, name, answer):
+        """The sender's line for a silent acceptance: "Pat is on it · talked to Sam on Slack, Fri 10:12"."""
+        first = (name or 'Your teammate').split()[0]
+        return f"{first} is on it · {how_text(answer['where'], answer.get('with'), answer['at'], self.local_now().tzinfo)}"
 
     def handoff_back(self, row):
         """Not theirs after all: the handed-off card comes back to Ready, saying who declined and why, to do it yourself,
@@ -671,6 +716,134 @@ class Requests:
             raise ValueError('That card was not handed off')
         self.set_meta('handoff_mine:' + row['id'], fleet.now())
         return {'ok': True}
+
+    # -- silent acceptance: the owner is already on a waiting handoff
+    def waiting_handoffs(self):
+        """Handoffs waiting for the owner's answer, for the review to hold against what the owner does."""
+        since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=WAITING_DAYS)).isoformat(timespec='seconds')
+        with self.connect() as db:
+            rows = db.execute("SELECT id,name,question,at FROM fleet_in WHERE kind='handoff' AND status='waiting' AND at>=? ORDER BY at", (since,)).fetchall()
+        return [{'ask_id': r['id'], 'from': r['name'], 'since': r['at'][:16], 'title': json.loads(r['question']).get('title', ''),
+                 'summary': json.loads(r['question']).get('summary', '')} for r in rows]
+
+    def waiting_handoffs_text(self):
+        """The review's list of waiting handoffs: the teammate's words quoted, as data."""
+        return '\n'.join(f"- ask_id {h['ask_id']}, from {h['from']} since {h['since']}: “{h['title']}”, their summary: “{h['summary']}”"
+                         for h in self.waiting_handoffs()[:20])
+
+    def handoff_on_it(self, ask_id, event_id):
+        """The review judged that a message the owner sent, or a call they joined, after a teammate's handoff came, shows
+        them acting on it: it is theirs without a tap. Their card is made as on Accept, with a note that says why and a
+        Not mine; the teammate hears "on it", where and when. A handoff the owner already answered keeps their answer."""
+        if isinstance(event_id, str) and event_id.strip().isdigit():  # a model may pass the number as text
+            event_id = int(event_id.strip())
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM fleet_in WHERE id=? AND kind='handoff' AND status='waiting'", (str(ask_id),)).fetchone()
+            event = db.execute('SELECT id,kind,occurred_at,title,metadata FROM events WHERE id=? AND deleted=0', (event_id,)).fetchone() \
+                if isinstance(event_id, int) and not isinstance(event_id, bool) else None
+        if not row:
+            raise ValueError('That handoff is not waiting for the owner (answered, expired or unknown); their own answer stands')
+        if not event or event['kind'] not in ON_IT:
+            raise ValueError('event_id is the email, chat message or calendar call that shows the owner acting on it')
+        event = dict(event)
+        if not (self.own_event and self.own_event(event)):
+            raise ValueError("Only a message the owner sent or a call they joined shows they took it on; a message they received doesn't")
+        if dt.datetime.fromisoformat(event['occurred_at']) < dt.datetime.fromisoformat(row['at']):
+            raise ValueError('That was before the handoff came; only what the owner did after it counts')
+        question = json.loads(row['question'])
+        where = ON_IT[event['kind']]
+        who, address = self.other_party(event)
+        # Claimed first, in one step: an Accept or Decline that got there first wins, and one coming after finds it answered.
+        with self.connect() as db:
+            if not db.execute("UPDATE fleet_in SET status='answered',decided_at=?,choice='silent' WHERE id=? AND status='waiting'",
+                              (fleet.now(), row['id'])).rowcount:
+                raise ValueError('That handoff is not waiting for the owner (answered, expired or unknown); their own answer stands')
+        card_id = joined = None
+        try:  # the card first (it can't be made without a work account), then the teammate is told
+            joined = bool(self.same_card(row['fleet'], question))  # it joins a card the owner already had: Not mine leaves that card
+            card_id = self.request_card(row, question)
+            shared = who if who and self.known_to(row, question, who, address) else ''
+            answer = {'stage': 'accepted', 'silent': True, 'where': where,
+                      'at': dt.datetime.fromisoformat(event['occurred_at']).isoformat(timespec='minutes'), **({'with': shared} if shared else {})}
+            self.relay.call('POST', '/answer', {'id': row['id'], 'status': 'answered', 'answer': answer})
+        except Exception:
+            with self.connect() as db:  # nothing told: it waits for the owner again
+                db.execute("UPDATE fleet_in SET status='waiting',decided_at=NULL,choice=NULL WHERE id=? AND choice='silent'", (row['id'],))
+            if card_id and not joined and self.drop_card:  # a card made for it goes again; one the owner had keeps only its joined note
+                try:
+                    self.drop_card(card_id)
+                except Exception as error:
+                    LOG.warning('fleet silent drop error=%s', type(error).__name__)
+            raise
+        how = how_text(where, who)
+        with self.connect() as db:
+            db.execute("UPDATE fleet_requests SET stage='on_it',card_id=?,updated_at=? WHERE id=?", (card_id, fleet.now(), row['id']))
+            db.execute('INSERT OR REPLACE INTO fleet_meta(key,value) VALUES(?,?)',
+                       ('handoff_silent:' + row['id'], json.dumps({'card_id': card_id, 'how': how, 'event_id': event['id'], 'joined': joined, 'at': fleet.now()})))
+            self.log(db, 'in', row['fleet'], row['member_id'], row['name'], 'handoff', fleet.question_text('handoff', question),
+                     f'marked as yours: you {how} (told them: on it)')
+        if row['telegram_message_id'] and self.retell:
+            self.retell(row['telegram_message_id'])
+        return {'status': 'answered', 'card_id': card_id, 'how': how}
+
+    def other_party(self, event):
+        """Who the owner talked to in this message or call, as (first name, address): its first recipient, the chat, or
+        the first other person invited. Their own data; only shared on when the teammate knows them already."""
+        m = json.loads(event['metadata'] or '{}') if isinstance(event['metadata'], str) else event['metadata'] or {}
+        mine = self.my_emails()
+        if event['kind'].endswith('calendar.event'):
+            people = [(a.get('displayName') or '', str(a.get('email') or '').lower()) for a in m.get('attendees') or []
+                      if isinstance(a, dict) and not a.get('self') and str(a.get('email') or '').lower() not in mine]
+        elif event['kind'] in ('gmail.message', 'outlook.message'):
+            people = [(n, a) for n, a in graph.addresses(m.get('to')) if a not in mine]
+        else:
+            name = m.get('to_name') or m.get('chat_name') or ''
+            people = [(name, '')] if name and not str(name).startswith('#') else []
+        name, address = people[0] if people else ('', '')
+        name = fleet.clean(name, 60) or (address.split('@')[0] if address else '')
+        return (name.split()[0] if name else ''), address
+
+    def known_to(self, row, question, who, address):
+        """Whether the teammate already knows who the owner talked to: the handoff's own contact, or someone in the Fleet,
+        by their address. A name alone never counts (another person can share it): when in doubt, no name goes."""
+        if not address:
+            return False
+        if address == str(question.get('contact') or '').lower():
+            return True
+        members = (self.fleets().get(row['fleet']) or {}).get('members', [])
+        return any(address in {str(e).lower() for e in m.get('emails') or []} for m in members)
+
+    @staticmethod
+    def marked_line(how):
+        return f"Marked as yours, since you {how} about it"
+
+    def silent_note(self, card_id):
+        """The note on a card that became the owner's by what they did: "Marked as yours, since you talked to Sam about it"."""
+        with self.connect() as db:
+            for r in db.execute("SELECT key,value FROM fleet_meta WHERE key LIKE 'handoff_silent:%'"):
+                v = json.loads(r['value'])
+                if v.get('card_id') == card_id:
+                    stage = db.execute('SELECT stage FROM fleet_requests WHERE id=?', (r['key'][15:],)).fetchone()
+                    if stage and stage['stage'] == 'on_it' and not db.execute("SELECT 1 FROM fleet_out WHERE context=? AND at>=?", ('handoff:' + card_id, v.get('at') or '')).fetchone():
+                        return {'ask_id': r['key'][15:], 'line': self.marked_line(v['how']), 'joined': bool(v.get('joined'))}
+        return None
+
+    def handoff_not_mine(self, card_id):
+        """Not mine on a card that became the owner's silently: undone, and the teammate is told, so it comes back to them."""
+        note = self.silent_note(card_id)
+        if not note:
+            raise ValueError('That card did not become yours by itself')
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM fleet_requests WHERE id=?', (note['ask_id'],)).fetchone()
+        self.relay.call('POST', '/answer', {'id': row['id'], 'status': 'answered', 'answer': {'stage': 'declined', 'note': 'Not mine'}})
+        with self.connect() as db:
+            db.execute("UPDATE fleet_requests SET stage='declined',updated_at=? WHERE id=?", (fleet.now(), row['id']))
+            db.execute("UPDATE fleet_in SET choice='decline' WHERE id=? AND choice='silent'", (row['id'],))
+            message = db.execute('SELECT telegram_message_id FROM fleet_in WHERE id=?', (row['id'],)).fetchone()
+            self.log(db, 'in', row['fleet'], row['member_id'], row['name'], 'handoff', 'not yours after all', 'told them: declined (Not mine)')
+        if message and message[0] and self.retell:
+            self.retell(message[0])
+        return {'ok': True, 'card_id': card_id, 'joined': note['joined']}
 
     # -- shared follow-ups
     def split_parts(self, fleet_ref, question, teammate):
@@ -825,10 +998,11 @@ class Requests:
                 self.handoff_back(row)
         with self.connect() as db:
             rows = db.execute("SELECT r.*,s.status AS card_status,(SELECT COUNT(*) FROM action_jobs j WHERE j.suggestion_id=r.card_id AND j.status='sent') AS sent "
-                              "FROM fleet_requests r JOIN suggestions s ON s.id=r.card_id WHERE r.stage IN ('accepted','adjusted') AND r.kind IN ('intro','handoff','todo')").fetchall()
+                              "FROM fleet_requests r JOIN suggestions s ON s.id=r.card_id WHERE r.stage IN ('accepted','adjusted','on_it') AND r.kind IN ('intro','handoff','todo')").fetchall()
         for row in rows:
             stage = ('sent' if row['sent'] else 'declined' if row['card_status'] == 'rejected' else None) if row['kind'] == 'intro' else \
-                    ('done' if row['card_status'] == 'completed' else None)
+                    ('done' if row['card_status'] == 'completed' else
+                     'declined' if row['card_status'] == 'rejected' and row['stage'] == 'on_it' else None)  # marked for them, then dismissed
             if not stage:
                 continue
             try:
@@ -874,6 +1048,9 @@ class Requests:
                     "SELECT 1 FROM decisions WHERE suggestion_id=? AND source!='fleet' AND choice IN ('other','accept','retry') AND created_at>?",
                     (r['context'][8:], r['answered_at'] or r['at'])).fetchone():
                 mine.add(r['id'])
+            if answer.get('silent') and stage == 'accepted':
+                handed[r['context'][8:]] = {'name': r['name'], 'stage': 'on it', 'line': self.on_it_line(r['name'], answer)}
+                continue
             handed[r['context'][8:]] = {'name': r['name'], 'stage': {'asked': 'asked', 'waiting': 'waiting for them'}.get(stage, STAGES.get(stage, stage)),
                                         **({'note': answer['note']} if answer.get('note') else {}),
                                         # handed back: Do it myself, Hand to someone else or Mark done, until the owner picks
@@ -881,7 +1058,24 @@ class Requests:
         splits = {}
         for r in db.execute("SELECT * FROM fleet_splits WHERE status IN ('sent','accepted') AND event_id IS NOT NULL"):
             splits[r['event_id']] = '; '.join(f"{'you' if p.get('mine') else p['name']}: {p['what']}" for p in json.loads(r['parts']) if p.get('what'))
+        silent = {}
+        for r in db.execute("SELECT m.key,m.value FROM fleet_meta m JOIN fleet_requests q ON q.id=substr(m.key,16) "
+                            "WHERE m.key LIKE 'handoff_silent:%' AND q.stage='on_it'"):
+            v = json.loads(r['value'])
+            if not db.execute("SELECT 1 FROM fleet_out WHERE context=? AND at>=?", ('handoff:' + str(v.get('card_id')), v.get('at') or '')).fetchone():
+                silent[v.get('card_id')] = self.marked_line(v['how'])  # handed on since: that handoff leads instead
+        contacts = {}  # a handoff's contact, on its own line under the ask (cards from before carried it in the body)
+        for r in db.execute("SELECT q.card_id,i.question FROM fleet_requests q JOIN fleet_in i ON i.id=q.id WHERE q.kind='handoff' AND q.card_id IS NOT NULL"):
+            contact = (json.loads(r['question']) or {}).get('contact')
+            if contact:
+                contacts[r['card_id']] = contact
         for s in suggestions:
+            if contacts.get(s['id']):
+                s['handoff_contact'] = contacts[s['id']]
+                if isinstance(s.get('body'), str):
+                    s['body'] = s['body'].removesuffix(f' Contact: {contacts[s["id"]]}.')
+            if silent.get(s['id']):
+                s['handoff_silent'] = {'line': silent[s['id']]}
             if handed.get(s['id']):
                 s['fleet_handoff'] = handed[s['id']]
                 if handed[s['id']]['stage'] not in (STAGES['declined'], 'expired') and s.get('next_actions'):

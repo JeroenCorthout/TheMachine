@@ -1135,6 +1135,9 @@ def telegram_message(rows, root):
     for n, row in enumerate(rows, 1):
         outcome = ((fleet_requests.ACCEPTED if row['kind'] in fleet_requests.STAGED else DECIDED).get(row['choice']) or (BY_RULE.get(row['status']) if row['choice'] == 'rule' else None) or ('Answered' if row['status'] == 'answered' else row['status'].capitalize())
                    if row['status'] != 'waiting' else '')
+        if row['choice'] == 'silent':  # marked as theirs by what they did (silent acceptance); Not mine is on the card
+            how = json.loads(_get(row, 'silent') or '{}').get('how')
+            outcome = (fleet_requests.Requests.marked_line(how) if how else 'Marked as yours') + '. Not mine on the card undoes it.'
         prefix = f'{n}. ' if many else ''
         if row['kind'] == 'anything':
             # Their words, quoted, then the draft built from your own accounts. Send this answer sends exactly that draft.
@@ -1929,7 +1932,8 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
 
     def telegram_view(self, message_id):
         with self.connect() as db:
-            rows = db.execute('SELECT * FROM fleet_in WHERE telegram_message_id=? ORDER BY at,id', (str(message_id),)).fetchall()
+            rows = db.execute("SELECT i.*,m.value AS silent FROM fleet_in i LEFT JOIN fleet_meta m ON m.key='handoff_silent:'||i.id "
+                              'WHERE i.telegram_message_id=? ORDER BY i.at,i.id', (str(message_id),)).fetchall()
         return telegram_message(rows, dashboard_root(self.config)) if rows else None
 
     # -- notices: what happens in the owner's Fleet (a seat request, joined, a server started, left)

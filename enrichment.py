@@ -6,8 +6,9 @@ use {key} too. The key is read from a file or an environment variable, never sto
 Only organisation domains from the graph are sent (never free-mail or the owner's own domains), a few
 at a time, each looked up again after REFRESH_DAYS: first those of people the owner writes with both ways or
 meets, never those only cold outreach, newsletters or no-reply senders come from (see due). What comes back is
-normalised to a small profile (industry, size, location, founded, about, links) that the graph, reviews and
-preparations show next to the organisation; it describes the company, never what it is to the owner."""
+normalised to a small profile (industry, size, location, founded, about, links, logo) that the graph, reviews and
+preparations show next to the organisation; it describes the company, never what it is to the owner. An answer about
+another company (the service matched a page that merely sits on the domain) is dropped, as if nothing was found."""
 from __future__ import annotations
 
 import datetime as dt
@@ -41,7 +42,9 @@ FIELDS = {
     'linkedin_url': ['linkedin_url', 'linkedin.url', 'linkedin.handle', 'linkedin'],
     'website': ['website', 'website_url', 'url', 'domain'],
     'type': ['type', 'company_type', 'ownership'],
+    'logo': ['logo', 'logo_url', 'logoUrl', 'image_url', 'logo.url', 'image'],
 }
+LOGO = re.compile(r'https://[A-Za-z0-9.-]{1,200}\.[A-Za-z]{2,}(?::\d{2,5})?/[^\s"\'<>\\]{0,500}')
 WRAPPERS = ('organization', 'company', 'data', 'result')
 
 
@@ -97,6 +100,11 @@ def normalise(data, fields=None):
             found = value(data, path)
             if found in (None, '', [], {}) or isinstance(found, (dict, list)):
                 continue
+            if field == 'logo':
+                if not isinstance(found, str) or not LOGO.fullmatch(found.strip()):
+                    continue  # only a plain https address; the dashboard loads it as an image, nothing else
+                profile[field] = found.strip()
+                break
             if field in ('employees', 'founded'):
                 try:
                     found = int(found)
@@ -133,9 +141,29 @@ def fetch(cfg, domain, timeout=15):
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise EnrichmentError('unreachable: ' + type(getattr(error, 'reason', error)).__name__) from None
     try:
-        return normalise(json.loads(body or b'null'), cfg.get('fields'))
+        profile = normalise(json.loads(body or b'null'), cfg.get('fields'))
     except ValueError:
         raise EnrichmentError('the answer was not JSON') from None
+    return None if profile and another_company(profile, domain) else profile
+
+
+def another_company(profile, domain):
+    """True when the answer is about some other company: its website is not this domain's home page (a blog post, a
+    form, a page on a hosting subdomain) and its name has nothing in common with the domain. Services match by the
+    website a company page lists, so a one-person page that links to someone's article gets that company's domain.
+    A website on the home page, or a name that shares a word with the domain, is trusted."""
+    site = str(profile.get('website') or '').strip().lower()
+    if not site:
+        return False
+    parts = urllib.parse.urlsplit(site if '://' in site else 'https://' + site)
+    host = (parts.hostname or '').removeprefix('www.')
+    if host == domain.removeprefix('www.') and re.fullmatch(r'/?(?:[a-z]{2}(?:[-_][a-z]{2})?/?)?', parts.path or ''):
+        return False
+    label = re.sub(r'[^a-z0-9]', '', domain.split('.')[0])
+    name = str(profile.get('name') or '').lower()
+    squashed = re.sub(r'[^a-z0-9]', '', name)
+    words = [w for w in re.findall(r'[a-z0-9]+', name) if len(w) >= 3]
+    return not (label and squashed and (label in squashed or squashed in label or any(w in label for w in words)))
 
 
 # Free mail beyond the graph's own list (any country's Yahoo, Outlook, ...): a person's address there says nothing

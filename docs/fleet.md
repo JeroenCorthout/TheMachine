@@ -74,6 +74,17 @@ default, Always accept, Never), and nothing happens on your side until you accep
    Already done, No time this week); **Accept with a note** (under More) adds a short note too. Only the sender sees it,
    sealed like the answer. A card handed to you can't be handed straight back to whoever gave it; to others it can.
 
+   If you are already on a handoff before you answer it, it can become yours without a tap. Your Machine's review
+   looks only at messages you sent and calls you joined after it came, and judges by what they are about whether you
+   are acting on it (never a message you only received, never a word list). It then accepts it for you, quietly: your
+   card says "Marked as yours, since you talked to Sam about it" with **Not mine**, which undoes it and tells your
+   teammate. They see "<you> is on it · talked to Sam on Slack, Fri 10:12" and their card is done, the check-in gone.
+   Only where (email, Slack, a call) and when travel; the person's first name only if your teammate knows them
+   already (the handoff's own contact or someone in the Fleet, by email address; a chat name alone never counts), and
+   never what was said. Dismissing that card later tells your teammate you declined, so it comes back to them. Nothing is sent or drafted
+   for you. Your own Accept or Decline always wins: once you answer, it is never marked for you. An older Machine
+   on the other side reads it as a plain accept, and a later Not mine only as a note that you declined.
+
    When a task is a teammate's to do, the review offers to hand it to their Machine, and Do it prepares the handoff
    itself: **Hand off to <teammate>** leads the card and opens this form with that teammate picked and the message
    written to them already in it (a Slack message or email to them can be a second choice). What goes is always the
