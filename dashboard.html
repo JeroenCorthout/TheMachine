@@ -2256,7 +2256,7 @@ function chatParts(s){const t=document.createElement('template');t.innerHTML=sug
  const panel=[...(card?.querySelectorAll('.change-editor:not([class*="answer"]),.fleet-handoff-form')||[])].filter(n=>!n.querySelector('[id^="feedback-"]')).map(n=>n.outerHTML).join('')
   +(['blocked','running','starting'].includes(s.preparation_status)&&s.preparation_browser?`<p class="note">${browserLink(s.id,s.preparation_browser)}</p>`:'');
  const html=n=>n?.outerHTML||'';
- return {sends,sheet:html(card?.querySelector('.agent-form')),lead:html(lead),send:!!lead?.dataset.smart,copy:lead?.dataset.result==='copy',back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,3).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
+ return {sends,going,sheet:html(card?.querySelector('.agent-form')),lead:html(lead),send:!!lead?.dataset.smart,copy:lead?.dataset.result==='copy',back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,3).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
   status,intro:body?.innerHTML||'',ask:html(card?.querySelector('.ask-line')),agent:html(card?.querySelector('.agent-job')),
   links:card?.querySelector('.foot-links')?.innerHTML||'',panel}}
 // What the card asks of the owner, in one plain line, when its text doesn't already ask: the question its run wrote,
@@ -2305,7 +2305,8 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  const open=s&&!closed(s)&&s.status!=='snoozed'&&!chat.active&&!['queued','starting','running'].includes(s.preparation_status);
  const lastMachine=rows.findLastIndex(i=>i.kind==='reply'||i.kind==='card');
  const tabAt=s&&!closed(s)?rows.findLastIndex(i=>i.kind==='reply'&&CHAT_TAB.test(i.text||'')):-1;
- const options=(n,onDraft)=>open&&n===lastMachine&&p.options&&!(p.send&&onDraft)?`<div class="chat-options">${p.options}</div>`:'';
+ // While a message goes out no other choice shows; they come back once it went or failed
+ const options=(n,onDraft)=>open&&!p.going&&n===lastMachine&&p.options&&!(p.send&&onDraft)?`<div class="chat-options">${p.options}</div>`:'';
  const clamp=(k,html,long,more='More')=>long?`<div class="chat-clamp${chatOpenSet.has(k)?' open':''}">${html}</div><button type="button" class="link chat-more" data-unclamp="${k}">${chatOpenSet.has(k)?'Less':more}</button>`:html;
  // What the Machine or an agent made for the owner is a result: a reply with a draft or an outcome headline ("**Verf · prijsbenchmark klaar**"),
  // an agent's answer with files, or the card's own question while it waits on a call. The latest one is the raised card; earlier ones step back.

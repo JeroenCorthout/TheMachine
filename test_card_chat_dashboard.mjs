@@ -259,7 +259,7 @@ try{
  await page.locator('#chat-log .chat-draft-foot [data-smart]').click();await page.locator('#send-dialog[open]').waitFor();
  await page.locator('#send-confirm').click();await page.locator('#chat-log .chat-sendstate',{hasText:'Sending…'}).waitFor();
  assert.equal(await page.locator('#chat-log .chat-draft .send-progress').count(),1);
- assert.equal(await page.locator('#chat-log .chat-options .primary,#chat-log .chat-draft [data-smart]').count(),0,'nothing is the next step while it goes out');
+ assert.equal(await page.locator('#chat-log .chat-options,#chat-log .chat-draft [data-smart]').count(),0,'no choices at all while it goes out');
  await shot('send-sending');
  const robin=cards.find(c=>c.id==='c9c9c9c9c9c9c9c9').next_actions[0],sentAt=new Date(Date.now()-1000).toISOString();
  robin.state={status:'sent',revision:'r9',message_id:'m-1',sent_at:sentAt};  // the queue sends it; the page sees it by itself within seconds
