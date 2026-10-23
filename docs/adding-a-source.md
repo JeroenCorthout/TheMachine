@@ -4,7 +4,7 @@ A source (connector) reads one account of one service and stores what it finds a
 
 There are two ways to add one:
 
-- **A connector plugin**: one Python file in `connectors/`, named after its service. No changes to `assistant.py`. This is the way for most sources. [`connectors/rss.py`](../connectors/rss.py) is a complete example; [`github.py`](../connectors/github.py) (a CLI) and [`stripe.py`](../connectors/stripe.py) (an API with a key, filtering what's worth storing) are two more, [`trello.py`](../connectors/trello.py) pages an API with cursors and an overlap window, and [`x.py`](../connectors/x.py) and [`linkedin.py`](../connectors/linkedin.py) read through the signed-in OpenClaw browser.
+- **A connector plugin**: one Python file in `connectors/`, named after its service. No changes to `assistant.py`. This is the way for most sources. [`connectors/rss.py`](../connectors/rss.py) is a complete example; [`github.py`](../connectors/github.py) (a CLI) and [`stripe.py`](../connectors/stripe.py) (an API with a key, filtering what's worth storing) are two more, [`trello.py`](../connectors/trello.py) pages an API with cursors and an overlap window, [`intercom.py`](../connectors/intercom.py) reads a search API in frozen windows and allows only its read routes, and [`x.py`](../connectors/x.py) and [`linkedin.py`](../connectors/linkedin.py) read through the signed-in OpenClaw browser.
 - **A built-in source**: a branch in `sync_source` in `assistant.py`, for sources that need deeper integration (realtime threads, special review handling).
 
 This guide covers the plugin.
