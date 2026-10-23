@@ -140,7 +140,7 @@ class CardChat(unittest.TestCase):
         with self.store.connect() as db:
             owner, _ = self.app.card_chat_service(db, sid)
         self.assertEqual({k: owner[0][k] for k in ('from', 'via', 'text', 'at')},
-                         {'from': 'Sam Lee', 'via': 'intercom', 'text': 'Hi there, we need your call.\nThanks', 'at': 1792673603000})
+                         {'from': 'Sam Lee', 'via': 'Intercom', 'text': 'Hi there, we need your call.\nThanks', 'at': 1792673603000})  # the connector's label
 
     def test_a_conversation_source_is_what_was_asked_then_the_note(self):
         body = ('Can I sync all inboxes on this plan?\n1792673603 · Sam Lee · note: Hi there.\n1792683559 · user · comment: They belong to different people\n'
