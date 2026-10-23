@@ -1,6 +1,7 @@
 {
   "name": "the-machine",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Node packages for The Machine's helpers. Exact pins: the Gateway client is tested together with the OpenClaw version The Machine asks for.",
   "type": "module",
   "dependencies": {
