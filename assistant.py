@@ -5383,7 +5383,7 @@ class Store:
         if resume_action and old:action_id=old['action_id']
         # New work replaces a confirmed final step that never saved its result. It may have
         # gone through already, so a later Confirm checks the source first, never resubmits blindly.
-        for left in db.execute("SELECT id,payload FROM action_jobs WHERE suggestion_id=? AND status='local_preparation' AND id IS NOT ?",(suggestion_id,action_id)).fetchall():
+        for left in db.execute("SELECT id,payload FROM action_jobs WHERE suggestion_id=? AND status IN ('local_preparation','paused') AND id IS NOT ?",(suggestion_id,action_id)).fetchall():
             payload=json.loads(left['payload'])
             if payload['kind']!='finish':continue
             payload['finish_result']={'state':'uncertain','body':'Replaced by new work before its result was saved.','at':now()}
@@ -5392,6 +5392,8 @@ class Store:
                    (suggestion_id,decision_id,uuid.uuid4().hex,now(),now()))
         db.execute('UPDATE preparations SET session_job_id=coalesce(?,job_id) WHERE suggestion_id=?',(session_job_id,suggestion_id))
         db.execute('UPDATE preparations SET action_id=? WHERE suggestion_id=?',(action_id,suggestion_id))
+        if action_id:  # the same approved step carries on (Try again, the end of a snooze, Undo, Reopen)
+            db.execute("UPDATE action_jobs SET status='local_preparation',updated_at=? WHERE id=? AND status='paused'",(now(),action_id))
 
     def decide(self, suggestion_id, choice, feedback, decision_id, source, snooze_hours=24, snoozed_until=None, snooze_option=None, verified_terminal_job=None, work=False):
         with self.connect() as db:
@@ -5568,8 +5570,9 @@ class Store:
                 db.execute("UPDATE preparations SET status='cancelled' WHERE suggestion_id=?",(suggestion_id,))
             self.queue_preparation(db,suggestion_id,decision_id,resume_action=choice=='accept' and row['status']=='snoozed')
         elif status in ('completed','rejected','snoozed'):
-            # Stop unfinished work; a finished preparation stays recorded as done.
+            # Stop unfinished work; a finished preparation stays recorded as done. Its confirmed step waits, paused.
             db.execute("UPDATE preparations SET status='cancelled',updated_at=? WHERE suggestion_id=? AND status!='done'",(now(),suggestion_id))
+            pause_idle_steps(db,suggestion_id)
         if choice in ['reject','complete']:
             db.execute("UPDATE deliveries SET status='cancelled',reminder=0 WHERE suggestion_id=? AND status='queued'",(suggestion_id,))
         return {'status': status, 'snoozed_until': until, 'note': 'Preference saved. Acceptance does not execute or authorize an unspecified external action.'}
@@ -5714,7 +5717,7 @@ class Store:
                 payload=json.loads(chosen['payload']);payload['finish_result']={'state':state,'body':body,'at':now()}
                 db.execute('UPDATE action_jobs SET status=?,payload=?,updated_at=? WHERE id=?',
                            ({'completed':'done','not_performed':'needs_input','uncertain':'finish_uncertain'}[state],encoded(payload),now(),chosen['id']))
-            db.execute("UPDATE action_jobs SET status='done',updated_at=? WHERE suggestion_id=? AND status='local_preparation' AND json_extract(payload,'$.kind')='prepare'",(now(),suggestion_id))
+            db.execute("UPDATE action_jobs SET status='done',updated_at=? WHERE suggestion_id=? AND status IN ('local_preparation','paused') AND json_extract(payload,'$.kind')='prepare'",(now(),suggestion_id))
             db.execute("UPDATE suggestions SET body=?,status='prepared',next_action=?,outcome=? WHERE id=?", (body[:5000],action_json,encoded(outcome) if outcome else None,suggestion_id))
             if title and current_title(row, title) != row['title']:
                 db.execute('UPDATE suggestions SET title=? WHERE id=?', (title, suggestion_id))  # the new notification and the edited message carry it
@@ -5755,7 +5758,7 @@ class Store:
             if lock:raise ValueError(lock)
             # A final step that ran, or whose outcome is still unknown, may already have gone out:
             # its text stays as confirmed, so a retry checks the source instead of posting other text.
-            if action['kind']=='finish' and db.execute("SELECT 1 FROM action_jobs WHERE suggestion_id=? AND revision=? AND status IN ('local_preparation','finish_uncertain','done')",(suggestion_id,revision)).fetchone():
+            if action['kind']=='finish' and db.execute("SELECT 1 FROM action_jobs WHERE suggestion_id=? AND revision=? AND status IN ('local_preparation','paused','finish_uncertain','done')",(suggestion_id,revision)).fetchone():
                 raise ValueError('This step already ran or is being checked. Use its current buttons.')
             if action['kind']=='finish':subject=None
             revised=next_actions.revise(action,subject,body)
@@ -5798,7 +5801,7 @@ class Store:
             if action['kind'] in ('prepare','finish') and db.execute("SELECT 1 FROM action_jobs WHERE suggestion_id=? AND status IN ('sending','uncertain')",(suggestion_id,)).fetchone():
                 raise ValueError('An earlier send is still being checked. Wait for that outcome before changing the result.')
             previous=db.execute('SELECT * FROM action_jobs WHERE suggestion_id=? AND revision=?',(suggestion_id,revision)).fetchone()
-            if previous and action['kind'] in ('prepare','finish') and previous['status'] in ('needs_input','finish_uncertain','cancelled','failed','blocked') and previous['approval_id']!=approval_id:
+            if previous and action['kind'] in ('prepare','finish') and previous['status'] in ('needs_input','finish_uncertain','cancelled','failed','blocked','paused') and previous['approval_id']!=approval_id:
                 # The same approved step resumes, not a new operation. An unknown outcome
                 # starts with reconciliation of that exact step, never a blind new submission.
                 db.execute("UPDATE action_jobs SET status='local_preparation',approval_id=?,source=?,updated_at=? WHERE id=?",(approval_id,source,now(),previous['id']))
@@ -5908,6 +5911,7 @@ class Store:
             # An empty list says the run asks nothing (ask_blocked); NULL is a blocker from before runs named questions.
             db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,questions=?,updated_at=? WHERE suggestion_id=?",
                        (reason,(details or '').strip() or None,encoded(questions),now(),suggestion_id))
+            pause_idle_steps(db,suggestion_id)  # nothing runs now: its confirmed step waits for Try again or an answer
             db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(suggestion_id,))
         return {'status':'blocked','reason':reason}
 
@@ -8379,7 +8383,37 @@ def card(row):
 
 
 CARD_DRAFT_KINDS = ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')
-ACTION_BUSY = ('queued', 'sending', 'sent', 'uncertain', 'local_preparation', 'undoing', 'undone')
+ACTION_BUSY = ('queued', 'sending', 'sent', 'uncertain', 'local_preparation', 'paused', 'undoing', 'undone')
+# What is really working right now, for tools and for a check before a restart or an update (`assistant busy`).
+# A confirmed step whose preparation stopped (blocked, timed out, cancelled by a snooze or close) is 'paused', not here.
+ACTION_WORKING = ('queued', 'sending', 'undoing', 'local_preparation')
+PREPARATION_WORKING = ('starting', 'running')
+
+
+def pause_idle_steps(db, suggestion_id=None, stamp=None):
+    """A confirmed step (a finish or a next preparation) is 'local_preparation' only while a preparation of its card is
+    queued or running. When that preparation stops without saving a result (it is blocked, it timed out, a snooze or a
+    close cancelled it), the step is 'paused': still approved, nothing runs, so it never counts as active work. Try
+    again, the end of a snooze, Undo or Reopen resume it (queue_preparation, and admission in preparation_step)."""
+    return db.execute("""UPDATE action_jobs SET status='paused',updated_at=? WHERE status='local_preparation' AND (? IS NULL OR suggestion_id=?)
+        AND NOT EXISTS(SELECT 1 FROM preparations p WHERE p.suggestion_id=action_jobs.suggestion_id AND p.status IN ('queued','starting','running'))""",
+        (stamp or now(), suggestion_id, suggestion_id)).rowcount
+
+
+def active_work(db):
+    """Work a restart or an update would cut off: agent jobs that run, sends under way, confirmed steps being worked on
+    and preparations that started. Paused steps, blocked or queued preparations and finished work are not in it."""
+    found = {}
+    for name, sql, args in (
+            ('agent_jobs', 'SELECT id,suggestion_id,status FROM agent_jobs WHERE status IN (%s)', agent_jobs.ACTIVE),
+            ('action_jobs', 'SELECT id,suggestion_id,status FROM action_jobs WHERE status IN (%s)', ACTION_WORKING),
+            ('preparations', 'SELECT job_id id,suggestion_id,status FROM preparations WHERE status IN (%s)', PREPARATION_WORKING)):
+        try:
+            rows = db.execute(sql % ','.join('?' for _ in args), args).fetchall()
+        except sqlite3.OperationalError:  # a table this install doesn't have yet
+            rows = []
+        found[name] = [dict(zip(('id', 'suggestion_id', 'status'), tuple(r))) for r in rows]
+    return found
 
 
 def action_busy(state):
@@ -8989,7 +9023,8 @@ def push_notify(store, config, row, sender=None):
     if row.get('_result_notice'):
         ready = row['status'] == 'prepared'
         signin = not ready and (row.get('preparation_browser') or {}).get('signin_url')
-        payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ') + row['title'],
+        asks = ask_blocked(row) or (row.get('preparation_browser') and not row.get('preparation_error'))
+        payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if asks else 'Stuck: ') + row['title'],
                    'body': plain(strip_result_links(row['body']) if ready else row.get('preparation_reason') or ''),
                    'url': signin or root + '#result=' + row['id']}
     else:
@@ -9052,7 +9087,7 @@ def telegram(config, row, action, message_id=None):
         ready=row['status']=='prepared'
         root='https://'+config['dashboard_host']+config.get('dashboard_path','/')
         signin=not ready and (row.get('preparation_browser') or {}).get('signin_url')
-        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if ask_blocked(row) or row.get('preparation_browser') else 'Stuck: ')+'**'+title+'**'
+        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if ask_blocked(row) or (row.get('preparation_browser') and not row.get('preparation_error')) else 'Stuck: ')+'**'+title+'**'
         message+='\n\n[View '+('result' if ready else 'task')+']('+root+'#result='+row['id']+')'
         # A sign-in blocker opens the dashboard's sign-in for this task; once in, the task carries on by itself.
         blocks=[{'type':'buttons','buttons':[{'label':'Sign in','action':{'type':'url','url':signin}}]}] if signin else []
@@ -12168,6 +12203,8 @@ class App:
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.settle_ahead(db)
+            # A confirmed step no preparation works on any more is paused, also one left from before paused existed.
+            pause_idle_steps(db)
             for row in db.execute("SELECT id FROM suggestions WHERE status IN ('accepted','instructions') AND NOT EXISTS(SELECT 1 FROM preparations WHERE suggestion_id=suggestions.id)").fetchall():
                 decision=db.execute("SELECT id FROM decisions WHERE suggestion_id=? AND choice IN ('accept','other','reopen') AND id NOT IN (SELECT decision_id FROM decision_annotations) ORDER BY created_at DESC LIMIT 1",(row['id'],)).fetchone()
                 if decision:self.store.queue_preparation(db,row['id'],decision['id'])
@@ -12190,6 +12227,8 @@ class App:
                 if job['status']=='queued':
                     db.execute("UPDATE preparations SET status='starting',updated_at=?,started_at=coalesce(started_at,?),attempts=attempts+1 WHERE job_id=?",(now(),now(),job['job_id']))
                     db.execute("INSERT OR IGNORE INTO preparation_runs(job_id,suggestion_id,session_job_id,status,started_at) VALUES(?,?,?,'starting',?)",(job['job_id'],job['suggestion_id'],job.get('session_job_id') or job['job_id'],now()))
+                    if job.get('action_id'):  # its paused confirmed step is worked on again (also after an automatic retry)
+                        db.execute("UPDATE action_jobs SET status='local_preparation',updated_at=? WHERE id=? AND status='paused'",(now(),job['action_id']))
                 jobs.append(job)
         for job in jobs:
             try:self.preparation_run_step(job,runner)
@@ -12281,11 +12320,13 @@ class App:
                 details={'run_ended_without_preparation':'The AI run ended without saving a result or a blocker.',
                          'ai_run_timed_out':'The AI run hit its time limit.'}.get(error,'The AI run failed (often a model timeout or overload).')+' The automatic retry ended the same way.'
                 db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,error=?,updated_at=? WHERE job_id=?",(reason,details,error,now(),job['job_id']))
+                pause_idle_steps(db,job['suggestion_id'])
                 db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(job['suggestion_id'],))
             elif (dt.datetime.fromisoformat(now())-dt.datetime.fromisoformat(current['started_at'] or current['created_at'])).total_seconds()>2100:
                 db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,error='completion_unconfirmed',updated_at=? WHERE job_id=?",
                            ('This is taking too long. I’ll stop that run and try once more.' if not current['auto_retries'] else 'This didn’t finish, also on the second try. Tap Try again, or change the request.',
                             'No confirmed completion after 25 minutes plus 10 minutes for connection outages. The old run is stopped and confirmed ended before anything restarts.',now(),job['job_id']))
+                pause_idle_steps(db,job['suggestion_id'])
                 db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(job['suggestion_id'],))
             elif status=='unavailable':
                 # Keep the same admission ID and original deadline through short outages.

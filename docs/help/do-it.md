@@ -22,5 +22,5 @@ What it can send depends on the source: an email, a Slack direct message, a What
 ## When it can't
 
 - "This can't be sent from here." means you copy the draft with **Copy draft** and send it yourself.
-- **Needs your help** means it asks you something: **Answer** it. **Stuck** means it stopped without a question; the card says why.
+- **Needs your help** means it asks you something: **Answer** it. **Stuck** means it stopped without a question, or ran too long and was stopped; the card says why.
 - **Try again** runs it once more. **Change** asks for something else.

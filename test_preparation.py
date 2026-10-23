@@ -107,6 +107,66 @@ class Preparation(unittest.TestCase):
         self.assertIn(submit['instructions'],message);self.assertIn(submit['preview'],message)
         self.assertIn('do not go ahead: record a blocker',message);self.assertNotIn('NOT tapped',message)
 
+    def confirmed_finish(self):
+        """A prepared-ahead card whose last step the owner confirmed: its run is admitted and working on it."""
+        sid=self.ahead()['id'];self.app.preparation_step(lambda r:{'status':'admitted'})
+        job=self.q('SELECT job_id FROM preparations WHERE suggestion_id=?',sid)['job_id']
+        step={'kind':'finish','label':'Order the cable','url':'https://shop.example.com/checkout','instructions':'On https://shop.example.com/checkout press Place order.','preview':'One cable, 60 EUR.'}
+        self.app.action('prepare',{'suggestion_id':sid,'job_id':job,'body':'In the cart.','next_actions':[step],'outcome':'needs_you','needs':'confirm the order'})
+        action=a.next_actions.actions(self.q('SELECT next_action FROM suggestions WHERE id=?',sid)['next_action'])[0]
+        with self.store.connect() as db:db.execute("UPDATE preparation_runs SET status='ok',finished_at=?",(a.now(),))
+        self.app.action('confirm_action',{'suggestion_id':sid,'revision':action['revision'],'approval_id':'owner-tap'},owner_dashboard=True)
+        self.app.preparation_step(lambda r:{'status':'admitted'})
+        return sid,self.q('SELECT job_id FROM preparations WHERE suggestion_id=?',sid)['job_id']
+
+    def step_state(self,sid):
+        return self.q('SELECT status FROM action_jobs WHERE suggestion_id=?',sid)['status']
+
+    def busy(self):
+        with self.store.connect() as db:return sum(len(v) for v in a.active_work(db).values())
+
+    def test_a_confirmed_step_whose_run_stopped_is_paused_not_running_and_resumes_on_try_again(self):
+        """A confirmed finish stayed 'local_preparation' for good once its run saved a blocker and the owner snoozed the
+        card: port checks and tools saw a running job that nothing worked on. Now it is paused while nothing runs, comes
+        back on Try again, and its run gets the same confirmed step."""
+        sid,job=self.confirmed_finish()
+        self.assertEqual(self.step_state(sid),'local_preparation');self.assertGreater(self.busy(),0)
+        self.app.action('preparation_blocked',{'suggestion_id':sid,'job_id':job,'reason':'The checkout page did not load.','questions':[]})
+        self.assertEqual(self.step_state(sid),'paused')
+        with self.store.connect() as db:db.execute("UPDATE preparation_runs SET status='ok',finished_at=?",(a.now(),))
+        self.assertEqual(self.busy(),0)  # blocked and paused: nothing runs, a restart cuts nothing off
+        self.store.decide(sid,'retry','','try-again','dashboard')
+        self.assertEqual(self.step_state(sid),'local_preparation')
+        calls=[];self.app.preparation_step(lambda r:calls.append(r) or {'status':'admitted'})
+        self.assertIn('Order the cable',next(c['message'] for c in calls if c.get('message')))  # the same confirmed step
+        self.store.decide(sid,'snooze','','later','dashboard')  # a snooze cancels the run: paused again
+        self.assertEqual(self.step_state(sid),'paused')
+        with self.store.connect() as db:db.execute("UPDATE suggestions SET snoozed_until=? WHERE id=?",('2000-01-01T00:00:00+00:00',sid))
+        self.store.wake_snoozed()
+        self.assertEqual(self.step_state(sid),'local_preparation')  # the end of the snooze carries on with it
+
+    def test_a_step_left_running_from_before_is_paused_by_the_next_preparation_step(self):
+        sid,job=self.confirmed_finish()
+        with self.store.connect() as db:  # how a cancelled preparation left it before paused existed
+            db.execute("UPDATE preparations SET status='cancelled' WHERE suggestion_id=?",(sid,))
+            db.execute("UPDATE preparation_runs SET status='ok',finished_at=?",(a.now(),))
+        self.assertEqual(self.step_state(sid),'local_preparation')
+        self.app.preparation_step(lambda r:{'status':'ok'})
+        self.assertEqual(self.step_state(sid),'paused');self.assertEqual(self.busy(),0)
+
+    def test_a_run_that_hangs_times_out_stuck_with_try_again_even_after_browser_steps(self):
+        sid,job=self.confirmed_finish()
+        with self.store.connect() as db:
+            db.execute("UPDATE preparations SET started_at=? WHERE suggestion_id=?",('2000-01-01T00:00:00+00:00',sid))
+            db.execute("INSERT INTO preparation_calls(job_id,call_id,tool,params,started_at) VALUES(?,?,?,?,?)",(job,'c1','browser','{}','2000-01-01T00:00:00+00:00'))
+        self.app.preparation_step(lambda r:{'status':'pending'})
+        row=self.q('SELECT status,error FROM preparations WHERE suggestion_id=?',sid)
+        self.assertEqual(row,{'status':'blocked','error':'completion_unconfirmed'})
+        self.assertEqual(self.step_state(sid),'paused')
+        row={**self.q('SELECT * FROM suggestions WHERE id=?',sid),'preparation_status':'blocked','preparation_reason':'This is taking too long.','preparation_error':'completion_unconfirmed','preparation_browser':{'since':'x'}}
+        self.assertFalse(a.ask_blocked(row))
+        self.assertIn('I’m stuck',a.card(row))
+
     def test_final_step_uploads_exactly_the_files_shown_and_never_an_unlisted_one(self):
         sid=self.ahead()['id'];calls=[];self.app.preparation_step(lambda r:calls.append(r) or {'status':'admitted'})
         job=self.q('SELECT job_id FROM preparations WHERE suggestion_id=?',sid)['job_id']
