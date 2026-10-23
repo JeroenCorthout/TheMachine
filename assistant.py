@@ -440,7 +440,7 @@ class SourceError(Exception):
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -2391,6 +2391,9 @@ class Store:
                 db.execute('DROP TABLE promises')
                 db.execute('ALTER TABLE promises_next RENAME TO promises')
             db.execute("CREATE INDEX IF NOT EXISTS promises_open ON promises(status,check_at)")
+            # What happened to a promise after it was recorded, for its page: a kind and a date or id, never message text
+            db.execute('CREATE TABLE IF NOT EXISTS promise_log(id INTEGER PRIMARY KEY,promise_id INTEGER NOT NULL,at TEXT NOT NULL,kind TEXT NOT NULL,detail TEXT)')
+            db.execute('CREATE INDEX IF NOT EXISTS promise_log_promise ON promise_log(promise_id)')
             if 'together' not in {r['name'] for r in db.execute('PRAGMA table_info(promises)')}:
                 db.execute('ALTER TABLE promises ADD COLUMN together INTEGER NOT NULL DEFAULT 0')  # a plan made with them: theirs and the owner's
             preparation_columns = {r['name'] for r in db.execute('PRAGMA table_info(preparations)')}
@@ -3918,6 +3921,7 @@ class Store:
                 if row['direction'] != direction:  # both sides said it: a plan made together, kept as the owner's
                     db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
                                (promise_check_at('mine', row['due'], row['made_at'], digest_at), stamp, row['id']))
+                    promise_logged(db, row['id'], 'together', event['id'])
                 return {'id': row['id'], 'status': row['status'], 'duplicate': True}
             cursor = db.execute('INSERT INTO promises(direction,who,what,due,check_at,event_id,account_id,watch,status,created_at,updated_at) '
                                 "VALUES(?,?,?,?,?,?,?,?,'open',?,?) ON CONFLICT(event_id,direction,who,what) DO NOTHING",
@@ -3939,14 +3943,16 @@ class Store:
                     raise ValueError('Say in a few words what shows it kept or no longer needed (reason), with the event_ids')
                 db.execute('UPDATE promises SET status=?,note=?,updated_at=? WHERE id=?',
                            (status, reason or ('Done' if status == 'kept' else 'Not needed') + ' (you)', now(), row['id']))
+                promise_logged(db, row['id'], status, source)
                 return {'id': row['id'], 'status': status}
-            if args.get('due') and source == 'assistant':
+            if args.get('due') and source in ('assistant', 'dashboard'):
                 try:
                     due = dt.date.fromisoformat(str(args['due'])[:10]).isoformat()
                 except ValueError:
                     raise ValueError('due must be YYYY-MM-DD') from None
                 check_at = promise_check_at(row['direction'], due, row['made_at'], digest_at)
-                db.execute('UPDATE promises SET due=?,check_at=?,note=?,updated_at=? WHERE id=?', (due, check_at, reason or None, now(), row['id']))
+                db.execute('UPDATE promises SET due=?,check_at=?,note=?,updated_at=? WHERE id=?', (due, check_at, reason or row['note'] if source == 'dashboard' else reason or None, now(), row['id']))
+                promise_logged(db, row['id'], 'due', due)
                 return {'id': row['id'], 'status': 'open', 'due': due, 'check_at': check_at}
         raise ValueError("Update a promise with status 'kept' or 'dropped' and a reason, or with a new due date")
 
@@ -3994,9 +4000,11 @@ class Store:
             if len({r['direction'] for r in rows}) > 1 and not (keep['together'] and keep['direction'] == 'mine'):
                 db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
                            (promise_check_at('mine', keep['due'], keep['made_at']), now(), keep['id']))
+                promise_logged(db, keep['id'], 'together')
             for r in rows:
                 if r['id'] != keep['id']:
                     db.execute("UPDATE promises SET status='dropped',note=?,updated_at=? WHERE id=?", (f"The same as promise {keep['id']}", now(), r['id']))
+                    promise_logged(db, r['id'], 'merged', keep['id'])
         for row in db.execute("SELECT id,watch FROM promises WHERE status='open' AND watch IS NOT NULL").fetchall():
             watch = {**json.loads(row['watch']), 'promise': True}
             answer = next((e for e in db.execute('SELECT id,account_id,kind,occurred_at,title,metadata FROM events WHERE account_id=? AND kind=? AND occurred_at>? AND deleted=0 ORDER BY occurred_at',
@@ -4004,6 +4012,7 @@ class Store:
             if answer:
                 db.execute("UPDATE promises SET status='answered',note=?,updated_at=? WHERE id=?",
                            (f"They wrote again: {answer['title'][:150]}", now(), row['id']))
+                promise_logged(db, row['id'], 'answered', answer['id'])
 
     def promises(self, days=14):
         """Open promises and those closed in the last days, soonest first."""
@@ -4016,6 +4025,33 @@ class Store:
         for row in rows:
             row['state'] = promise_state(row)
         return [r for r in rows if r['state'] in ('open', 'card') or r['updated_at'] >= since]
+
+    def promise_page(self, promise_id):
+        """One promise for its own dashboard page: who promised what to whom and by when, where it stands, the message
+        it came from, the people, organisation and project that message is on, its card and what happened since."""
+        with self.connect() as db:
+            row = db.execute('SELECT p.*,e.occurred_at made_at,e.kind source_kind,s.status card_status,s.title card_title FROM promises p '
+                             'JOIN events e ON e.id=p.event_id LEFT JOIN suggestions s ON s.id=p.suggestion_id WHERE p.id=?', (promise_id,)).fetchone()
+            if not row:
+                raise ValueError('Unknown promise')
+            p = dict(row)
+            try:
+                links = [dict(r) for r in db.execute("SELECT n.id,n.kind,n.name FROM graph_events g JOIN graph_nodes n ON n.id=g.node_id "
+                                                     "WHERE g.event_id=? AND n.kind IN ('person','org','project') ORDER BY n.kind DESC,n.name LIMIT 12", (p['event_id'],))]
+            except sqlite3.OperationalError:
+                links = []  # no graph yet
+            log = [dict(r) for r in db.execute('SELECT at,kind,detail FROM promise_log WHERE promise_id=? ORDER BY at,id', (promise_id,))]
+        p['state'] = promise_state(p)
+        history = [{'at': p['made_at'], 'kind': 'said', 'detail': p['source_kind']}, {'at': max(p['created_at'], p['made_at']), 'kind': 'noted'}]
+        history += [h for h in log if h['kind'] != 'together' or h['at'] > p['created_at']]
+        closed = {'kept': 'kept', 'dropped': 'dropped', 'answered': 'answered'}.get(p['status'])
+        if closed and not any(h['kind'] in (closed, 'merged') for h in log):
+            history.append({'at': p['updated_at'], 'kind': closed})  # closed before the log
+        if p['suggestion_id'] and not any(h['kind'] == 'carded' for h in log):
+            history.append({'at': p['updated_at'], 'kind': 'carded'})
+        card = {'id': p['suggestion_id'], 'title': p['card_title'], 'status': p['card_status']} if p['suggestion_id'] and p['card_title'] else None
+        keep = ('id', 'direction', 'together', 'who', 'what', 'due', 'check_at', 'status', 'state', 'note', 'made_at', 'event_id', 'account_id', 'created_at', 'updated_at')
+        return {**{k: p[k] for k in keep}, 'card': card, 'links': links, 'history': sorted(history, key=lambda h: h['at'] or '')}
 
     def promises_text(self, limit=30):
         """Open promises for the review prompt, so a later message can close them."""
@@ -7044,6 +7080,10 @@ def promise_check_at(direction, due, made_at, digest_at='08:30', current=None):
     return target.astimezone(dt.timezone.utc).isoformat()
 
 
+def promise_logged(db, promise_id, kind, detail=None):
+    db.execute('INSERT INTO promise_log(promise_id,at,kind,detail) VALUES(?,?,?,?)', (promise_id, now(), kind, None if detail is None else str(detail)))
+
+
 def promise_state(row):
     """open, card (its card is out), kept, dropped or answered; a card closes the promise with it."""
     if row['status'] == 'carded':
@@ -9448,13 +9488,14 @@ def weekly_recap_message(store, config, current=None, usage=None):
 
     # 1. What needs the owner: promises made to them that are late, then their own open ones with a date.
     promised = [p for p in store.promises(7) if p['state'] in ('open', 'card')]
-    card_of = lambda p: p['suggestion_id'] if p['state'] == 'card' and p['suggestion_id'] in open_cards else None
+    # A promise links to its own page on the dashboard, never to its card (the page links the card)
+    said = lambda p: f"[{recap_escape(recap_clip(p['what']))}]({root}#promise/{p['id']})" if root else recap_escape(recap_clip(p['what']))
     late_to = [p for p in promised if p['direction'] == 'theirs' and ((p['due'] and p['due'] < today.isoformat()) or (not p['due'] and p['check_at'] <= current.isoformat()))]
     soon = (today + dt.timedelta(days=14)).isoformat()  # their own: late ones and those due in the next two weeks
     mine = sorted((p for p in promised if p['direction'] == 'mine' and p['due'] and p['due'] <= soon), key=lambda p: p['due'])
-    needs = [f"• Waiting on {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+    needs = [f"• Waiting on {recap_escape(p['who'])}: {said(p)}, "
              + (f"due {recap_day(p['due'])}" if p['due'] else f"since {recap_day(p['made_at'])}") for p in late_to[:4]]
-    needs += [f"• Promised {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+    needs += [f"• Promised {recap_escape(p['who'])}: {said(p)}, "
               + (f"was due {recap_day(p['due'])}" if p['due'] < today.isoformat() else f"due {recap_day(p['due'])}") for p in mine[:4]]
     more = max(0, len(late_to) - 4) + max(0, len(mine) - 4)
     if needs:
@@ -9473,7 +9514,7 @@ def weekly_recap_message(store, config, current=None, usage=None):
     for p in promised:
         same = lambda q: q['direction'] == 'mine' and q['who'] == p['who'] and q['what'].lower() == p['what'].lower()
         if p['direction'] == 'theirs' and p['due'] and in_week(p['due']) and not any(map(same, mine)):  # today's are on time, late ones are under Needs you, a shared plan shows once
-            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {link(recap_clip(p['what']), card_of(p))}"))
+            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {said(p)}"))
     if week:
         when = lambda v: str(v) if len(str(v)) <= 10 else dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')).astimezone(tz).strftime('%Y-%m-%dT%H:%M')
         week.sort(key=lambda w: when(w[0]))
@@ -10728,6 +10769,10 @@ class App:
             if not owner_dashboard or args.get('status') not in ('kept', 'dropped'):
                 raise ValueError('Only the owner closes a promise, on the dashboard')
             return self.store.update_promise({'id': args.get('id'), 'status': args['status']}, source='dashboard')
+        if name == 'promise_due':
+            if not owner_dashboard or not args.get('due'):
+                raise ValueError('Only the owner moves a promise’s date here, on the dashboard')
+            return self.store.update_promise({'id': args.get('id'), 'due': args['due']}, self.config.get('digest_at', '08:30'), source='dashboard')
         if name in ('set_signature', 'detect_signature'):
             if not owner_dashboard:
                 raise ValueError('Only the owner sets a signature, on the dashboard (Settings, Signatures)')
@@ -11771,7 +11816,8 @@ class App:
         saved = self.store.suggest('promise:%d' % p['id'], title[:90], body[:700], [p['event_id']], 'now', self.config.get('digest_at', '08:30'),
                                    work=self.is_work([p['account_id']]), due=p['due'], ahead=ahead, _db=_db)
         with contextlib.nullcontext(_db) as db:
-            db.execute("UPDATE promises SET status='carded',suggestion_id=?,updated_at=? WHERE id=? AND status='open'", (saved['id'], now(), p['id']))
+            if db.execute("UPDATE promises SET status='carded',suggestion_id=?,updated_at=? WHERE id=? AND status='open'", (saved['id'], now(), p['id'])).rowcount:
+                promise_logged(db, p['id'], 'carded')
             if p['watch'] and not saved.get('duplicate'):
                 # Their reply closes the card too while it is still on its way.
                 db.execute('UPDATE suggestions SET awaiting=? WHERE id=?', (encoded({**json.loads(p['watch']), 'promise': True}), saved['id']))
@@ -13737,6 +13783,15 @@ class App:
                         except (fleet.Off, ValueError, OSError):
                             pass
                         self.output(200, app.fleet_view())
+                elif path.path == '/api/promise':  # a promise's own page: read-only
+                    try:
+                        found = app.store.promise_page(int(urllib.parse.parse_qs(path.query).get('id', [''])[0]))
+                        rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[found['event_id']])
+                        found['source'] = [{'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
+                                            'source_url': r['metadata'].get('source_url'), **event_glance(r, app.config['accounts'])} for r in rows][:1]
+                        self.output(200, found)
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(404, {'error': 'No such promise'})
                 elif path.path == '/api/graph':
                     node = urllib.parse.parse_qs(path.query).get('node', [''])[0]
                     query = urllib.parse.parse_qs(path.query).get('q', [''])[0]
@@ -13937,7 +13992,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
