@@ -55,8 +55,8 @@ try{
  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('#task-c1c1c1c1c1c1c1c1').waitFor();
  const shot=async n=>{if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/${n}.png`})};
- // No Chat link on the card: its title opens the chat
- assert.equal(await page.locator('#task-c1c1c1c1c1c1c1c1 .chat-link').count(),0);
+ // The title opens the chat; so does a small, optional Chat link on the card's top row
+ assert.equal(await page.locator('#task-c1c1c1c1c1c1c1c1 .meta a.card-chat-link[href="#chat=c1c1c1c1c1c1c1c1"]').count(),1);
  await page.locator('#task-c1c1c1c1c1c1c1c1 h3 a').click();
  await page.locator('.chat-layout .chat-head').waitFor();
  assert.equal(new URL(page.url()).hash,'#chat=c1c1c1c1c1c1c1c1');
@@ -77,11 +77,11 @@ try{
  assert.equal(await page.locator('#chat-log .chat-source .bubble strong').textContent(),'Tuesday');
  assert.ok((await page.locator('#chat-log .chat-day').count())>=2);
  for(const t of await page.locator('#chat-log .chat-time').allTextContents())assert.match(t,/^\d\d:\d\d$/);
- // The owner's own taps are quiet lines on the right, the same one in a row folded with a count; others' in the middle
- assert.match(await page.locator('#chat-log .chat-event.mine').first().textContent(),/^Snoozed 3 times · \d\d:\d\d/);
+ // The owner's own taps are quiet lines on the right, the same one in a row folded with a count; others' in the middle; their time shows on hover
+ assert.match(await page.locator('#chat-log .chat-event.mine').first().textContent(),/^Snoozed 3 times\d\d:\d\d/);
  await page.locator('#chat-log .chat-event.mine summary').click();
  assert.equal(await page.locator('#chat-log .chat-event.mine li').count(),3);
- assert.match(await page.locator('#chat-log .chat-event:not(.mine)').textContent(),/^Didn’t go out to Sam · \d\d:\d\d$/);
+ assert.match(await page.locator('#chat-log .chat-event:not(.mine)').textContent(),/^Didn’t go out to Sam\d\d:\d\d$/);
  // The steps come before the reply they led to, folded into one quiet line
  const order=await page.locator('#chat-log>*').evaluateAll(ns=>ns.map(n=>n.classList.contains('chat-work')?'steps':n.matches('.chat-msg.machine')?'reply':n.matches('.chat-msg.you')?'you':''));
  assert.ok(order.indexOf('steps')>=0&&order.indexOf('steps')<order.indexOf('reply'));
@@ -102,15 +102,18 @@ try{
  // The card's choices on the Machine's latest message, the accent only on the main one
  assert.equal(await page.locator('#chat-log .chat-options button.primary').count(),1);
  // A message to a coding agent says to whom; its answer leads with what it found, its files as chips
- assert.equal(await page.locator('#chat-log .chat-msg.you .chat-from').textContent(),'To Codex');
- const agent=page.locator('#chat-log .chat-msg.machine',{hasText:'Both dates are free.'});
- assert.equal(await agent.locator('.chat-from span').textContent(),'Codex');
+ assert.equal(await page.locator('#chat-log .chat-msg.you .chat-to').textContent(),'to Codex');
+ // An answer with files is a result: the raised card, as the latest thing made for the owner
+ const agent=page.locator('#chat-log .chat-result',{hasText:'Both dates are free.'});
+ assert.equal(await agent.locator('.chat-result-title').textContent(),'Codex');
+ assert.ok(await agent.evaluate(n=>n.classList.contains('current')));
+ assert.ok(await page.locator('#chat-log .chat-result.earlier').count()>=1);
  assert.equal(await agent.locator('.chat-files a.agent-file').textContent(),'summary.md');
  assert.equal(await agent.locator('.chat-noted').textContent(),'Nothing sent');
  // A shortened answer has More, which shows the whole answer
  await agent.locator('.chat-more').click();
- await page.locator('#chat-log .chat-msg.machine',{hasText:'I wrote summary.md.'}).waitFor();
- assert.equal(await page.locator('#chat-log .chat-msg.machine',{hasText:'I wrote summary.md.'}).locator('.chat-more').textContent(),'Less');
+ await page.locator('#chat-log .chat-result',{hasText:'I wrote summary.md.'}).waitFor();
+ assert.equal(await page.locator('#chat-log .chat-result',{hasText:'I wrote summary.md.'}).locator('.chat-more').textContent(),'Less');
  // At most two suggestions from the card; one fills the message box
  assert.ok(await page.locator('#chat-picks').isHidden());  // after a message of yours, only while you write
  await page.locator('#chat-input').focus();
@@ -124,9 +127,13 @@ try{
  await page.locator('#chat-log .chat-steps summary').click();
  await page.waitForTimeout(1200);
  assert.ok(await page.locator('#chat-log .chat-steps').last().evaluate(d=>d.open));
- // The composer: one line, "Message", a send icon
- assert.equal(await page.locator('#chat-input').getAttribute('placeholder'),'Message');
+ // The composer: one line, "Ask or change something", a send icon
+ assert.equal(await page.locator('#chat-input').getAttribute('placeholder'),'Ask or change something');
  assert.equal(await page.locator('#chat-input').getAttribute('rows'),'1');
+ // On a computer the page stays put: the list and the thread scroll on their own, and a scroll past the end stays inside
+ const box=await page.evaluate(()=>{const l=getComputedStyle(document.querySelector('#chat-log')),d=getComputedStyle(document.querySelector('.chat-side'));
+  return {page:document.documentElement.scrollHeight<=innerHeight+1,log:l.overflowY,logOver:l.overscrollBehaviorY,side:d.overflowY,sideOver:d.overscrollBehaviorY}});
+ assert.deepEqual(box,{page:true,log:'auto',logOver:'contain',side:'auto',sideOver:'contain'});
  await shot('desktop');
  // Send (Enter with a keyboard): the Change path, then the reply grows while the run goes (polled with the cursor)
  await page.locator('#chat-input').fill('Shorter please, and say Tuesday');
@@ -147,7 +154,8 @@ try{
  await page.locator('.chat-side a',{hasText:'Alex needs your call'}).click();
  await page.locator('h2.chat-title',{hasText:'Alex needs your call'}).waitFor();
  await page.locator('#chat-log .chat-card').waitFor();
- assert.equal(await page.locator('#chat-log .chat-card .chat-q').textContent(),'Your call: the venue?');
+ // The call it needs is the card's result: the raised card under its message
+ assert.equal(await page.locator('#chat-log .chat-result.current .chat-q').textContent(),'Your call: the venue?');
  assert.doesNotMatch(await page.locator('#chat-log .chat-card .bubble').textContent(),/I can check/);
  assert.equal(await page.locator('#chat-picks [data-chat-say]').first().textContent(),'Draft an answer');
  // A snoozed task: the status line with Unsnooze as a text button; a message still goes (it brings the task back)
