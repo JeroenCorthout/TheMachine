@@ -59,6 +59,7 @@ SETUP = {'label': 'RSS feed',                          # name in prompts, doctor
          'secret': None,                                 # a prompt here asks for a key without echo into the `credential` file (mode 600)
          'hints': {},                                    # error prefix -> plain fix, e.g. {'myapi:HTTP_401': 'MyAPI rejected the key'}
          'browser': None,                                # for sources read through the shared browser: its site ('linkedin', 'x'); an error ending in _signed_out then shows 'Signed out' with a way to sign in again
+         'broker': False,                                # True when a hosting control plane signs it in (Zoom): the Add tab links to that page instead
          'family': None,                                 # e.g. 'MYAPI_': offer keys named MYAPI_…KEY/TOKEN the owner already saved
          'maton': None}                                  # truthy offers reading through Maton instead; the connection is found with the key ('maton_app' names the Maton app if not the service)
 ```

@@ -18,7 +18,7 @@ const view={on:true,kinds:{relationships:'who knows someone',intro:'warm intros'
   {id:'q_'+'2'.repeat(16),fleet:FL,name:'Pat',kind:'followup',question:'Follow-ups from Deal review on 2026-10-20: you: Send pricing; Pat: Book the demo'}],
  asked:[{id:'a1',fleet:FL,name:'Pat',kind:'intro',status:'answered',question:'An intro to someone at other.example',answer:'intro email sent'}],
  intro_offers:[{ask_id:'r1',fleet:FL,member_id:'p',name:'Pat',about:'client.example'}],
- splits:[{id:'out:'+'k'.repeat(64),fleet:FL,title:'Deal review',day:'2026-10-20',status:'proposed',parts:[{member_id:'m',name:'You',mine:true,what:'Send pricing'},{member_id:'p',name:'Pat',mine:false,what:''}]}],
+ splits:[{id:'out:'+'k'.repeat(64),fleet:FL,title:'Deal review',day:'2026-10-20',status:'proposed',notes:'Zoom',parts:[{member_id:'m',name:'You',mine:true,what:'Send pricing'},{member_id:'p',name:'Pat',mine:false,what:'Book a demo',from_notes:true}]}],
  log:[],notices:[]};
 const card={id:'c1',title:'Send Sam the pricing',body:'Sam asked for pricing.',status:'pending',event_ids:[1],scope:'work',created_at:new Date().toISOString(),fleet_holder:{}};  // a claim without a name
 const state={suggestions:[card],connectors:[],suggestion_counts:{pending:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:3}};
@@ -78,6 +78,9 @@ try{
  assert.match(await page.locator('#fleet-split-out\\:'+'k'.repeat(64)+' h3').innerText(),/Deal review Tue 20 Oct/);
  assert.deepEqual(await proposal.locator('.split-who').allInnerTexts(),['You','Pat']);
  assert.deepEqual(await proposal.locator('.actions>button').allInnerTexts(),['Send the split','Not needed']);
+ // Filled in from the meeting's Zoom notes: a suggestion to check, the suggested part marked, still sent only by the owner
+ assert.equal(await page.locator('#suggestions .split-note').innerText(),'Filled in from the Zoom notes. Check it before you send.');
+ assert.equal(await proposal.locator('.split-part.suggested input').inputValue(),'Book a demo');
  await proposal.locator('input[name="p"]').fill('Book the demo');
  await proposal.locator('button.primary').click();await page.waitForTimeout(100);
  assert.deepEqual(calls.at(-1),{action:'fleet_split',args:{id:'out:'+'k'.repeat(64),items:{m:'Send pricing',p:'Book the demo'}}});
