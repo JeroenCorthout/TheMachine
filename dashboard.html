@@ -986,16 +986,16 @@ dialog h2,.snooze-heading h2{font:var(--fw-heading) var(--fs-xl)/var(--lh-tight)
   .card .more-actions>summary{min-height:36px;font-size:var(--fs-sm);padding:7px 12px}
 }
 #needs-you .head-link,.notice-card .head-link,.fleet-pane button:not(.primary),.fleet-box button:not(.primary){background:var(--surface-2)}
-/* Handoffs on a Work Fleet: one row each, open ones first; accepted and done ones quieter. The time leads the summary, one line until tapped; Open centred on the row. */
+/* Handoffs on a Work Fleet: one row each, open ones first; accepted and done ones quieter. The time leads two lines of
+   summary. A row whose card is still there is a .tap row (the Graph lists' chevron, hover and focus) that opens it. */
 .fleet-ho-list{list-style:none;margin:var(--sp-2) 0 0;padding:0}
-.fleet-ho{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px var(--sp-3);padding:var(--sp-2) 0;border-top:1px solid var(--lines)}
+.fleet-ho{display:flex;flex-direction:column;gap:2px;min-width:0;padding:var(--sp-2) 0;border-top:1px solid var(--lines)}
 .fleet-ho:first-child{border-top:0}
 .fleet-ho.quiet{opacity:.7}
 .fleet-ho-top{display:flex;align-items:center;flex-wrap:wrap;gap:4px var(--sp-2);min-width:0}
 .fleet-ho-sum time{color:var(--faint)}
-#fleet-view .fleet-ho-sum{grid-column:1;min-width:0;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--muted);font:inherit;font-size:var(--fs-sm);font-weight:400;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-#fleet-view .fleet-ho-sum[aria-expanded="true"]{white-space:normal;overflow-wrap:anywhere}
-.fleet-ho .fleet-brief-open{grid-column:2;grid-row:1/span 2;align-self:center}
+.fleet-ho-sum{margin:0;color:var(--muted);font-size:var(--fs-sm);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.fleet-ho.tap{padding-right:32px!important}.fleet-ho.tap::after{right:4px}
 /* Lists inside a box: rows divided by a line, not boxes in a box. */
 .fleet-box .list{border:0;border-radius:0;background:transparent;box-shadow:none}
 .fleet-box .list>article{background:transparent;border:0;border-top:1px solid var(--border);border-radius:0;box-shadow:none;margin:0;padding:12px 0}
@@ -3479,7 +3479,7 @@ function fleetHandoffs(f,work,inFleet){const cards=new Set((state?.suggestions||
  if(!rows.length)return'';
  const open=rows.filter(r=>!r.st[2]),quiet=rows.filter(r=>r.st[2]),shown=3;
  const row=(r,k)=>{const more=r.st[2]&&k>=shown,text=r.text+(r.st[3]?` · “${r.st[3].replace(/^“|”$/g,'')}”`:'');
-  return`<li class="fleet-ho${r.st[2]?' quiet':''}${more?' fleet-ho-more':''}"${more?' hidden':''}><div class="fleet-ho-top"><strong>${esc(r.who)}</strong>${chip(r.st[0],r.st[1])}</div><button type="button" class="fleet-ho-sum" aria-expanded="false" title="${esc(text)}" data-ho-expand>${time(r.at,true)} · ${esc(text)}</button>${r.href?`<a class="fleet-brief-open" href="${esc(r.href)}">Open</a>`:''}</li>`};
+  return`<li class="fleet-ho${r.href?' tap':''}${r.st[2]?' quiet':''}${more?' fleet-ho-more':''}"${more?' hidden':''}${r.href?` tabindex="0" role="link" aria-label="${esc(r.who)}: open the card" data-ho-go="${esc(r.href)}"`:''}><div class="fleet-ho-top"><strong>${esc(r.who)}</strong>${chip(r.st[0],r.st[1])}</div><p class="fleet-ho-sum" title="${esc(text)}">${time(r.at,true)} · ${esc(text)}</p></li>`};
  return`<div class="fleet-box fleet-handoffs"><h3>Handoffs</h3><ul class="fleet-ho-list">${open.map(row).join('')}${quiet.map(row).join('')}</ul>${quiet.length>shown?`<button type="button" class="quiet fleet-brief-show" data-ho-more>Show ${quiet.length-shown} more</button>`:''}</div>`}
 function fleetIntroOffers(f,work,inFleet){const offers=(f.intro_offers||[]).filter(o=>inFleet(o,work));
  return offers.length?`<div class="list">${offers.map(o=>`<article><p><strong>${esc(o.name)}</strong> knows someone at ${esc(o.about)}.</p><form class="fleet-ask fleet-intro-form" data-fleet="${esc(o.fleet)}" data-member="${esc(o.member_id)}" data-about="${esc(o.about)}"><input name="note" maxlength="300" placeholder="Why, in a line (optional; they see it)" aria-label="Why"><button class="primary">Ask ${esc(o.name)} for an intro</button></form></article>`).join('')}</div>`:''}
@@ -3752,10 +3752,10 @@ fleetOn('change',async e=>{const t=e.target.closest('[data-net-addr]');if(!t)ret
  try{await fleetPost('fleet_network',{do:t.checked?'address_on':'address_off',email:t.dataset.netAddr});await fleetView()}catch(err){t.checked=!t.checked;toast(err.message,true)}finally{t.disabled=false}});
 fleetOn('change',async e=>{const t=e.target.closest('[data-net-toggle]');if(!t)return;t.disabled=true;
  try{await fleetPost('fleet_network',{do:t.dataset.netToggle});await fleetView()}catch(err){t.checked=!t.checked;toast(err.message,true)}finally{t.disabled=false}});
+fleetOn('keydown',e=>{const go=(e.key==='Enter'||e.key===' ')&&e.target.matches?.('[data-ho-go]')&&e.target;if(go){e.preventDefault();location.hash=go.dataset.hoGo}});
 fleetOn('click',async e=>{const more=e.target.closest('[data-brief-more]');if(more){more.closest('.fleet-brief').querySelectorAll('.fleet-brief-more').forEach(li=>li.hidden=false);more.remove();return}
  const hoMore=e.target.closest('[data-ho-more]');if(hoMore){hoMore.closest('.fleet-handoffs').querySelectorAll('.fleet-ho-more').forEach(li=>li.hidden=false);hoMore.remove();return}
- const hoGo=e.target.closest('.fleet-ho a[href^="#"]');if(hoGo&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();location.hash=hoGo.getAttribute('href');return}  // in-page, also under another base path
- const hoSum=e.target.closest('[data-ho-expand]');if(hoSum){hoSum.setAttribute('aria-expanded',String(hoSum.getAttribute('aria-expanded')!=='true'));return}
+ const hoGo=e.target.closest('[data-ho-go]');if(hoGo){location.hash=hoGo.dataset.hoGo;return}  // the whole row opens its card
  const ask=e.target.closest('[data-brief-ask]');if(ask){const input=document.querySelector(`.fleet-free-form[data-fleet="${CSS.escape(ask.dataset.fleet)}"] input[name=text]`);if(!input)return;input.value=ask.dataset.briefAsk;input.focus();input.scrollIntoView({block:'center',behavior:'smooth'});return}
  const hide=e.target.closest('[data-brief-hide]');if(!hide)return;hide.disabled=true;
  try{await fleetPost('fleet_brief_hide',{fleet:hide.dataset.fleet,key:hide.dataset.briefHide});hide.closest('li').remove();toast('Hidden from this brief.');await fleetView()}catch(err){hide.disabled=false;toast(err.message,true)}});
