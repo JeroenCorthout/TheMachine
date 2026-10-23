@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Fleet tab, Family: when everyone is free, to-dos and plans in one compact pane; a member's to-do or plan waits as a
@@ -47,7 +48,7 @@ try{
   assert.match(await card.innerText(),/Robin asks you to do something/);
   calls.length=0;await card.locator('[data-choice-f="once"]').click();await page.waitForTimeout(200);
   assert.deepEqual(calls.at(-1),{action:'fleet_decide',args:{id:'q_'+'1'.repeat(16),choice:'once'}});
-  await page.locator('nav [data-tab="fleet"]').click();await page.locator('.fleet-tabs').waitFor();
+  await navClick(page.locator('nav [data-tab="fleet"]'));await page.locator('.fleet-tabs').waitFor();
   // Every Fleet together, Work and Family, by when it was joined; then Friends, Sharing and Activity
   assert.deepEqual(await page.locator('.fleet-tabs [data-fleet-pane]').allInnerTexts(),['Acme','Home','Beta','Friends','Sharing','Activity']);
   await page.locator('[data-fleet-pane="family"]').click();await page.locator('#fleet-family').waitFor();

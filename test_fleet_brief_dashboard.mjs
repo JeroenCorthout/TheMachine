@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Fleet tab: the team brief card and its setting, free questions asked and answered per teammate; under Suggestions a teammate's free
@@ -40,7 +41,7 @@ try{
  const page=await (await browser.newContext({viewport:{width:1000,height:900}})).newPage();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);
- await page.locator('nav [data-tab="fleet"]').click();await page.getByText('What the Fleet saw').waitFor();
+ await navClick(page.locator('nav [data-tab="fleet"]'));await page.getByText('What the Fleet saw').waitFor();
  assert.deepEqual(errors,[]);
  // The brief: ranked lines with human dates, 5 shown, the rest behind Show more; no inner scroll box, no markup from names
  const brief=page.locator('.fleet-brief');
@@ -70,17 +71,17 @@ try{
  assert.equal(await card.locator('[data-choice-f="always"]').count(),0);
  assert.equal(await page.locator('#fleet-free-q_'+'1'.repeat(16)).inputValue(),'Yes, I have: 2 emails on this.');
  // Answers to my question: per teammate, as text, in the Fleet tab
- await page.locator('nav [data-tab="fleet"]').click();await page.getByText('What the Fleet saw').waitFor();
+ await navClick(page.locator('nav [data-tab="fleet"]'));await page.getByText('What the Fleet saw').waitFor();
  assert.equal(await page.locator('.list b').count(),0);
  assert.match(await page.getByText('Yes, <b>twice</b>').innerText(),/twice/);
  assert.ok(await page.getByText('no answer').count());
  // Only what the owner sends goes
- await page.locator('nav [data-tab="inbox"]').click();
+ await navClick(page.locator('nav [data-tab="inbox"]'));
  calls.length=0;await page.locator('#fleet-free-q_'+'1'.repeat(16)).fill('Yes, call me.');
  await card.locator('[data-fleet-send]').click();
  assert.deepEqual(await waitCall(page,'fleet_decide'),{action:'fleet_decide',args:{id:'q_'+'1'.repeat(16),choice:'once',text:'Yes, call me.'}});
  await page.getByText('Sent.',{exact:true}).waitFor();await page.waitForTimeout(300);
- await page.locator('nav [data-tab="fleet"]').click();
+ await navClick(page.locator('nav [data-tab="fleet"]'));
  calls.length=0;await page.locator('.fleet-free-form input').fill('Anyone know a good notary?');await page.locator('.fleet-free-form button').click();
  assert.deepEqual(await waitCall(page,'fleet_free'),{action:'fleet_free',args:{text:'Anyone know a good notary?',fleet:FL}});
  // How often the brief comes sits under Sharing, with the meetings option.

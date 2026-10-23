@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings, Account: on a hosted Machine it comes first in General, with Open account and Sign out side by side. Sign out posts to
@@ -30,7 +31,7 @@ try{
   const context=await browser.newContext({viewport:{width,height:900},colorScheme:scheme}),page=await context.newPage();
   await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
   page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(base);await page.locator('#open-settings').click();
+  await page.goto(base);await navClick(page.locator('#open-settings'));
   await page.locator('#sign-out:not([hidden])').waitFor();
   assert.equal(await page.evaluate(()=>document.querySelector('#settings-tabs').nextElementSibling.id),'settings-account-block');
   const box=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect(),o=r('#manage'),s=r('#sign-out button'),card=r('#settings-account');
@@ -41,7 +42,7 @@ try{
   if(width===390&&scheme==='light'){
    await page.locator('#sign-out button').click();await page.waitForURL(base+'/bye');assert.deepEqual(posts,['POST']);
    // On your own computer: no account page to sign out of, and the card stays last.
-   hosted=false;await page.goto(base);await page.locator('#open-settings').click();await page.locator('#settings-cloud:not([hidden])').waitFor();
+   hosted=false;await page.goto(base);await navClick(page.locator('#open-settings'));await page.locator('#settings-cloud:not([hidden])').waitFor();
    assert.equal(await page.locator('#sign-out').isHidden(),true);
    assert.equal(await page.evaluate(()=>document.querySelector('#settings').lastElementChild.id),'settings-account-block');
   }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings, Signatures: one card per mailbox with a rich editor in a frame that runs nothing. With nothing kept yet,
@@ -34,7 +35,7 @@ try{
   page.on('pageerror',e=>errors.push(e.message));
   page.on('dialog',d=>d.accept(d.message().startsWith('Link')?'https://example.org':'javascript:alert(1)'));
   await page.goto('http://127.0.0.1:'+server.address().port);
-  await page.locator('#open-settings').click();await page.locator('#settings-tabs [data-settings-tab="writing"]').click();
+  await navClick(page.locator('#open-settings'));await page.locator('#settings-tabs [data-settings-tab="writing"]').click();
   const forms=page.locator('#signatures .sig-form');await forms.first().waitFor();
   assert.equal(await forms.count(),2);
   const outlook=forms.nth(0),gmail=forms.nth(1);

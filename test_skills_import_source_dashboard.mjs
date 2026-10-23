@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings > Skills > Import: the source picked above Find my skills is the only account it looks in, and the note
@@ -32,7 +33,7 @@ try{
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);
- await page.locator('#open-settings').click();await page.locator('#settings-tabs [data-settings-tab="skills"]').click();
+ await navClick(page.locator('#open-settings'));await page.locator('#settings-tabs [data-settings-tab="skills"]').click();
  await page.locator('#skill-import-open').click();
  assert.equal(await page.locator('#import-find-note').textContent(),'Looks on this computer and in your Claude account.');
  await page.locator('input[name="import-from"][value="chatgpt"]').check();

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Graph and Connections have sub-tabs like Fleet: a pill row over panes. Links open the right one (#graph=roles,
@@ -40,7 +41,7 @@ try{
  await page.goto(base);
  // Graph: People first, then Projects and Organisations; Who's who, with its count, last. The Graph tab counts it too.
  await page.locator('#badge-people',{hasText:/^2$/}).waitFor();
- await page.locator('nav [data-tab="people"]').click();
+ await navClick(page.locator('nav [data-tab="people"]'));
  await page.locator('#people-view .sub-tabs').waitFor();
  assert.deepEqual(await tabs(page,'#people-view'),['People','Projects','Organisations','Who’s who\n2']);
  assert.equal(await selected(page,'#people-view'),'People');
@@ -53,7 +54,7 @@ try{
   return {lines:Math.round(hr.height/parseFloat(getComputedStyle(h).lineHeight)),inline:cr.top<hr.bottom&&cr.left>hr.left,below:pr.top>=hr.bottom-1,text:p.textContent}});
  assert.deepEqual(head,{lines:1,inline:true,below:true,text:'Roles your Machine picked up. Confirm or edit; it learns from your edits.'});
  // The choice is kept; a link picks one.
- await page.reload();await page.locator('nav [data-tab="people"]').click();await page.locator('#people-view .sub-tabs').waitFor();
+ await page.reload();await navClick(page.locator('nav [data-tab="people"]'));await page.locator('#people-view .sub-tabs').waitFor();
  assert.equal(await selected(page,'#people-view'),'Who’s who\n2');
  await page.goto(base+'/#graph=people');await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();
  await page.goto(base+'/#graph=roles');await page.locator('[data-graph-panel="roles"]:not([hidden])').waitFor();
@@ -61,10 +62,10 @@ try{
  page.once('dialog',d=>d.accept());await page.locator('[data-graph-panel="roles"] [data-role-confirm]').first().click();
  await page.locator('#badge-people',{hasText:/^1$/}).waitFor();assert.equal(await selected(page,'#people-view'),'Who’s who\n1');
  await page.goto(base+'/#graph=projects');await page.locator('[data-graph-panel="projects"]:not([hidden])').waitFor();
- assert.equal(await page.locator('#people').isVisible(),true);assert.equal(await page.evaluate(()=>location.hash),'');
+ assert.equal(await page.locator('#people').isVisible(),true);assert.equal(await page.evaluate(()=>location.hash),'#graph=projects');  // the pane stays in the address
  await page.goto(base+'/#people');await page.locator('#people:not([hidden])').waitFor();
  // Connections: sources by kind; the one with a failing source shows its count and opens first.
- await page.goto(base);await page.locator('nav [data-tab="health"]').click();await page.locator('#health-tabs [role=tab]').first().waitFor();
+ await page.goto(base);await navClick(page.locator('nav [data-tab="health"]'));await page.locator('#health-tabs [role=tab]').first().waitFor();
  for(let i=0;i<100&&(await tabs(page,'#health-tabs')).length<6;i++)await page.waitForTimeout(20);
  assert.deepEqual(await tabs(page,'#health-tabs'),['Mail and calendar','Chat\n1','Other sources','+ Add','Sign-ins\n1','Reviews']);
  assert.equal(await page.locator('#health-tabs [data-health-pane="chat"] .badge.warn').count(),1);

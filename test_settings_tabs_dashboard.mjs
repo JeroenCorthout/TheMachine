@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
+import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings in tabs: General, Work hours, Writing, Skills, Model, each part of Settings in one. A Machine linked to a
@@ -34,8 +35,8 @@ try{
   const context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage();
   await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
   page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(base);await page.locator('#updated',{hasText:/\d/}).waitFor();
-  await page.locator('#open-settings').click();await page.locator('#settings-tab-account:not([hidden])').waitFor();
+  await page.goto(base);await page.locator('#updated',{hasText:/\d/}).waitFor({state:'attached'});
+  await navClick(page.locator('#open-settings'));await page.locator('#settings-tab-account:not([hidden])').waitFor();
   assert.deepEqual(await tabs(page),['Account ↗','General','Work hours','Writing','Skills','Model']);
   assert.equal(await page.locator('#settings-tab-account').getAttribute('href'),'https://account.example/account');
   assert.equal(await page.locator('#settings-tab-account').getAttribute('target'),'_blank');
@@ -54,16 +55,16 @@ try{
   assert.deepEqual(row,{top:1,height:1,fits:true,overflow:'auto'});
   if(process.env.SHOTS)await page.screenshot({path:`${process.env.SHOTS}/settings-tabs-${width}.png`});
   // The last tab is kept; a link opens another; leaving Settings drops the link.
-  await page.reload();await page.locator('#updated',{hasText:/\d/}).waitFor();await page.locator('#settings:not([hidden])').waitFor();
+  await page.reload();await page.locator('#updated',{hasText:/\d/}).waitFor({state:'attached'});await page.locator('#settings:not([hidden])').waitFor();
   assert.equal(await selected(page),'Model');
-  await page.locator('nav [data-tab="events"]').click();assert.equal(await page.evaluate(()=>location.hash),'');
-  await page.locator('#open-settings').click();assert.equal(await selected(page),'Model');
+  await navClick(page.locator('nav [data-tab="events"]'));assert.equal(await page.evaluate(()=>location.hash),'');
+  await navClick(page.locator('#open-settings'));assert.equal(await selected(page),'Model');
   await page.goto(base+'/#settings/skills');await page.locator('#settings-skills:visible').waitFor();assert.equal(await selected(page),'Skills');
   await page.goto(base+'/#settings=hours');await page.locator('#hours:visible').waitFor();assert.equal(await selected(page),'Work hours');
   await page.evaluate(()=>{location.hash='#settings/writing'});await page.locator('#signatures:visible').waitFor();
   assert.equal(await page.locator('#settings').isVisible(),true);
   // On your own computer: no Account link, and a tab with nothing in it (no model reported) is left out.
-  hosted=false;model=false;await page.goto('about:blank');await page.goto(base+'/#settings/model');await page.locator('#updated',{hasText:/\d/}).waitFor();await page.locator('#settings:not([hidden])').waitFor();
+  hosted=false;model=false;await page.goto('about:blank');await page.goto(base+'/#settings/model');await page.locator('#updated',{hasText:/\d/}).waitFor({state:'attached'});await page.locator('#settings:not([hidden])').waitFor();
   assert.deepEqual(await tabs(page),['General','Work hours','Writing','Skills']);
   assert.equal(await selected(page),'General');assert.equal(await visible(page,'#settings-cloud'),true);
   // Self-hosted but paired with the Network: Account ↗ to the control plane's account page.
