@@ -737,5 +737,112 @@ class StatedOrganisations(unittest.TestCase):
         self.assertNotIn('{', prompt.split('graph args')[0])
 
 
+class Boards(unittest.TestCase):
+    """Projects on a board, moved by what messages mean: each move keeps why and the message, the owner's drag wins
+    until a newer message, an older message never undoes a newer move, and the board never sends anything."""
+    STAGES = [{'name': 'Contacted', 'hint': 'Asked, no yes yet'}, 'Agreed', 'Live']
+
+    def setUp(self):
+        Graph.setUp(self)
+
+    add, build, thread_ids = Graph.add, Graph.build, Graph.thread_ids
+
+    def mails(self):
+        self.add(mail(9, 'Sam <sam@acme.com>', 'ann@partner.example', ('SENT',), thread='deal'),
+                 mail(3, 'Ann <ann@partner.example>', 'sam@acme.com', thread='deal'),
+                 mail(1, 'Sam <sam@acme.com>', 'ann@partner.example', ('SENT',), thread='other'))
+        with self.store.connect() as db:
+            return [r[0] for r in db.execute('SELECT id FROM events ORDER BY occurred_at')]
+
+    def test_migration_adds_the_stage_columns_to_an_older_projects_table(self):
+        with self.store.connect() as db:
+            cols = {r['name'] for r in db.execute('PRAGMA table_info(projects)')}
+            self.assertTrue({'board_id', 'stage', 'stage_reason', 'stage_event_id', 'stage_by', 'stage_at', 'next_step', 'org'} <= cols)
+            self.assertTrue(db.execute("SELECT 1 FROM sqlite_master WHERE name IN ('boards','project_moves')").fetchone())
+
+    def test_review_moves_keep_reason_and_message_and_the_owner_wins_until_a_newer_message(self):
+        asked, agreed, later = self.mails()
+        with self.store.connect() as db:
+            with self.assertRaises(ValueError):  # a new board needs its stages
+                graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', reason='asked', event_id=asked)
+            with self.assertRaises(ValueError):  # a review move gives the message and why
+                graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', stages=self.STAGES)
+            first = graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', stages=self.STAGES,
+                                    reason='asked for a listing', event_id=asked, next_step='Wait for their reply', org='https://www.Partner.example/x')
+            node = first['node_id']
+            row = db.execute('SELECT * FROM projects WHERE id=?', (node.split(':')[1],)).fetchone()
+            self.assertEqual((row['stage'], row['stage_reason'], row['stage_event_id'], row['next_step'], row['org']),
+                             ('Contacted', 'asked for a listing', asked, 'Wait for their reply', 'partner.example'))
+            with self.assertRaises(ValueError):
+                graph.set_stage(db, node, 'Nowhere', 'review', NOW.isoformat(), reason='x', event_id=agreed)
+            graph.set_stage(db, node, 'agreed', 'review', NOW.isoformat(), reason='Ann said yes', event_id=agreed)
+            # An older message never undoes a newer move
+            kept = graph.set_stage(db, node, 'Contacted', 'review', NOW.isoformat(), reason='asked again', event_id=asked)
+            self.assertEqual(kept['kept'], 'A later message moved it already')
+            # The owner's drag wins over a review reading an earlier message
+            graph.set_stage(db, node, 'Live', 'owner', NOW.isoformat())
+            kept = graph.set_stage(db, node, 'Agreed', 'review', NOW.isoformat(), reason='Ann said yes', event_id=later)
+            self.assertEqual(kept['kept'], 'The owner moved it after this message')
+            self.assertEqual(db.execute('SELECT stage,stage_by FROM projects WHERE id=?', (node.split(':')[1],)).fetchone()[:], ('Live', 'owner'))
+            # The owner moves only from the node id
+            with self.assertRaises(ValueError):
+                graph.set_stage(db, 'Paperkite', 'Agreed', 'owner', NOW.isoformat())
+        # Something new after the owner's move moves it again
+        self.add(mail(-1, 'Ann <ann@partner.example>', 'sam@acme.com', thread='deal'))
+        with self.store.connect() as db:
+            newer = db.execute('SELECT max(id) FROM events').fetchone()[0]
+            moved = graph.set_stage(db, node, 'Agreed', 'review', NOW.isoformat(), reason='Ann wants changes first', event_id=newer)
+            self.assertNotIn('kept', moved)
+            moves = graph.project_moves(db, node)
+        self.assertEqual([m['stage'] for m in moves['moves']], ['Agreed', 'Live', 'Agreed', 'Contacted'])
+        self.assertEqual((moves['board'], moves['stage'], moves['moves'][1]['source']), ('Listings', 'Agreed', 'owner'))
+
+    def test_board_shows_no_reply_age_org_and_card(self):
+        asked, answered, mine = self.mails()
+        with self.store.connect() as db:
+            node = graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', stages=self.STAGES,
+                                   reason='asked for a listing', event_id=asked, org='partner.example')['node_id']
+            graph.label(db, [answered, mine], 'Paperkite', 'review', NOW.isoformat())
+        card = self.store.suggest('pk-1', 'Follow up with Ann', 'Made up.', [mine], project='Paperkite')
+        self.build()
+        with self.store.connect() as db:
+            board, = graph.boards(db, NOW.isoformat())
+            self.assertEqual([s['name'] for s in board['stages']], ['Contacted', 'Agreed', 'Live', graph.STALLED])
+            self.assertTrue(board['stages'][-1]['side'])
+            item, = board['projects']
+            self.assertEqual((item['id'], item['stage'], item['first'], item['days']), (node, 'Contacted', True, 9))
+            self.assertEqual(item['no_reply_days'], 1)  # counted from the owner's first message after Ann's answer
+            self.assertEqual(item['org']['name'], 'partner.example')
+            self.assertEqual(item['card']['id'], card['id'])
+            self.assertEqual(graph.boards_brief(db)[0]['board'], 'Listings')
+            # A project on a board keeps its node in the graph
+            self.assertTrue(db.execute('SELECT 1 FROM graph_nodes WHERE id=?', (node,)).fetchone())
+
+    def test_finish_analysis_moves_only_from_its_own_batch(self):
+        asked, agreed, _ = self.mails()
+        claim = self.store.begin_analysis(['work'], 10)
+        move = {'project': 'Paperkite', 'board': 'Listings', 'stages': self.STAGES, 'stage': 'Agreed', 'reason': 'Ann said yes', 'event_id': agreed}
+        with self.assertRaises(ValueError):
+            self.store.finish_analysis(claim['analysis_id'], 'x', stages=[{**move, 'event_id': 999999}])
+        with self.assertRaises(ValueError):
+            self.store.finish_analysis(claim['analysis_id'], 'x', stages={'Paperkite': 'Agreed'})
+        done = self.store.finish_analysis(claim['analysis_id'], 'Reviewed', stages=[move])
+        self.assertEqual(done['stages'][0]['stage'], 'Agreed')
+        with self.store.connect() as db:  # the next review sees where it stands
+            self.assertEqual(graph.boards_brief(db)[0]['board'], 'Listings')
+
+    def test_owner_moves_by_hand_only_on_the_dashboard(self):
+        asked, _, _ = self.mails()
+        with self.store.connect() as db:
+            node = graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', stages=self.STAGES,
+                                   reason='asked for a listing', event_id=asked)['node_id']
+        with self.assertRaises(ValueError):
+            self.app.action('graph_stage', {'node_id': node, 'stage': 'Live'})
+        self.app.graph_build = lambda *a, **k: None
+        moved = self.app.action('graph_stage', {'node_id': node, 'stage': 'Live'}, owner_dashboard=True)
+        self.assertEqual(moved['stage'], 'Live')
+        self.assertIn('graph_stage', a.OWNER_ACTIONS)
+
+
 if __name__ == '__main__':
     unittest.main()
