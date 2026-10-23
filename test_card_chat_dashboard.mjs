@@ -77,9 +77,10 @@ try{
  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('#task-c1c1c1c1c1c1c1c1').waitFor();
  const shot=async n=>{if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/${n}.png`})};
- // The title opens the chat; so does a small, optional Chat link on the card's top row
+ // The small Chat link on the card's top row opens the chat (on a computer a click on the title renames the card;
+ // a tap on a phone opens the chat)
  assert.equal(await page.locator('#task-c1c1c1c1c1c1c1c1 .meta a.card-chat-link[href="#chat=c1c1c1c1c1c1c1c1"]').count(),1);
- await page.locator('#task-c1c1c1c1c1c1c1c1 h3 a').click();
+ await page.locator('#task-c1c1c1c1c1c1c1c1 .meta a.card-chat-link').click();
  await page.locator('.chat-layout .chat-head').waitFor();
  assert.equal(new URL(page.url()).hash,'#chat=c1c1c1c1c1c1c1c1');
  // The header: back, the title and a ⋯ menu with the card's other actions

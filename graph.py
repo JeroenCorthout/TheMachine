@@ -276,6 +276,10 @@ def touches(kind, m, owner, wrote_to):
     if kind == 'stripe.event':
         found = addresses(m.get('from'))
         return [('email:' + found[0][1], None, 0.05, 'seen')] if found and not owner.mine(found[0][1]) and not bulk(found[0][1]) else []
+    if kind == 'owner.card':
+        # A card the owner made about someone (New card, Who): that person, lightly, as one the card is about.
+        return [(str(p['id']), p.get('name'), 0.05, 'about') for p in (m.get('about') or ())[:5]
+                if isinstance(p, dict) and p.get('kind') == 'person' and str(p.get('id') or '').strip()]
     if kind in ('salesflare.email', 'salesflare.meeting'):
         contacts = [c for c in m.get('contacts') or () if isinstance(c, dict) and '@' in str(c.get('email') or '')][:5]
         met = kind == 'salesflare.meeting' and str(m.get('host') or '').lower() in owner.emails
@@ -1174,6 +1178,13 @@ def open_between(db, node_id, limit=6, skip_card=None):
             f"SELECT s.id,s.title,s.status,s.due FROM suggestions s WHERE s.status IN ({marks}) AND s.id IS NOT ? AND (EXISTS ({on_node.format('s.event_ids')}) "
             "OR (? IS NOT NULL AND s.project=? COLLATE NOCASE)) ORDER BY coalesce(s.due,s.created_at) LIMIT ?",
             (*OPEN_CARD, skip_card, node_id, project and project['name'], project and project['name'], limit))]
+        if row and row['kind'] == 'org':  # a card the owner made about this organisation (New card, Who)
+            mine = [m.get('card_id') for m in (json.loads(r['metadata'] or '{}') for r in db.execute("SELECT metadata FROM events WHERE kind='owner.card' AND deleted=0"))
+                    if any(isinstance(a, dict) and a.get('id') == node_id for a in m.get('about') or ())]
+            have = {c['id'] for c in out['cards']}
+            out['cards'] += [dict(r) for r in db.execute(
+                f"SELECT id,title,status,due FROM suggestions WHERE status IN ({marks}) AND id IS NOT ? AND id IN ({','.join('?' * len(mine)) or 'NULL'}) "
+                "ORDER BY coalesce(due,created_at)", (*OPEN_CARD, skip_card, *mine)) if r['id'] not in have][:max(0, limit - len(out['cards']))]
         marks = ','.join('?' for _ in ids)
         out['known'] = [{'id': r['id'], 'text': r['text']} for r in db.execute(
             f"SELECT f.id,f.text FROM facts f WHERE f.removed_at IS NULL AND f.kind='fact' "

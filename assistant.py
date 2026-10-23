@@ -355,7 +355,8 @@ def queue_thread_snooze(db, action, job):
 
 def current_title(card, title):
     """The title a refresh gives a card: the new one for a title The Machine wrote, so it keeps describing where things
-    stand now; the owner's own title (title_source 'user', set when they rename a card or make their own) is never replaced."""
+    stand now; the owner's own title (title_source 'user', set when they rename a card) is never replaced. A card the
+    owner made stays 'auto': the review may clean its title up, their words stay in owner_words."""
     return card['title'] if 'title_source' in card.keys() and card['title_source'] == 'user' else title
 
 
@@ -450,6 +451,9 @@ OWNER_ACTIONS |= FRIEND_ACTIONS
 # Family (family.py): asking when everyone is free, proposing a to-do or a plan. The owner's own, from their dashboard.
 FAMILY_ACTIONS = {'family_free', 'family_todo', 'family_event'}
 OWNER_ACTIONS |= FAMILY_ACTIONS
+# Cards the owner makes, renames, or merges when the review asks: theirs alone, from the dashboard.
+CARD_ACTIONS = {'card_new', 'card_rename', 'card_merge'}
+OWNER_ACTIONS |= CARD_ACTIONS
 # Skills (skills.py): writing, sharing and installing them is the owner's own, from the dashboard. The agent can only
 # propose one (skill_propose), which waits for the owner's Approve.
 SKILL_ACTIONS = {'skill_save', 'skill_get', 'skill_toggle', 'skill_delete', 'skill_share', 'skill_decide', 'skill_example',
@@ -562,6 +566,15 @@ def compact_metadata(metadata, budget=2500):
     return compact, clipped
 
 
+# What a review is told on the signal of a card the owner made themselves (AGENTS.md, "Cards the owner added").
+OWNER_CARD_RULE = ('The owner added this card themselves, in their own words. Fill it in: suggest with this event and card_id, '
+                   'a clear title, a body with the next step, the people, threads and project, and prepare_ahead when a draft helps. '
+                   'Keep everything they said in the title and body (who, what, by when): their words show only in its chat. '
+                   'A draft says a file is attached only when the file goes along in its attachments; otherwise it names what to attach. '
+                   'Never dismiss it or fold it into another card: if it is the same as another card, '
+                   'pass that card_id and the owner is asked whether to merge.')
+
+
 def review_view(row, preview=REVIEW_PREVIEW_CHARS, offset=0, earlier=None):
     """What a reviewer needs from a signal, without sync bookkeeping."""
     metadata = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'])
@@ -586,6 +599,8 @@ def review_view(row, preview=REVIEW_PREVIEW_CHARS, offset=0, earlier=None):
         view['deferred_before'] = row['deferrals']
     if earlier:
         view['earlier_in_conversation'] = earlier
+    if row['kind'] == 'owner.card':
+        view['owner_card'] = {'card_id': metadata.get('card_id'), 'rule': OWNER_CARD_RULE}
     return view
 
 
@@ -2263,6 +2278,13 @@ class Store:
                 db.execute('ALTER TABLE suggestions ADD COLUMN awaiting TEXT')
             if 'outcome' not in columns:
                 db.execute('ALTER TABLE suggestions ADD COLUMN outcome TEXT')
+            # A card the owner made themselves: origin 'owner' (NULL is The Machine's own) and what they typed, kept as is.
+            # title_suggested: the generated title, held while the owner's own title is in `title` (a rename); NULL when
+            # not renamed. Every reader of `title` (Telegram, push, the Fleet, the CLI, older dashboards) shows theirs.
+            # merge_offer: on an owner's card, the card the review thinks it is the same as ({"card_id"}, "kept" once they said no).
+            for column in ['origin', 'owner_words', 'title_suggested', 'merge_offer']:
+                if column not in columns:
+                    db.execute('ALTER TABLE suggestions ADD COLUMN ' + column + ' TEXT')
             if 'title_source' not in columns:  # 'auto': written by The Machine and kept current; 'user': the owner named it
                 db.execute("ALTER TABLE suggestions ADD COLUMN title_source TEXT NOT NULL DEFAULT 'auto'")
             if 'kind' not in {r['name'] for r in db.execute('PRAGMA table_info(facts)')}:
@@ -3357,14 +3379,15 @@ class Store:
         return {'status': 'complete'}
 
     def suggest(self, dedupe_key, title, body, event_ids, when='now', digest_at='08:30', work=False, urgent=False, due=None, ahead=False, awaiting=None, project=None,
-                card_id=None, separate=False, reopen=False, match=False, _db=None):
+                card_id=None, separate=False, reopen=False, match=False, _db=None, suggestion_id=None):
         """A new card, or with match (the review) the existing card about the same matter brought up to date:
-        card_id names the card the reviewer judged to be the same matter, separate says it is a different one."""
+        card_id names the card the reviewer judged to be the same matter, separate says it is a different one.
+        suggestion_id: the new card's id, when the caller made its evidence first (owner_card)."""
         if _db is None:
             with self.connect() as db:
                 db.execute('BEGIN IMMEDIATE')
                 return self.suggest(dedupe_key, title, body, event_ids, when, digest_at, work, urgent, due, ahead, awaiting, project,
-                                    card_id, separate, reopen, match, _db=db)
+                                    card_id, separate, reopen, match, _db=db, suggestion_id=suggestion_id)
         if not dedupe_key or not title or not body or not event_ids:
             raise ValueError('Evidence, title, body and stable dedupe_key are required')
         if due is not None:
@@ -3382,6 +3405,10 @@ class Store:
             rows = db.execute('SELECT id,account_id,kind,occurred_at,metadata FROM events WHERE deleted=0 AND id IN (' + ','.join('?' for _ in event_ids) + ')', event_ids).fetchall()
             if {r['id'] for r in rows} != set(event_ids):
                 raise ValueError('Every evidence event must exist and be live')
+            own = owner_card_of(db, rows) if match else None
+            if own is not None and card_id is not None and card_id != own['id']:
+                # The owner's card is theirs to merge: the review only asks.
+                return self.offer_merge(db, own, card_id)
             watch = None
             if awaiting is not None:
                 promise = next((r for r in rows if r['id'] == awaiting), None)
@@ -3391,7 +3418,9 @@ class Store:
                 if when in ('now', 'digest') and not due:
                     raise ValueError('A follow-up on someone else\'s promise needs due (their deadline) or when, so the card waits until then')
             target = None
-            if card_id is not None and match:
+            if own is not None:
+                target = own  # the owner's own signal always fills in their card, never a second one
+            elif card_id is not None and match:
                 target = db.execute('SELECT * FROM suggestions WHERE id=?', (card_id,)).fetchone()
                 if not target:
                     raise ValueError('card_id must be an existing card')
@@ -3429,7 +3458,7 @@ class Store:
             if preview:
                 wanted = ahead and first_look_running(db)
                 ahead, deliver_after = False, None
-            suggestion_id = uuid.uuid4().hex[:16]
+            suggestion_id = suggestion_id or uuid.uuid4().hex[:16]
             db.execute('INSERT INTO suggestions(id,dedupe_key,title,body,event_ids,account_ids,created_at,deliver_after,source_line,urgent,due) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                        (suggestion_id, dedupe_key[:240], title[:300], body[:5000], encoded(event_ids),
                         encoded(sorted({r['account_id'] for r in rows})), now(), deliver_after, source_line(sorted([dict(r) for r in rows],key=lambda r:event_ids.index(r['id']))), int(urgent), due))
@@ -3460,7 +3489,8 @@ class Store:
         and one that was snoozed or waiting for a reply comes back. A done or dismissed card only reopens when the
         reviewer says the matter needs the owner again (reopen); otherwise the signal is kept on it as evidence."""
         stamp, sid = now(), card['id']
-        title = current_title(card, title)
+        # The review's title; while the owner's own title holds (a rename) it waits in title_suggested for Reset.
+        suggested, title = title, current_title(card, title)
         old_ids = json.loads(card['event_ids'] or '[]')
         ids = [*event_ids, *[i for i in old_ids if i not in event_ids]]  # the newest evidence leads the source line
         evidence = {r['id']: dict(r) for r in db.execute('SELECT id,account_id,kind,occurred_at,metadata FROM events WHERE id IN (' + ','.join('?' * len(ids)) + ')', ids)}
@@ -3468,6 +3498,11 @@ class Store:
         db.execute('INSERT OR IGNORE INTO suggestion_keys(dedupe_key,suggestion_id,created_at) VALUES(?,?,?)', (dedupe_key[:240], sid, stamp))
         added = [i for i in event_ids if i not in old_ids]
         closed = card['status'] in ('completed', 'rejected')
+        own = card['origin'] == 'owner'
+        if own and not any(r['kind'] != 'owner.card' and r['occurred_at'] > card['created_at'] for r in rows):
+            # The owner's own signal, or older context the review links to it: it fills in the card they made.
+            # Not news, so the card stays where they put it (snoozed, done) and nothing is sent.
+            return self.fill_owner_card(db, card, suggested, body, ids, accounts, [evidence[i] for i in ids if i in evidence], due, ahead and not closed, project, event_ids)
         if closed and not reopen:
             db.execute('UPDATE suggestions SET event_ids=?,account_ids=? WHERE id=?', (encoded(ids), encoded(accounts), sid))
             if added:
@@ -3486,10 +3521,12 @@ class Store:
         waiting = card['status'] == 'snoozed'
         # New work on the matter: back to Outstanding as a fresh suggestion, or prepared ahead again.
         status = 'accepted' if ahead else 'pending' if waiting or closed or card['status'] in ('pending', 'prepared') else card['status']
-        db.execute('UPDATE suggestions SET title=?,body=?,event_ids=?,account_ids=?,source_line=?,deliver_after=?,urgent=?,due=coalesce(?,due),status=?,'
+        # A title the owner gave (a rename) stays: the review's goes to title_suggested. On their own card, their due date stays.
+        db.execute('UPDATE suggestions SET ' + KEEP_OWNER_TITLE + ',body=?,event_ids=?,account_ids=?,source_line=?,deliver_after=?,urgent=?,'
+                   + ('due=coalesce(due,?)' if own else 'due=coalesce(?,due)') + ',status=?,'
                    'early=?,outcome=CASE WHEN status=? THEN outcome ELSE NULL END,snoozed_until=NULL,resume_status=NULL,awaiting=NULL,handled_hint=NULL,undo_until=NULL,completed_from=NULL,'
                    'feedback_until=NULL WHERE id=?',
-                   (title[:300], body[:5000], encoded(ids), encoded(accounts), source_line([evidence[i] for i in ids if i in evidence]),
+                   (suggested[:300], suggested[:300], body[:5000], encoded(ids), encoded(accounts), source_line([evidence[i] for i in ids if i in evidence]),
                     deliver_after, int(urgent or bool(card['urgent'])), due, status, int(bool(ahead)), status, sid))
         was = (f"Updated with a new signal{' and brought back' if waiting else ' and reopened' if closed else ''}."
                + (f" Before: {card['title'][:150]}" if title[:300] != card['title'] else ''))
@@ -3541,6 +3578,150 @@ class Store:
                 self.queue_preparation(db, sid, decision_id)
                 started += 1
         return started
+
+    def fill_owner_card(self, db, card, title, body, ids, accounts, evidence, due, ahead, project, event_ids):
+        """The review's pass over a card the owner made: a clearer title (unless they renamed it), a body with the next
+        step, people, threads and project, and a draft prepared ahead when it helps. Their words (owner_words), their
+        due date and where the card is (snoozed, done) stay as they were; nothing is sent to anyone."""
+        stamp, sid = now(), card['id']
+        db.execute('UPDATE suggestions SET ' + KEEP_OWNER_TITLE + ',body=?,event_ids=?,account_ids=?,source_line=?,due=coalesce(due,?) WHERE id=?',
+                   (title[:300], title[:300], body[:5000], encoded(ids), encoded(accounts), source_line(evidence), due, sid))
+        db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
+                   ('update:' + uuid.uuid4().hex, sid, 'update', f"Filled in by the review. Before: {card['title'][:150]}", 'assistant', stamp))
+        if project:
+            graph.label(db, event_ids, project, 'card', stamp)
+            db.execute('UPDATE suggestions SET project=coalesce(project,(SELECT name FROM projects WHERE name=? COLLATE NOCASE)) WHERE id=?',
+                       (re.sub(r'\s+', ' ', str(project)).strip(), sid))
+        ahead = bool(ahead) and card['status'] == 'pending' and not active_preview(db)
+        if ahead:
+            decision_id = 'ahead:' + uuid.uuid4().hex
+            db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
+                       (decision_id, sid, 'prepare_ahead', '', 'assistant', stamp))
+            db.execute("UPDATE suggestions SET status='accepted',early=1 WHERE id=?", (sid,))
+            self.queue_preparation(db, sid, decision_id)
+            # Ready, it reaches the owner like any card prepared ahead.
+            db.execute("UPDATE deliveries SET status='queued',updated_at=? WHERE suggestion_id=? AND status='not_sent'", (stamp, sid))
+        db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id=? AND message_id IS NOT NULL', (sid,))
+        return {'id': sid, 'status': 'accepted' if ahead else card['status'], 'duplicate': False, 'updated': True, 'owner_card': True,
+                **({'prepared_ahead': True} if ahead else {}),
+                'note': 'The owner made this card; it is filled in. Their own words stay on it.'}
+
+    def offer_merge(self, db, own, other_id):
+        """The review thinks the owner's card is the same as another one. Nothing merges: the card asks them."""
+        other = db.execute('SELECT id,status FROM suggestions WHERE id=?', (other_id,)).fetchone()
+        if not other:
+            raise ValueError('card_id must be an existing card')
+        offer = json.loads(own['merge_offer'] or '{}')
+        if offer.get('card_id') == other_id and offer.get('kept'):
+            return {'id': own['id'], 'status': own['status'], 'merge_offered': False,
+                    'note': 'The owner keeps these two cards apart. Fill in their card on its own (card_id ' + own['id'] + ').'}
+        if other['status'] in ('completed', 'rejected'):
+            return {'id': own['id'], 'status': own['status'], 'merge_offered': False,
+                    'note': 'That card is closed. Fill in the owner\'s card on its own (card_id ' + own['id'] + ').'}
+        db.execute('UPDATE suggestions SET merge_offer=? WHERE id=?', (encoded({'card_id': other_id, 'at': now()}), own['id']))
+        return {'id': own['id'], 'status': own['status'], 'merge_offered': True,
+                'note': 'Not merged: the owner made this card, so they are asked whether it is the same as that one. '
+                        'Other signals in this call were not saved; suggest them again without the owner\'s signal.'}
+
+    def owner_card(self, text, account_id, work=False, due=None, about=(), attach=(), project=None):
+        """A card the owner makes themselves (New card on the dashboard). It goes through suggest() like every card, with
+        their words as its first evidence: a signal of kind owner.card, left for the next review to fill in. Nothing is
+        sent: the card is already on their screen (delivery not_sent) and its buttons need their tap as on any card."""
+        words = '\n'.join(' '.join(line.split()) for line in str(text or '').strip().splitlines()).strip()
+        words = re.sub(r'\n{3,}', '\n\n', words)
+        if not words:
+            raise ValueError('Say what needs doing')
+        if len(words) > OWNER_WORDS_MAX:
+            raise ValueError(f'Keep it under {OWNER_WORDS_MAX} characters')
+        title = owner_title(words)
+        stamp, sid = now(), uuid.uuid4().hex[:16]
+        meta = {'from_me': True, 'sender_display': 'You', 'card_id': sid, 'origin': 'owner', **({'about': list(about)} if about else {})}
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            cursor = db.execute('INSERT INTO events(account_id,source_id,kind,occurred_at,title,body,metadata,deleted,content_hash,version,analyzed_version,ingested_at) '
+                                "VALUES(?,?,'owner.card',?,?,?,?,0,?,1,0,?)",
+                                (account_id, 'owner:' + sid, stamp, title, words, json.dumps(meta), hashlib.sha256(words.encode()).hexdigest(), stamp))
+            saved = self.suggest('owner:' + sid, title, clamp(words, 699), [cursor.lastrowid, *[i for i in attach if i != cursor.lastrowid]], when='now',
+                                 work=work, due=due, project=project, _db=db, suggestion_id=sid)
+            db.execute('UPDATE suggestions SET origin=?,owner_words=?,deliver_after=NULL WHERE id=?', ('owner', words, sid))
+            db.execute("UPDATE deliveries SET status='not_sent',updated_at=? WHERE suggestion_id=?", (stamp, sid))
+        return {'id': sid, 'status': saved['status'], 'title': title, 'event_id': cursor.lastrowid}
+
+    def rename_card(self, suggestion_id, title=None, reset=False, decision_id=None, source='dashboard'):
+        """The owner's own title for a card, kept in `title` (so every surface shows it) while the generated one waits in
+        title_suggested; reviews and preparations update that one, never theirs. reset goes back to the suggested title."""
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,200}', str(decision_id or '')):
+            raise ValueError('Renames come from the owner’s controls')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM decisions WHERE id=?', (decision_id,)).fetchone():
+                row = db.execute('SELECT title,title_suggested FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+                return {'id': suggestion_id, 'title': row['title'] if row else None, 'duplicate': True}
+            row = db.execute('SELECT title,title_suggested FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+            if not row:
+                raise ValueError('Unknown card')
+            suggested = row['title'] if row['title_suggested'] is None else row['title_suggested']
+            if reset:
+                new = suggested
+            else:
+                new = ' '.join(str(title or '').split())
+                if not new:
+                    raise ValueError('Give the card a title')
+                if len(new) > TITLE_OWNER_MAX:
+                    raise ValueError(f'Keep the title under {TITLE_OWNER_MAX} characters')
+            kept = None if new == suggested else suggested
+            if new == row['title'] and kept == row['title_suggested']:
+                return {'id': suggestion_id, 'title': new, 'renamed': kept is not None, 'unchanged': True}
+            db.execute('UPDATE suggestions SET title=?,title_suggested=?,title_source=? WHERE id=?', (new, kept, 'auto' if kept is None else 'user', suggestion_id))
+            db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
+                       (decision_id, suggestion_id, 'rename' if kept is not None else 'rename_reset', '', source, now()))
+            # A card already in Telegram is edited to the new title.
+            db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id=? AND message_id IS NOT NULL', (suggestion_id,))
+        return {'id': suggestion_id, 'title': new, 'renamed': kept is not None, **({'title_suggested': kept} if kept is not None else {})}
+
+    def merge_answer(self, suggestion_id, merge, decision_id, source='dashboard'):
+        """The owner's answer to "Looks like the same as X. Merge?" on their card. Merge folds their card into X, which
+        keeps its own work (a draft, a run) and takes on their words, their title if they gave one, and the evidence.
+        Keep both stops the question for that pair."""
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,200}', str(decision_id or '')):
+            raise ValueError('Merges come from the owner’s controls')
+        stamp = now()
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            own = db.execute('SELECT * FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+            offer = json.loads((own['merge_offer'] if own else None) or '{}')
+            if not own or not offer.get('card_id') or offer.get('kept'):
+                raise ValueError('There is nothing to merge on this card')
+            if db.execute('SELECT 1 FROM decisions WHERE id=?', (decision_id,)).fetchone():
+                return {'id': suggestion_id, 'duplicate': True}
+            other = db.execute('SELECT * FROM suggestions WHERE id=?', (offer['card_id'],)).fetchone()
+            if not merge or not other or other['status'] in ('completed', 'rejected'):
+                db.execute('UPDATE suggestions SET merge_offer=? WHERE id=?', (encoded({**offer, 'kept': True}), suggestion_id))
+                db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
+                           (decision_id, suggestion_id, 'keep_both', '', source, stamp))
+                return {'id': suggestion_id, 'merged': False}
+            ids = json.loads(other['event_ids'] or '[]')
+            ids += [i for i in json.loads(own['event_ids'] or '[]') if i not in ids]
+            accounts = sorted(set(json.loads(other['account_ids'] or '[]')) | set(json.loads(own['account_ids'] or '[]')))
+            words = '\n\n'.join(w for w in (other['owner_words'], own['owner_words']) if w)
+            renamed = own['title_suggested'] is not None and other['title_suggested'] is None
+            db.execute('UPDATE suggestions SET event_ids=?,account_ids=?,origin=?,owner_words=?,due=coalesce(?,due),project=coalesce(project,?) WHERE id=?',
+                       (encoded(ids), encoded(accounts), 'owner', words or None, own['due'], own['project'], other['id']))
+            if renamed:
+                db.execute("UPDATE suggestions SET title_suggested=title,title=?,title_source='user' WHERE id=?", (own['title'], other['id']))
+            db.execute('INSERT OR IGNORE INTO suggestion_keys(dedupe_key,suggestion_id,created_at) VALUES(?,?,?)', (own['dedupe_key'], other['id'], stamp))
+            for event in db.execute("SELECT e.id,e.metadata FROM events e JOIN json_each(?) j ON j.value=e.id WHERE e.kind='owner.card'", (own['event_ids'],)).fetchall():
+                meta = json.loads(event['metadata'])
+                if meta.get('card_id') == own['id']:
+                    db.execute('UPDATE events SET metadata=? WHERE id=?', (json.dumps({**meta, 'card_id': other['id']}), event['id']))
+            db.execute("UPDATE suggestions SET status='rejected',closed_from=status,merge_offer=NULL WHERE id=?", (own['id'],))
+            db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
+                       (decision_id, own['id'], 'merge', '', source, stamp))
+            db.execute("UPDATE preparations SET status='cancelled',updated_at=? WHERE suggestion_id=? AND status!='done'", (stamp, own['id']))
+            db.execute("UPDATE action_jobs SET status='cancelled',updated_at=? WHERE suggestion_id=? AND status IN ('queued','blocked')", (stamp, own['id']))
+            db.execute("UPDATE deliveries SET status='cancelled',updated_at=? WHERE suggestion_id=? AND status IN ('queued','not_sent')", (stamp, own['id']))
+            db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id IN (?,?) AND message_id IS NOT NULL', (own['id'], other['id']))
+        return {'id': other['id'], 'merged': True, 'from': own['id']}
 
     def ahead_room(self, per_day):
         since = (dt.datetime.fromisoformat(now()) - dt.timedelta(days=1)).isoformat()
@@ -5221,6 +5402,8 @@ class Store:
             db.execute("UPDATE suggestions SET body=?,status='prepared',next_action=?,outcome=? WHERE id=?", (body[:5000],action_json,encoded(outcome) if outcome else None,suggestion_id))
             if title and current_title(row, title) != row['title']:
                 db.execute('UPDATE suggestions SET title=? WHERE id=?', (title, suggestion_id))  # the new notification and the edited message carry it
+            elif title and row['title_source'] == 'user':
+                db.execute('UPDATE suggestions SET title_suggested=? WHERE id=?', (title[:300], suggestion_id))  # their title stays; Reset gets this one
             draft_saved(db,suggestion_id,next_action)
             db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id=? AND message_id IS NOT NULL', (suggestion_id,))
             db.execute("UPDATE preparations SET status='done',updated_at=?,error=NULL,reason=NULL WHERE suggestion_id=?",(now(),suggestion_id))
@@ -6735,6 +6918,7 @@ SOURCE_KIND = {'gmail.message': 'email', 'calendar.event': 'calendar', 'slack.me
                'gateway.alert': 'OpenClaw'}
 SOURCE_KIND['fleet.request'] = 'Fleet'
 SOURCE_KIND['fleet.email'] = 'email'  # a copy a teammate's handoff carried (fleet_requests.handoff_sources)
+SOURCE_KIND['owner.card'] = 'note'  # a card the owner made themselves (New card): their own words
 SOURCE_KIND['fleet.message'] = 'message'
 
 
@@ -7120,7 +7304,8 @@ def preparation_steps(job_id, agent_db=None, limit=4):
 # service prompts in the transcript; the agent's side is its replies and its steps, in the owner's words.
 CHAT_HISTORY_LIMIT = 200
 CHAT_OWNER_WORDS = {'accept': 'Do it', 'retry': 'Try again', 'complete': 'Marked done', 'reject': 'Not needed',
-                    'snooze': 'Snoozed', 'reopen': 'Reopened', 'undo': 'Reopened'}
+                    'snooze': 'Snoozed', 'reopen': 'Reopened', 'undo': 'Reopened', 'rename': 'Renamed',
+                    'rename_reset': 'Back to the suggested title', 'merge': 'Merged into the other card', 'keep_both': 'Kept both cards'}
 # A tap that the next one takes back within a minute (done then reopened, snoozed then unsnoozed), or that Undo took
 # back, is left out, both.
 CHAT_UNDONE = {('complete', 'reopen'), ('reject', 'reopen'), ('snooze', 'unsnooze')}
@@ -7563,6 +7748,28 @@ def thread_keys(rows):
 
 
 CARD_OPEN = ('pending', 'accepted', 'prepared', 'instructions', 'snoozed')
+# A rename on a card: the review's title goes to title_suggested and theirs stays (two parameters, the same title).
+KEEP_OWNER_TITLE = ("title=CASE WHEN title_source='user' THEN title ELSE ? END,"
+                    "title_suggested=CASE WHEN title_source='user' THEN ? ELSE NULL END")
+OWNER_WORDS_MAX, TITLE_OWNER_MAX = 2000, 200
+
+
+def owner_title(words, limit=90):
+    """A card's first title from what the owner typed: its first line, cut at a word."""
+    line = words.split('\n', 1)[0].strip()
+    if len(line) <= limit:
+        return line
+    cut = line[:limit - 1].rsplit(' ', 1)[0] if ' ' in line[:limit - 1] else line[:limit - 1]
+    return cut.rstrip(' ,;:.-') + '…'
+
+
+def owner_card_of(db, rows):
+    """The card the owner made for one of these signals (their owner.card signal), or None."""
+    ids = {json.loads(r['metadata']).get('card_id') if isinstance(r['metadata'], str) else r['metadata'].get('card_id')
+           for r in rows if r['kind'] == 'owner.card'} - {None}
+    if len(ids) > 1:
+        raise ValueError('These are several cards the owner made: suggest about one at a time')
+    return db.execute('SELECT * FROM suggestions WHERE id=?', (ids.pop(),)).fetchone() if ids else None
 
 
 def same_thread_card(db, rows, days=60):
@@ -7611,6 +7818,7 @@ def same_matter_cards(db, event_ids, project=None, limit=4):
 
 def source_line(rows):
     """One readable line about where a suggestion comes from, for the card."""
+    rows = [r for r in rows if r['kind'] != 'owner.card']  # the owner's own words: the card says "Added by you" instead
     if not rows:
         return None
     first = rows[0]  # The reviewer's main evidence (callers keep its order).
@@ -9975,6 +10183,14 @@ class App:
             elif not owner_dashboard and re.fullmatch(r'telegram:[A-Za-z0-9_.:-]{1,200}',str(args.get('approval_id',''))):source='telegram'
             else:raise ValueError('Sending approval must come from the owner’s controls')
             return self.store.confirm_action(args['suggestion_id'],args['revision'],args['approval_id'],source,args.get('recipients'))
+        if name in CARD_ACTIONS:
+            if not owner_dashboard:
+                raise ValueError('Cards are added, renamed and merged by the owner, on the dashboard')
+            if name == 'card_new':
+                return self.new_card(args)
+            if name == 'card_rename':
+                return self.store.rename_card(args.get('suggestion_id'), args.get('title'), args.get('reset') is True, args.get('decision_id'))
+            return self.store.merge_answer(args.get('suggestion_id'), args.get('merge') is True, args.get('decision_id'))
         if name == 'undo_merge':
             if owner_dashboard and re.fullmatch(r'[A-Za-z0-9_.:-]{1,200}',str(args.get('approval_id',''))):source='dashboard'
             elif not owner_dashboard and re.fullmatch(r'telegram:[A-Za-z0-9_.:-]{1,200}',str(args.get('approval_id',''))):source='telegram'
@@ -10438,6 +10654,49 @@ class App:
                                            f"introduction. Read it, change it if you like, and send it yourself.", next_action=draft,
                                outcome={'state': 'needs_you', 'needs': 'read and send the intro email'})
         return card['id']
+
+    def new_card(self, args):
+        """New card: what the owner typed, with optional Work or Personal, a due date (YYYY-MM-DD; the dashboard reads
+        "Friday" or "in 2 weeks" into one), people, organisations or a project from the Graph, and emails to attach.
+        It is a normal card (Store.owner_card); the next review fills it in."""
+        accounts = self.config.get('accounts', [])
+        if not accounts:
+            raise ValueError('Connect a source first')
+        scope = args.get('scope') or None
+        if scope not in (None, 'work', 'personal'):
+            raise ValueError('scope is work or personal')
+        try:
+            attach = list(dict.fromkeys(int(i) for i in args.get('attach') or []))
+        except (TypeError, ValueError):
+            raise ValueError('attach is a list of event ids') from None
+        wanted = list(dict.fromkeys(str(i) for i in args.get('about') or []))
+        if len(attach) > 5 or len(wanted) > 5:
+            raise ValueError('Up to five people and five emails')
+        known = {a['id'] for a in accounts}
+        with self.store.connect() as db:
+            found = {r['id']: r['account_id'] for r in db.execute(
+                f"SELECT id,account_id FROM events WHERE deleted=0 AND id IN ({','.join('?' * len(attach)) or 'NULL'})", attach)}
+            nodes = {r['id']: dict(r) for r in db.execute(
+                f"SELECT id,kind,name FROM graph_nodes WHERE id IN ({','.join('?' * len(wanted)) or 'NULL'})", wanted)}
+        if set(found) != set(attach) or not set(found.values()) <= known:
+            raise ValueError('That email is no longer there')
+        if set(nodes) != set(wanted):
+            raise ValueError('That person is no longer in the Graph')
+        about = [{'id': n['id'], 'name': n['name'][:120], 'kind': n['kind']} for n in (nodes[i] for i in wanted) if n['kind'] in ('person', 'org')]
+        project = next((nodes[i]['name'] for i in wanted if nodes[i]['kind'] == 'project'), None)
+        work_ids = [a['id'] for a in accounts if suggestion_scope([a['id']], accounts) == 'work']
+        personal_ids = [a['id'] for a in accounts if a['id'] not in work_ids]
+        if scope == 'work' and not work_ids:
+            raise ValueError('No work account is connected')
+        if scope == 'personal' and not personal_ids:
+            raise ValueError('No personal account is connected')
+        account = (work_ids[0] if scope == 'work' else personal_ids[0] if scope == 'personal'
+                   else found[attach[0]] if attach else accounts[0]['id'])
+        work = any(a['id'] == account and str(a.get('boundary') or '').startswith('work:') for a in accounts)
+        saved = self.store.owner_card(args.get('text'), account, work=work, due=args.get('due') or None, about=about, attach=attach, project=project)
+        if about and getattr(self, 'graph_dirty', None):
+            self.graph_dirty.set()  # the card shows on their Graph page after the next build
+        return saved
 
     def handoff_email(self, card_id, email, title, summary):
         """Hand a card to someone who is not on the Network: an ordinary email draft on the card, from the card's Gmail
@@ -13120,7 +13379,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

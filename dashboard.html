@@ -1342,6 +1342,70 @@ body main{padding-top:0}
   .bp-head button:hover{background:var(--c-hover)}.bp-head button svg{width:20px;height:20px}
   .browser-pane iframe{flex:1 1 0;min-height:0;width:100%;border:0;background:#000}
 }
+/* New card: a row under Find a card on a computer, a "+" in the top bar on a phone, a composer like the chat's. */
+.side-new{display:none}
+.new-card-link svg,.side-new svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+@media(min-width:1024px){
+  .app-side .head-side>.new-card-link{display:none}
+  .side-new{order:1;flex:none;display:flex;align-items:center;gap:10px;width:100%;min-height:34px;margin:0 0 6px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-sm)/1.2 var(--sans);text-align:left;cursor:pointer;white-space:nowrap}
+  .side-new:hover,.side-new.hit{background:var(--c-hover);color:var(--text)}
+  .side-new kbd{margin-left:auto;padding:1px 6px;border:1px solid var(--c-line);border-radius:5px;background:none;color:var(--side-quiet);font:500 11px/1.4 var(--sans)}
+  :root[data-side="collapsed"] .side-new{justify-content:center;padding:0}
+  :root[data-side="collapsed"] .side-new span,:root[data-side="collapsed"] .side-new kbd{display:none}
+}
+@media(max-width:1023px){
+  .nc-drawer .side-new{order:1;flex:none;display:flex;align-items:center;gap:12px;width:100%;min-height:44px;margin:0 0 6px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--side-ink);font:var(--fw-medium) var(--fs-md)/1.2 var(--sans);text-align:left;cursor:pointer}
+  .nc-drawer .side-new svg{width:20px;height:20px}.nc-drawer .side-new kbd{display:none}
+  .new-card-top{margin-left:auto}
+}
+#new-card{width:min(600px,calc(100vw - 24px));padding:18px 18px 14px}
+#new-card .snooze-heading{margin-bottom:12px}
+#new-card .chat-box{border-radius:22px}
+#new-card .chat-box textarea{height:auto;min-height:48px}
+/* On a phone the composer is a bottom sheet that stays above the keyboard, like the card chat's box. */
+@media(max-width:560px){
+  #new-card{position:fixed;inset:auto 0 var(--nc-kb,0px) 0;width:100%;max-width:100%;margin:0;max-height:calc(100dvh - var(--nc-kb,0px) - 24px);border-radius:var(--r-xl,20px) var(--r-xl,20px) 0 0;padding:14px max(16px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  #new-card[open]{animation:nc-up .18s ease-out}
+  #new-card .nc-keys{display:none}
+}
+@keyframes nc-up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+.nc-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+.nc-chips button{display:inline-flex;align-items:center;gap:6px;min-height:30px;margin:0;padding:4px 12px;border:1px solid var(--c-line-strong,var(--border));border-radius:999px;background:none;box-shadow:none;color:var(--muted);font:500 .85rem/1.2 var(--sans);cursor:pointer}
+.nc-chips button:hover{color:var(--text)}
+.nc-chips button[aria-pressed="true"],.nc-chips button.set{border-color:var(--mint);background:color-mix(in srgb,var(--mint) 16%,transparent);color:var(--text)}
+.nc-chips .x{margin-right:-4px;color:var(--muted);font-size:1rem;line-height:1}
+.nc-pick{margin:10px 0 0}
+.nc-pick input{margin:0}
+.nc-pick .nc-read{margin:6px 2px 0;color:var(--muted);font-size:.85rem}
+.nc-hits{display:flex;flex-direction:column;gap:1px;margin:6px 0 0;padding:0;list-style:none}
+.nc-hits button{display:block;width:100%;min-height:0;margin:0;padding:7px 10px;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--text);font:400 .9rem/1.35 var(--sans);text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nc-hits button:hover,.nc-hits button:focus-visible{background:var(--c-hover)}
+.nc-hits small{margin-left:8px;color:var(--muted)}
+.nc-foot{display:flex;justify-content:space-between;gap:12px;margin:12px 2px 0;color:var(--muted);font-size:.8rem}
+.nc-error{margin:10px 2px 0;color:var(--c-orange,var(--orange));font-size:.88rem}
+.nc-error:empty{display:none}
+.chat-side-new{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;margin:0 0 10px;padding:0 12px;border:0;border-radius:12px;background:none;box-shadow:none;color:var(--text);font:500 .95rem/1.2 var(--sans);text-align:left;cursor:pointer}
+.chat-side-new:hover{background:var(--c-hover)}.chat-side-new svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+/* An owner's card: quiet "Added by you"; their own words open its chat. */
+.card .added-by{color:var(--muted);font-size:.8rem;margin-right:8px}
+@media(max-width:560px){.card .meta-side:has(.added-by)>time{display:none}}
+.merge-offer{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:4px 0 10px;padding:10px 12px;border:1px solid var(--c-line,var(--border));border-radius:12px}
+.merge-offer>span{flex:1 1 220px;min-width:0}
+.merge-offer button{min-height:30px;margin:0;padding:4px 12px}
+.chat-panel .merge-offer{margin:12px 0}
+/* Rename: an input over the title, wherever the title is the card's own heading. */
+.rename-box{position:fixed;z-index:60;display:flex;flex-direction:column;gap:4px}
+.rename-box input{width:100%;min-height:0;height:100%;margin:0;padding:2px 8px;border:1px solid var(--c-accent,var(--mint));border-radius:8px;background:var(--surface);color:var(--text);font:inherit;box-shadow:0 0 0 3px color-mix(in srgb,var(--c-accent,var(--mint)) 22%,transparent);outline:none}
+.rename-box .rename-reset{align-self:flex-start;min-height:0;margin:0;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 6px 16px #0003;color:var(--muted);font:500 .8rem/1.3 var(--sans);cursor:pointer}
+.rename-box .rename-reset:hover{color:var(--text)}
+.row-more{position:fixed;z-index:30;display:grid;place-items:center;width:24px;height:24px;min-height:0;margin:0;padding:0;border:0;border-radius:6px;background:var(--c-hover);box-shadow:none;color:var(--side-ink,var(--muted));cursor:pointer}
+.row-more:hover{color:var(--text)}
+.row-more svg{width:16px;height:16px}
+.row-menu{position:fixed;z-index:61;display:flex;flex-direction:column;min-width:150px;padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 12px 30px #0005}
+.row-menu button{min-height:0;margin:0;padding:7px 12px;border:0;border-radius:8px;background:none;box-shadow:none;color:var(--text);font:500 .9rem/1.3 var(--sans);text-align:left}
+.row-menu button:hover{background:var(--c-hover)}
+@media(hover:hover) and (pointer:fine){.card h3 .title-link{cursor:text}}
+.chat-title{cursor:text}
 </style>
 <aside class="app-side" id="app-side" aria-label="The Machine"><header><div class="brand"><img class="avatar refresh-tap" role="button" tabindex="0" title="Refresh" src="brand/avatar.png" alt="" width="68" height="68"><div><h1>The Machine</h1><p id="tagline">A few useful things to do next.</p></div><button type="button" class="side-toggle" id="side-toggle" aria-label="Collapse the sidebar" title="Collapse the sidebar" aria-expanded="true" aria-controls="app-side"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg></button></div><div class="head-side"><a class="head-link settings-link" id="open-browser" hidden target="_blank" rel="noopener" title="The Machine’s browser" aria-label="Browser"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg><span class="lbl">Browser</span></a><button type="button" class="head-link settings-link" id="open-settings" aria-label="Settings" title="Settings" aria-current="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" class="teeth"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.4"/></svg><span class="lbl">Settings</span></button><small class="live mono refresh-tap" id="live" role="button" tabindex="0" title="Refresh"><span id="updated">Connecting…</span></small></div></header><label class="side-search" id="side-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg><input id="side-find" type="search" placeholder="Find a card" aria-label="Find a card" autocomplete="off"></label><nav aria-label="Sections"><button class="active" data-tab="inbox"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l1.9 4.6 4.6 1.9-4.6 1.9L12 16.5l-1.9-4.6L5.5 10l4.6-1.9z"/><path d="M18.5 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg><span class="nl">Suggestions</span> <span class="badge" id="badge-inbox"></span></button><button data-tab="events"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h3.5l2.5-6.5 5 13 2.5-6.5h3.5"/></svg><span class="nl">Events</span></button><button data-tab="people"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="10" cy="17.5" r="2.3"/><path d="M8.2 7.6l7.6 1M7.1 9.1l2 6.3M16.3 10.6l-4.4 5.4"/></svg><span class="nl">Graph</span> <span class="badge" id="badge-people"></span></button><button data-tab="fleet" id="tab-fleet" hidden><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M15.5 5.8a3 3 0 0 1 0 5.4M17.5 14.6c1.6.6 2.6 2.2 3 4.4"/></svg><span class="nl">Fleet</span> <span class="badge" id="badge-fleet"></span></button><button data-tab="feedback"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7.5L7 20.5V16.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M12 13.2l-2.4-2.3a1.5 1.5 0 0 1 2.1-2.1l.3.3.3-.3a1.5 1.5 0 0 1 2.1 2.1z"/></svg><span class="nl">Feedback</span></button><button data-tab="health"><svg class="ni" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5v4"/></svg><span class="nl">Connections</span> <span class="badge warn" id="badge-health"></span></button></nav><div class="side-cards" id="side-cards"></div></aside><main><div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div id="needs-you" role="status" hidden></div><div class="page-head" id="page-head" hidden></div>
@@ -1517,7 +1581,9 @@ function cardActions(s,choices,smartButtons,unmerge,hint,smart){const copy=copyL
  const rank=c=>c.startsWith('agent:')?99:c==='change'&&agentAsk(s)?-1:order.indexOf(c),rest=all.filter(([c])=>!isPrimary(c)).sort((a,b)=>rank(a[0])-rank(b[0]));
  const leads=(smartButtons.match(/<(button|a) /g)||[]).length+head.length,room=Math.max(1,3-leads);
  let shown=rest.slice(0,room),more=rest.slice(room);if(more.length===1&&!unmerge){shown=rest;more=[]}
- const menu=more.length||unmerge?`<details class="more-actions"><summary aria-label="More actions">More</summary><div class="more-menu" role="group" aria-label="More actions">${more.map(btn).join('')}${unmerge}</div></details>`:'';
+ // Rename sits in More on every card (and so in the chat's menu): the owner's title wins over the generated one.
+ const rename=`<button type="button" class="ghost" data-rename="${esc(s.id)}">Rename</button>`;
+ const menu=`<details class="more-actions"><summary aria-label="More actions">More</summary><div class="more-menu" role="group" aria-label="More actions">${more.map(btn).join('')}${rename}${unmerge}</div></details>`;
  return `<div class="actions">${smartButtons}${head.map(btn).join('')}${shown.map(btn).join('')}${menu}</div>${copy?`<p class="copy-why">${COPY_WHY}</p>`:''}`}
 // A Needs you line ends with one mark: a question keeps its "?" instead of getting ".".
 const sentence=t=>{t=String(t).trim();return /[.?!…]$/.test(t)?t:t+'.'};
@@ -1576,7 +1642,7 @@ const viewIn=s.browser_view&&!smart.some(a=>a.browser)?[{kind:'open',browser:tru
 const smartButtons=s.status==='prepared'?[...smart,...viewIn].map(a=>a.kind==='handoff'?(canHandoff(s)?`<button class="primary" data-fleet-handoff="${esc(s.id)}">${esc(a.label||'Hand off')}</button>`:''):a.kind==='open'&&a.browser?`<a class="open${finalStep(s)?' primary':''}" href="${esc(state.browser_link||'#')}" target="_blank" rel="noopener" data-browser-show="${esc(s.id)}"${a.site?` title="${esc(a.site)}, in your Machine’s browser"`:''}>${esc(a.label)} ↗</a>`:a.kind==='open'?`<a class="open" href="${esc(safeURL(a.url))}" target="_blank" rel="noreferrer">${esc(a.label)} ↗</a>`:!(a.kind==='finish'&&(a.state||s.action_status)?.status==='done')&&!sendBusy(a.state||s.action_status)?`<button class="primary" data-id="${s.id}" data-smart="${a.revision}">${esc(sendLabel(a)||(a.kind==='prepare'?'Prepare next step':'Review and send'))}</button>`:'').join(''):'';
 // A merged fix stays reversible for a day.
 const unmerge=['prepared','completed'].includes(s.status)&&smart.some(a=>a.kind==='merge'&&Date.parse((a.state||s.action_status)?.undo_until||'')>Date.now())?`<button data-id="${s.id}" data-unmerge="1">Undo merge</button>`:'';
-return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>${s.latest_feedback.choice==='other'?'Asked':'Your note'}</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
+return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${s.origin==='owner'?'<span class="added-by">Added by you</span>':''}${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${mergeOffer(s)}${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>${s.latest_feedback.choice==='other'?'Asked':'Your note'}</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.state,x.action.kind))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
 }
 // Success notices clear themselves after a few seconds; errors stay until the next notice.
 let noticeTimer;const notice=(text,error=false)=>{const n=$('#notice');n.textContent=text;n.className=error?'error':'';clearTimeout(noticeTimer);if(text&&!error)noticeTimer=setTimeout(()=>{if(n.textContent===text)n.textContent=''},4500)};
@@ -2101,7 +2167,8 @@ const apiURL=path=>new URL(path,document.baseURI).href;
 // Any card built from collected messages can show them, including older cards without a source line.
 const eventIds=s=>{try{return Array.isArray(s.event_ids)?s.event_ids:JSON.parse(s.event_ids||'[]')}catch{return []}};
 const cardViaIcon=s=>{const v=/^Source:\s*([^·\n]+)/i.exec(s.source_line||'')?.[1]||'';return isEmail(s)?'mail':/note/i.test(v)?'note':/calendar/i.test(v)?'cal':/^(email|gmail|outlook|mail)/i.test(v.trim())?'mail':'chat'};
-const hasOriginal=s=>Boolean(s.source_line||eventIds(s).length||(s.original_urls||[]).length);
+// A card the owner added has their own words as its only signal until the review links an email: nothing to open yet.
+const hasOriginal=s=>Boolean(s.source_line||(s.origin!=='owner'&&eventIds(s).length)||(s.original_urls||[]).length);
 const isEmail=s=>/^Source: email/.test(s.source_line||'')||(s.original_urls||[]).some(u=>/^https:\/\/(mail\.google\.com|outlook\.(office|office365|live)\.com)\//.test(u));
 const originalsFor=id=>{if(!originals.has(id))originals.set(id,request('api/originals?id='+id).then(r=>r.originals).catch(e=>{originals.delete(id);throw e}));return originals.get(id)};
 // Dark mode for HTML emails, like Gmail's: light backgrounds turn dark and dark text turns light,
@@ -2524,7 +2591,7 @@ function chatParts(s){const t=document.createElement('template');t.innerHTML=sug
  const decide=rest.filter(n=>['complete','snooze','reject','accept','retry'].includes(n.dataset.choice)||n.dataset.smart!=null);
  const status=card?.querySelector('.status-line:not(.ask-line)')?.textContent.trim()||card?.querySelector('.card-badges .chip')?.textContent.trim()||'';
  const body=card?.querySelector('.body');body?.classList.remove('clamp');
- const panel=[...(card?.querySelectorAll('.change-editor:not([class*="answer"]),.fleet-handoff-form')||[])].filter(n=>!n.querySelector('[id^="feedback-"]')).map(n=>n.outerHTML).join('')
+ const panel=[...(card?.querySelectorAll('.merge-offer,.change-editor:not([class*="answer"]),.fleet-handoff-form')||[])].filter(n=>!n.querySelector('[id^="feedback-"]')).map(n=>n.outerHTML).join('')
   +(['blocked','running','starting'].includes(s.preparation_status)&&s.preparation_browser?`<p class="note">${browserLink(s.id,s.preparation_browser)}</p>`:'');
  const html=n=>n?.outerHTML||'';
  return {sends,going,sheet:html(card?.querySelector('.agent-form')),lead:html(lead),send:!!lead?.dataset.smart,copy:lead?.dataset.result==='copy',back:html(back),rest:rest.map(html).join(''),options:[lead,...decide].filter(Boolean).slice(0,3).map(n=>{n.classList.remove('ghost','primary');n.classList.add(n===lead?'primary':'ghost');return n.outerHTML}).join(''),
@@ -2648,6 +2715,7 @@ const chatPicks=s=>chatSuggestions(s).map(t=>`<button type="button" class="chat-
 // Suggestions show while nothing has been said yet, or while you are writing
 const chatPicksShown=()=>!(chat?.items||[]).some(i=>i.kind==='you')||document.activeElement?.id==='chat-input';
 const BACK='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>';
+const NC_PLUS='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 const SEND='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4.5l7 7-1.4 1.4-4.6-4.6V20h-2V8.3l-4.6 4.6L5 11.5z"/></svg>';
 const DOTS='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></svg>';
 const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}):d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
@@ -2656,7 +2724,7 @@ function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…'
   :closed(s)?(s.status==='completed'?'Done':'Not needed'):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':s.preparation_status==='blocked'?p.status:'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
- const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
+ const side=`<aside class="chat-side" aria-label="Tasks"><button type="button" class="chat-side-new" data-new-card>${NC_PLUS}<span>New card</span></button><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.filter(([items])=>items.length).map(([items,title])=>`<h3>${title}<span>${items.length}</span></h3>${items.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}`).join('')}</aside>`;
  return `<div class="chat-layout${chatDrawer?' drawer':''}" data-chat="${s.id}">${side}<div class="chat-main"><header class="chat-head"><a class="chat-back" href="#card=${s.id}" data-chat-back aria-label="Back to the card" title="Back to the card">${BACK}</a><h2 class="chat-title" title="${esc(s.title)}">${esc(s.title)}</h2>
   <details class="chat-menu" id="chat-menu"><summary aria-label="More actions" title="More actions">${DOTS}</summary><div class="chat-menu-list" role="group" aria-label="More actions">${p.rest}<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button></div></details></header>
  <article id="task-${s.id}" class="chat-panel">${p.panel}</article><div class="chat-log" id="chat-log" aria-live="polite">${chatLog(s)}</div>
@@ -3732,4 +3800,159 @@ refresh().then(()=>newTagline());setInterval(refreshWhenReady,30000);
  matchMedia('(min-width:1024px)').addEventListener('change',e=>{if(!e.matches)leave()});  // narrower than a computer: back to the view before
  addEventListener('hashchange',e=>{if(quiet){quiet=false;return}if(location.hash==='#browser')show();else if(e.oldURL.endsWith('#browser')){pushed=false;leave()}});
  if(location.hash==='#browser'){const t=Date.now(),wait=()=>location.hash!=='#browser'||show()||Date.now()-t>8000||setTimeout(wait,200);wait()}}
+// New card: the owner adds a card in their own words. It goes through the same path as the cards the review makes
+// (card_new), so it has the same states, buttons, chat, snooze and handoffs; the next review fills it in. Creating
+// it sends nothing. One field is enough; Work or Personal, a due date, a person and an email are optional chips.
+const nc={scope:null,due:null,about:[],attach:[],pick:null,hits:[],timer:null,busy:false};
+// "Friday", "in 2 weeks", "tomorrow", "24 Oct", "Oct 24", "24/10" or 2026-10-24, read as a date from today on.
+function ncDue(text,today=new Date()){const t=String(text||'').trim().toLowerCase().replace(/\s+/g,' ').replace(/^(by|on|due|before) /,'');if(!t)return null;
+ const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()),add=n=>{d.setDate(d.getDate()+n);return d};
+ const MONTHS=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],DAYS=['sun','mon','tue','wed','thu','fri','sat'];
+ const NUM={a:1,an:1,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+ if(t==='today'||t==='tonight')return d;if(t==='tomorrow'||t==='tmr')return add(1);
+ let m=/^in (\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten) (day|week|month)s?$/.exec(t);
+ if(m){const n=NUM[m[1]]||+m[1];if(m[2]==='month'){d.setMonth(d.getMonth()+n);return d}return add(m[2]==='week'?7*n:n)}
+ if(t==='next week')return add(((8-d.getDay())%7)||7);
+ if(t==='end of week'||t==='eow'||t==='this week')return add((5-d.getDay()+7)%7);
+ if(t==='end of month'||t==='eom')return new Date(d.getFullYear(),d.getMonth()+1,0);
+ m=/^(this |next )?(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/.exec(t);
+ if(m)return add((DAYS.indexOf(m[2])-d.getDay()+7)%7||7);
+ m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(t);if(m){const x=new Date(+m[1],+m[2]-1,+m[3]);return x.getMonth()===+m[2]-1?x:null}
+ const dm=(day,mon)=>{if(mon<0||day<1||day>31)return null;let x=new Date(d.getFullYear(),mon,day);if(x.getMonth()!==mon)return null;if(x<d)x=new Date(d.getFullYear()+1,mon,day);return x};
+ m=/^(\d{1,2})(?:st|nd|rd|th)? (?:of )?([a-z]{3})[a-z]*$/.exec(t);if(m)return dm(+m[1],MONTHS.indexOf(m[2]));
+ m=/^([a-z]{3})[a-z]* (\d{1,2})(?:st|nd|rd|th)?$/.exec(t);if(m)return dm(+m[2],MONTHS.indexOf(m[1]));
+ m=/^(\d{1,2})[/.](\d{1,2})$/.exec(t);if(m)return dm(+m[1],+m[2]-1);
+ return null}
+const ncISO=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const ncRead=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}).replace(',','');
+function ncDialog(){let d=$('#new-card');if(d)return d;d=document.createElement('dialog');d.id='new-card';d.setAttribute('aria-labelledby','new-card-title');
+ d.innerHTML=`<form method="dialog"><div class="snooze-heading"><h2 id="new-card-title">New card</h2><button aria-label="Close">×</button></div></form><div class="chat-box"><textarea id="nc-text" rows="2" aria-label="What needs doing?" placeholder="What needs doing?" maxlength="2000" enterkeyhint="done"></textarea><div class="chat-tools"><button type="button" class="chat-send" id="nc-add" aria-label="Add the card" title="Add the card" disabled>${SEND}</button></div></div><div class="nc-chips" id="nc-chips" role="group" aria-label="Optional"></div><div class="nc-pick" id="nc-pick" hidden></div><p class="nc-error" id="nc-error" role="alert"></p><p class="nc-foot"><span>Nothing is sent. I’ll fill in the rest.</span><span class="nc-keys">Enter adds it</span></p>`;
+ document.body.append(d);
+ const text=$('#nc-text');text.addEventListener('input',()=>{$('#nc-add').disabled=!text.value.trim();text.style.height='auto';text.style.height=Math.min(200,Math.max(48,text.scrollHeight))+'px'});
+ text.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();ncCreate()}});
+ $('#nc-add').onclick=ncCreate;
+ $('#nc-chips').addEventListener('click',e=>{const x=e.target.closest('[data-nc-drop]');if(x){const[k,i]=x.dataset.ncDrop.split(':');if(k==='due')nc.due=null;else nc[k].splice(+i,1);ncChips();return}
+  const b=e.target.closest('[data-nc]');if(!b)return;const k=b.dataset.nc;
+  if(k==='work'||k==='personal'){nc.scope=nc.scope===k?null:k;ncChips();return}ncPick(nc.pick===k?null:k)});
+ $('#nc-pick').addEventListener('click',e=>{const h=e.target.closest('[data-nc-hit]');if(h)ncChoose(+h.dataset.ncHit)});
+ d.addEventListener('close',()=>{ncPick(null);if(nc.byPointer)setTimeout(()=>document.activeElement?.closest?.('[data-new-card]')&&document.activeElement.blur())});
+ return d}
+function ncChips(){const due=nc.due?`<button type="button" class="set" data-nc="due">Due ${esc(ncRead(nc.due))}<span class="x" data-nc-drop="due:0" aria-label="Remove the due date">×</span></button>`:`<button type="button" data-nc="due" aria-expanded="${nc.pick==='due'}">Due</button>`;
+ const set=(k,list,label)=>list.map((x,i)=>`<button type="button" class="set" data-nc="${k}">${esc(label(x))}<span class="x" data-nc-drop="${k}:${i}" aria-label="Remove">×</span></button>`).join('');
+ $('#nc-chips').innerHTML=[['work','Work'],['personal','Personal']].map(([k,t])=>`<button type="button" data-nc="${k}" aria-pressed="${nc.scope===k}">${t}</button>`).join('')+due
+  +set('about',nc.about,x=>x.name)+(nc.about.length<5?`<button type="button" data-nc="about" aria-expanded="${nc.pick==='about'}">Person</button>`:'')
+  +set('attach',nc.attach,x=>x.title||'Email')+(nc.attach.length<5?`<button type="button" data-nc="attach" aria-expanded="${nc.pick==='attach'}">Email</button>`:'')}
+const NC_PICK={due:['When is it due?','Friday, in 2 weeks, 24 Oct'],about:['Link a person','A name or a company'],attach:['Attach an email','Search your emails']};
+function ncPick(k){nc.pick=k;nc.hits=[];const box=$('#nc-pick');if(!box)return;ncChips();if(!k){box.hidden=true;box.innerHTML='';return}
+ box.hidden=false;box.innerHTML=`<input id="nc-find" type="search" autocomplete="off" aria-label="${NC_PICK[k][0]}" placeholder="${NC_PICK[k][1]}"><p class="nc-read" id="nc-read" aria-live="polite"></p><ul class="nc-hits" id="nc-hits"></ul>`;
+ const f=$('#nc-find');f.focus();
+ f.addEventListener('input',()=>{if(k==='due'){const d=ncDue(f.value);$('#nc-read').textContent=f.value.trim()?d?ncRead(d):'I can’t read that date yet':'';return}clearTimeout(nc.timer);nc.timer=setTimeout(()=>ncSearch(k,f.value),200)});
+ f.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();ncPick(null);$('#nc-text').focus();return}
+  if(e.key!=='Enter'||e.isComposing)return;e.preventDefault();if(k==='due'){const d=ncDue(f.value);if(d){nc.due=d;ncPick(null);$('#nc-text').focus()}}else if(nc.hits.length)ncChoose(0)})}
+async function ncSearch(k,q){q=q.trim();const list=$('#nc-hits');if(!list)return;if(q.length<2){nc.hits=[];list.innerHTML='';return}
+ try{if(k==='about'){const r=await request('api/graph?q='+encodeURIComponent(q));nc.hits=(r.found||[]).filter(n=>['person','org','project'].includes(n.kind)&&!nc.about.some(a=>a.id===n.id)).slice(0,6).map(n=>({id:n.id,name:n.name,note:n.kind==='person'?(n.ids||[])[0]||'':n.kind==='org'?n.domain||'Organisation':'Project'}))}
+  else{const r=await request('api/events?account=all&q='+encodeURIComponent(q));nc.hits=(Array.isArray(r)?r:[]).filter(e=>/\.message$|\.email$/.test(e.kind)&&!nc.attach.some(a=>a.id===e.id)).slice(0,6).map(e=>({id:e.id,title:e.title||'(no subject)',note:e.metadata?.from||''}))}}
+ catch(e){nc.hits=[]}
+ if(nc.pick!==k||$('#nc-find')?.value.trim()!==q)return;
+ list.innerHTML=nc.hits.length?nc.hits.map((h,i)=>`<li><button type="button" data-nc-hit="${i}">${esc(h.name||h.title)}${h.note?`<small>${esc(String(h.note).replace(/<[^>]*>/g,'').trim())}</small>`:''}</button></li>`).join(''):`<li class="nc-read">${k==='about'?'Nobody by that name.':'No emails match.'}</li>`}
+function ncChoose(i){const h=nc.hits[i];if(!h)return;if(nc.pick==='about')nc.about.push({id:h.id,name:h.name});else nc.attach.push({id:h.id,title:h.title});ncPick(null);$('#nc-text').focus()}
+// The sheet sits on the phone's keyboard: the keyboard's height, from the visual viewport.
+function ncKeyboard(){const d=$('#new-card'),v=window.visualViewport;if(!d||!v)return;d.style.setProperty('--nc-kb',(d.open?Math.max(0,Math.round(innerHeight-v.height-v.offsetTop)):0)+'px')}
+window.visualViewport?.addEventListener('resize',ncKeyboard);window.visualViewport?.addEventListener('scroll',ncKeyboard);
+function ncOpen(){const d=ncDialog();if(d.open)return;Object.assign(nc,{scope:scopeFilter==='work'||scopeFilter==='personal'?scopeFilter:null,due:null,about:[],attach:[],pick:null,busy:false,byPointer:false});
+ const t=$('#nc-text');t.value='';t.style.height='';$('#nc-add').disabled=true;$('#nc-error').textContent='';ncPick(null);d.showModal();t.focus();ncKeyboard()}
+async function ncCreate(){const text=$('#nc-text').value.trim();if(!text||nc.busy)return;nc.busy=true;$('#nc-add').disabled=true;$('#nc-error').textContent='';
+ try{const made=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_new',args:{text,scope:nc.scope,due:nc.due?ncISO(nc.due):null,about:nc.about.map(a=>a.id),attach:nc.attach.map(a=>a.id)}})});
+  $('#new-card').close();toast('Added');if(chatId)chatGo(made.id);else{showTab('inbox');history.replaceState(null,'',location.pathname+location.search+'#card='+made.id)}await refresh()}
+ catch(e){$('#nc-error').textContent=e.message||'Couldn’t add the card'}finally{nc.busy=false;const b=$('#nc-add');if(b)b.disabled=!$('#nc-text')?.value.trim()}}
+// Entry points: a row under Find a card on a computer, "+" in the top bar on a phone, C, and Ctrl/Cmd+K then "new".
+{const row=document.createElement('button');row.type='button';row.className='side-new';row.id='side-new';row.dataset.newCard='';row.title='New card (C)';row.setAttribute('aria-label','New card');
+ row.innerHTML=`${NC_PLUS}<span>New card</span><kbd>C</kbd>`;$('#side-search').after(row);
+ const plus=document.createElement('button');plus.type='button';plus.className='head-link settings-link new-card-link';plus.id='new-card-top';plus.dataset.newCard='';plus.title='New card';plus.setAttribute('aria-label','New card');
+ // With the phone drawer (#topbar), the sidebar row shows in the drawer and the "+" sits on the right of the top bar.
+ const top=$('#topbar');if(top){plus.className='topbar-menu new-card-top';plus.innerHTML=NC_PLUS;top.append(plus);document.documentElement.classList.add('nc-drawer')}
+ else{plus.innerHTML=`${NC_PLUS}<span class="lbl">New card</span>`;$('#open-settings').before(plus)}}
+document.addEventListener('click',e=>{if(e.target.closest('[data-new-card]')){e.preventDefault();if(typeof drawerClose==='function')drawerClose();ncOpen();nc.byPointer=e.detail>0}});
+const ncTyping=t=>t?.closest?.('input,textarea,select,[contenteditable=""],[contenteditable="true"],dialog[open]');
+document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.isComposing)return;
+ if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&e.key.toLowerCase()==='k'){e.preventDefault();const f=$('#side-find');if(f&&f.offsetParent){if(document.documentElement.dataset.side==='collapsed')sideSet(false);f.focus();f.select()}else ncOpen();return}
+ if(e.key.toLowerCase()==='c'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!ncTyping(e.target)&&!document.querySelector('dialog[open]')){e.preventDefault();ncOpen()}});
+const ncAsked=()=>{const q=$('#side-find').value.trim().toLowerCase();return q.length>=2&&(q==='+'||'new card'.startsWith(q))};
+$('#side-find').addEventListener('input',()=>$('#side-new').classList.toggle('hit',ncAsked()));
+$('#side-find').addEventListener('keydown',e=>{if(e.key==='Enter'&&ncAsked()){e.preventDefault();e.stopImmediatePropagation();e.target.value='';sideCards();$('#side-new').classList.remove('hit');ncOpen()}},true);
+
+// Merge offer on an owner's card: the review thought it is the same as another card. Only the owner's tap merges.
+function mergeOther(s){if(s.origin!=='owner'||!s.merge_offer||closed(s))return null;try{const o=JSON.parse(s.merge_offer);return o.kept?null:(state.suggestions||[]).find(x=>x.id===o.card_id&&!closed(x))||null}catch{return null}}
+function mergeOffer(s){const o=mergeOther(s);return o?`<div class="merge-offer"><span>Looks like the same as “${esc(o.title)}”. Merge?</span><button type="button" class="ghost" data-merge="yes" data-card="${esc(s.id)}">Merge</button><button type="button" class="quiet" data-merge="no" data-card="${esc(s.id)}">Keep both</button></div>`:''}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-merge]');if(!b)return;e.preventDefault();b.disabled=true;const id=b.dataset.card,merge=b.dataset.merge==='yes';
+ try{const r=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_merge',args:{suggestion_id:id,merge,decision_id:crypto.randomUUID()}})});
+  toast(merge?'Merged':'Kept both');if(merge&&chatId===id&&r?.merged)chatGo(r.id);await refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
+
+// Rename: the owner's title is kept over the generated one, on every surface. An input opens over the title in the
+// sidebar (the ⋯ on hover, a double click, a right click, a long press on a phone), the chat's header (a click, or
+// Rename in its menu) and the card (Rename in More; a click on the title on a computer). Enter saves, Esc cancels,
+// empty puts the old title back. Saved at once on screen; the chat gets a quiet "Renamed" line.
+const fine=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
+const ROWS='#side-cards a[href^="#chat="],.chat-side a[href^="#chat="]';
+const rowId=a=>a?.getAttribute('href')?.slice(6)||'';
+const cardOf=id=>(state.suggestions||[]).find(s=>s.id===id);
+let renaming=null;
+function renameClose(){document.querySelector('.rename-box')?.remove();renaming=null}
+// The input stays over the title while the page scrolls (a phone's keyboard opening scrolls it too).
+function renamePlace(){if(!renaming)return;let el=renaming.el;if(!el?.isConnected)el=renaming.el=titleEl(renaming.id,renaming.prefer);if(!el)return;
+ const r=el.getBoundingClientRect(),h=renaming.h,b=renaming.box;b.style.left=Math.max(8,r.left-4)+'px';b.style.top=Math.max(8,r.top+(r.height-h)/2)+'px'}
+function renameAt(id,el,prefer){const s=cardOf(id);if(!s||!el)return;renameClose();rowMenuClose();
+ let r=el.getBoundingClientRect();if(r.top<64||r.bottom>innerHeight-64){el.scrollIntoView({block:'center'});r=el.getBoundingClientRect()}
+ const box=document.createElement('div');box.className='rename-box';
+ const wide=(el.closest('h3')||el).getBoundingClientRect(),h=Math.max(30,Math.min(44,r.height)),w=Math.max(200,Math.min(wide.width,innerWidth-r.left-12));
+ Object.assign(box.style,{left:Math.max(8,r.left-4)+'px',top:Math.max(8,r.top+(r.height-h)/2)+'px',width:w+8+'px'});
+ box.innerHTML=`<input type="text" maxlength="200" aria-label="Card title" style="height:${h}px;font-size:${getComputedStyle(el).fontSize};font-weight:${getComputedStyle(el).fontWeight}">${s.title_suggested?'<button type="button" class="rename-reset">Reset to suggested title</button>':''}`;
+ document.body.append(box);const input=box.querySelector('input');input.value=s.title;input.focus();input.select();renaming={id,box,el,h,prefer};
+ let done=false;const finish=(save,reset=false)=>{if(done)return;done=true;const v=input.value;renameClose();if(save)renameSave(id,v,reset)};
+ input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(false)}});
+ input.addEventListener('blur',()=>setTimeout(()=>{if(!done&&!box.contains(document.activeElement))finish(true)},0));
+ const reset=box.querySelector('.rename-reset');if(reset){reset.addEventListener('mousedown',e=>e.preventDefault());reset.onclick=()=>finish(true,true)}}
+async function renameSave(id,value,reset=false){const s=cardOf(id);if(!s)return;const title=String(value||'').replace(/\s+/g,' ').trim().slice(0,200),before={title:s.title,title_suggested:s.title_suggested};
+ if(!reset&&(!title||title===s.title))return; // empty puts the old title back
+ if(reset){if(!s.title_suggested)return;Object.assign(s,{title:s.title_suggested,title_suggested:null})}
+ else Object.assign(s,{title,title_suggested:title===(s.title_suggested??null)?null:s.title_suggested??before.title});
+ render();
+ try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_rename',args:{suggestion_id:id,title:reset?null:title,reset,decision_id:crypto.randomUUID()}})});
+  await refresh();if(chatId===id)chatPoll()}
+ catch(e){Object.assign(s,before);render();toast(e.message||'Couldn’t rename the card',true)}}
+// Where the title of card id is on screen now: the chat header, the card's heading, or its sidebar row.
+const shownEl=sel=>[...document.querySelectorAll(sel)].find(n=>n.getClientRects().length)||null;
+function titleEl(id,prefer){const css=CSS.escape(id);return(prefer==='row'?shownEl(`#side-cards a[href="#chat=${css}"],.chat-side a[href="#chat=${css}"]`):null)
+ ||(chatId===id?document.querySelector('.chat-title'):null)||document.querySelector(`#task-${css} h3 .title-link,#task-${css} h3`)||document.querySelector(`#side-cards a[href="#chat=${css}"]`)}
+// The ⋯ on a sidebar row (on hover), and its small menu (also on a right click or a long press).
+const rowMore=document.createElement('button');rowMore.type='button';rowMore.className='row-more';rowMore.hidden=true;rowMore.setAttribute('aria-label','More for this card');rowMore.title='More';rowMore.innerHTML=DOTS;document.body.append(rowMore);
+let rowHover=null;
+document.addEventListener('mouseover',e=>{if(e.target.closest('.row-more'))return;const a=e.target.closest(ROWS);if(a===rowHover)return;rowHover=a;
+ if(!a||!fine()){rowMore.hidden=true;return}const r=a.getBoundingClientRect();Object.assign(rowMore.style,{left:r.right-28+'px',top:r.top+(r.height-24)/2+'px'});rowMore.dataset.id=rowId(a);rowMore.hidden=false});
+document.addEventListener('scroll',()=>{rowMore.hidden=true;rowHover=null;rowMenuClose();renamePlace()},true);addEventListener('resize',()=>renamePlace());
+function rowMenuClose(){document.querySelector('.row-menu')?.remove()}
+function rowMenu(id,x,y){rowMenuClose();const m=document.createElement('div');m.className='row-menu';m.setAttribute('role','menu');
+ m.innerHTML=`<button type="button" role="menuitem" data-row-rename="${esc(id)}">Rename</button><button type="button" role="menuitem" data-row-open="${esc(id)}">Open</button>`;document.body.append(m);
+ const r=m.getBoundingClientRect();Object.assign(m.style,{left:Math.max(8,Math.min(x,innerWidth-r.width-8))+'px',top:Math.max(8,Math.min(y,innerHeight-r.height-8))+'px'});m.querySelector('button').focus()}
+rowMore.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const r=rowMore.getBoundingClientRect();rowMenu(rowMore.dataset.id,r.left,r.bottom+4)});
+document.addEventListener('click',e=>{const rn=e.target.closest('[data-row-rename]'),op=e.target.closest('[data-row-open]');
+ if(rn){e.preventDefault();const id=rn.dataset.rowRename;rowMenuClose();renameAt(id,titleEl(id,'row'),'row');return}
+ if(op){e.preventDefault();rowMenuClose();chatGo(op.dataset.rowOpen);return}
+ if(!e.target.closest('.row-menu'))rowMenuClose()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.querySelector('.row-menu')){rowMenuClose();e.stopPropagation()}},true);
+document.addEventListener('contextmenu',e=>{const a=e.target.closest(ROWS);if(!a)return;e.preventDefault();rowMenu(rowId(a),e.clientX,e.clientY)});
+document.addEventListener('dblclick',e=>{const a=e.target.closest(ROWS);if(!a)return;e.preventDefault();const id=rowId(a);requestAnimationFrame(()=>renameAt(id,titleEl(id,'row'),'row'))});
+// A long press on a row on a phone opens the same menu; the tap that ends it doesn't open the card.
+{let timer=null,pressed=false,start=null;
+ document.addEventListener('touchstart',e=>{const a=e.target.closest(ROWS);if(!a||e.touches.length!==1)return;pressed=false;const t=e.touches[0];start=[t.clientX,t.clientY];
+  clearTimeout(timer);timer=setTimeout(()=>{pressed=true;navigator.vibrate?.(10);rowMenu(rowId(a),start[0],start[1]+8)},500)},{passive:true});
+ document.addEventListener('touchmove',e=>{if(timer&&start&&Math.hypot(e.touches[0].clientX-start[0],e.touches[0].clientY-start[1])>8){clearTimeout(timer);timer=null}},{passive:true});
+ document.addEventListener('touchend',()=>{clearTimeout(timer);timer=null},{passive:true});
+ document.addEventListener('click',e=>{if(pressed&&e.target.closest(ROWS)){e.preventDefault();e.stopImmediatePropagation();pressed=false}},true)}
+// Rename in a card's More menu (and so in the chat header's menu); a click on the chat's title; on a computer, a click
+// on a card's title. A tap on a phone still opens the card.
+document.addEventListener('click',e=>{const b=e.target.closest('[data-rename]');if(b){e.preventDefault();e.stopPropagation();b.closest('details')?.removeAttribute('open');const id=b.dataset.rename;requestAnimationFrame(()=>renameAt(id,titleEl(id)));return}
+ const ct=e.target.closest('.chat-title');if(ct&&chatId){e.preventDefault();renameAt(chatId,ct);return}
+ const tl=e.target.closest('.card h3 .title-link');if(tl&&fine()&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){const id=tl.closest('article')?.id.replace(/^task-/,'');if(cardOf(id)){e.preventDefault();e.stopPropagation();renameAt(id,tl)}}},true);
+document.addEventListener('mouseover',e=>{const t=e.target.closest('.card h3 .title-link');if(t&&fine()&&!t.classList.contains('chat-title'))t.title='Click to rename'});
 </script></html>

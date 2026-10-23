@@ -171,9 +171,9 @@ await page.locator('[data-fold-tile="later"]').click();assert.equal(await page.l
 await page.locator('[data-fold-tile="ready"]').click();assert.equal(await page.locator('#task-'+ids[2]).count(),0);assert.equal(await page.locator('#section-ready').getAttribute('aria-expanded'),'false');
 assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('folded-sections'))),['ready']);
 await page.locator('#section-ready').click();assert.equal(await page.locator('#task-'+ids[2]).isVisible(),true);assert.equal(await page.locator('[data-fold-tile="ready"]').getAttribute('aria-expanded'),'true');
-await later.locator('summary').getByText('Coming back later').waitFor();await later.locator('summary').click();await page.locator('#task-'+ids[3]).waitFor();
+await later.locator(':scope>summary').getByText('Coming back later').waitFor();await later.locator(':scope>summary').click();await page.locator('#task-'+ids[3]).waitFor();
 await page.evaluate(()=>refresh());assert.equal(await page.locator('#task-'+ids[3]).isVisible(),true);
-await later.locator('summary').click();await page.locator('#task-'+ids[3]).waitFor({state:'hidden'});await page.waitForTimeout(300);await page.screenshot({path:'/tmp/261012-later-folded.png'});}
+await later.locator(':scope>summary').click();await page.locator('#task-'+ids[3]).waitFor({state:'hidden'});await page.waitForTimeout(300);await page.screenshot({path:'/tmp/261012-later-folded.png'});}
 await page.locator('#task-'+ids[2]).getByRole('button',{name:'Read message',exact:true}).waitFor();
 suggestions[2].source_line=undefined;suggestions[2].event_ids='[3]';suggestions[2].original_urls=['https://mail.google.com/mail/u/?authuser=x#all/1'];await page.evaluate(()=>refresh());
 await page.locator('#task-'+ids[2]).getByRole('button',{name:'Read email',exact:true}).waitFor();
