@@ -58,6 +58,7 @@ import family
 import friends
 import discovery
 import network
+import shared_connectors
 import skills
 
 LOG = logging.getLogger('personal-assistant')
@@ -114,6 +115,7 @@ DOMAIN = re.compile(r'(?:[a-z0-9-]+\.)+[a-z]{2,}')
 MONTH = re.compile(r'\d{4}-\d{2}')
 DAY = re.compile(r'\d{4}-\d{2}-\d{2}')
 DIRECTORY_EVERY, CLAIMS_EVERY, MEETINGS_EVERY, OFF_WAIT = 600, 120, 300, 600
+SHARED_EVERY = 60  # shared connectors: sends, prompts and drops (shared_connectors.py)
 HANDLED_DAYS, HANDLED_PER_ROUND = 14, 2  # closed cards announced as handled: this recent (the relay keeps claims 14 days); claims
 # a round, well under the relay's limit on claims per hour
 REMOVALS_EVERY = 600  # how often a Machine asks whether a Work Fleet it left wants its company data removed
@@ -1534,7 +1536,7 @@ def brief_text(view, today=None, hidden=()):
 
 # ---------------------------------------------------------------- the Fleet on this Machine
 
-class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, family.Family):
+class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, family.Family, shared_connectors.SharedConnectors):
     def __init__(self, connect, config, token, relay=None):
         self.connect, self.config = connect, config
         self.relay = relay or NetworkClient(settings(config)['url'], token, endpoints(config), connect=connect)
@@ -1779,6 +1781,8 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
             return self.take_request(ask, teammate, fleet, kind, question, name)
         if kind == 'skill':  # a shared skill: kept for the owner to read (skills.py), never installed by itself
             return self.take_skill(ask, teammate, fleet, name)
+        if kind == 'connector':  # a Fleet admin's shared connector (shared_connectors.py): checked, never shown or asked
+            return self.take_connector(ask)
         with self.connect() as db:
             if not teammate or not question:
                 self.log(db, 'in', fleet, ask.get('from'), name, kind if kind in KIND_LABEL else 'other', 'a question this Machine does not answer', 'declined')
@@ -2173,7 +2177,7 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                 return True
             row = db.execute('SELECT * FROM fleet_out WHERE id=?', (str(item.get('id')),)).fetchone()
             if not row:
-                return False
+                return self.connector_answered(item)  # a shared connector's answer: nothing to keep (shared_connectors.py)
             status = item.get('status') if item.get('status') in ('answered', 'declined', 'waiting', 'expired') else 'declined'
             answer = clean_answer(row['kind'], item.get('answer')) if status == 'answered' else None
             if status == 'answered' and answer is None:
@@ -2628,13 +2632,30 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
     def step(self, wait=25):
         import time
         self.directory()
+        if time.monotonic() - self.last.get('shared', 0.0) > SHARED_EVERY or not wait:
+            self.last['shared'] = time.monotonic()
+            try:
+                self.shared_round()  # shared connectors (shared_connectors.py): send, ask the owner, drop what stopped
+            except (ValueError, OSError, KeyError, TypeError, Off) as error:  # Off: a Network from before, without shared connectors
+                LOG.error('shared connectors error=%s', type(error).__name__)
         with self.connect() as db:  # a question still to tell the owner about: come back sooner
             if wait and self.untold(db):
                 wait = min(wait, NOTIFY_SETTLE)
         sealing = self.relay if isinstance(self.relay, network.Sealing) else None
         if sealing:
             sealing.flush()  # answers kept while the Network was away go first
-        found = self.relay.call('GET', f'/inbox?wait={int(wait)}&notices=1&ack=1', timeout=wait + 15)
+        # shared: the shared connectors' stamp seen last; the inbox answers at once when a share stops or its token is
+        # replaced, so this Machine looks again now instead of at its next directory (it still checks what it keeps)
+        seen = self.meta('shared_stamp') or '-'
+        found = self.relay.call('GET', f'/inbox?wait={int(wait)}&notices=1&ack=1&shared={seen}', timeout=wait + 15)
+        if isinstance(found.get('shared'), str) and found['shared'] != seen:
+            self.set_meta('shared_stamp', found['shared'])
+            self.last['shared'] = time.monotonic()
+            try:
+                self.directory(refresh=True)
+                self.shared_round()
+            except (ValueError, OSError, KeyError, TypeError, Unavailable, Off) as error:
+                LOG.error('shared connectors error=%s', type(error).__name__)
         for ask in found.get('asks', []):
             if sealing and ask.get('id') and sealing.taken(ask['id']):
                 continue  # taken before: its answer is sent or waits in the outbox, so it's never acted on twice
@@ -2787,6 +2808,10 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                 self.off, backoff, away = False, 0, 0
             except Off:
                 self.off = True
+                try:
+                    self.drop_received()  # out of every Fleet, or it is off for them: shared connectors go (shared_connectors.py)
+                except Exception as error:  # noqa: BLE001 - never stops the Fleet
+                    LOG.error('shared connectors error=%s', type(error).__name__)
                 stop.wait(OFF_WAIT)
             except (Unavailable, OSError) as error:
                 # The relay restarting (502) or the connection cut: normal for a moment, an error only once it lasts.

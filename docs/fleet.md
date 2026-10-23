@@ -38,6 +38,9 @@ their answers, and the log.
    email that reached a teammate or a shared address like info@), the other's open card says "Done: <teammate> already
    handled this", with **Mark done** first: when they marked it done, or when the card would hand it to them and they
    closed it either way. It then offers no handoff. If they reopen theirs, so does yours.
+4. **Shared connectors.** An admin connects Intercom once and shares it from the Fleet tab, **Shared connectors**: the
+   Machines they say OK to get it as a work source, sealed Machine to Machine. Connections shows "Shared by <Fleet>".
+   How it's kept safe: [Network](network.md#shared-connectors).
 
 A Family Fleet asks three things: when everyone is free, to-dos for one another, and family plans to say yes or no to.
 See [Family](family.md). Work questions never travel in a Family.

@@ -28,6 +28,9 @@ class FakeFleet:
         return {'on': True, 'fleets': [{'id': ref, 'kind': f['kind'], 'people': [{'member_id': m['member_id'], 'name': m['name']} for m in f['members']]}
                                        for ref, f in self.directory.items()]}
 
+    def shared_view(self):  # shared connectors (shared_connectors.py): this Machine's own, no peer asked
+        return {'prompts': [], 'shares': [], 'accounts': [], 'can_share': []}
+
     def __getattr__(self, name):
         raise AssertionError('the Graph must not use the Fleet for ' + name)
 
