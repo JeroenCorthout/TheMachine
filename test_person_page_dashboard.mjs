@@ -49,7 +49,7 @@ try{
  if(process.env.SHOT_DIR)await mkdir(process.env.SHOT_DIR,{recursive:true});
  for(const [width,height,scheme] of [[390,844,'dark'],[390,844,'light'],[1440,900,'dark'],[1440,900,'light']]){
   person=fresh();calls.length=0;
-  const context=await browser.newContext({viewport:{width,height},colorScheme:scheme,deviceScaleFactor:width<500?2:1}),page=await context.newPage();
+  const context=await browser.newContext({viewport:{width,height},colorScheme:scheme,deviceScaleFactor:width<500?2:1,timezoneId:'America/New_York'}),page=await context.newPage();
   await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port+'/#graph/'+encodeURIComponent(person.id));
@@ -59,14 +59,16 @@ try{
   // Header: title · organisation, the place, and one plain line.
   assert.equal((await card.locator('.person-job').textContent()).trim(),'Head of the Northwind Technical and Digital Academy · Northwind',tag);
   assert.equal(await card.locator('.person-job button.node[data-node="org:eu.northwind.example"]').count(),1);
-  assert.match((await card.locator('.person-place').textContent()).trim(),/^Antwerpen, Belgium · \d{1,2}:\d\d( [AP]M)? their time$/);
+  assert.match((await card.locator('.person-place').textContent()).trim(),/^Antwerpen, Belgium · \d\d:\d\d their time$/);  // 24h, as their clock differs from the owner's
+  assert.equal(await page.evaluate(()=>localTime('America/New_York')),'','no "their time" when it is the owner\'s too');
   assert.equal(await card.locator('.person-bio').textContent(),'Learning, alloys and long walks.');
   assert.match(await card.locator('.person-rel').textContent(),/^Talk daily · last \w+, \w+ \d+ · next meeting \w+, \w+ \d+$/);
   // Sections with headings, in order; no scattered Edit links.
   assert.deepEqual(await card.locator('.detail-section>h4').allTextContents(),['Contact','About you','People','Projects']);
   assert.equal(await card.locator('[data-role-edit],[data-person-org-edit],.role-form,.person-org-form,.name-form').count(),0);
   assert.deepEqual(await card.locator('.person-contact .kv .k').allTextContents(),['Phone','Email','Email','LinkedIn','X','Also on']);
-  assert.equal(await card.locator('.person-contact a[href="tel:+32470000071"]').count(),1);
+  assert.equal(await card.locator('.person-contact a[href="tel:+32470000071"]').textContent(),'+32 470 00 00 71');  // grouped to read; tap and Copy use the number
+  assert.equal(await card.locator('.person-contact [data-copy-command="+32470000071"]').count(),1);
   assert.equal(await card.locator('.person-contact a[href="mailto:mara.ellison@eu.northwind.example"]').count(),1);
   assert.equal(await card.locator('.person-contact [data-copy-command="mara.ellison@eu.northwind.example"]').count(),1);
   const fonts=await card.locator('.person-contact .kv .v').evaluateAll(els=>els.map(e=>getComputedStyle(e).fontFamily));

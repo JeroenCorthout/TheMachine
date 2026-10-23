@@ -57,7 +57,8 @@ try{
   assert.ok(about.includes('Accounting firm')&&about.includes('“Lumen does our books”'),about);
   assert.equal(await card.locator('.person-about [data-role-confirm="org:lumen.example"]').count(),1);
   assert.equal(await card.locator('[data-role-edit],.role-form,.name-form').count(),0);
-  assert.equal(await page.locator('#people-view [data-fleet-ask]').textContent(),'Ask the Fleet who knows Lumen');
+  assert.equal(await card.locator('.person-view > .detail-fleet-ask [data-fleet-ask]').textContent(),'Ask the Fleet who knows Lumen');  // a quiet row in the card, after Related
+  assert.equal(await page.locator('#people-view [data-fleet-ask]').count(),1);
   assert.equal(await page.locator('#people-view [data-fleet-ask]').getAttribute('data-fleet-ask'),'lumen.example');
   for(const v of await card.locator('.kv .v').all())assert.ok(await v.evaluate(e=>e.scrollWidth<=e.clientWidth+1),'a row is cut off at '+tag);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no sideways scroll at '+tag);
