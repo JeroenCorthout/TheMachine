@@ -8,13 +8,14 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 // the browser's back button works. Facts about them sit apart from what is open, each with Not about them and Forget.
 // Events come by day, each row with its source, who wrote it and the start of the text.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
-const now=new Date(),hour=h=>new Date(now.getFullYear(),now.getMonth(),now.getDate(),h).toISOString(),daysAgo=d=>new Date(Date.now()-d*864e5).toISOString();
+// Earlier today, whatever the hour the test runs at: n minutes ago, never before midnight.
+const now=new Date(),hour=n=>new Date(Math.max(new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime(),now-n*6e4)).toISOString(),daysAgo=d=>new Date(Date.now()-d*864e5).toISOString();
 const long='Can you pick up the kids at five today? I am stuck in a meeting that runs late and the school closes at half past, so it would really help. '.repeat(3);
 let known=[{id:5,text:'Ann prefers calls before 10.'},{id:6,text:'Ann is allergic to nuts.'}];
-const person=()=>({id:'wa:3247000001',kind:'person',name:'Ann Example',strength:2,closeness:'close',last_at:hour(9),signals:9,ids:['+3247000001'],links:[],
+const person=()=>({id:'wa:3247000001',kind:'person',name:'Ann Example',strength:2,closeness:'close',last_at:hour(1),signals:9,ids:['+3247000001'],links:[],
  open:{cards:[{id:'0123456789abcdef',title:'Answer Ann',status:'pending',due:null}],...(known.length?{known}:{})},
- recent:[{id:41,account_id:'chat',kind:'whatsapp.message',occurred_at:hour(9),title:'Ann Example',from:'Ann Example',from_me:false,preview:long},
-         {id:40,account_id:'chat',kind:'whatsapp.message',occurred_at:hour(8),title:'Ann Example',from:'You',from_me:true,preview:'ok'},
+ recent:[{id:41,account_id:'chat',kind:'whatsapp.message',occurred_at:hour(1),title:'Ann Example',from:'Ann Example',from_me:false,preview:long},
+         {id:40,account_id:'chat',kind:'whatsapp.message',occurred_at:hour(2),title:'Ann Example',from:'You',from_me:true,preview:'ok'},
          {id:39,account_id:'work',kind:'gmail.message',occurred_at:daysAgo(3),title:'School trip',from:'Ann Example',from_me:false,preview:'Here is the form.'},
          {id:38,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(3),title:'Parents evening',preview:'School hall'},
          {id:37,account_id:'help',kind:'intercom.conversation',occurred_at:daysAgo(4),title:'Question about billing',from:'Ann Example',preview:'Hi there'},
