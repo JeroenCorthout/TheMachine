@@ -380,6 +380,7 @@ sys.path.insert(0, sys.argv[1])
 import message_keyring, message_seal
 data = sys.argv[2]
 db = os.path.join(data, 'events.sqlite')
+os.makedirs(os.environ['XDG_RUNTIME_DIR'] + '/keyring', mode=0o700, exist_ok=True)
 daemon = subprocess.Popen(['gnome-keyring-daemon', '--foreground', '--unlock', '--components=secrets',
                            '--control-directory=' + os.environ['XDG_RUNTIME_DIR'] + '/keyring'],
                           stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -387,12 +388,20 @@ daemon.stdin.write(b'throwaway-password')
 daemon.stdin.close()
 out = {}
 try:
-    for _ in range(100):
-        try:
-            message_keyring.BACKEND.collection()
+    # Query the bus itself first: querying Secret.Service before our daemon owns the name
+    # auto-starts a different daemon and races the throwaway unlocked collection.
+    for _ in range(200):
+        names = subprocess.run(['busctl', '--user', '--json=short', 'call', 'org.freedesktop.DBus',
+                                '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'ListNames'],
+                               capture_output=True, text=True, check=True)
+        if 'org.freedesktop.secrets' in json.loads(names.stdout).get('data', [[]])[0]:
             break
-        except message_keyring.Unavailable:
-            time.sleep(0.1)
+        if daemon.poll() is not None:
+            raise RuntimeError('The isolated test keyring exited during startup')
+        time.sleep(0.1)
+    else:
+        raise RuntimeError('The isolated test keyring did not acquire its service name')
+    message_keyring.BACKEND.collection()
     key = message_seal.load_key(db, create=True)
     with open(os.path.join(data, 'browser-logins.sealed'), 'wb') as f:
         f.write(message_seal.Sealer(key).seal_bytes(b'{}'))

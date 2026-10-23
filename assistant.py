@@ -5587,11 +5587,17 @@ class Store:
                 return {'status':'completed','note':'Result saved; the confirmed step went through, so the card is done.'}
         return {'status': 'prepared', 'note': 'Result saved. The service itself executed nothing.'}
 
-    def revise_draft(self,suggestion_id,revision,source,subject=None,body=None):
+    def revise_draft(self,suggestion_id,revision,source,subject=None,body=None,agent_job=None):
         # The owner edits a ready draft themselves: the edit replaces that draft under a new
         # revision, so Send always sends exactly what they last saw; the before/after teaches later drafts.
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            if agent_job is not None:
+                job = db.execute('SELECT * FROM agent_jobs WHERE id=?', (agent_job['id'],)).fetchone()
+                if (not job or job['suggestion_id'] != suggestion_id or job['status'] not in ((*agent_jobs.ACTIVE, 'result') if job['place'] == 'remote' else agent_jobs.ACTIVE)
+                        or job['turns'] != agent_job['turns'] or job['outcome'] is not None
+                        or job['draft_revision'] != revision):
+                    raise ValueError('This agent job stopped or the draft changed. Its result stays on the card without replacing the draft.')
             row=db.execute('SELECT * FROM suggestions WHERE id=?',(suggestion_id,)).fetchone()
             action=next_actions.selected(row['next_action'],revision) if row else None
             if not row or row['status']!='prepared' or not action or action['kind'] not in ('email','linkedin','slack','x','whatsapp','intercom','finish'):
@@ -5613,6 +5619,8 @@ class Store:
                 current=revised
             stamp=now()
             db.execute('UPDATE suggestions SET next_action=? WHERE id=?',(encoded(current),suggestion_id))
+            if agent_job is not None:
+                db.execute('UPDATE agent_jobs SET draft_revision=? WHERE id=? AND turns=?', (revised['revision'], agent_job['id'], agent_job['turns']))
             draft_saved(db,suggestion_id,revised,stamp)
             db.execute("UPDATE action_jobs SET status='cancelled',updated_at=? WHERE suggestion_id=? AND revision=? AND status IN ('queued','blocked')",(stamp,suggestion_id,revision))
             db.execute('INSERT INTO draft_edits(id,suggestion_id,old_revision,new_revision,kind,before_subject,before_body,after_subject,after_body,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -9992,7 +10000,7 @@ class App:
                 'task': card_task(card), 'note': note, 'about': agent_about(card, views), 'history': agent_history(*chat, skip=note),
                 'message_kinds': [v['kind'] for v in views]}
 
-    def agent_revise(self, suggestion_id, text):
+    def agent_revise(self, suggestion_id, text, job=None):
         """A message Claude Code or Codex rewrote (its draft.md) becomes the card's draft under a new revision, when the
         card has exactly one message draft: the owner still reads it there and sends it with the card's own Send."""
         with self.store.connect() as db:
@@ -10004,7 +10012,7 @@ class App:
         editable = [a for a in actions or [] if isinstance(a, dict) and a.get('kind') in ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom') and a.get('revision')]
         if len(editable) != 1:
             return False
-        return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text).get('status') == 'revised'
+        return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text, agent_job=job).get('status') == 'revised'
 
     def agent_action(self, name, args):
         if not self.agents:
