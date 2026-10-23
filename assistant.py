@@ -9468,13 +9468,14 @@ def weekly_recap_message(store, config, current=None, usage=None):
 
     # 1. What needs the owner: promises made to them that are late, then their own open ones with a date.
     promised = [p for p in store.promises(7) if p['state'] in ('open', 'card')]
-    card_of = lambda p: p['suggestion_id'] if p['state'] == 'card' and p['suggestion_id'] in open_cards else None
+    # A promise links to its own page on the dashboard, never to its card (the page links the card)
+    said = lambda p: f"[{recap_escape(recap_clip(p['what']))}]({root}#promise/{p['id']})" if root else recap_escape(recap_clip(p['what']))
     late_to = [p for p in promised if p['direction'] == 'theirs' and ((p['due'] and p['due'] < today.isoformat()) or (not p['due'] and p['check_at'] <= current.isoformat()))]
     soon = (today + dt.timedelta(days=14)).isoformat()  # their own: late ones and those due in the next two weeks
     mine = sorted((p for p in promised if p['direction'] == 'mine' and p['due'] and p['due'] <= soon), key=lambda p: p['due'])
-    needs = [f"• Waiting on {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+    needs = [f"• Waiting on {recap_escape(p['who'])}: {said(p)}, "
              + (f"due {recap_day(p['due'])}" if p['due'] else f"since {recap_day(p['made_at'])}") for p in late_to[:4]]
-    needs += [f"• Promised {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+    needs += [f"• Promised {recap_escape(p['who'])}: {said(p)}, "
               + (f"was due {recap_day(p['due'])}" if p['due'] < today.isoformat() else f"due {recap_day(p['due'])}") for p in mine[:4]]
     more = max(0, len(late_to) - 4) + max(0, len(mine) - 4)
     if needs:
@@ -9493,7 +9494,7 @@ def weekly_recap_message(store, config, current=None, usage=None):
     for p in promised:
         same = lambda q: q['direction'] == 'mine' and q['who'] == p['who'] and q['what'].lower() == p['what'].lower()
         if p['direction'] == 'theirs' and p['due'] and in_week(p['due']) and not any(map(same, mine)):  # today's are on time, late ones are under Needs you, a shared plan shows once
-            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {link(recap_clip(p['what']), card_of(p))}"))
+            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {said(p)}"))
     if week:
         when = lambda v: str(v) if len(str(v)) <= 10 else dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')).astimezone(tz).strftime('%Y-%m-%dT%H:%M')
         week.sort(key=lambda w: when(w[0]))
