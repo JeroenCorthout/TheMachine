@@ -124,7 +124,7 @@ try{
  await page.waitForTimeout(100);
  await page.evaluate(()=>people('email:pat@client.example'));
  await page.locator('.graph-detail h3',{hasText:'Pat Doe'}).waitFor();
- await page.locator('[data-name-edit]').click();
+ await page.locator('.person-menu summary').click();await page.locator('[data-name-edit]').click();
  await page.locator('.name-form input').fill('Pat Owner Name');
  holdOrg=new Promise(r=>release=r);
  await page.evaluate(()=>{void people('org:client.example')});

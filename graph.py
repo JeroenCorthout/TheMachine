@@ -26,11 +26,14 @@ from __future__ import annotations
 import collections
 import datetime as dt
 import email.utils
+import hashlib
+import hmac
 import json
 import math
 import operator
 import os
 import re
+import secrets
 import sqlite3
 import struct
 import unicodedata
@@ -59,6 +62,10 @@ CREATE TABLE IF NOT EXISTS graph_role_asks(identifier TEXT PRIMARY KEY,run_id TE
 CREATE TABLE IF NOT EXISTS role_corrections(id INTEGER PRIMARY KEY,identifier TEXT NOT NULL,name TEXT NOT NULL,old_role TEXT NOT NULL,
   new_role TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS org_profiles(domain TEXT PRIMARY KEY,status TEXT NOT NULL,profile TEXT,fetched_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS person_profiles(identifier TEXT PRIMARY KEY,status TEXT NOT NULL,profile TEXT,fetched_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS enrich_prefs(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS forgotten_people(digest TEXT PRIMARY KEY,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS forgotten_salt(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS graph_relations(a TEXT NOT NULL,b TEXT NOT NULL,relation TEXT NOT NULL,source TEXT NOT NULL,event_id INTEGER,
   created_at TEXT NOT NULL,PRIMARY KEY(a,b));
 CREATE TABLE IF NOT EXISTS org_edits(domain TEXT PRIMARY KEY,fields TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -483,6 +490,7 @@ def _build(db, config, now):
             wrote_to |= {a for _, a in addresses(m.get('to')) + addresses(m.get('cc'))}
 
     warmup = hidden(db)  # addresses there are a warm-up tool's traffic: nobody in the graph
+    gone = forgotten(db)  # people the owner deleted permanently: never added again
 
     # Who: identifiers per signal, joined into people.
     seen_message_ids = set()
@@ -512,7 +520,7 @@ def _build(db, config, now):
                 domain = addr.rsplit('@', 1)[1]
                 if kind == 'stripe.event' and m.get('customer_name') and domain not in FREEMAIL:
                     paying_names.setdefault(domain, str(m['customer_name']))
-        found = [t for t in touches(kind, m, owner, wrote_to) if not (t[0].startswith('email:') and t[0].rsplit('@', 1)[1] in warmup)]
+        found = [t for t in touches(kind, m, owner, wrote_to) if not (t[0].startswith('email:') and t[0].rsplit('@', 1)[1] in warmup) and not gone(t[0])]
         if not found:
             continue
         if kind == 'linkedin.message' and isinstance(m.get('headline'), str) and m['headline'].strip() and not m.get('group'):
@@ -534,6 +542,8 @@ def _build(db, config, now):
         if r['same']:
             union.join(r['a'], r['b'])
     for r in db.execute('SELECT identifier,name,email FROM identity_names'):
+        if gone(r['identifier']) or (r['email'] and gone('email:' + r['email'].lower())):
+            continue
         if r['name']:
             names[r['identifier']][person_name(r['name'])] += 3
         if r['email'] and r['identifier'] in known:
@@ -680,6 +690,7 @@ def _build(db, config, now):
     related = db.execute("SELECT a,b,relation,source FROM graph_relations ORDER BY source='owner',created_at").fetchall()
     profiles = {r['domain']: json.loads(r['profile']) for r in db.execute("SELECT domain,profile FROM org_profiles WHERE profile IS NOT NULL AND status!='wrong'")}
     wrong = {r[0] for r in db.execute("SELECT domain FROM org_profiles WHERE status='wrong'")}
+    looked_up = {r['identifier']: r['profile'] for r in db.execute("SELECT identifier,profile FROM person_profiles WHERE status='found' AND profile IS NOT NULL")}
     edits = {r['domain']: json.loads(r['fields']) for r in db.execute('SELECT domain,fields FROM org_edits')}
     stated_rows = {r['identifier']: dict(r) for r in db.execute('SELECT * FROM person_orgs')}
     stated = {}  # person node -> the statement of where they work, when no work address says it
@@ -718,11 +729,13 @@ def _build(db, config, now):
         hints = sorted(set().union(*(appears.get(i, ()) for i in group))) + (["an address at the owner's own domain"] if colleague else []) \
             + (["in the owner's Slack"] if any(i.startswith('slack:') for i in group) else []) \
             + (["shares the owner's surname"] if full and surnames & set(full.split()[1:]) else [])
+        person_profile = next((json.loads(looked_up[i]) for i in group if i in looked_up), None)
         info = {'ids': sorted({shown_id(i, x_names) for i in group}), 'org': ('org:' + domains[0]) if domains and not said_org else None,
                 'org_by': 'email' if domains and not said_org else None, 'has_headline': any(i in headlines for i in group),
                 'wrote': len(roles[node]['owner']), 'heard': len(roles[node]['them']), 'met': len(roles[node]['met']),
                 'accounts': sorted(accounts[node]), 'next_meeting': next_meeting[node].isoformat() if node in next_meeting else None,
-                'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk}
+                'colleague': colleague, 'role': role, 'role_by': role_by, 'role_id': role_id, 'identifiers': group, 'hints': hints, 'seen_only': not talk,
+                'profile': person_profile}
         nodes.append((node, 'person', name[:200], round(value, 4), last_day[node].isoformat() if node in last_day else None,
                       len(node_events[node]), usual, int(quiet), None, info))
     # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
@@ -862,7 +875,8 @@ def node_view(row, links=None):
                     next_meeting=info.get('next_meeting'), colleague=info.get('colleague'), role=info.get('role'),
                     role_by=info.get('role_by'), role_id=info.get('role_id'), hints=info.get('hints', []),
                     seen_only=bool(info.get('seen_only')), relations=info.get('relations', []), org_by=info.get('org_by'),
-                    org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'))
+                    org_via=info.get('org_via'), org_event_id=info.get('org_event_id'), org_at=info.get('org_at'),
+                    profile=info.get('profile'))
     elif row['kind'] == 'org':
         view.update(role=info.get('role'), role_by=info.get('role_by'), domain=info.get('domain'), profile=info.get('profile'),
                     about=enrichment.summary(info.get('profile')), edited=info.get('edited', []), wrong=bool(info.get('wrong')))
@@ -984,7 +998,9 @@ def context_lines(db, event_ids, limit_chars=1500, skip_card=None):
             org = db.execute('SELECT name,info FROM graph_nodes WHERE id=?', (view['org'],)).fetchone() if view['org'] else None
             org_info = json.loads(org['info']) if org else {}
             org_bits = [b for b in (org_info.get('role'), enrichment.summary(org_info.get('profile'))) if b]
-            bits = ([view['role']] if view['role'] else ['no role yet']) + ([f"at {org['name']}" + (f" ({'; '.join(org_bits)})" if org_bits else '')] if org else []) \
+            title = (view.get('profile') or {}).get('title')
+            bits = ([view['role']] if view['role'] else ['no role yet']) + ([f'job title {title}'] if title else []) \
+                + ([f"at {org['name']}" + (f" ({'; '.join(org_bits)})" if org_bits else '')] if org else []) \
                 + [relation_text(r) for r in view['relations'][:2]] \
                 + [f"{view['closeness']} contact", f"last {'seen' if view['seen_only'] else 'contact'} {short_date(view['last_at'])}"]
             if view['usual_gap_days']:
@@ -1582,3 +1598,178 @@ def merge(db, a, b, same, now):
     if a == b or not all(re.fullmatch(r'(?:email|wa|slack|li|x|gh):\S+', i) for i in (a, b)):
         raise ValueError('Merge two different person ids from graph results (like email:… or wa:…)')
     db.execute('INSERT OR REPLACE INTO graph_merges(a,b,same,created_at) VALUES(?,?,?,?)', (a, b, int(bool(same)), now))
+
+
+# Delete permanently (the owner's right to have someone forgotten, GDPR art. 17): the person and what is tied to them
+# go; what stays is a keyed hash of each of their identifiers, so they are never added, looked up or learned again.
+class _Everyone:
+    def __contains__(self, item):
+        return True
+
+
+def _salt(db, create=False):
+    row = db.execute('SELECT salt FROM forgotten_salt WHERE id=1').fetchone()
+    if row or not create:
+        return row[0] if row else None
+    salt = secrets.token_hex(32)
+    db.execute('INSERT INTO forgotten_salt(id,salt) VALUES(1,?)', (salt,))
+    return salt
+
+
+def forgotten_digest(salt, identifier):
+    return hmac.new(bytes.fromhex(salt), ' '.join(str(identifier).split()).casefold().encode(), hashlib.sha256).hexdigest()
+
+
+def anyone_forgotten(db):
+    try:
+        return bool(db.execute('SELECT 1 FROM forgotten_people LIMIT 1').fetchone())
+    except sqlite3.OperationalError:
+        return False
+
+
+def forgotten(db):
+    """A check, identifier -> True when that person was deleted permanently. Cheap when nobody was."""
+    try:
+        digests = {r[0] for r in db.execute('SELECT digest FROM forgotten_people')}
+        salt = _salt(db) if digests else None
+    except sqlite3.OperationalError:
+        digests, salt = set(), None
+    if not digests or not salt:
+        return lambda identifier: False
+    return lambda identifier: forgotten_digest(salt, identifier) in digests
+
+
+def event_parties(kind, m, owner):
+    """(sender, others) of one signal as graph identifiers: who wrote it (None when the owner did or for a meeting)
+    and everyone else in it but the owner."""
+    found = touches(kind, m, owner, _Everyone())
+    roles = {role for _, _, _, role in found}
+    sender = None
+    if found and not roles & {'owner', 'met'} and kind not in ('calendar.event', 'salesflare.meeting', 'salesflare.email', 'owner.card'):
+        sender = found[0][0]
+    return sender, {t[0] for t in found}
+
+
+def from_forgotten(kind, m, owner, gone):
+    """True when a signal is from a deleted person, or they are the only other one in it."""
+    sender, others = event_parties(kind, m, owner)
+    return bool((sender and gone(sender)) or (others and all(gone(i) for i in others)))
+
+
+def _table(db, name):
+    return bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
+
+
+def _scrub(text, needles):
+    """Their names and addresses out of a text the owner keeps (a card, a draft, a promise)."""
+    if not isinstance(text, str) or not text:
+        return text
+    for needle in sorted(needles, key=len, reverse=True):
+        text = re.sub(r'(?<![\w@.])' + re.escape(needle) + r'(?![\w@])', 'someone', text, flags=re.IGNORECASE)
+    return text
+
+
+def mentions(text, needles):
+    return isinstance(text, str) and any(re.search(r'(?<![\w@.])' + re.escape(n) + r'(?![\w@])', text, re.IGNORECASE) for n in needles)
+
+
+def delete_person(db, node_id, config, now):
+    """Deletes a person permanently: their graph rows, links, aliases and addresses, looked-up details and photo link,
+    relationship scores, the messages they sent or that were only between them and the owner, the notes learned about
+    them. Cards that involve them stay, as the owner's own work, with their name and addresses taken out. Returns
+    {'identifiers', 'events', 'facts', 'cards', 'needles'}; the caller rebuilds the graph."""
+    row = db.execute("SELECT id,name,info FROM graph_nodes WHERE id=? AND kind='person'", (str(node_id or ''),)).fetchone()
+    if not row:
+        raise ValueError('Unknown person')
+    info = json.loads(row['info'] or '{}')
+    ids = sorted({str(i) for i in info.get('identifiers') or ()} | {row['id']})
+    for r in db.execute('SELECT a,b FROM graph_merges WHERE same=1').fetchall():  # aliases joined by hand
+        if r['a'] in ids or r['b'] in ids:
+            ids = sorted(set(ids) | {r['a'], r['b']})
+    emails = sorted({i.split(':', 1)[1].lower() for i in ids if i.startswith('email:')})
+    if emails and _table(db, 'identity_names'):  # their other channels, known by their address
+        ids = sorted(set(ids) | {r[0] for r in db.execute('SELECT identifier FROM identity_names WHERE lower(email) IN (%s)' % ','.join('?' * len(emails)), emails)})
+    names = {' '.join(str(row['name']).split())}
+    names |= {r[0] for r in db.execute('SELECT name FROM graph_names WHERE node_id IN (%s)' % ','.join('?' * len(ids)), ids)}
+    names |= {r[0] for r in db.execute('SELECT name FROM identity_names WHERE name IS NOT NULL AND identifier IN (%s)' % ','.join('?' * len(ids)), ids)}
+    full = {n for n in names if n and plain_name(n)}
+    needles = sorted(full | set(emails))
+    salt = _salt(db, create=True)
+    db.executemany('INSERT OR IGNORE INTO forgotten_people(digest,created_at) VALUES(?,?)', [(forgotten_digest(salt, i), now) for i in ids])
+    gone = forgotten(db)
+    owner = Owner(config or {})
+    # Messages they sent, or only between them and the owner.
+    dropped = []
+    if _table(db, 'events'):
+        for e in db.execute('SELECT id,kind,metadata FROM events').fetchall():
+            try:
+                m = json.loads(e['metadata'])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(m, dict) and from_forgotten(e['kind'], m, owner, gone):
+                dropped.append(e['id'])
+    marks = ','.join('?' * len(ids))
+    for table, column in (('event_vectors', 'event_id'), ('event_projects', 'event_id'), ('graph_events', 'event_id'), ('events', 'id')):
+        if _table(db, table):
+            db.executemany(f'DELETE FROM {table} WHERE {column}=?', [(i,) for i in dropped])
+    if dropped and _table(db, 'analyses'):
+        gone_events = set(dropped)
+        for review in db.execute('SELECT id,items FROM analyses').fetchall():
+            items = json.loads(review['items'] or '[]')
+            if any(isinstance(item, dict) and item.get('id') in gone_events for item in items):
+                for item in items:
+                    if isinstance(item, dict) and item.get('id') in gone_events:
+                        item['excluded'] = 'person_deleted'
+                db.execute('UPDATE analyses SET items=? WHERE id=?', (json.dumps(items), review['id']))
+    # The graph: them, their links and scores, aliases, roles, where they work, relations, looked-up details.
+    db.execute(f'DELETE FROM graph_nodes WHERE id IN ({marks})', ids)
+    db.execute(f'DELETE FROM graph_links WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    db.execute(f'DELETE FROM graph_events WHERE node_id IN ({marks})', ids)
+    db.execute(f'DELETE FROM graph_merges WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    db.execute(f'DELETE FROM graph_relations WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
+    for table in ('graph_names',):
+        db.execute(f'DELETE FROM {table} WHERE node_id IN ({marks})', ids)
+    for table in ('identity_names', 'person_roles', 'person_orgs', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'role_corrections'):
+        if _table(db, table):
+            db.execute(f'DELETE FROM {table} WHERE identifier IN ({marks})', ids)
+    if emails:
+        db.executemany('DELETE FROM identity_names WHERE lower(email)=?', [(e,) for e in emails])
+    if _table(db, 'network_people'):
+        db.execute(f'DELETE FROM network_people WHERE node_id IN ({marks})', ids)
+        db.executemany('DELETE FROM network_people WHERE lower(email)=?', [(e,) for e in emails])
+    # Learned notes about them, or that name them.
+    facts = set()
+    if _table(db, 'fact_about'):
+        facts |= {r[0] for r in db.execute(f'SELECT fact_id FROM fact_about WHERE node_id IN ({marks})', ids)}
+    if _table(db, 'facts'):
+        facts |= {r['id'] for r in db.execute('SELECT id,text FROM facts').fetchall() if mentions(r['text'], needles)}
+        for table, column in (('fact_about', 'fact_id'), ('fact_vectors', 'fact_id'), ('facts', 'id')):
+            if _table(db, table):
+                db.executemany(f'DELETE FROM {table} WHERE {column}=?', [(f,) for f in facts])
+    # Cards stay as the owner's work, without their name or addresses.
+    cards = 0
+    if _table(db, 'suggestions'):
+        dropped_set = set(dropped)
+        for card in db.execute('SELECT id,title,body,event_ids FROM suggestions').fetchall():
+            try:
+                linked = bool(dropped_set & set(json.loads(card['event_ids'] or '[]')))
+            except (TypeError, ValueError):
+                linked = False
+            if not (linked or mentions(card['title'], needles) or mentions(card['body'], needles)):
+                continue
+            cards += 1
+            first = {n.split()[0] for n in full if len(n.split()[0]) > 1}  # on a card about them, "Hi Lee" too
+            card_needles = needles + sorted(first)
+            db.execute('UPDATE suggestions SET title=?,body=? WHERE id=?', (_scrub(card['title'], card_needles), _scrub(card['body'], card_needles), card['id']))
+            if _table(db, 'decisions'):
+                for d in db.execute('SELECT id,feedback FROM decisions WHERE suggestion_id=?', (card['id'],)).fetchall():
+                    db.execute('UPDATE decisions SET feedback=? WHERE id=?', (_scrub(d['feedback'], card_needles), d['id']))
+            if _table(db, 'draft_edits'):
+                for d in db.execute('SELECT id,before_subject,before_body,after_subject,after_body FROM draft_edits WHERE suggestion_id=?', (card['id'],)).fetchall():
+                    db.execute('UPDATE draft_edits SET before_subject=?,before_body=?,after_subject=?,after_body=? WHERE id=?',
+                               (*(_scrub(d[k], card_needles) for k in ('before_subject', 'before_body', 'after_subject', 'after_body')), d['id']))
+    if _table(db, 'promises'):
+        for pr in db.execute('SELECT id,who,what,note FROM promises').fetchall():
+            if mentions(pr['who'], needles) or mentions(pr['what'], needles) or mentions(pr['note'], needles):
+                db.execute('UPDATE promises SET who=?,what=?,note=? WHERE id=?', (_scrub(pr['who'], needles), _scrub(pr['what'], needles), _scrub(pr['note'], needles), pr['id']))
+    return {'identifiers': len(ids), 'events': len(dropped), 'facts': len(facts), 'cards': cards, 'needles': needles}

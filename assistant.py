@@ -440,7 +440,7 @@ class SourceError(Exception):
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -2839,6 +2839,12 @@ class Store:
                 events = [e for e in events if e['source_id'] not in set(dropped)]
                 excluded_source_ids = [*excluded_source_ids, *dropped]
         with self.connect() as db:
+            if events and graph.anyone_forgotten(db):  # someone the owner deleted permanently: what they send is not kept or learned from
+                gone, owner = graph.forgotten(db), graph.Owner({})
+                dropped = [e['source_id'] for e in events if isinstance(e.get('metadata'), dict) and graph.from_forgotten(e['kind'], e['metadata'], owner, gone)]
+                if dropped:
+                    events = [e for e in events if e['source_id'] not in set(dropped)]
+                    excluded_source_ids = [*excluded_source_ids, *dropped]
             self.exclude_sources(db, account, excluded_source_ids)
             changed = set()
             for event in events:
@@ -9591,6 +9597,27 @@ def needs_you(config):
     return items
 
 
+def forget_in_notes(root, needles):
+    """Takes out the lines of the agent's memory notes (Markdown and text under memory/) that name someone deleted
+    permanently: their full name or an address. Returns how many lines went."""
+    if not needles or not root.is_dir():
+        return 0
+    removed = 0
+    for path in sorted(root.rglob('*')):
+        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in ('.md', '.txt') or path.stat().st_size > 5_000_000:
+            continue
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        lines = text.splitlines(keepends=True)
+        kept = [line for line in lines if not graph.mentions(line, needles)]
+        if len(kept) != len(lines):
+            removed += len(lines) - len(kept)
+            path.write_text(''.join(kept), encoding='utf-8')
+    return removed
+
+
 class App:
     @functools.cached_property
     def task_pages(self):
@@ -10067,6 +10094,7 @@ class App:
             result['hours'] = self.hours()
             result['agents_settings'] = self.agents_view()
             result['signatures'] = self.signature_view()
+            result['lookups'] = self.lookups_view()
             # Read only the existing heartbeat's runtime facts, never conversation
             # content or scheduler configuration. Missing evidence stays unknown.
             try:
@@ -10168,7 +10196,7 @@ class App:
                 self.graph_dirty.set()
                 return found
             with self.store.connect() as db:
-                return enrichment.status(db, self.config)
+                return {**enrichment.status(db, self.config), 'people': enrichment.people_status(db)}
         if name == 'preview_review':
             return self.start_preview()
         if name == 'roles_start':
@@ -10459,6 +10487,16 @@ class App:
             if not owner_dashboard:
                 raise ValueError('Only the owner undoes a warm-up domain here, on the dashboard; reviews use graph with warmup')
             return self.graph_action({'node_id': args.get('domain') or args.get('node_id'), 'warmup': args.get('warmup') is True}, source='owner')
+        if name == 'graph_person_delete':
+            if not owner_dashboard:
+                raise ValueError('Only the owner deletes someone permanently, on their page in the dashboard')
+            return self.delete_person(str(args.get('node_id') or ''))
+        if name == 'set_people_lookup':
+            if not owner_dashboard:
+                raise ValueError('Only the owner turns Look up work contacts on or off, in Settings')
+            with self.store.connect() as db:
+                enrichment.set_people(db, args.get('on') is not False)
+            return self.lookups_view()
         if name == 'graph_person_org':
             if not owner_dashboard:
                 raise ValueError('Only the owner sets an organisation here, on the dashboard; reviews use graph with org, event_id and quote')
@@ -12999,11 +13037,12 @@ class App:
         self.model_status = model_status(self.config, reply, self.model_usage, resets)
 
     def graph_freshness(self):
-        """What makes a rebuild worth it before the ten minutes are up: new organisation profiles (looked up by the
+        """What makes a rebuild worth it before the ten minutes are up: new organisation or people profiles (looked up by the
         enrichment worker, or by a hosting agent writing straight into the database), and, while the graph has no
         organisations yet (the first import), new signals."""
         with self.store.connect() as db:
-            profiles = tuple(db.execute("SELECT count(*),max(fetched_at) FROM org_profiles WHERE status!='error'").fetchone())
+            profiles = tuple(db.execute("SELECT count(*),max(fetched_at) FROM org_profiles WHERE status!='error'").fetchone()) \
+                + tuple(db.execute("SELECT count(*),max(fetched_at) FROM person_profiles WHERE status!='error'").fetchone())
             empty = not db.execute("SELECT 1 FROM graph_nodes WHERE kind='org' LIMIT 1").fetchone()
             signals = tuple(db.execute('SELECT count(*),max(ingested_at) FROM events').fetchone()) if empty else None
         return profiles, signals
@@ -13035,13 +13074,15 @@ class App:
                 wait = 1800
 
     def enrichment_worker(self):
-        """Organisation data from the configured enrichment service: a few domains every ten minutes, each
+        """Organisation and work contact data from the configured enrichment service: a few domains (and people) every ten minutes, each
         looked up again after three months. A service error waits an hour (a day for that domain)."""
         wait = 120
         while not self.stop.wait(wait):
             try:
                 if enrichment.step(self.store.connect, self.config, now()):
                     self.graph_dirty.set()  # show the new profiles
+                if enrichment.people_step(self.store.connect, self.config, now()):
+                    self.graph_dirty.set()
                 wait = 600
             except enrichment.EnrichmentError as error:
                 LOG.error('enrichment error=%s', error)
@@ -13149,6 +13190,25 @@ class App:
                 if found.get((f.get('id'), p.get('member_id'))):
                     p['graph_node'] = found[(f['id'], p['member_id'])]
         return view
+
+    def delete_person(self, node_id, workspace=None):
+        """Delete permanently (graph.delete_person), then the lines in the agent's memory notes that name them, then a
+        rebuild so nothing derived from them is left."""
+        with self.store.connect() as db:
+            done = graph.delete_person(db, node_id, self.config, now())
+        notes = forget_in_notes((workspace or WORKSPACE) / 'memory', done.pop('needles'))
+        self.graph_build()
+        return {**done, 'notes': notes}
+
+    def lookups_view(self):
+        """Settings, Look up work contacts: whether this Machine can look people up, and whether the owner has it on."""
+        available = enrichment.people_available(self.config)
+        try:
+            with self.store.connect() as db:
+                on = enrichment.people_on(db)
+        except sqlite3.Error:
+            on = True
+        return {'people_available': available, 'people': on}
 
     def graph_fleet_marks(self, db):
         """Who in the graph is in the owner's Fleets, Family or Friends: from the Network directory this Machine keeps,
@@ -13518,7 +13578,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
