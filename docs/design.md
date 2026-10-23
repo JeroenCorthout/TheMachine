@@ -70,7 +70,8 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   under a fold that is remembered; a row opens that pane and the address keeps it (`#graph=orgs`). Below 1024px the
   same sidebar is a drawer under a slim top bar with a menu button: a swipe from the left edge or All tasks in a chat
   also opens it, and ✕, the shade, Esc, back or a swipe to the left closes it, as does picking a row. Each page has a
-  serif title in the column.
+  serif title in the column, except Suggestions: there the tagline is a quiet serif line at body size, muted, with the
+  counts under it, so the cards lead; a phone shows only the counts.
 - **Calendar**: the next seven days, read-only. An agenda by day (Overdue, Today, Tomorrow, then each weekday), one
   row per item: the time (or Due, All day), a tone dot (a ring for a meeting, amber due, orange overdue, lavender coming
   back or a check-in, mint a promise), the title and one quiet line. A meeting's card shows as a chip (in the line on a

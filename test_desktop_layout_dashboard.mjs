@@ -3,6 +3,12 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
+// The tagline is a quiet line over the cards, not a headline: about body size, muted, on one line where it fits, with
+// the count readable under it
+const quietTagline=async(page,label)=>{const q=await page.evaluate(()=>{const t=document.querySelector('#page-head .page-title'),c=getComputedStyle(t),sub=document.querySelector('#page-head .page-sub');
+  return {size:parseFloat(c.fontSize),lines:Math.round(t.getBoundingClientRect().height/parseFloat(c.lineHeight)),muted:c.color!==getComputedStyle(document.body).color,sub:sub&&parseFloat(getComputedStyle(sub).fontSize),below:sub&&sub.getBoundingClientRect().top>=t.getBoundingClientRect().bottom-1}});
+ assert.ok(q.size<=18,'the tagline is about body size '+label+': '+q.size);assert.equal(q.lines,1,'the tagline is one line '+label);assert.ok(q.muted,'the tagline is muted '+label);
+ assert.ok(q.sub>=13&&q.below,'the count is readable under it '+label)};
 
 // The desktop layout (from 1024px): a fixed sidebar with the tabs as rows, the cards as a list by section (Done folded,
 // each fold remembered), a filter and a Work/Personal switch; the main area gets a title per tab. The sidebar folds to
@@ -49,6 +55,7 @@ try{
   await scrolls(page,'inbox at 1440');assert.ok(Math.abs((await side(page)).top)<1,'the sidebar stays in place');
   // The main area has a title; the old filter row and tiles live in the sidebar instead
   assert.ok(await page.locator('#page-head .page-title').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));
+  await quietTagline(page,'at 1440');
   // The cards by section; Done starts folded with its count, opens, and stays open after a reload
   const done=page.locator('[data-side-fold="done"]');assert.equal(await done.getAttribute('aria-expanded'),'false');assert.match(await done.textContent(),/Done\s*12/);
   assert.equal(await page.locator('#side-cards a').count(),12);
@@ -184,6 +191,7 @@ try{
   {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#page-head .page-title')}});
    assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
    assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
+  await quietTagline(page,'at '+w);
   assert.ok(await page.locator('#page-head .page-title').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
   for(const t of TABS){await tab(page,t);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
   await tab(page,'inbox');await page.evaluate(()=>scrollTo(0,0));

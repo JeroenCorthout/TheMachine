@@ -1229,7 +1229,11 @@ body main{padding-top:0}
 .app-side .head-side>.live::before{flex:none}
 .page-head{display:flex;align-items:center;gap:14px;margin:0 0 32px}.page-head[hidden]{display:none}
 .page-title{margin:0;font:var(--fw-display) 30px/1.2 var(--serif);letter-spacing:-.015em;color:var(--text);text-wrap:balance}
-.page-head.greet .page-title{font-size:28px}
+/* The tagline is a quiet line, not a headline: about body size, muted, one line where it fits; the count stays readable under it. */
+.page-head.greet{align-items:center;gap:12px;margin-bottom:24px}
+.page-head.greet .page-title{font:400 var(--fs-lg)/1.35 var(--serif);letter-spacing:0;color:var(--c-text-2);text-wrap:pretty}
+.page-head.greet .page-sub{margin-top:2px;color:var(--c-text-2)}
+.page-head.greet .page-avatar{width:32px;height:32px}
 .page-avatar{width:40px;height:40px;flex:none;object-fit:contain}
 .page-sub{margin:4px 0 0;color:var(--side-quiet);font-size:var(--fs-sm)}
 #inbox #suggestion-summary,#inbox #suggestion-stats{display:none}
@@ -1333,7 +1337,8 @@ body main{padding-top:0}
   .app-side .head-side>.live{min-height:36px}
   #open-browser:not([hidden]){display:flex}
   .page-head{display:flex;align-items:center;gap:12px;margin:4px 0 22px}
-  .page-title{font-size:26px}.page-head.greet .page-title{font-size:24px}
+  .page-title{font-size:26px}.page-head.greet .page-title{font-size:var(--fs-lg)}
+  .page-head.greet{margin:2px 0 18px}
   .page-avatar{display:none}  /* the top bar carries the mascot on a phone */
   .chat-layout [data-chat-drawer]{display:flex}
 }
