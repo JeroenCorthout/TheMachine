@@ -9,14 +9,15 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 // chat and back returns to the Calendar; a meeting without a card opens in its calendar. On a computer a Week grid is one
 // click away and remembered. Viewing is read-only: no POST at all. Nothing is wider than the screen at 360, 390 and 900.
 // CALENDAR_SHOT=<dir> also writes screenshots at 1440, 900, 390 and 360 in light and dark.
+process.env.TZ='Europe/Brussels';  // the same days here as in the page, also on a CI runner in UTC
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const brand={'/brand/avatar.png':'brand/app-icon-192.png','/brand/serif.woff2':'brand/fonts/source-serif-4-latin.woff2','/brand/sans.woff2':'brand/fonts/inter-latin.woff2'};
 const at=(days,h,m=0)=>{const d=new Date();d.setDate(d.getDate()+days);d.setHours(h,m,0,0);return d};
 const day=n=>{const d=at(n,12);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
-const soon=new Date(Date.now()+2*36e5);soon.setMinutes(0,0,0);
+const soon=at(0,18);  // a fixed hour, so a late run keeps it on today
 const iso=d=>d.toISOString(),now=iso(new Date());
 const meetings=[
- {id:101,account_id:'cal',title:'Team standup',start:iso(at(0,0,15)),end:iso(at(0,0,30)),all_day:false,location:'',guests:6,url:'https://calendar.google.com/calendar/event?eid=standup'},
+ {id:101,account_id:'cal',title:'Team standup',start:iso(at(0,0,0)),end:iso(at(0,0,1)),all_day:false,location:'',guests:6,url:'https://calendar.google.com/calendar/event?eid=standup'},
  {id:102,account_id:'cal',title:'Pilot review with Northwind',start:iso(soon),end:iso(new Date(soon.getTime()+45*6e4)),all_day:false,location:'Zoom',guests:3,url:'https://calendar.google.com/calendar/event?eid=pilot'},
  {id:103,account_id:'cal',title:'Quarterly planning',start:iso(at(1,14)),end:iso(at(1,15,30)),all_day:false,location:'Room 2',guests:8,url:'https://calendar.google.com/calendar/event?eid=planning'},
  {id:104,account_id:'cal',title:'Team offsite',start:iso(at(3,0)),end:iso(at(5,0)),all_day:true,location:'Lakeside',guests:0,url:null},
@@ -71,7 +72,7 @@ try{
   assert.deepEqual(b[0].rows,[await page.evaluate(d=>calShort(d),day(-1))+' | Renew the shop domain | Needs your decision']);assert.match(b[0].rows[0],/^\w{3} \d{1,2} \|/);
   const today=b[1].rows.join('\n');
   // The prepped meeting carries its card, which is not listed again as due; done cards and promises on a card stay out
-  assert.match(today,/Pilot review with Northwind \| Prep ready · \d\d:\d\d to \d\d:\d\d · Zoom · 3 guests/);assert.ok(!today.includes('Prep notes'),'its card is the meeting');
+  assert.match(today,/Pilot review with Northwind \| Prep ready · 18:00 to 18:45 · Zoom · 3 guests/);assert.ok(!today.includes('Prep notes'),'its card is the meeting');
   assert.match(today,/Due \| Send the revised quote to Northwind \| Needs your decision/);assert.ok(!today.includes('Already done')&&!today.includes('On a card already'));
   assert.ok(b[1].rows[0].startsWith('Due'),'dates without a time come first');
   const tomorrow=b[2].rows.join('\n');assert.match(tomorrow,/09:00 \| Follow up on the unpaid invoice \| Comes back/);assert.match(tomorrow,/14:00 \| Quarterly planning \| 14:00 to 15:30 · Room 2 · 8 guests/);
