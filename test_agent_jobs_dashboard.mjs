@@ -32,7 +32,7 @@ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'
 try{
  const page=await (await browser.newContext({viewport:{width:390,height:900}})).newPage();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:'+server.address().port);
+ const base='http://127.0.0.1:'+server.address().port+'/';await page.goto(base);
  const c=page.locator('#task-c1');await c.waitFor();
  assert.equal(await c.locator('[data-agent-hand]').count(),2);
  const more=c.locator('.more-actions>summary');if(await more.count())await more.click();
@@ -101,6 +101,45 @@ try{
  await page.waitForTimeout(300);
  assert.deepEqual(calls.at(-1),{action:'agent_follow_up',args:{job_id:job.id,text:'Shorter, please'}});
  assert.ok((await c.locator('.actions>button').allInnerTexts()).some(b=>/send to Sam/i.test(b)));  // also while it works
+ // A work folder full of housekeeping: only what the answer names shows, the rest under Details behind "+N more".
+ const junk=['build.log','build.pid','deploy.log','preview.pid','.cache/x.json','notes/a.md','notes/b.md','site/index.html','report.md','summary.md'];
+ card.agent_job={...card.agent_job,status:'result',turns:2,draft_updated:false,has_diff:false,summary:'Wrote the report in report.md.',files:junk.map(path=>({path,size:9}))};
+ await page.evaluate(()=>refresh());await page.waitForFunction(()=>/report\.md/.test(document.querySelector('.agent-result')?.textContent||''));
+ const shownChips=()=>c.locator('.agent-result>.agent-files>a.agent-file').allInnerTexts();
+ assert.deepEqual(await shownChips(),['report.md']);  // the file the answer names, not the folder
+ assert.equal(await c.locator('.agent-result [data-agent-files]').innerText(),'+9 more');
+ card.agent_job={...card.agent_job,summary:'Done. The site is ready to look at.'};await page.evaluate(()=>refresh());
+ await page.waitForFunction(()=>/ready to look/.test(document.querySelector('.agent-result')?.textContent||''));
+ const shown=await shownChips();
+ assert.deepEqual(shown,['a.md','b.md','index.html']);  // no .pid, .log or dot folders, at most three
+ assert.equal(await c.locator('.agent-result [data-agent-files]').innerText(),'+7 more');
+ assert.equal(await c.locator('.agent-result .agent-more').getAttribute('open'),null);
+ await c.locator('.agent-result [data-agent-files]').click();
+ assert.notEqual(await c.locator('.agent-result .agent-more').getAttribute('open'),null);
+ assert.deepEqual(await c.locator('.agent-result .agent-allfiles a.agent-file').allInnerTexts(),junk.map(f=>f.split('/').pop()));
+ // The same block in the card chat looks like it does on the card: chips, the header with Open in Codex on the right,
+ // quiet text buttons, at 1280 and 390 without awkward wraps.
+ const twin={...card,id:'c1c1c1c1c1c1c1c1'};state.suggestions.push(twin);
+ for(const width of [1280,390,300]){await page.setViewportSize({width,height:900});await page.goto(base+'#chat='+twin.id);await page.reload();
+  const b=page.locator('.chat-agent .agent-result');await b.waitFor({timeout:10000});
+  const look=await b.evaluate(el=>{const r=n=>n.getBoundingClientRect(),q=s=>el.querySelector(s),name=q('.agent-head .dm'),app=q('.agent-head a.agent-app'),cs=n=>getComputedStyle(n);
+   const line=n=>{const h=parseFloat(cs(n).lineHeight)||parseFloat(cs(n).fontSize)*1.4;return r(n).height<h*1.6};
+   return {head:cs(q('.agent-head')).display,gap:r(app).left-r(name).right,sameRow:Math.abs(r(app).top-r(name).top)<4,appRight:Math.abs(r(app).right-r(q('.agent-head')).right)<1,
+    chips:[...el.querySelectorAll(':scope>.agent-files>.agent-file')].map(n=>({border:cs(n).borderTopStyle,one:line(n),deco:cs(n).textDecorationLine})),
+    tools:[...el.querySelectorAll('.agent-tools button')].map(n=>({border:cs(n).borderTopStyle,bg:cs(n).backgroundColor,one:line(n)})),
+    wide:el.scrollWidth<=el.clientWidth+1}});
+  assert.equal(look.head,'flex',width);assert.ok(look.appRight,JSON.stringify(look));
+  assert.ok(look.sameRow&&look.gap>=12,JSON.stringify(look));  // one row; name and Open in Codex never run together
+  assert.ok(look.chips.length===4&&look.chips.every(x=>x.border==='solid'&&x.one&&x.deco==='none'),JSON.stringify(look.chips));
+  assert.ok(look.tools.length===2&&look.tools.every(x=>x.border==='none'&&/rgba\(0, 0, 0, 0\)|transparent/.test(x.bg)&&x.one),JSON.stringify(look.tools));
+  assert.ok(look.wide,width)}
+ state.suggestions.pop();
+ // The card's header keeps one row too: where "Open in Codex" doesn't fit next to the name it reads "Open".
+ for(const [width,label] of [[1280,'Open in Codex ↗'],[390,'Open ↗'],[300,'Open ↗']]){await page.setViewportSize({width,height:900});await page.goto(base);await page.reload();
+  const h=c.locator('.agent-result .agent-head');await h.waitFor();await page.waitForTimeout(100);
+  const r=await h.evaluate(el=>{const a=el.querySelector('a.agent-app'),n=el.firstElementChild;return {same:Math.abs(a.getBoundingClientRect().top-n.getBoundingClientRect().top)<4,label:a.innerText.trim(),aria:a.getAttribute('aria-label')}});
+  assert.deepEqual(r,{same:true,label,aria:'Open in Codex'},String(width))}
+ await page.setViewportSize({width:1280,height:900});await page.goto(base);await c.waitFor();
  // Without the tools on this Machine, no Hand to buttons.
  delete card.agent_job;state.agent_tools=[];await page.evaluate(()=>refresh());
  assert.equal(await c.locator('[data-agent-hand]').count(),0);

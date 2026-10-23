@@ -44,7 +44,7 @@ const history={session:true,status:'ok',active:false,cursor:'k1',items:[
  {kind:'reply',text:'Changed Monday to Tuesday.',drafts:[mail('Hi Sam, Tuesday works.')],at:t0+4000},
  {kind:'event',text:'Didn’t go out to Sam',mine:false,at:t0+5000},
  {kind:'you',text:'Check the venue site',to:'Codex',via:'agent',at:t0+6000},
- {kind:'agent',id:'aj_1',name:'Codex',text:'Both dates are free.',full:'Both dates are free. I wrote summary.md.',files:['summary.md'],nothing_sent:true,at:t0+7000}]};
+ {kind:'agent',id:'aj_1',name:'Codex',text:'Both dates are free.',full:'Both dates are free. I wrote summary.md.',files:['build.log','summary.md','build.pid','.cache/a.json'],nothing_sent:true,at:t0+7000}]};
 const actions=[];let live=null;
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
@@ -144,7 +144,9 @@ try{
  // The open draft is the one raised result; the earlier one steps back
  assert.equal(await page.locator('#chat-log .chat-result.current').count(),1);
  assert.ok(await page.locator('#chat-log .chat-result.current .chat-draft.current').count());
- assert.equal(await agent.locator('.chat-files a.agent-file').textContent(),'summary.md');
+ assert.deepEqual(await agent.locator('.chat-files .agent-file').allTextContents(),['summary.md','+3 more']);  // what it made, not its logs
+ await agent.locator('[data-agent-files]').click();
+ assert.deepEqual(await agent.locator('details.chat-allfiles[open] a.agent-file').allTextContents(),['build.log','summary.md','build.pid','a.json']);
  assert.equal(await agent.locator('.chat-files .chat-noted').textContent(),'Codex sent nothing');
  // A shortened answer has More, which shows the whole answer
  await agent.locator('.chat-more').click();

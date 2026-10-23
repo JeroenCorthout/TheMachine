@@ -9,6 +9,7 @@ import concurrent.futures
 import contextlib
 import datetime as dt
 import difflib
+import functools
 import hashlib
 import hmac
 import importlib.util
@@ -50,6 +51,7 @@ import mimetypes
 import work_removal
 import skills
 import task_invites
+import task_pages
 import google_api
 import ms_graph
 import signatures
@@ -434,7 +436,7 @@ CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_
 OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_split', 'fleet_split_dismiss',
-                         'fleet_split_adjust', 'task_import'}
+                         'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
 OWNER_ACTIONS |= FLEET_REQUEST_ACTIONS
 # Friends (friends.py): adding, accepting, removing and blocking friends, and asking a friend when they are free.
 FRIEND_ACTIONS = {'fleet_friend', 'fleet_availability', 'fleet_network'}  # fleet_network: finding people on the Network (discovery.py)
@@ -2284,6 +2286,7 @@ class Store:
             # Git receipts survive a service restart before optional push/restart work.
             db.execute('CREATE TABLE IF NOT EXISTS merge_effects(action_id TEXT NOT NULL,operation TEXT NOT NULL,receipt TEXT NOT NULL,status TEXT NOT NULL,'
                        'updated_at TEXT NOT NULL,PRIMARY KEY(action_id,operation))')
+            db.execute(task_pages.SCHEMA)  # task pages offered or shared from handoffs by email (task_pages.py)
             # Promises the owner made and promises made to them, from reviewed messages. Each is
             # checked when due: still open, it becomes a card (status carded, suggestion_id).
             db.execute('CREATE TABLE IF NOT EXISTS promises(id INTEGER PRIMARY KEY,direction TEXT NOT NULL,who TEXT NOT NULL,what TEXT NOT NULL,due TEXT,'
@@ -9069,6 +9072,11 @@ def needs_you(config):
 
 
 class App:
+    @functools.cached_property
+    def task_pages(self):
+        """Pages for tasks handed off by email (task_pages.py)."""
+        return task_pages.TaskPages(self)
+
     def __init__(self, config, config_path=None):
         set_timezone(config.get('timezone'))
         try:
@@ -9095,6 +9103,7 @@ class App:
             self.fleet.retell = lambda message_id: threading.Thread(target=self.fleet_retell, args=(message_id,), daemon=True).start()
             self.fleet.notify_notice = self.fleet_notify_notice
             self.fleet.make_card, self.fleet.tell = self.fleet_card, self.fleet_tell  # Fleet requests (fleet_requests.py)
+            self.fleet.task_pages = self.task_pages.round
             # A handoff the teammate accepted is theirs now: the owner's card is done, saying to whom (Undo brings it back).
             self.fleet.close_card = lambda card_id, why, key: self.store.decide_handoff(card_id, 'complete', why, key, key.removeprefix('fleet-handoff-'))
             # Handed off and not answered yet: the card waits under Later and comes back to check in if their Machine stays
@@ -9565,11 +9574,20 @@ class App:
                         self.fleet.annotate(db, result.get('suggestions', []))
                 except (sqlite3.Error, ValueError) as error:
                     LOG.error('fleet status error=%s', type(error).__name__)
+            try:
+                with self.store.connect() as db:
+                    self.task_pages.annotate(db, result.get('suggestions', []))
+            except (sqlite3.Error, ValueError) as error:
+                LOG.error('task pages status error=%s', type(error).__name__)
             return result if args.get('full') else compact_status(result)
         if name == 'task_import':  # a task link someone sent this owner by email (task_invites.py)
             if not owner_dashboard:
                 raise ValueError('Add a task link from the dashboard')
             return self.task_import(str(args.get('link') or ''))
+        if name in task_pages.ACTIONS:  # a task page for an email handoff: add, skip, stop sharing, mark done (task_pages.py)
+            if not owner_dashboard:
+                raise ValueError('Task pages are shared from the dashboard')
+            return self.task_pages.action(name, args)
         if name.startswith('fleet_') or name in FAMILY_ACTIONS:
             return self.fleet_action(name, args, owner_dashboard)
         if name == 'related':
@@ -10030,6 +10048,8 @@ class App:
                                      args.get('snoozed_until'), args.get('snooze_option'),terminal_job,self.is_work_suggestion(args['suggestion_id']))
             if args['choice'] == 'complete' and getattr(self, 'agents', None):
                 self.agents.card_closed(args['suggestion_id'])  # its Claude Code or Codex result did the job
+            if args['choice'] == 'complete':
+                self.task_pages.card_closed(args['suggestion_id'])  # its task page shows it done (task_pages.py)
             if args['choice'] == 'accept':
                 try:self.apply_skill_clusters()
                 except Exception as error:LOG.error('skill from notes error=%s',type(error).__name__)
@@ -10214,8 +10234,8 @@ class App:
 
     def handoff_email(self, card_id, email, title, summary):
         """Hand a card to someone who is not on the Network: an ordinary email draft on the card, from the card's Gmail
-        account, for the owner to read and send. It carries a task link: the task sealed with a key only the link has,
-        so a Machine of their own (if they get one) starts with it. Only the title, summary and due date go along."""
+        account, for the owner to read and send. Nothing about the task leaves this Machine until the owner sends it,
+        or approves a task page for it (task_pages.py), which this offers on the card."""
         email = email.strip()
         if not task_invites.EMAIL.fullmatch(email) or len(email) > 254:
             raise ValueError('Give their email address')
@@ -10230,21 +10250,9 @@ class App:
         order = [a for a in gmail if a['id'] in allowed] + [a for a in gmail if a['id'] not in allowed]
         if not any(a['id'] in allowed for a in order):
             raise ValueError('This card has no Gmail or Outlook account to send from')
-        pending_key = 'pending_handoff:' + hashlib.sha256(encoded([found['suggestion_id'], email, task]).encode()).hexdigest()
-        with self.fleet.connect() as db:
-            pending = db.execute('SELECT value FROM fleet_meta WHERE key=?', (pending_key,)).fetchone()
-            if pending:
-                pending = json.loads(pending[0])
-            else:
-                sealed, key = task_invites.seal(task)
-                pending = {'sealed': sealed, 'key': key, 'request_id': uuid.uuid4().hex}
-                db.execute('INSERT INTO fleet_meta(key,value) VALUES(?,?)', (pending_key, encoded(pending)))
-        sealed, key = pending['sealed'], pending['key']
-        made = None
+        subject, body = task_invites.draft(task, '', me)
         for account in order:
             try:
-                made = made or self.fleet.relay.call('POST', '/task-invite', {'action': 'create', 'kind': 'handoff', 'sealed': sealed, 'request_id': pending['request_id']})
-                subject, body = task_invites.draft(task, '', me, made['url'] + '#k=' + key)
                 action = next_actions.validate({'kind': 'email', 'label': 'Send', 'account_id': account['id'], 'to': [email],
                                                 'subject': subject, 'body': body}, self.config, allowed)
                 break
@@ -10255,12 +10263,10 @@ class App:
             raise ValueError('This card has no Gmail or Outlook account to send from')
         with self.store.connect() as db:
             db.execute("UPDATE suggestions SET status='accepted' WHERE id=? AND status='pending'", (found['suggestion_id'],))
-        self.store.prepare(found['suggestion_id'], f'An email handing this to {email}. It has a link that brings the task to a Machine of '
-                                                   'their own, if they want one. Read it, change it if you like, and send it yourself.',
+        self.store.prepare(found['suggestion_id'], f'An email handing this to {email}. Read it, change it if you like, and send it yourself.',
                            next_action=action, outcome={'state': 'needs_you', 'needs': 'read and send the handoff email'})
-        with self.fleet.connect() as db:
-            db.execute('DELETE FROM fleet_meta WHERE key=?', (pending_key,))
-        return {'card_id': found['suggestion_id'], 'invite_id': made['id']}
+        self.task_pages.offer(found['suggestion_id'], task)
+        return {'card_id': found['suggestion_id']}
 
     def task_import(self, link):
         """Add a task someone sent by email (task_invites.py) as a card, and say who sent it so the owner can connect

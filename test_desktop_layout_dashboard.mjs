@@ -12,7 +12,8 @@ const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8
 const now=new Date().toISOString();
 const card=(n,status,scope,extra={})=>({id:(n+'').padStart(2,'0').repeat(8),title:'Card number '+n+' with a long title that does not fit the sidebar',body:'Some text for card '+n+'.',status,scope,created_at:now,event_ids:[n+1],...extra});
 const cards=[...Array.from({length:12},(_,n)=>card(n,n%3?'pending':'prepared',n%2?'work':'personal')),...Array.from({length:12},(_,n)=>card(20+n,'completed','work'))];
-const state=()=>({suggestions:cards,promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]},connectors:[],fleet:fleetOn?{on:true,waiting:0}:{on:false,fleets:[]}});let fleetOn=false;
+let emptyOn=false;const promises=Array.from({length:3},(_,i)=>({id:i+1,direction:'mine',who:'Sam Lee',what:'send the notes '+i,due:null,state:'open',made_at:now,check_at:now}));
+const state=()=>({agents_settings:{claude_session:'session_01Example',device:'Desk',codex_env:'env_1',codex_branch:'',connector:'https://machine.example/mcp',saveable:true,on_network:true},suggestions:emptyOn?cards.filter(c=>c.status==='completed'):cards,promises:emptyOn?promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]},connectors:[],fleet:fleetOn?{on:true,waiting:0}:{on:false,fleets:[]}});let fleetOn=false;
 const history={session:true,status:'ok',active:false,cursor:'k1',items:Array.from({length:30},(_,n)=>({kind:'reply',text:'Reply '+n,at:Date.now()-100000+n*1000}))};
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
@@ -28,7 +29,7 @@ const open=async(width,height,opts={})=>{const mobile=width<600;
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  if(opts.noStorage)await context.addInitScript(()=>{for(const m of ['getItem','setItem']){const real=Storage.prototype[m];Storage.prototype[m]=function(k,...v){if(/^side/.test(k))throw new DOMException('blocked','SecurityError');return real.call(this,k,...v)}}});
  const page=await context.newPage();page.on('pageerror',e=>errors.push(width+': '+e.message));
- await page.goto(base);await page.locator('#task-'+cards[0].id).waitFor();return {context,page}};
+ await page.goto(base);await page.locator(opts.wait||'#task-'+cards[0].id).waitFor();return {context,page}};
 const tab=(page,t)=>page.evaluate(t=>t==='settings'?showSettings('general'):document.querySelector(`nav [data-tab="${t}"]`).click(),t).then(()=>page.waitForTimeout(120));
 const scrolls=async(page,where)=>{const y=await page.evaluate(()=>{const s=[...document.querySelectorAll('main>section')].find(x=>!x.hidden);
  if(!s.querySelector('.scroll-probe')){const d=document.createElement('div');d.className='scroll-probe';d.style.height='3000px';s.append(d)}
@@ -79,6 +80,46 @@ try{
   assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('.app-side nav [data-tab]')].filter(b=>!b.hidden&&b.offsetHeight).map(b=>b.dataset.tab)),['inbox','events','people','fleet','feedback','health']);
   await tab(page,'fleet');await scrolls(page,'fleet tab at 1440');assert.equal(await page.locator('#page-head').innerText(),'Fleet');await context.close()}
  fleetOn=false;
+ // Wide: the column sits in the middle of the space next to the sidebar, with cards and all clear; the sidebar keeps its padding
+ for(const empty of [false,true]){emptyOn=empty;const {context,page}=await open(2000,1000,empty?{wait:'#suggestions .all-clear'}:{});
+  const m=await page.evaluate(()=>{const s=document.querySelector('#app-side').getBoundingClientRect(),c=document.querySelector('#suggestions').getBoundingClientRect(),w=document.body.getBoundingClientRect().right;
+   return {off:Math.abs((c.left+c.right)/2-(s.right+w)/2),pad:Math.min(...['.app-side .brand','#side-search','.app-side nav button'].map(q=>document.querySelector(q).getBoundingClientRect().left))}});
+  assert.ok(m.off<2,`column centred next to the sidebar (${empty?'all clear':'cards'}, off by ${m.off})`);assert.ok(m.pad>=8,`sidebar padding (${empty?'all clear':'cards'}: ${m.pad})`);
+  if(empty)assert.equal(await page.locator('#page-head .page-sub').innerText(),'All clear · 3 promises kept track of');
+  await context.close()}
+ emptyOn=false;
+ // Folded, every row has a name and a tooltip to its right: after a moment on hover, at once on keyboard focus, with its count in words; Ctrl+B folds and unfolds
+ {const {context,page}=await open(1440,900);await page.keyboard.press('Control+b');await page.waitForFunction(()=>document.documentElement.dataset.side==='collapsed');
+  assert.equal(await page.locator('#side-toggle').getAttribute('aria-label'),'Expand sidebar');
+  const names=await page.evaluate(()=>[...document.querySelectorAll('.app-side nav [data-tab]')].filter(b=>b.offsetParent).map(b=>b.getAttribute('aria-label')));
+  assert.equal(names[0],'Suggestions · 4 ready · 8 to decide');assert.deepEqual(names.slice(1),['Events','Graph','Feedback','Connections']);
+  for(const q of ['#open-settings','#side-toggle','#live'])assert.ok(await page.locator(q).getAttribute('aria-label'),q+' has a name');
+  const row=page.locator('.app-side nav [data-tab="inbox"]');await row.hover();await page.waitForTimeout(120);assert.equal(await page.locator('#side-tip').isVisible(),false,'not at once on hover');
+  await page.locator('#side-tip').waitFor({state:'visible',timeout:1000});assert.equal(await page.locator('#side-tip').textContent(),'Suggestions · 4 ready · 8 to decide');
+  const pos=await page.evaluate(()=>{const t=document.querySelector('#side-tip').getBoundingClientRect(),s=document.querySelector('#app-side').getBoundingClientRect(),r=document.querySelector('.app-side nav [data-tab="inbox"]').getBoundingClientRect();return {gap:t.left-s.right,mid:Math.abs((t.top+t.bottom)/2-(r.top+r.bottom)/2)}});
+  assert.ok(pos.gap>=4&&pos.gap<=16&&pos.mid<2,JSON.stringify(pos));
+  await page.screenshot({path:process.env.SHOT_DIR?process.env.SHOT_DIR+'/tip.png':'/dev/null'}).catch(()=>{});
+  await page.mouse.move(900,500);await page.locator('#side-tip').waitFor({state:'hidden'});
+  await page.locator('#open-settings').focus();await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');
+  assert.equal(await page.locator('#side-tip').isVisible(),true,'at once on keyboard focus');assert.equal(await page.locator('#side-tip').textContent(),'Settings');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#side-tip').isVisible(),false);
+  await page.locator('body').click({position:{x:900,y:300}});await page.keyboard.press('Control+b');await page.waitForFunction(()=>document.documentElement.dataset.side==='open');
+  assert.equal(await page.locator('#side-toggle').getAttribute('aria-label'),'Collapse sidebar');
+  await row.hover();await page.waitForTimeout(500);assert.equal(await page.locator('#side-tip').isVisible(),false,'no tooltip with the labels showing');
+  await context.close()}
+ // Settings in the same column: the lists as wide as the forms, the agent fields in clean rows, no browser button (Browser is in the sidebar)
+ {const {context,page}=await open(1440,900);await tab(page,'settings');await page.locator('#agents-settings').waitFor();
+  const st=await page.evaluate(()=>{const w=q=>Math.round(document.querySelector(q).getBoundingClientRect().width),r=q=>document.querySelector(q).getBoundingClientRect();
+   return {list:Math.round([...document.querySelectorAll('#settings .settings-list')].find(e=>e.offsetWidth).getBoundingClientRect().width),form:w('#agents-settings'),session:w('#agents-session'),device:[r('#agents-device').top,r('#agents-device').width],branch:[r('#agents-branch').top,r('#agents-branch').width],browser:!!document.querySelector('#settings-browser').offsetParent}});
+  assert.equal(st.list,st.form,'settings lists are as wide as the forms');assert.ok(st.session>=st.form-2,'the session field is full width');
+  assert.equal(st.device[0],st.branch[0],'Runs on and Branch side by side');assert.ok(Math.abs(st.device[1]-st.branch[1])<2);assert.equal(st.browser,false);
+  await context.close()}
+ // An open chat: its header spans the main area, one line that ends in an ellipsis; the thread stays in the column
+ {const {context,page}=await open(2000,1000);await page.locator('.side-cards a').first().click();await page.locator('#chat-log').waitFor();
+  const h=await page.evaluate(()=>{const s=document.querySelector('#app-side').getBoundingClientRect(),hd=document.querySelector('.chat-head').getBoundingClientRect(),t=document.querySelector('.chat-title'),cs=getComputedStyle(t),
+   box=document.querySelector('.chat-compose').getBoundingClientRect();return {left:hd.left-s.right,right:document.documentElement.clientWidth-hd.right,lines:Math.round(t.getBoundingClientRect().height/parseFloat(cs.lineHeight)),ell:cs.textOverflow,compose:box.width}});
+  assert.ok(Math.abs(h.left)<2&&h.right<20,`chat header spans the main area (${h.left}, ${h.right})`);assert.equal(h.lines,1);assert.equal(h.ell,'ellipsis');assert.ok(h.compose<900,`the message box stays in the column (${h.compose})`);
+  await context.close()}
  {const {context,page}=await open(1440,900,{noStorage:true});await page.locator('#side-toggle').click();assert.ok((await side(page)).w<=72);await context.close()}
  // Every tab scrolls at each desktop width, and nothing is wider than the window
  for(const [w,h] of [[1024,768],[1920,1080]]){const {context,page}=await open(w,h);

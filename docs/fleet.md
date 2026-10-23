@@ -81,12 +81,22 @@ default, Always accept, Never), and nothing happens on your side until you accep
 
    **Someone not on the Network.** Pick **Someone else, by email** and give their address: instead of a Fleet request,
    the card gets an ordinary email draft from its Gmail account, for you to read, change and send yourself (it never
-   goes out by itself). It says what you need from them, then ends with one line about The Machine and a task link.
-   Only the title, summary and due date you edited go into that link, sealed on your Machine with a key that exists
-   only in the link itself: the Network keeps an unreadable copy for 30 days at most. If they get a Machine of their
-   own (hosted, or self-hosted with `assistant task-import '<link>'`), the task arrives there as a card with your words
-   quoted, and their dashboard offers to connect with you on the Network. The Network only counts how far each
-   link got (opened, signed up, task added, connected), never what was in it.
+   goes out by itself). It says what you need from them, with no promotional line or signature.
+
+   **Task page.** The card then offers **Add a task page**: a page they open from your email to see the status and
+   answer (I'm on it, Done, Can't do this, with a short note), no account needed. Nothing is made until you tap it and
+   see exactly what the page shows: the title, the details, the due date and your first name. **Leave out** takes a
+   part off, and you pick how long the link works (7, 14 or 30 days, 14 by default). **Add to email** puts one plain
+   line in the draft, "Status and replies: <link>". Never on the page: the email or its thread, your notes, the graph or
+   other cards; details that repeat the original email are refused. The page is sealed on your Machine with a key that
+   exists only in the link (after the #), so the Network keeps an unreadable copy; it never changes when someone only
+   opens the link (an email scanner, a preview), and an answer needs a check only that key can make. Answers come back
+   on the card (it leads with their latest answer, and the sent email folds into one line) and as a notification, and
+   the page shows them as updates. Can't do this brings the card back to Ready. Marking the card done closes the page
+   (it ends within 7 days); **Stop sharing** deletes it from the Network at once. If they get a Machine of their own
+   (hosted, or self-hosted with `assistant task-import '<link>'`), the task arrives there as a card with your words
+   quoted, and their dashboard offers to connect with you on the Network. The Network only counts how far each link
+   got (opened, answered, done, signed up, task added, connected), never what was in it.
 6. **Shared follow-ups.** After a meeting that several members of one Work Fleet attended (in the last two days), one
    Machine proposes who does which follow-up: the organizer's, else that of the member who joined the Fleet first, so
    there is only ever one proposal. It starts from that owner's own open cards and promises on the meeting; the owner

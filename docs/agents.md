@@ -11,7 +11,7 @@ Nothing goes without your **Hand off**.
 The job runs in its own folder under the Machine's data folder (`agent-jobs/<job>/work`), with the card's messages in
 `card/messages.md`, full text included, so it needs no mailbox of its own. A job that runs away from this computer
 (Claude Code on your paired computer, Codex cloud) doesn't get that folder, so the messages are in the brief itself,
-newest first, shortened to fit with a note where something is cut. The card shows its progress, then a short result with the files it made. Details stay folded away. **Ask for
+newest first, shortened to fit with a note where something is cut. The card shows its progress, then a short result with up to three of the files it made: the ones its answer names, never logs or `.pid` files. The full list and the rest stay folded under Details. The chat shows the same block. **Ask for
 changes** sends a follow-up to the same job. Cancel stops it.
 
 A job never sends anything for you. If it rewrites a message (`draft.md`), that text becomes the card's draft, and you
