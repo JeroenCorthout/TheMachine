@@ -17,6 +17,6 @@ Only an organisation's web address is sent, never your messages or who you know 
 
 On the organisation's page:
 
-- **Edit** to change the name, website, LinkedIn, industry, size, location, founding year or description. Your edits stay. Empty a field to use the looked-up value again.
+- **Edit** to change the name, industry, size, location, founding year, description, website, LinkedIn and what it is to you. Your edits stay. Empty a field to use the looked-up value again.
 - **Wrong company, clear details** if it picked the wrong company.
 - **Look it up again** to fetch fresh details.

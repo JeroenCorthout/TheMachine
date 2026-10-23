@@ -89,7 +89,11 @@ try{
  // An organisation has a role row too.
  await page.evaluate(()=>people('org:client.example'));
  await page.locator('.graph-detail h3',{hasText:'Client Ltd'}).waitFor();
- assert.ok((await page.locator('.role-row').first().textContent()).includes('To you: customer'));
+ assert.ok((await page.locator('.person-about .kv-role').textContent()).includes('Customer'));
+ // Who's who Edit on an organisation opens it in Edit, on What it is to you.
+ await page.evaluate(()=>{editRole='org:client.example';return people('org:client.example')});
+ await page.locator('.org-form:not([hidden]) [name=role]').waitFor();assert.equal(await page.evaluate(()=>document.activeElement?.name),'role');
+ await page.locator('[data-org-cancel]').click();
  // What the enrichment service says about it, with only real links.
  const detail=await page.locator('.graph-detail').textContent();
  assert.ok(detail.includes('Logistics, 51-200 people, Ghent')&&detail.includes('Client Ltd moves boxes.'));

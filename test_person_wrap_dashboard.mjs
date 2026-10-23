@@ -33,7 +33,7 @@ const server=createServer(async(req,res)=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 // Every text row on the page shows all of its text inside the card, and every button in it can be tapped.
 const measure=page=>page.evaluate(()=>{const card=document.querySelector('#people-view .graph-detail'),edge=card.getBoundingClientRect();
- const rows=[...card.querySelectorAll('p,h3,.person-job,.relation,.graph-links')].filter(e=>e.getBoundingClientRect().height&&!e.closest('[hidden]'));
+ const rows=[...card.querySelectorAll('p,h3,.person-job,.relation,.graph-links,.kv')].filter(e=>e.getBoundingClientRect().height&&!e.closest('[hidden]'));
  const cut=rows.filter(e=>e.scrollWidth>e.clientWidth+1||[...e.querySelectorAll('*')].some(c=>c.getBoundingClientRect().right>edge.right+1||c.scrollWidth>c.clientWidth+1&&getComputedStyle(c).overflow!=='visible')).map(e=>e.textContent.slice(0,60));
  const buttons=[...card.querySelectorAll('button,summary')].filter(b=>b.getBoundingClientRect().height&&!b.closest('[hidden],form,.fact-menu-list,.person-delete'));
  const unreachable=buttons.filter(b=>{const r=b.getBoundingClientRect();if(r.left<0||r.right>innerWidth||r.right>edge.right+1)return true;b.scrollIntoView({block:'center'});const q=b.getBoundingClientRect();
@@ -65,8 +65,8 @@ try{
    assert.ok(m.rows>=6&&m.buttons>=3,'the rows and buttons are there, '+label);
    assert.deepEqual(m.cut,[],'no row is cut off, '+label);assert.deepEqual(m.unreachable,[],'every button can be tapped, '+label);
    assert.ok(m.overflow<=0,'no page overflow, '+label)}
-  // Edit on the To you row still opens its form.
-  await page.locator('#people-view [data-role-edit]').first().click();assert.ok(await page.locator('#people-view .role-form').isVisible(),'Edit opens the To you form at '+width);
+  // Edit in the header opens the form, What it is to you included.
+  await page.locator('#people-view [data-org-edit]').click();assert.ok(await page.locator('#people-view .org-form [name=role]').isVisible(),'Edit opens the role field at '+width);
   assert.deepEqual(errors,[]);await context.close();
  }
  if(process.env.WRAP_REPORT)console.log(JSON.stringify(report));

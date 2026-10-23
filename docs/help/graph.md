@@ -50,6 +50,8 @@ Roles your Machine read in your messages, waiting for your word. **✓ Right** c
 
 Companies, from the addresses and names in your messages. See [Organisation details](organisation-data.md).
 
+An organisation's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you) and the people and projects there. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
+
 Mail from email warm-up tools is kept out, under "Hidden as warm-up", with **Undo** per domain.
 
 ## Projects
