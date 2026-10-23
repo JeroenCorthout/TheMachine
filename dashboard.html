@@ -1474,8 +1474,11 @@ $('#signatures').addEventListener('submit',async e=>{e.preventDefault();const f=
 // A lost connection, a cut-off or garbled answer or a server hiccup (5xx) is "offline": quiet, retried. Only a clear refusal
 // (a 4xx with its reason) is said out loud.
 const offline=e=>Object.assign(Error('Can’t reach your Machine right now. Try again in a moment.'),{offline:true,cause:e});
-async function request(path,options){let r;try{r=await fetch(path,options)}catch(e){throw offline(e)}let d;try{d=await r.json()}catch(e){throw r.status<500&&r.ok===false&&r.status>=400?Error('Request failed'):offline(e)}
- if(r.status>=500)throw offline(d?.error);if(!r.ok)throw Error(d?.error||'Request failed');return d}
+async function request(path,options){let r;try{r=await fetch(path,options)}catch(e){throw offline(e)}
+ // Only a JSON answer is read; an empty or HTML 502 while the service restarts, a cut-off body or any 5xx is "offline"
+ const json=/json/i.test(r.headers.get('content-type')||'');let d=null;if(json)try{d=await r.json()}catch(e){if(r.ok||r.status>=500)throw offline(e)}
+ if(r.status>=500||r.ok&&!json){const wait=+r.headers.get('retry-after');throw Object.assign(offline(d?.error),{restarting:!!d?.restarting,retryAfter:wait>0?Math.min(wait,60)*1000:0})}
+ if(!r.ok)throw Error(d?.error||'Request failed');return d}
 let retryIn=0,retryTimer=null;
 
 // Skills (skills.py): the owner's how-tos, written to OpenClaw's workspace; shared ones are read here and installed by the owner.
@@ -2453,7 +2456,7 @@ let refreshes=0;
 function uiVersionCheck(){if(!state.ui_version||UI_VERSION.startsWith('__')||state.ui_version===UI_VERSION)return false;
  const typing=[...document.querySelectorAll('textarea,input[type=text],input:not([type])')].some(t=>t.value&&t.offsetParent!==null);
  if(!canRefresh()||typing||document.querySelector('dialog[open]'))return false;location.reload();return true}
-async function refresh(){refreshes++;try{state=await request('api/status');if(uiVersionCheck())return;render();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
+async function refresh(){refreshes++;try{state=await request('api/status');if(uiVersionCheck())return;render();openChatLink();openSnoozeLink();openResultLink();openSendLink();openCardLink();openFleetLink();openTabLink();if(!$('#people').hidden)await people(graphNode,true);if(refreshFailed){notice('');refreshFailed=false}retryIn=0;clearTimeout(retryTimer);return true}catch(e){refreshFailed=true;if(e.offline){notice('');clearTimeout(retryTimer);retryIn=e.retryAfter||Math.min(30000,(retryIn||2500)*2);retryTimer=setTimeout(refreshWhenReady,retryIn)}else notice(e.message,true);$('#live').classList.add('stale');$('#updated').textContent=e.restarting?'Restarting · retrying':lastOk?'Offline · retrying':'Unavailable';if(!state?.suggestions)$('#suggestions').innerHTML='<div class="empty all-clear"><img class="sticker" src="brand/sad.webp" alt=""><div><strong>I can’t reach the assistant.</strong>I’ll keep trying every 30 seconds.</div></div>',notice('');return false}finally{refreshes--}}
 // On a phone the tab row scrolls sideways: a fade shows on the side with more tabs, and the current tab scrolls into view.
 function navFade(){const n=$('nav'),max=n.scrollWidth-n.clientWidth;n.classList.toggle('more-left',n.scrollLeft>2);n.classList.toggle('more-right',n.scrollLeft<max-2)}
 $('nav').addEventListener('scroll',navFade,{passive:true});addEventListener('resize',navFade);navFade();

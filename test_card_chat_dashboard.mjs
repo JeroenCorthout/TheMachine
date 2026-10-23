@@ -261,9 +261,11 @@ try{
  await page.locator('h2.chat-title',{hasText:'Renew the passport'}).waitFor();
  assert.ok(!(await page.locator('.chat-layout').evaluate(n=>n.classList.contains('drawer'))));
  // A cut-off or failed status answer is "offline": the quiet pill only, never a raw error; the next good one clears it
- for(const bad of [{status:200,body:'{"suggestions":[{"id'},{status:502,body:'<html>Bad gateway</html>'}]){
-  await page.route('**/api/status',r=>r.fulfill({...bad,contentType:'application/json'}));await page.evaluate(()=>refresh());
-  assert.equal(await page.locator('#notice').textContent(),'');assert.match(await page.locator('#updated').textContent(),/Offline · retrying/);
+ for(const bad of [{status:200,body:'{"suggestions":[{"id',contentType:'application/json'},{status:502,body:'<html>Bad gateway</html>',contentType:'text/html'},{status:502,body:''},
+  {status:503,body:'{"error":"The Machine is restarting…","restarting":true}',contentType:'application/json',headers:{'Retry-After':'5'},pill:/Restarting · retrying/}]){
+  await page.route('**/api/status',r=>r.fulfill(bad));await page.evaluate(()=>refresh());
+  assert.equal(await page.locator('#notice').textContent(),'');assert.match(await page.locator('#updated').textContent(),bad.pill||/Offline · retrying/);
+  if(bad.headers)assert.equal(await page.evaluate(()=>retryIn),5000);
   await page.unroute('**/api/status')}
  await page.evaluate(()=>refresh());assert.match(await page.locator('#updated').textContent(),/Updated/);
  assert.deepEqual(errors,[]);
