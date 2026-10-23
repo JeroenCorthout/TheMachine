@@ -2386,8 +2386,7 @@ $('#suggestions').oninput=e=>{if(e.target.tagName==='TEXTAREA')e.target.classLis
 async function saveDecision(id,choice,feedback='',answer=false){
 const saved=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'decide',args:{suggestion_id:id,choice,feedback,decision_id:crypto.randomUUID()}})});
 changing.delete(id);await refresh();
-// A Change carries on as a conversation: the card's chat opens, with the reply on its way. (An answer stays on the card.)
-if(choice==='other'&&!answer&&!chatId){chatGo(id);return}
+// A Change stays on the card (its "You asked" note has See in chat ›); the chat never opens by itself.
 if(['complete','reject'].includes(choice))toast(saved?.status==='completed'?'Marked done':'Marked not needed',false,id);else toast(answer?'Thanks. I’ll carry on.':({accept:'I’ll prepare it.',other:'Changes saved.',retry:'Trying again.',undo:'Undone.',reopen:'Reopened.'})[choice]||'Saved.');
 }
 document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.more-actions[open]'))if(!m.contains(e.target)||e.target.closest('.more-menu button'))m.open=false});

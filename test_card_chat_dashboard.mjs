@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// Card chat: the card's title, its "You asked" note or a sent Change opens #chat=<id>: a header with back, the title
+// Card chat: the card's title, its Chat › link or its "You asked" note opens #chat=<id>: a header with back, the title
 // and a ⋯ menu, the conversation from the service's card_chat strictly by time (the source first, the card itself as
 // the first message with its question and choices, the owner's own taps as quiet lines on the right with repeats
 // folded, the steps before the reply, drafts inline with what changed, a coding agent's answers with their files),
@@ -189,14 +189,14 @@ try{
  await page.locator('#task-c1c1c1c1c1c1c1c1 .saved-feedback').click();
  await page.locator('h2.chat-title',{hasText:'Reply to the venue'}).waitFor();
  await page.evaluate(()=>{location.hash=''});await page.locator('#suggestions .chat-layout').waitFor({state:'detached'});
- // A Change sent from the card carries on in its chat
+ // A Change sent from the card stays on the card: the chat never opens by itself
  await page.locator('#task-c2c2c2c2c2c2c2c2 [data-choice="change"]').click().catch(async()=>{
   await page.locator('#task-c2c2c2c2c2c2c2c2 .more-actions summary').click();await page.locator('#task-c2c2c2c2c2c2c2c2 [data-choice="change"]').click()});
  await page.locator('#feedback-c2c2c2c2c2c2c2c2').fill('Use the new address');
  await page.locator('#task-c2c2c2c2c2c2c2c2 [data-choice="other"]').click();
- await page.locator('h2.chat-title',{hasText:'Renew the passport'}).waitFor();
- assert.equal(new URL(page.url()).hash,'#chat=c2c2c2c2c2c2c2c2');
+ await page.locator('#feedback-c2c2c2c2c2c2c2c2').waitFor({state:'detached'});
  assert.equal(actions.filter(a=>a.action==='decide').at(-1).args.feedback,'Use the new address');
+ assert.notEqual(new URL(page.url()).hash,'#chat=c2c2c2c2c2c2c2c2');assert.equal(await page.locator('#suggestions .chat-layout').count(),0);
  // On a phone: the page header steps aside, the task list is a drawer under ⋯
  await page.setViewportSize({width:390,height:800});
  await page.evaluate(()=>{location.hash='#chat=c1c1c1c1c1c1c1c1'});
