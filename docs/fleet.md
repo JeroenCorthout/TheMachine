@@ -79,9 +79,8 @@ default, Always accept, Never), and nothing happens on your side until you accep
    are acting on it (never a message you only received, never a word list). It then accepts it for you, quietly: your
    card says "Marked as yours, since you talked to Sam about it" with **Not mine**, which undoes it and tells your
    teammate. They see "<you> is on it · talked to Sam on Slack, Fri 10:12" and their card is done, the check-in gone.
-   Only where (email, Slack, a call) and when travel; the person's first name only if your teammate knows them
-   already (the handoff's own contact or someone in the Fleet, by email address; a chat name alone never counts), and
-   never what was said. Dismissing that card later tells your teammate you declined, so it comes back to them. Nothing is sent or drafted
+   Where (email, Slack, a call), when, and the first name of who you talked to travel; never their address or what
+   was said. Dismissing that card later tells your teammate you declined, so it comes back to them. Nothing is sent or drafted
    for you. Your own Accept or Decline always wins: once you answer, it is never marked for you. An older Machine
    on the other side reads it as a plain accept, and a later Not mine only as a note that you declined.
 
