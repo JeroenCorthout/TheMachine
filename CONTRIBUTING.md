@@ -28,6 +28,9 @@ and explain why they are needed. The dashboard is plain HTML, CSS and JavaScript
   do not need tests that merely repeat their implementation.
 - Source adapters must verify account identity and save each page with its checkpoint
   atomically. Use fixtures to check pagination, replay and failures. See README “Adding a source”.
+- Every feature change updates its help article in `docs/help/` in the same pull request (the articles are the help at
+  themachine.computer/help). `python3 scripts/help_check.py` names the article a new connector, dashboard tab or Settings
+  tab needs, and any button text, route or command an article names that the code no longer has.
 - Preserve the separation between collected evidence, owner decisions and approved sends.
   An unknown send outcome must never cause a blind resend.
 - Use reserved example addresses and synthetic content in fixtures and screenshots.
