@@ -190,10 +190,6 @@ For an explicitly owner-requested UI demo only, `{"kind":"email_demo","label":"S
 
 This checkout is public source, not the owner's workspace. Use synthetic fixtures and reserved example addresses; never port real messages, people, customer facts, account IDs, machine addresses, runtime files or credentials from a private installation. Owner-specific policies belong in the owner's private overlay, not this template. Keep audit evidence outside the repository. Inspect staged files and images before publishing; a successful secret scan does not prove that prose is public-safe. Use GitHub's noreply address for new commits. History rewrites require a coordinated plan because hosted machines update this repository by fast-forward.
 
-## Site demo
-
-For maintainers: themachine.computer/demo runs a recording of this dashboard on the sandbox data. Whoever merges a change to `dashboard.html` or `sandbox/` also opens the sync pull request in the control plane repository (`scripts/demo_sync.py` there re-records it). Its daily check fails when the two drift apart.
-
 ## Security maintenance
 
 For maintainers: check this repository's Aikido feed at least daily. Fix new critical and high issues the same day; fix medium issues or ignore them in Aikido with a specific reason; handle lows in batches. Add a test with a fix where it makes sense, and after pushing check in the feed that the issue cleared. Unattended fixes go through a pull request, not straight to main. Only this repository and its hosted control plane are in scope.
