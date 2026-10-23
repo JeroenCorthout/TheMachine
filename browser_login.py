@@ -565,7 +565,9 @@ class LoginStore:
 
     def list(self):
         with self.lock:
-            return sorted(({'site': k, 'username': v.get('username') or '', 'saved_at': v.get('saved_at')}
+            # whether a password is kept, never the password or anything from it (not even its length)
+            return sorted(({'site': k, 'username': v.get('username') or '', 'saved_at': v.get('saved_at'),
+                            'password_saved': bool(v.get('password'))}
                            for k, v in self._read().items()), key=lambda x: x['site'])
 
     def forget(self, host):
