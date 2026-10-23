@@ -961,18 +961,18 @@ def gog_read(config, account, api, version, method, params, scope):
 # Contact photos from the owner's Google contacts and Workspace directory, with the scopes the gog sign-in already has
 # (a hosted sign-in through the broker has no Contacts scope, so it is never asked). Read only, once a day per account.
 GOOGLE_PHOTO_LISTS = (
-    ('people.connections.list', {'resourceName': 'people/me', 'pageSize': 1000, 'personFields': 'emailAddresses,phoneNumbers,photos'},
+    ('people.connections.list', {'resourceName': 'people/me', 'pageSize': 1000, 'personFields': 'emailAddresses,phoneNumbers,photos,organizations'},
      'https://www.googleapis.com/auth/contacts', 'connections'),
-    ('people.listDirectoryPeople', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos', 'sources': 'DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE'},
+    ('people.listDirectoryPeople', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos,organizations', 'sources': 'DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE'},
      'https://www.googleapis.com/auth/directory.readonly', 'people'),
     ('otherContacts.list', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos'},
      'https://www.googleapis.com/auth/contacts.other.readonly', 'otherContacts'))
 GOOGLE_PHOTO_PAGES = 20
 
 
-def google_photo_offers(config, account, read=None):
+def google_photo_offers(config, account, read=None, facts=None):
     """(identifiers, link, chosen) for each of the account's contacts with a real photo. A list the sign-in can't read
-    is skipped."""
+    is skipped. With a list as `facts`, their job title, company and phone from the same pages go there too."""
     read = read or gog_read
     offers = []
     for method, params, scope, key in GOOGLE_PHOTO_LISTS:
@@ -983,6 +983,8 @@ def google_photo_offers(config, account, read=None):
             except SourceError:
                 break
             offers += [o for o in (enrichment.google_photo(p) for p in page.get(key) or [] if isinstance(p, dict)) if o]
+            if facts is not None:
+                facts += [f for p in page.get(key) or [] if isinstance(p, dict) for f in enrichment.google_facts(p)]
             token = page.get('nextPageToken')
             if not token:
                 break
@@ -1337,13 +1339,14 @@ def sync_salesflare(store, config, account, source=None):
     since, until = dt.datetime.fromisoformat(window['since']), dt.datetime.fromisoformat(window['until'])
     meeting_since = dt.datetime.fromisoformat(window.get('meeting_since', window['since']))
     email_ids = set(window['email_ids']) if 'email_ids' in window else None  # older frozen windows: read both
-    events, skipped, excluded = [], 0, set()
+    events, skipped, excluded, titles = [], 0, set(), []  # titles: each contact's job title in the CRM, a record about them
     batch = window['pending'][:account.get('accounts_per_batch', 5)]
     for crm_id in batch:
         try:
             crm = source.get(f'/accounts/{crm_id}')
             crm = crm[0] if isinstance(crm, list) and crm else crm
             info, contacts = salesflare_context(account, crm)
+            titles += [(['email:' + c['email']], {'title': c['role']}, enrichment.RECORD) for c in contacts.values() if c['email'] and c['role']]
             if crm.get('part_of') is False and account.get('join_pipelines'):
                 pipeline = salesflare_in_pipelines(source, crm_id, account['join_pipelines'])
                 if pipeline:
@@ -1389,6 +1392,11 @@ def sync_salesflare(store, config, account, source=None):
             state['next_full'] = stamp.timestamp() + 86400
         state.pop('window')
     store.commit_page(account['id'], state, events, excluded_source_ids=excluded)
+    involved = {'email:' + str(c.get('email')).lower() for e in events for c in e['metadata'].get('contacts') or ()}
+    titles = [t for t in titles if t[0][0] in involved]  # only people in what was kept, as for their messages
+    if titles:
+        with store.connect() as db:
+            enrichment.offer_facts(db, titles, 'salesflare', now())
     return {'mode': state['mode'], 'events': len(events), 'filtered': skipped, 'more': bool(state.get('window'))}
 
 
@@ -6736,10 +6744,12 @@ def remember_slack_names(store, source, events, channels=(), per_page=3):
         profile = user.get('profile') or {}
         name = None if user.get('is_bot') else (profile.get('real_name') or profile.get('display_name') or user.get('real_name'))
         store.remember_name(identifier, name and str(name)[:200], None if user.get('is_bot') else str(profile.get('email') or '').lower()[:320] or None)
-        offer = enrichment.slack_photo({**user, 'id': user.get('id') or identifier.split(':', 1)[1]})
-        if offer:
+        user = {**user, 'id': user.get('id') or identifier.split(':', 1)[1]}
+        offer, facts = enrichment.slack_photo(user), enrichment.slack_facts(user)
+        if offer or facts:
             with store.connect() as db:
-                enrichment.offer_photos(db, [offer], 'slack', now(), known_only=False)
+                enrichment.offer_photos(db, [offer], 'slack', now(), known_only=False) if offer else None
+                enrichment.offer_facts(db, [facts], 'slack', now()) if facts else None
 
 
 GATEWAY_SIGNALS = (
@@ -7113,8 +7123,20 @@ def sync_source(store, config, account):
 # Connector plugins: connectors/<service>.py with sync(store, config, account, helpers) and
 # optional KINDS {kind: label}. Loaded by validated name only. See docs/adding-a-source.md.
 CONNECTORS = ROOT / 'connectors'
+def remember_profiles(store, source, offers):
+    """What a connector read about people while it ran, from pages it fetched anyway: offers are {'ids', 'facts',
+    'rank', 'photo'} (their own photo's link, or None). Kept on this Machine, never sent anywhere. Returns how many
+    facts changed."""
+    offers = [o for o in offers if isinstance(o, dict) and o.get('ids')]
+    with store.connect() as db:
+        changed = enrichment.offer_facts(db, [(o['ids'], o.get('facts') or {}, o.get('rank', enrichment.STATED)) for o in offers], source, now())
+        photos = [(o['ids'], o['photo'], o.get('rank', enrichment.STATED) >= enrichment.STATED) for o in offers if o.get('photo')]
+        enrichment.offer_photos(db, photos, source, now(), known_only=False) if photos else None
+    return changed
+
+
 CONNECTOR_HELPERS = types.SimpleNamespace(
-    SourceError=SourceError, browser_read_failure=browser_read_failure, now=lambda: now(), credential=lambda config, name: credential(config, name), local_tz=lambda: local_tz(),
+    SourceError=SourceError, browser_read_failure=browser_read_failure, now=lambda: now(), remember_profiles=lambda store, source, offers: remember_profiles(store, source, offers), credential=lambda config, name: credential(config, name), local_tz=lambda: local_tz(),
     iso=lambda stamp: dt.datetime.fromtimestamp(stamp, dt.timezone.utc).isoformat())
 _connectors = {}
 
@@ -13704,11 +13726,15 @@ class App:
                     with self.store.connect() as db:
                         due = enrichment.contact_run_due(db, 'google:' + account['email'].lower(), now())
                     if due and not self.stop.is_set():
-                        offers = google_photo_offers(self.config, account)
+                        facts = []
+                        offers = google_photo_offers(self.config, account, facts=facts)
                         with self.store.connect() as db:
                             enrichment.offer_photos(db, offers, 'google', now())
+                            known = enrichment.graph_people(db)  # contacts the Machine knows, like their photos
+                            found += enrichment.offer_facts(db, [(ids, f, r) for ids, f, r in facts if any(i in known for i in ids)], 'google', now())
                             enrichment.contact_run_done(db, 'google:' + account['email'].lower(), now())
                 photos += enrichment.contact_photos_step(self.store.connect, now())
+                found += enrichment.facts_from_signals(self.store.connect, now())  # once: facts already in stored signals
                 if found or photos:
                     LOG.info('enrichment people found=%s photos=%s', found, photos)
                     self.graph_dirty.set()
@@ -14323,8 +14349,8 @@ class App:
             threading.Thread(target=self.skills.catalog.worker, args=(self.stop,), daemon=True).start()
         if embeddings.settings(self.config):
             threading.Thread(target=self.embedding_worker, daemon=True).start()
-        if enrichment.settings(self.config) or enrichment.people_available(self.config):
-            threading.Thread(target=self.enrichment_worker, daemon=True).start()
+        # Always: photos and facts from the owner's own connections need no look-up service (its steps skip themselves).
+        threading.Thread(target=self.enrichment_worker, daemon=True).start()
         if getattr(self, 'protection_waits', False):
             threading.Thread(target=self.protection_waiter, daemon=True).start()
         server.timeout = 1

@@ -71,7 +71,11 @@ async () => {
     const person = (pUrn) => { const p = byUrn[pUrn]; const m = p && p.participantType && (p.participantType.member || p.participantType.organization || p.participantType.custom);
       if (!m) return {name: 'Unknown', me: false};
       const name = [txt(m.firstName), txt(m.lastName)].filter(Boolean).join(' ') || txt(m.name) || 'Unknown';
-      return {name, headline: txt(m.headline), me: pUrn.endsWith(meUrn)}; };
+      // Their profile link and photo come with the participant (no extra request): the artifact nearest 200 px.
+      const pic = m.profilePicture || {}, arts = (pic.artifacts || []).filter(x => x && x.fileIdentifyingUrlPathSegment)
+        .sort((x, y) => Math.abs((x.width || 0) - 200) - Math.abs((y.width || 0) - 200));
+      return {name, headline: txt(m.headline), url: typeof m.profileUrl === 'string' ? m.profileUrl : '',
+              photo: pic.rootUrl && arts[0] ? pic.rootUrl + arts[0].fileIdentifyingUrlPathSegment : '', me: pUrn.endsWith(meUrn)}; };
     const msg = (m) => { const s = person(m['*sender']);
       let body = txt(m.body);
       if (!body && m.renderContentFallbackText) body = m.renderContentFallbackText;
@@ -90,6 +94,7 @@ async () => {
         const lastUrn = ((c.messages || {})['*elements'] || [])[0];
         return {urn: c.entityUrn, with: c.title || others.map(p => p.name).join(', ') || '(only you)',
           headline: others.length === 1 ? (others[0].headline || null) : null,
+          profile: others.length === 1 && !c.groupChat ? {headline: others[0].headline || '', url: others[0].url, photo: others[0].photo} : null,
           unread: c.unreadCount || 0, read: !!c.read, lastActivityAt: c.lastActivityAt,
           categories: c.categories || [], group: !!c.groupChat,
           last: lastUrn && byUrn[lastUrn] ? msg(byUrn[lastUrn]) : null}; });
@@ -123,7 +128,8 @@ async () => {
       const reachedFloor=convs.some(c=>(c.lastActivityAt||0)<P.since);
       const more=pending || (!!cursor && !reachedFloor);
       if (!pending && cursor===P.state?.cursor && more) throw Error('conversation cursor did not advance');
-      return {messages:out.sort((a,b)=>(a.at||0)-(b.at||0)),more,
+      const profiles=Object.fromEntries(convs.filter(c=>c.profile&&out.some(m=>m.conversation===c.urn)).map(c=>[c.urn,c.profile]));
+      return {messages:out.sort((a,b)=>(a.at||0)-(b.at||0)),more,profiles,
         state:{cursor:pending?(P.state?.cursor||null):(more?cursor:null),progress:pending?progress:{},coverage_complete:!more}};
     }
     if (P.mode === 'verify') {
