@@ -1558,6 +1558,8 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         self.notify_brief = None
         # remove_work(item) removes a Work Fleet's company data from this Machine and returns the counts (work_removal.py)
         self.remove_work = None
+        # task_pages() brings in answers from task pages (task_pages.TaskPages.round)
+        self.task_pages = None
         self.last['removals'] = None
         with self.connect() as db:
             ensure(db)
@@ -2693,6 +2695,11 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
             self.requests_round()
             self.followup_round()
             self.family_reminders()
+            if self.task_pages:  # answers from task pages (task_pages.py)
+                try:
+                    self.task_pages()
+                except (ValueError, OSError) as error:
+                    LOG.warning('task pages round error=%s', type(error).__name__)
         if stamp - self.last.get('network', 0.0) > MEETINGS_EVERY or not wait:
             self.last['network'] = stamp
             self.discovery_step()

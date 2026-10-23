@@ -1,11 +1,14 @@
 """Coordinating with someone who is not on The Machine Network yet, by email (docs/network.md).
 
 A handoff (and later follow-ups and planning) to a person outside the Network becomes an ordinary email draft on the
-owner's card: the task in plain words, plus one short line inviting them to get a Machine of their own, with a link
-that brings the task along. Nothing goes out until the owner reads it and presses Send.
+owner's card: the task in plain words. Nothing goes out until the owner reads it and presses Send. Only if the owner
+also approves a task page on the card (task_pages.py) does the email get one plain line, "Status and replies: <link>";
+never a promotional signature.
 
-The task behind the link is sealed here with a fresh key that only travels in the link's #fragment: the Network keeps
-an opaque blob for at most 30 days and cannot read it. Their new Machine (or their browser) opens it with that key.
+The page behind the link is sealed here with a fresh key that only travels in the link's #fragment: the Network keeps
+an opaque blob for 7, 14 or 30 days and cannot read it. Their browser opens it with that key (and their new Machine
+adds it). Answers from the page come back sealed with a key derived from it (`derived(key, 'reply')`); the Network gets
+`derived(key, 'check')` only, to tell an answer from the page from one that is not.
 
 Sealing uses only the standard library, so it opens in a browser with WebCrypto too: keys enc = HMAC(k, "enc") and
 mac = HMAC(k, "mac"); the body is XORed with HMAC(enc, nonce || block counter) (a PRF in counter mode) and the whole is
@@ -15,6 +18,7 @@ What the other Machine adds is their words, kept to a fixed form and shown quote
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -57,7 +61,7 @@ def seal(task, key=None):
     return _b64(b'\x01' + nonce + body + tag), _b64(key)
 
 
-def unseal(sealed, key):
+def _open(sealed, key):
     raw, key = _unb64(sealed), _unb64(key)
     if len(raw) < 49 or raw[0] != 1 or len(key) != 32:
         raise ValueError('That task link is not one this Machine can open')
@@ -65,7 +69,74 @@ def unseal(sealed, key):
     nonce, body, tag = raw[1:17], raw[17:-32], raw[-32:]
     if not hmac.compare_digest(hmac.new(mac, nonce + body, hashlib.sha256).digest(), tag):
         raise ValueError('That task link is not one this Machine can open')
-    return clean(json.loads(bytes(a ^ b for a, b in zip(body, _stream(enc, nonce, len(body))))))
+    return json.loads(bytes(a ^ b for a, b in zip(body, _stream(enc, nonce, len(body)))))
+
+
+def unseal(sealed, key):
+    return clean(_open(sealed, key))
+
+
+def derived(key, name):
+    """A key made from the link's key (base64url in, base64url out): 'reply' seals answers, 'check' goes to the Network."""
+    return _b64(hmac.new(_unb64(key), name.encode(), hashlib.sha256).digest())
+
+
+ANSWERS = {'on': "is on it", 'done': 'marked it done', 'cant': "can't do this"}
+NOTE_CHARS = 280
+
+
+def open_answer(sealed, key):
+    """An answer from the task page, opened with the link's key and kept to its fixed form: a choice and a short note.
+    Their words, shown quoted on the card, never read as instructions."""
+    found = _open(sealed, derived(key, 'reply'))
+    if not isinstance(found, dict) or found.get('answer') not in ANSWERS:
+        raise ValueError('That answer is not one this Machine can open')
+    note = ' '.join(str(found.get('note') or '').split())[:NOTE_CHARS] if isinstance(found.get('note'), str) else ''
+    return {'answer': found['answer'], 'note': note}
+
+
+PAGE_PARTS = ('summary', 'due', 'steps')  # what the owner may leave out; the title and their first name always go
+STATUSES = ('waiting', 'in_progress', 'back', 'done')
+
+
+def page(task, leave_out=(), status='waiting', updates=(), steps=()):
+    """What the task page shows, and nothing else: built only from the approved task's fixed fields (clean), never
+    from the card, its email, its evidence or the owner's other data. The privacy guard is this function's shape."""
+    task = clean(task)
+    out = {'kind': task['kind'], 'title': task['title'], 'from_name': first_name(task.get('from_name')) or 'Someone',
+           'status': status if status in STATUSES else 'waiting', 'updates': [dict(u) for u in updates][-30:]}
+    for part in ('summary', 'due'):
+        if task.get(part) and part not in leave_out:
+            out[part] = task[part]
+    if steps and 'steps' not in leave_out:
+        out['steps'] = [{'t': ' '.join(str(x.get('t', '')).split())[:120], 'done': bool(x.get('done'))} for x in steps if str(x.get('t', '')).strip()][:8]
+    return out
+
+
+def quotes(text, sources, run=12):
+    """Whether `text` repeats `run` words in a row of any source text (the card's original email): such a summary is
+    the email itself, which never goes on a task page."""
+    words = lambda value: re.findall(r'[^\W_]+', str(value or '').casefold())
+    mine = words(text)
+    runs = {tuple(mine[i:i + run]) for i in range(len(mine) - run + 1)}
+    for source in sources:
+        theirs = words(source)
+        if any(tuple(theirs[i:i + run]) in runs for i in range(len(theirs) - run + 1)):
+            return True
+    return False
+
+
+def with_link(body, link):
+    """The email with the task page's one plain line, just before the sign-off (or at the end)."""
+    line = f'Status and replies: {link}'
+    if line in body:
+        return body
+    i = body.rfind('\n\nBest,')
+    return body[:i] + f'\n\n{line}' + body[i:] if i >= 0 else body.rstrip() + f'\n\n{line}'
+
+
+def without_link(body):
+    return re.sub(r'\n\nStatus and replies: https://\S+', '', body)
 
 
 def clean(task):
@@ -94,16 +165,26 @@ def first_name(name):
     return (str(name or '').split() or [''])[0]
 
 
-def draft(task, to_name, me, link):
-    """The email: the task in plain words first, then one line about The Machine with the link. Plain code, no model."""
+DAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+
+
+def spoken_day(day, today=None):
+    """A date as a person writes it in an email: "Saturday 31 October", with the year only when it is not this year."""
+    found = dt.date.fromisoformat(day)
+    year = '' if found.year == (today or dt.date.today()).year else f' {found.year}'
+    return f'{DAYS[found.weekday()]} {found.day} {MONTHS[found.month - 1]}{year}'
+
+
+def draft(task, to_name, me, link=None):
+    """The email: the task in plain words. With a task page the owner approved, one plain line with its link. Never a
+    promotional line or signature. Plain code, no model."""
     hello = f"Hi {first_name(to_name) or 'there'},"
-    due = f"\n\nIt would be great to have it by {task['due']}." if task.get('due') else ''
+    due = f"\n\nIt would be great to have it by {spoken_day(task['due'])}." if task.get('due') else ''
     subject = f"Could you take this on: {task['title']}"[:120]
     body = (f"{hello}\n\nCould you take this on?\n\n{task['title']}\n{task.get('summary', '')}{due}\n\n"
-            f"Just reply to this email to let me know.\n\nBest,\n{first_name(me) or me}\n\n"
-            f"P.S. I keep track of things like this with The Machine, a personal assistant. If you'd like one too, this link "
-            f"has this task ready for it: {link}")
-    return subject, body
+            f"Just reply to this email to let me know.\n\nBest,\n{first_name(me) or me}")
+    return subject, with_link(body, link) if link else body
 
 
 def network_url(config, fleet_module):

@@ -509,7 +509,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
             'profile_runs.draft': 'profile notes (USER.md)', 'skills.body': 'a skill', 'skills.description': 'a skill',
             'skills.note': 'a skill', 'skill_hints.summary': 'a skill hint', 'tool_approval_proposals.title': 'a proposal',
             'tool_approval_proposals.detail': 'a proposal', 'checkpoints.state': 'a sync cursor (MESSAGE_SEAL_AUDIT checks)',
-            'analyses.items': 'ids and versions', 'preparations.details': 'why a preparation stopped',
+            'analyses.items': 'ids and versions', 'task_pages.state': "a task page's stage (offered, shared, done)", 'preparations.details': 'why a preparation stopped',
             'preparations.reason': 'a reason code', 'preparations.questions': 'what a stopped run asks the owner',
             'android_inbox.payload': "its text sealed by the Gateway's plugin (message_seal.INBOX); deleted once read",
             'network_outbox.body': 'matched in SQL until sent; sealed end to end in transit (network_crypto)',
