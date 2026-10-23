@@ -163,6 +163,21 @@ try{
   el.dispatchEvent(new TouchEvent('touchend',{bubbles:true,touches:[],changedTouches:[t(...to)]}))},[from,to]);
  const isOpen=page=>page.evaluate(()=>document.documentElement.dataset.drawer==='open');
  const settle=page=>page.waitForTimeout(350);
+ // On a phone the whole drawer scrolls as one column (the nav, the cards, then Browser and Settings), with no scroll area
+ // inside it: a finger swipe up from the nav reaches Settings and the last card
+ {const {context,page}=await open(390,700);
+  await page.locator('#drawer-open').click();await settle(page);
+  const m=await page.evaluate(()=>{const s=document.querySelector('#app-side'),c=document.querySelector('#side-cards');return {side:s.scrollHeight-s.clientHeight,cards:c.scrollHeight-c.clientHeight,cardsOverflow:getComputedStyle(c).overflowY}});
+  assert.ok(m.side>0,'the drawer is taller than the screen here');assert.ok(m.cards<=1&&m.cardsOverflow==='visible','no scroll area inside the drawer: '+JSON.stringify(m));
+  const nav=await page.locator('.app-side nav [data-tab="events"]').boundingBox();const cdp=await context.newCDPSession(page);
+  for(let i=0;i<8&&await page.locator('#app-side').evaluate(s=>s.scrollTop+s.clientHeight<s.scrollHeight-1);i++)
+  {const x=Math.round(nav.x+nav.width/2),pt=y=>[{x,y}];await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:pt(620)});
+   for(let y=600;y>=120;y-=40)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:pt(y)});
+   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(200)}
+  const inView=sel=>page.locator(sel).evaluate(e=>{const r=e.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight+1});
+  assert.ok(await inView('#open-settings'),'Settings is reached');assert.ok(await inView('#side-cards a >> nth=-1'),'the last card is reached');
+  assert.ok(await isOpen(page),'scrolling does not close the drawer');
+  await context.close()}
  for(const [w,h] of [[390,844],[360,740],[430,932],[900,1100]]){const {context,page}=await open(w,h);
   assert.ok(await page.locator('#drawer-open').isVisible(),'the menu button at '+w);assert.ok(!(await page.locator('#app-side').isVisible()),'the drawer is closed at '+w);
   // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
