@@ -23,7 +23,7 @@ Collectors read existing source content. The optional Salesflare `join_pipelines
 | `gateway` | journald | `unit` (default `openclaw-gateway.service`), `bootstrap_hours` |
 | `github` (plugin) | `gh` CLI logged in as you | `login`, `repos` (optional filter), `ci_repos` + `ci_branch` (failed runs) |
 | `stripe` (plugin) | A restricted read-only Stripe key, or a Maton Stripe connection | `transport` (`api` or `maton`), `credential` (+ `credential_variable`, and `connection_id` found in Maton), `stripe_account`, `large_subscription_monthly` (500) |
-| `intercom` (plugin) | An access token from an app in Intercom's Developer Hub | `credential` (+ `credential_variable` for an env file); `workspace_id`, `workspace_name`, `region` and `admin_id` are read from the token when you connect |
+| `intercom` (plugin) | An access token from an app in Intercom's Developer Hub | `credential` (+ `credential_variable` for an env file); `workspace_id`, `workspace_name`, `region` and `admin_id` are read from the token when you connect; it is always Work, for the company the workspace names (`work:<workspace name>`, renamed like any account) |
 | `linkedin` (plugin) | LinkedIn signed in to the OpenClaw browser | `active_hours` (`[7, 22]`, local time); config `linkedin_inbox` for the reader path |
 | `x` (plugin) | X signed in to the OpenClaw browser | `handle`, `primary` (the account the browser is normally on), `active_hours` (`[7, 23]`), `long_posts` (X Premium: replies up to 25000 characters); config `x_inbox` for the reader path |
 | `trello` (plugin) | A Trello API key and a read-only token | `board` (URL or ID, one board per account), `api_key`, `credential` (the token), `bootstrap_days` (7) |

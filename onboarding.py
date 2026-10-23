@@ -828,6 +828,8 @@ def new_account(config, service, account_id=None, ui=None):
     options = boundaries(config, service)
     if service in ('android', 'whatsapp', 'gateway') and not same:
         pass  # keep the example's device boundary
+    elif setup_of(service).get('boundary') == 'workspace':
+        account['boundary'] = 'work'  # its check names the company after the workspace it connects (work:<name>)
     elif same or options:
         # Work (which company) or personal: the owner's own choice, which a Work Fleet's removal follows
         choice = ui.choose('Which part of your life is this account', [(b, scope_label(b)) for b in options]
