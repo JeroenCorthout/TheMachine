@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS org_profiles(domain TEXT PRIMARY KEY,status TEXT NOT 
 CREATE TABLE IF NOT EXISTS person_profiles(identifier TEXT PRIMARY KEY,status TEXT NOT NULL,profile TEXT,fetched_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS person_photos(identifier TEXT PRIMARY KEY,key TEXT NOT NULL UNIQUE,type TEXT NOT NULL,data BLOB NOT NULL,saved_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS person_photo_tries(identifier TEXT PRIMARY KEY,tried_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS contact_photo_links(identifier TEXT PRIMARY KEY,url TEXT NOT NULL,chosen INTEGER NOT NULL,source TEXT NOT NULL,seen_at TEXT NOT NULL,tried_at TEXT);
 CREATE TABLE IF NOT EXISTS enrich_prefs(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS forgotten_people(digest TEXT PRIMARY KEY,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS forgotten_salt(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT NOT NULL);
@@ -2118,7 +2119,7 @@ def delete_person(db, node_id, config, now):
     db.execute(f'DELETE FROM graph_relations WHERE a IN ({marks}) OR b IN ({marks})', ids + ids)
     for table in ('graph_names',):
         db.execute(f'DELETE FROM {table} WHERE node_id IN ({marks})', ids)
-    for table in ('identity_names', 'person_roles', 'person_orgs', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'person_photos', 'person_photo_tries', 'role_corrections'):
+    for table in ('identity_names', 'person_roles', 'person_orgs', 'graph_role_asks', 'graph_org_asks', 'person_profiles', 'person_photos', 'person_photo_tries', 'contact_photo_links', 'role_corrections'):
         if _table(db, table):
             db.execute(f'DELETE FROM {table} WHERE identifier IN ({marks})', ids)
     if emails:

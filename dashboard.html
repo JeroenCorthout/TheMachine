@@ -4877,6 +4877,9 @@ actionAdd(
  {id:'sidebar',group:'Actions',label:()=>document.documentElement.dataset.side==='collapsed'?'Expand the sidebar':'Collapse the sidebar',keywords:'sidebar fold icons',keys:'mod+b',bound:true,when:()=>DESK.matches,run:()=>sideSet(document.documentElement.dataset.side!=='collapsed')},
  {id:'refresh',group:'Actions',label:'Refresh',keywords:'reload update',run:()=>refresh()},
  {id:'shortcuts',group:'Actions',label:'Keyboard shortcuts',keywords:'keys help hotkeys',keys:'?',run:()=>keysOpen()});
+// This device (Settings, General): install the app, turn on notifications, a test notification to this device only.
+const DEVICE_WORDS={'install-app':'install app pwa taskbar dock home screen pin','push-on':'notifications push bell alerts enable','push-test':'test notification push ping'};
+actionAdd(...DEVICE_ACTIONS.map(a=>({id:a.id,group:'Actions',label:a.label,keywords:DEVICE_WORDS[a.id],when:()=>a.available(),run:a.run})));
 // This card: only what the card itself offers (its own button is there), on the open chat's card or the picked one.
 const SEND_KINDS=['email','email_demo','linkedin','slack','x','whatsapp','intercom','merge','finish'];
 const SEND_WORD={email:'the email',email_demo:'the email',linkedin:'the LinkedIn message',slack:'the Slack message',x:'the post',whatsapp:'the WhatsApp message',intercom:'the Intercom reply',merge:'the fix',finish:'the last step'};

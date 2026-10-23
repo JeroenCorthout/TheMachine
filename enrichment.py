@@ -729,6 +729,124 @@ def photos_step(connect, now, limit=PHOTOS_PER_PASS, fetch=None):
     return saved
 
 
+# Contact photos: from the owner's own connections, with only what they already allow (Google contacts and the
+# Workspace directory through the gog sign-in, Slack profiles). Personal contacts too: these stay on this Machine and
+# are never sent anywhere. They fill in someone without a photo; a photo the person chose themselves (their own Google
+# or Slack profile) comes before one the owner set on a contact, and generic placeholders are skipped. A link that
+# didn't work is tried again after 30 days at most.
+CONTACT_PHOTOS_PER_PASS = 100
+CONTACT_PHOTO_DAYS = 30
+CONTACT_PHOTO_RUN_HOURS = 24
+CONTACT_SCHEMA = ('CREATE TABLE IF NOT EXISTS contact_photo_links(identifier TEXT PRIMARY KEY,url TEXT NOT NULL,chosen INTEGER NOT NULL,'
+                  'source TEXT NOT NULL,seen_at TEXT NOT NULL,tried_at TEXT)',
+                  'CREATE TABLE IF NOT EXISTS contact_photo_runs(source TEXT PRIMARY KEY,ran_at TEXT NOT NULL)')
+GOOGLE_PHOTO = re.compile(r'https://lh[3-6]\.googleusercontent\.com/[^\s"\'<>\\]{1,500}')
+
+
+def contact_tables(db):
+    for statement in CONTACT_SCHEMA:
+        db.execute(statement)
+
+
+def graph_people(db):
+    """Each person identifier in the graph, with its person."""
+    try:
+        return dict(db.execute("SELECT j.value,n.id FROM graph_nodes n, json_each(n.info,'$.identifiers') j WHERE n.kind='person'").fetchall())
+    except Exception:
+        return {}
+
+
+def phone_identifier(value):
+    digits = re.sub(r'\D', '', str(value or ''))
+    return 'wa:' + digits if str(value or '').strip().startswith('+') and 7 <= len(digits) <= 15 else None
+
+
+def google_photo(person):
+    """(identifiers, link, chosen) for a Google contact or directory person with a real photo, else None. The person's
+    own profile photo comes first; Google's generated letter (default) is skipped."""
+    photos = [p for p in (person.get('photos') or []) if isinstance(p, dict) and not p.get('default') and GOOGLE_PHOTO.fullmatch(str(p.get('url') or ''))]
+    if not photos:
+        return None
+    kind = lambda p: ((p.get('metadata') or {}).get('source') or {}).get('type')
+    best = min(photos, key=lambda p: kind(p) != 'PROFILE')
+    url = str(best['url'])
+    url = re.sub(r'=s\d+(-c)?$', '=s160-c', url) if re.search(r'=s\d+(-c)?$', url) else url + ('=s160-c' if '=' not in url.rsplit('/', 1)[-1] else '')
+    ids = ['email:' + str(e.get('value')).strip().lower() for e in (person.get('emailAddresses') or [])
+           if isinstance(e, dict) and '@' in str(e.get('value') or '')]
+    ids += [i for i in (phone_identifier(n.get('canonicalForm')) for n in (person.get('phoneNumbers') or []) if isinstance(n, dict)) if i]
+    return (list(dict.fromkeys(ids)), url, kind(best) == 'PROFILE') if ids else None
+
+
+def slack_photo(user):
+    """(identifiers, link, chosen) for a Slack user with a picture of their own (not Slack's generated one)."""
+    profile = user.get('profile') or {}
+    url = str(profile.get('image_192') or profile.get('image_512') or '')
+    if user.get('is_bot') or user.get('deleted') or not profile.get('is_custom_image') or not LOGO.fullmatch(url) or not user.get('id'):
+        return None
+    return (['slack:' + str(user['id'])], url, True)
+
+
+def contact_run_due(db, source, now):
+    contact_tables(db)
+    row = db.execute('SELECT ran_at FROM contact_photo_runs WHERE source=?', (source,)).fetchone()
+    return not row or row[0] <= (dt.datetime.fromisoformat(now) - dt.timedelta(hours=CONTACT_PHOTO_RUN_HOURS)).isoformat()
+
+
+def contact_run_done(db, source, now):
+    contact_tables(db)
+    db.execute('INSERT INTO contact_photo_runs(source,ran_at) VALUES(?,?) ON CONFLICT(source) DO UPDATE SET ran_at=excluded.ran_at', (source, now))
+
+
+def offer_photos(db, offers, source, now, known_only=True):
+    """Keeps the photo links of people this Machine knows (by any identifier), one per identifier: a photo the person
+    chose beats one set on a contact. Returns how many were kept."""
+    contact_tables(db)
+    known = graph_people(db) if known_only else None
+    kept = 0
+    for ids, url, chosen in offers:
+        for identifier in ids:
+            if known is not None and identifier not in known:
+                continue
+            row = db.execute('SELECT url,chosen FROM contact_photo_links WHERE identifier=?', (identifier,)).fetchone()
+            if row and (row[1] > int(chosen) or (row[0] == url and row[1] == int(chosen))):
+                db.execute('UPDATE contact_photo_links SET seen_at=? WHERE identifier=?', (now, identifier))
+                continue
+            db.execute('INSERT INTO contact_photo_links(identifier,url,chosen,source,seen_at,tried_at) VALUES(?,?,?,?,?,NULL) ON CONFLICT(identifier) DO UPDATE SET '
+                       'url=excluded.url,chosen=excluded.chosen,source=excluded.source,seen_at=excluded.seen_at,tried_at=NULL',
+                       (identifier, url, int(chosen), source, now))
+            kept += 1
+    return kept
+
+
+def contact_photos_step(connect, now, limit=CONTACT_PHOTOS_PER_PASS, fetch=None):
+    """Saves a contact photo for people in the graph who have none yet, the best link first. Returns how many."""
+    fetch = fetch or download_photo
+    retry = (dt.datetime.fromisoformat(now) - dt.timedelta(days=CONTACT_PHOTO_DAYS)).isoformat()
+    with connect() as db:
+        contact_tables(db)
+        people = graph_people(db)
+        have = {people[i] for (i,) in db.execute('SELECT identifier FROM person_photos') if i in people}
+        rows = db.execute('SELECT identifier,url FROM contact_photo_links WHERE tried_at IS NULL OR tried_at<? '
+                          'ORDER BY chosen DESC,seen_at DESC', (retry,)).fetchall()
+    saved, tried = 0, 0
+    for identifier, url in rows:
+        node = people.get(identifier)
+        if node is None or node in have:
+            continue
+        if tried >= limit:
+            break
+        tried += 1
+        got = fetch(url)
+        with connect() as db:
+            db.execute('UPDATE contact_photo_links SET tried_at=? WHERE identifier=? AND url=?', (now, identifier, url))
+            if got and not db.execute('SELECT 1 FROM person_photos WHERE identifier=?', (identifier,)).fetchone():
+                db.execute('INSERT INTO person_photos(identifier,key,type,data,saved_at) VALUES(?,?,?,?,?)',
+                           (identifier, photo_key(identifier), got[1], got[0], now))
+                have.add(node)
+                saved += 1
+    return saved
+
+
 def photo(db, key):
     """(bytes, type) of a saved photo by its key, for the dashboard."""
     if not re.fullmatch(r'[0-9a-f]{32}', str(key or '')):
