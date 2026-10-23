@@ -195,7 +195,7 @@ Report ordinary bugs through the dashboard's [GitHub issue link](https://github.
 
 ## License
 
-Copyright (C) 2026 Salesflare. Open source under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`): [LICENSE](LICENSE). Versions up to and including `release-20261023-1648` were released under MIT.
+Copyright (C) 2026 Salesflare. Open source under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`): [LICENSE](LICENSE).
 
 OpenClaw and optional components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Names, branding and the hosted service have separate terms: [TRADEMARKS.md](TRADEMARKS.md). Website: [themachine.computer](https://themachine.computer).
 
