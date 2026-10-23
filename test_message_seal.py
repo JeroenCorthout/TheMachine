@@ -522,6 +522,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
             'voice_merges.merged_text': 'the same learned channel voice, retained only for undo',
             'suggestions.title_source': 'who wrote the title: auto or user',
             'skill_clusters.description': 'a skill suggested from learned notes', 'skill_clusters.body': 'a skill suggested from learned notes',
+            'board_suggestions.state': 'open, saved or dismissed',
         }
         sealed = {f'{t}.{c}' for t, cs in message_seal.DERIVED.items() for c in cs} | {f'{t}.{c}' for t, c, _ in message_seal.DERIVED_JSON}
         sealed |= {'events.title', 'events.body', 'events.metadata'}

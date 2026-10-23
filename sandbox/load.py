@@ -263,6 +263,13 @@ def load_boards(db, fixture, ids, base):
     would (graph.set_stage), one dragged by hand; their organisations' names as an enrichment service would give them."""
     import graph
     for board in fixture.get('boards') or ():
+        if board.get('suggestion'):  # projects on no board yet, and a review's suggestion of a board for them
+            sug = board['suggestion']
+            for p in sug['projects']:
+                graph.label(db, [ids[k] for k in p['events'] if k in ids], p['name'], 'review', base.isoformat())
+            graph.suggest_board(db, {**sug, 'projects': [p['name'] for p in sug['projects']]}, 'review', base.isoformat())
+            continue
+        graph.save_board(db, {'name': board['name'], 'stages': board['stages'], 'about': board.get('about', '')}, base.isoformat())  # the owner saved it
         for p in board['projects']:
             graph.label(db, [ids[k] for k in p['events'] if k in ids], p['name'], 'review', base.isoformat())
             for i, m in enumerate(p['moves']):

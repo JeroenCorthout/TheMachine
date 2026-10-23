@@ -521,6 +521,52 @@ button.node:hover{text-decoration:underline;background:none}
   .lane{display:none;padding:0;background:none}.lane.on{display:block}
   .lane-h{display:none}.lane-hint,.lane-sum{padding-left:0}
 }
+/* Boards the owner makes: a review's suggestion ("Start a board for Hiring?"), the board's ⋯ menu and the editor */
+.board-suggest{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin:0 0 18px;padding:14px 16px;border:1px solid var(--c-line);border-radius:var(--r-lg);background:var(--c-surface);box-shadow:var(--shadow-sm)}
+.board-suggest-text{flex:1 1 320px;min-width:0}
+.board-suggest-title{margin:0;font:var(--fw-heading) var(--fs-md)/1.3 var(--serif);color:var(--text)}
+.board-suggest-sub{margin:2px 0 0;color:var(--c-text-3);font-size:var(--fs-sm)}
+.stage-flow{display:flex;flex-wrap:wrap;gap:4px 0;margin:8px 0 0;padding:0;list-style:none;color:var(--c-text-2);font-size:var(--fs-sm)}
+.stage-flow li+li::before{content:"→";margin:0 6px;color:var(--c-text-3)}
+.board-suggest-actions{display:flex;gap:8px;flex-wrap:wrap}.board-suggest-actions button{margin:0;min-height:34px}
+.board-start{margin:0 0 14px}
+.board-name-row{display:flex;align-items:center;gap:4px;min-width:0}
+.board-menu{position:relative;flex:none}
+.board-menu>summary{list-style:none;display:grid;place-items:center;width:30px;height:28px;border-radius:var(--r-sm);color:var(--c-text-3);font-size:1rem;line-height:1;cursor:pointer;user-select:none}
+.board-menu>summary::-webkit-details-marker{display:none}
+.tile-menu>summary::before,.board-menu>summary::before{content:none}
+.board-menu>summary:hover,.board-menu[open]>summary{background:var(--c-hover);color:var(--text)}
+.board-menu .fact-menu-list{left:0;right:auto;min-width:170px}
+.tile-why.sorting{font-style:italic}
+#board-dialog{width:min(520px,calc(100vw - 24px));padding:18px 18px 16px}
+#board-dialog h2{margin:0;color:var(--text);font-size:1.2rem}
+#board-form{display:flex;flex-direction:column;gap:14px}
+#board-form .snooze-heading{margin:0}
+.ed-field{display:block;color:var(--c-text-2);font-size:var(--fs-sm)}#board-form textarea{min-height:4.8em;field-sizing:content;resize:vertical}
+.ed-field input,.ed-field textarea{display:block;width:100%;margin-top:6px}
+#board-form fieldset{margin:0;padding:0;border:0;min-width:0}
+#board-form legend{padding:0;margin-bottom:6px;color:var(--c-text-2);font-size:var(--fs-sm)}
+#board-form legend .count{margin-left:4px;color:var(--c-text-3)}
+.ed-stages ol,.ed-projects ul{margin:0 0 8px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.ed-stages li{display:flex;align-items:center;gap:4px}
+.ed-stages li input{flex:1;min-width:0;margin:0}
+#board-form button.icon{flex:none;width:34px;min-height:34px;margin:0;padding:0;border:0;background:none;box-shadow:none;color:var(--c-text-3);font-size:1rem;border-radius:var(--r-sm)}
+#board-form button.icon:hover:not(:disabled){background:var(--c-hover);color:var(--text)}
+#board-form button.icon:disabled{opacity:.3}
+.ed-check{display:flex;align-items:center;gap:8px;margin-top:4px;color:var(--c-text-2);font-size:var(--fs-sm)}.ed-check input{margin:0;width:auto}
+.ed-projects ul{max-height:200px;overflow:auto}
+.ed-projects li{display:flex;align-items:center;gap:6px;min-height:34px;padding:0 0 0 10px;border:1px solid var(--c-line);border-radius:var(--r-sm);font-size:var(--fs-sm)}
+.ed-projects li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed-projects li.muted{padding:6px 10px;border-style:dashed;color:var(--c-text-3)}
+.ed-projects input{display:block;width:100%;margin:0}
+.ed-note{margin:0;color:var(--c-text-3);font-size:var(--fs-xs)}.ed-note.warn{color:var(--c-orange)}
+.ed-actions{position:sticky;bottom:-16px;z-index:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 -18px -16px;padding:12px 18px 16px;border-top:1px solid var(--c-line);background:var(--surface)}.ed-actions .grow{flex:1}.ed-actions button{margin:0}
+.ed-actions button.danger{color:var(--orange)}
+@media(max-width:560px){
+  #board-dialog{width:100%;max-width:100%;max-height:92dvh;margin:auto 0 0;border-radius:16px 16px 0 0;padding:16px}
+  .board-suggest{padding:12px 14px}.board-suggest-actions{width:100%}.board-suggest-actions button{flex:1}
+  .ed-actions{margin:0 -16px -16px;padding:12px 16px 16px}.ed-actions .grow{display:none}.ed-actions button.primary{flex:1 1 100%;order:-1}
+}
 .graph-stage{margin:var(--sp-3) 0 0;padding:12px 14px;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--c-sunken)}
 .graph-stage p{margin:0}.graph-stage p+p{margin-top:4px}
 .graph-stage ol{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:4px}
@@ -1677,6 +1723,7 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 <dialog id="snooze-dialog" aria-labelledby="snooze-title"><form method="dialog"><div class="snooze-heading"><h2 id="snooze-title">Remind me later</h2><button aria-label="Close picker">×</button></div><div id="snooze-quick"><div class="snooze-presets"><button type="button" data-snooze="2h">2 hours</button><button type="button" data-snooze="tomorrow">Tomorrow · 9:00</button><button type="button" data-snooze="3d">3 days · 9:00</button><button type="button" data-snooze="1w">1 week · 9:00</button></div><button type="button" id="snooze-custom">Choose date</button></div><div id="snooze-calendar" hidden><div class="month-nav"><button type="button" id="month-prev" aria-label="Previous month">‹</button><strong id="snooze-month" aria-live="polite"></strong><button type="button" id="month-next" aria-label="Next month">›</button></div><div class="month-grid" id="snooze-days" aria-label="Choose a day"></div><div class="snooze-time-row"><label for="snooze-time">Time</label><input id="snooze-time" type="time" required></div><small id="snooze-zone"></small><div class="snooze-footer"><button id="snooze-back" type="button">Back</button><button id="snooze-save" type="button" class="primary">Save time</button></div></div><p id="snooze-error" class="error" role="alert"></p></form></dialog>
 <dialog id="skill-look" aria-labelledby="skill-look-title"><form method="dialog"><div class="snooze-heading"><h2 id="skill-look-title"></h2><button aria-label="Close">×</button></div></form><p id="skill-look-from" class="fine"></p><ul id="skill-look-notes" class="skill-notes"></ul><pre id="skill-look-body" class="skill-body"></pre><p id="skill-look-error" role="status"></p><div class="actions" id="skill-look-actions"></div></dialog>
  <dialog id="peek-dialog" aria-labelledby="peek-title"><form method="dialog"><div class="snooze-heading"><h2 id="peek-title">The browser, live</h2><button aria-label="Close">×</button></div></form><img id="peek-image" alt="What The Machine’s browser shows now"></dialog>
+<dialog id="board-dialog" aria-labelledby="board-dialog-title"><form id="board-form" novalidate></form></dialog>
 <dialog id="game-dialog" aria-labelledby="game-title"><form method="dialog"><div class="snooze-heading"><h2 id="game-title">Catch the Zzz</h2><button aria-label="Close game">×</button></div></form><p class="game-score"><b id="game-score">0</b> caught · <b id="game-time">20</b>s left · best <b id="game-best">0</b></p><div id="game-field" class="game-field"><img id="game-bot" src="brand/sleepy.webp" alt=""></div><div class="game-foot"><p id="game-msg"></p><button id="game-start" type="button">Start</button></div></dialog><dialog id="email-dialog" aria-labelledby="email-title"><form method="dialog"><div class="snooze-heading"><h2 id="email-title">Email</h2><button aria-label="Close email">×</button></div></form><div id="email-content"></div></dialog><dialog id="result-dialog" aria-labelledby="result-title"><form method="dialog"><div class="snooze-heading"><h2 id="result-title">Result</h2><button aria-label="Close result">×</button></div></form><div id="result-files"></div><div id="result-content"></div><div class="actions"><button id="result-copy" class="primary">Copy draft</button></div></dialog><dialog id="signin-dialog" aria-labelledby="signin-title"><form method="dialog"><div class="snooze-heading"><h2 id="signin-title">Sign in</h2><button aria-label="Close sign-in">×</button></div></form><form id="signin-form" autocomplete="off"><label id="signin-pick" hidden>Page<select id="signin-page"></select></label><p id="signin-saved" hidden><button type="button" id="signin-use-saved" class="primary"></button></p><label id="signin-user-row">Username or email<input id="signin-user" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1000"></label><label id="signin-pass-row">Password<input id="signin-pass" type="password" autocomplete="new-password" maxlength="1000"></label><div id="signin-code-row"><p id="signin-code-help" class="signin-help" hidden></p><p id="signin-code-ask" class="signin-ask" hidden></p><label><span id="signin-code-label">One-time code</span><input id="signin-code" inputmode="numeric" autocomplete="one-time-code" maxlength="100"></label><div id="signin-others" class="signin-others" hidden></div></div><label id="signin-save-row" class="signin-check"><input type="checkbox" id="signin-save"> Save for next time</label><p id="signin-status" class="signin-status" role="status" hidden><span class="spin" aria-hidden="true"></span><span id="signin-status-text"></span></p><div id="signin-view" class="signin-view" hidden><iframe id="signin-frame" title="The browser"></iframe></div><p id="signin-error" role="alert"></p><div class="actions"><button id="signin-go" class="primary">Sign in</button><button type="button" id="signin-browser" class="ghost">Open the browser</button><button type="button" id="signin-retry" class="ghost" hidden>Try again</button><button type="button" id="signin-continue" class="ghost" hidden>Continue</button></div><p class="fine" id="signin-fine">This goes straight into the page in your server’s browser. The assistant never sees it. For anything else, open the browser.</p></form></dialog>
 <script>
 let snoozeId=null,snoozeDay=null,snoozeMonth=null,lastOk=0,refreshFailed=false;
@@ -3971,7 +4018,7 @@ let graphBoards=[],boardShown=sideStore.get('board-shown')||'',boardStage={},boa
 const projView=()=>graphBoards.length?(sideStore.get('projects-view')==='list'?'list':'board'):'list';
 const shortDay=v=>{if(!v)return '';const d=new Date(String(v).length<=10?v+'T12:00':v),p=k=>d.toLocaleDateString('en-US',{[k]:k==='day'?'numeric':'short'});return `${p('weekday')} ${p('day')} ${p('month')}`};  /* Fri 23 Oct */
 const boardNow=()=>graphBoards.find(b=>b.name===boardShown)||graphBoards[0];
-const tileWhy=(p,side)=>{const when=p.at?(p.event_id?`<button type="button" class="link" data-quote-event="${p.event_id}" title="Read the message">${esc(shortDay(p.at))}</button>`:esc(shortDay(p.at))):'';
+const tileWhy=(p,side)=>{if(p.sorting)return '<p class="tile-why sorting">Sorting from your messages</p>';const when=p.at?(p.event_id?`<button type="button" class="link" data-quote-event="${p.event_id}" title="Read the message">${esc(shortDay(p.at))}</button>`:esc(shortDay(p.at))):'';
  const what=p.by==='owner'?`Moved to ${esc(p.stage)} by hand`:p.reason?`${p.first?'Added':'Moved to '+esc(p.stage)}: ${esc(p.reason)}`:'';
  return what||when?`<p class="tile-why">${what}${what&&when?' · ':''}${when}</p>`:''};
 const stuckDays=p=>p.stage!==boardSide()&&(p.no_reply_days||0)>=10?p.no_reply_days:0;
@@ -3988,12 +4035,13 @@ const lane=(b,s,items,on)=>{const key=b.name+'|'+s.name,all=boardOpen.has(key)||
 function boardView(){const b=boardNow();if(!b)return '<div class="empty all-clear"><div><strong>No boards yet.</strong>Projects of one kind show here in stages, as your messages move them.</div></div>';
  const by=s=>b.projects.filter(p=>p.stage===s.name),main=b.stages.filter(s=>!s.side),firstFull=b.stages.find(s=>by(s).length)?.name||b.stages[0].name;
  const on=b.stages.some(s=>s.name===boardStage[b.name])?boardStage[b.name]:firstFull;
- return `<div class="board-head"><div>${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title">${esc(b.name)}</h3><p class="board-sub">${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''} · moves come from your messages</p></div>`
+ return `<div class="board-head"><div><div class="board-name-row">${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title">${esc(b.name)}</h3><details class="board-menu"><summary aria-label="Board options" title="Board options">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-board-edit="${b.id}">Edit board</button><button type="button" role="menuitem" data-board-new>New board</button></div></details></div><p class="board-sub">${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''} · moves come from your messages</p></div>`
   +(graphBoards.length>1?`<div class="board-chips" role="group" aria-label="Boards">${graphBoards.map(x=>`<button type="button" data-board="${esc(x.name)}" aria-pressed="${x.name===b.name}">${esc(x.name)}</button>`).join('')}</div>`:'')+'</div>'
   +`<div class="sub-tabs stage-tabs" role="tablist" aria-label="Stages">${b.stages.map(s=>`<button type="button" role="tab" data-stage-tab="${esc(s.name)}" aria-selected="${s.name===on}"><span class="ell">${esc(s.side?'Stalled':s.name)}</span> <span class="badge">${by(s).length}</span></button>`).join('')}</div>`
   +`<div class="pboard-wrap"><div class="pboard" style="--lanes:${main.length}">${b.stages.map(s=>lane(b,s,by(s),s.name===on)).join('')}</div></div>`}
-const projectsPane=g=>{graphBoards=g.boards||[];const v=projView();if(!graphBoards.length)return graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects);
- return `<div class="proj-list"${v==='list'?'':' hidden'}>${graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)}</div><div class="proj-board"${v==='board'?'':' hidden'}>${boardView()}</div>`};
+const projectsPane=g=>{graphBoards=g.boards||[];graphSuggest=g.board_suggestions||[];graphProjNames=g.project_names||[];const v=projView();
+ if(!graphBoards.length){const list=graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects);return list||graphSuggest.length?suggestBox()+(graphSuggest.length?'':'<p class="board-start"><button type="button" class="ghost" data-board-new>Start a board</button></p>')+list:''}  /* no projects yet: no Projects pane */
+ return suggestBox()+`<div class="proj-list"${v==='list'?'':' hidden'}>${graphSection('Open','Named by the reviews and your cards. Heat fades over about three weeks.',g.projects)}</div><div class="proj-board"${v==='board'?'':' hidden'}>${boardView()}</div>`};
 function boardRedraw(){const el=$('#people-view .proj-board');if(el){const x=el.querySelector('.pboard')?.scrollLeft||0;el.innerHTML=boardView();const nb=el.querySelector('.pboard');if(nb)nb.scrollLeft=x}}
 function projectsViewSet(v){sideStore.set('projects-view',v);const view=$('#people-view');view.querySelector('.proj-list')?.toggleAttribute('hidden',v!=='list');view.querySelector('.proj-board')?.toggleAttribute('hidden',v!=='board');pageHead()}
 async function boardMove(node,stage){const b=boardNow(),p=b?.projects.find(x=>x.id===node);if(!p||p.stage===stage)return;const was=p.stage;
@@ -4008,7 +4056,63 @@ $('#people-view').addEventListener('click',e=>{if(!e.target.closest('.proj-board
  if(e.target.closest('.tile-menu,.tile a[href]'))e.stopPropagation()},true);
 $('#people-view').addEventListener('change',e=>{if(!e.target.matches?.('.board-pick'))return;boardShown=e.target.value;sideStore.set('board-shown',boardShown);boardRedraw()});
 $('#people-view').addEventListener('keydown',e=>{const t=e.target.closest?.('.tile');if(t&&e.target===t&&(e.key==='Enter'||e.key===' ')){e.preventDefault();graphOpen(t.dataset.node)}});
-document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.tile-menu[open]'))if(!m.contains(e.target))m.open=false});
+// Boards the owner makes. A review suggests one for a group of projects of one kind ("Start a board for Hiring?"): Save,
+// Edit or Not now; nothing is a board until it's saved. The same editor makes a new board and edits one from its ⋯
+// menu: the name, the stages (rename, reorder, add, remove), the Stalled row, which projects belong and the projects
+// on it. After a save, reviews place its projects by their messages. Deleting a board keeps its projects.
+let graphSuggest=[],graphProjNames=[],ed=null;
+const suggestBox=()=>{const s=graphSuggest[0];if(!s)return '';
+ return `<article class="board-suggest" data-suggest="${s.id}"><div class="board-suggest-text"><p class="board-suggest-title">Start a board for ${esc(s.name)}?</p><p class="board-suggest-sub">${s.projects.length} projects${s.reason?' · '+esc(s.reason):''}</p><ol class="stage-flow" aria-label="Stages">${s.stages.map(x=>`<li>${esc(x.name)}</li>`).join('')}</ol></div>`
+  +`<div class="board-suggest-actions"><button type="button" class="primary" data-suggest-save>Save</button><button type="button" class="ghost" data-suggest-edit>Edit</button><button type="button" class="ghost" data-suggest-dismiss>Not now</button></div></article>`};
+const boardSavedToast=(r,name)=>{const moved=(r.moved||[]).map(m=>m.to?`${m.count} from ${m.from} moved to ${m.to}.`:`${m.count} stalled left the board.`).join(' ');
+ toast(`Saved ${name}.${r.added?' Sorting its projects from your messages.':''}${moved?' '+moved:''}`)};
+async function boardSave(args){const r=await graphPost('board_save',args);boardShown=r.name;sideStore.set('board-shown',boardShown);sideStore.set('projects-view','board');boardSavedToast(r,r.name);await people('',true);return r}
+function edOpen(from){const b=from?.board,s=from?.suggestion;
+ ed=b?{id:b.id,name:b.name,stages:b.stages.filter(x=>!x.side).map(x=>({name:x.name,was:x.name,...(x.hint?{hint:x.hint}:{})})),side:b.side!==false,about:b.about||'',projects:b.projects.map(p=>({id:p.id,name:p.name})),counts:Object.fromEntries(b.stages.map(x=>[x.name,b.projects.filter(p=>p.stage===x.name).length]))}
+  :s?{suggestion:s.id,name:s.name,stages:s.stages.map(x=>({...x})),side:true,about:s.about||'',projects:s.projects.map(p=>({...p})),counts:{}}
+  :{name:'',stages:[{name:'Started'},{name:'In progress'},{name:'Done'}],side:true,about:'',projects:[],counts:{}};
+ edDraw();const d=$('#board-dialog');if(!d.open)d.showModal();d.querySelector('[name="name"]')?.focus()}
+function edGone(){if(!ed?.id)return '';const names=ed.stages.map(x=>x.was).filter(Boolean),old=Object.keys(ed.counts).filter(n=>n!==STALLED_ROW);
+ const notes=old.filter(n=>!names.includes(n)&&ed.counts[n]).map(n=>{const i=old.indexOf(n),earlier=old.slice(0,i).filter(x=>names.includes(x)),to=earlier.length?ed.stages.find(x=>x.was===earlier.at(-1)).name:ed.stages[0]?.name;return `${ed.counts[n]} in ${n} go to ${to||'the first stage'}.`});
+ if(!ed.side&&ed.counts[STALLED_ROW])notes.push(`${ed.counts[STALLED_ROW]} stalled leave the board.`);return notes.length?`<p class="ed-note warn" role="status">${esc(notes.join(' '))}</p>`:''}
+const STALLED_ROW='Stalled or declined';
+function edDraw(){const e=ed,f=$('#board-form'),last=e.stages.length-1,pick=graphProjNames.filter(p=>!e.projects.some(x=>x.id===p.id));
+ f.innerHTML=`<div class="snooze-heading"><h2 id="board-dialog-title">${e.id?'Edit board':e.suggestion?'Start a board':'New board'}</h2><button type="button" data-ed-close aria-label="Close">×</button></div>`
+  +`<label class="ed-field">Name<input name="name" maxlength="60" value="${esc(e.name)}" placeholder="e.g. Partner listings" autocomplete="off"></label>`
+  +`<fieldset class="ed-stages"><legend>Stages, in order</legend><ol>${e.stages.map((x,i)=>`<li><input data-ed-stage="${i}" maxlength="30" value="${esc(x.name)}" aria-label="Stage ${i+1}" autocomplete="off"><button type="button" class="icon" data-ed-up="${i}" aria-label="Move ${esc(x.name||'this stage')} up"${i?'':' disabled'}>↑</button><button type="button" class="icon" data-ed-down="${i}" aria-label="Move ${esc(x.name||'this stage')} down"${i<last?'':' disabled'}>↓</button><button type="button" class="icon" data-ed-del="${i}" aria-label="Remove ${esc(x.name||'this stage')}"${last?'':' disabled'}>×</button></li>`).join('')}</ol>`
+  +`${e.stages.length<8?'<button type="button" class="ghost" data-ed-add>Add stage</button>':''}<label class="ed-check"><input type="checkbox" name="side"${e.side?' checked':''}> A “Stalled or declined” row</label></fieldset>`
+  +`<label class="ed-field">Which projects belong<textarea name="about" rows="2" maxlength="200" placeholder="e.g. Partners we list our app with, one per partner">${esc(e.about)}</textarea></label>`
+  +`<fieldset class="ed-projects"><legend>Projects<span class="count">${e.projects.length}</span></legend><ul>${e.projects.map(p=>`<li><span title="${esc(p.name)}">${esc(p.name)}</span><button type="button" class="icon" data-ed-drop="${esc(p.id)}" aria-label="Take ${esc(p.name)} off">×</button></li>`).join('')||'<li class="muted">None yet. Reviews add the ones that fit.</li>'}</ul>`
+  +`<input name="add" list="board-dialog-names" placeholder="Add a project" aria-label="Add a project" autocomplete="off"><datalist id="board-dialog-names">${pick.slice(0,500).map(p=>`<option value="${esc(p.name)}"></option>`).join('')}</datalist></fieldset>`
+  +edGone()+'<p class="ed-note">After you save, The Machine sorts its projects into stages from your messages.</p>'
+  +`<p class="ed-note warn" data-ed-error role="alert" hidden></p><div class="ed-actions">${e.id?`<button type="button" class="ghost danger" data-ed-delete>${e.sure?'Delete? Its projects stay':'Delete board'}</button>`:''}<span class="grow"></span><button type="button" class="ghost" data-ed-close>Cancel</button><button class="primary">Save</button></div>`}
+const edFocus=sel=>requestAnimationFrame(()=>$('#board-form').querySelector(sel)?.focus());
+$('#board-form').addEventListener('input',e=>{const t=e.target;if(!ed)return;if(t.name==='name')ed.name=t.value;else if(t.name==='about')ed.about=t.value;else if(t.dataset.edStage)ed.stages[+t.dataset.edStage].name=t.value;
+ else if(t.name==='add'){const p=graphProjNames.find(x=>x.name.toLowerCase()===t.value.trim().toLowerCase());if(p&&!ed.projects.some(x=>x.id===p.id)){ed.projects.push({id:p.id,name:p.name});edDraw();edFocus('[name="add"]')}}});
+$('#board-form').addEventListener('change',e=>{if(e.target.name==='side'&&ed){ed.side=e.target.checked;edDraw();edFocus('[name="side"]')}});
+$('#board-form').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.name==='add'){e.preventDefault()}});
+$('#board-form').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||!ed)return;const st=ed.stages;
+ if(b.hasAttribute('data-ed-close')){$('#board-dialog').close();return}
+ if(b.dataset.edUp){const i=+b.dataset.edUp;[st[i-1],st[i]]=[st[i],st[i-1]];edDraw();edFocus(`[data-ed-up="${i-1}"]:not(:disabled),[data-ed-down="${i-1}"]`);return}
+ if(b.dataset.edDown){const i=+b.dataset.edDown;[st[i+1],st[i]]=[st[i],st[i+1]];edDraw();edFocus(`[data-ed-down="${i+1}"]:not(:disabled),[data-ed-up="${i+1}"]`);return}
+ if(b.dataset.edDel){st.splice(+b.dataset.edDel,1);edDraw();edFocus('[data-ed-add],[data-ed-stage]');return}
+ if(b.hasAttribute('data-ed-add')){st.push({name:''});edDraw();edFocus(`[data-ed-stage="${st.length-1}"]`);return}
+ if(b.dataset.edDrop){ed.projects=ed.projects.filter(p=>p.id!==b.dataset.edDrop);edDraw();edFocus('[name="add"]');return}
+ if(b.hasAttribute('data-ed-delete')){if(!ed.sure){ed.sure=true;edDraw();edFocus('[data-ed-delete]');return}
+  try{const r=await graphPost('board_delete',{board_id:ed.id});$('#board-dialog').close();boardShown='';sideStore.set('board-shown','');toast(`Deleted ${r.deleted}. Its ${r.projects===1?'project stays':r.projects+' projects stay'}.`);await people('',true)}catch(err){toast(err.message,true)}}});
+$('#board-form').addEventListener('submit',async e=>{e.preventDefault();if(!ed)return;const err=$('#board-form [data-ed-error]'),say=t=>{err.textContent=t;err.hidden=false};
+ const stages=ed.stages.map(x=>({...x,name:x.name.trim()})).filter(x=>x.name);if(!ed.name.trim())return say('Give the board a name.');if(!stages.length)return say('Add a stage.');
+ if(new Set(stages.map(x=>x.name.toLowerCase())).size<stages.length)return say('Each stage needs its own name.');
+ const btn=e.submitter||$('#board-form button.primary');btn.disabled=true;
+ try{await boardSave({...(ed.id?{board_id:ed.id}:{}),...(ed.suggestion?{suggestion_id:ed.suggestion}:{}),name:ed.name.trim(),stages,side:ed.side,about:ed.about.trim(),projects:ed.projects.map(p=>p.id)});$('#board-dialog').close()}catch(x){say(x.message)}finally{btn.disabled=false}});
+$('#board-dialog').addEventListener('close',()=>{ed=null});
+$('#people-view').addEventListener('click',async e=>{const t=e.target.closest('[data-suggest-save],[data-suggest-edit],[data-suggest-dismiss],[data-board-new],[data-board-edit]');if(!t)return;e.stopPropagation();
+ t.closest('details')?.removeAttribute('open');const s=graphSuggest.find(x=>String(x.id)===t.closest('[data-suggest]')?.dataset.suggest);
+ try{if(t.hasAttribute('data-board-new'))edOpen();else if(t.dataset.boardEdit)edOpen({board:graphBoards.find(b=>String(b.id)===t.dataset.boardEdit)});
+  else if(t.hasAttribute('data-suggest-edit'))edOpen({suggestion:s});
+  else if(t.hasAttribute('data-suggest-save')){t.disabled=true;await boardSave({suggestion_id:s.id,name:s.name,stages:s.stages,side:true,about:s.about||'',projects:s.projects.map(p=>p.id)})}
+  else if(t.hasAttribute('data-suggest-dismiss')){await graphPost('board_dismiss',{suggestion_id:s.id});toast('Not now. It won’t be suggested again.');await people('',true)}}catch(err){t.disabled=false;toast(err.message,true)}},true);
+document.addEventListener('click',e=>{for(const m of document.querySelectorAll('.tile-menu[open],.board-menu[open]'))if(!m.contains(e.target))m.open=false});
 {let dragged='';const view=$('#people-view'),laneOf=e=>e.target.closest?.('.proj-board .lane');
  view.addEventListener('dragstart',e=>{const t=e.target.closest?.('.tile');if(!t)return;dragged=t.dataset.node;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragged);t.classList.add('dragging')});
  view.addEventListener('dragend',()=>{dragged='';view.querySelectorAll('.tile.dragging,.lane.drop').forEach(x=>x.classList.remove('dragging','drop'))});

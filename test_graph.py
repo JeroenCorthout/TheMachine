@@ -744,6 +744,8 @@ class Boards(unittest.TestCase):
 
     def setUp(self):
         Graph.setUp(self)
+        with self.store.connect() as db:
+            graph.save_board(db, {'name': 'Listings', 'stages': self.STAGES, 'about': 'Partners we list with'}, NOW.isoformat())
 
     add, build, thread_ids = Graph.add, Graph.build, Graph.thread_ids
 
@@ -763,8 +765,8 @@ class Boards(unittest.TestCase):
     def test_review_moves_keep_reason_and_message_and_the_owner_wins_until_a_newer_message(self):
         asked, agreed, later = self.mails()
         with self.store.connect() as db:
-            with self.assertRaises(ValueError):  # a new board needs its stages
-                graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', reason='asked', event_id=asked)
+            with self.assertRaises(ValueError):  # only the owner makes a board
+                graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Hiring', stages=self.STAGES, reason='asked', event_id=asked)
             with self.assertRaises(ValueError):  # a review move gives the message and why
                 graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', stages=self.STAGES)
             first = graph.set_stage(db, 'Paperkite', 'Contacted', 'review', NOW.isoformat(), board='Listings', stages=self.STAGES,
@@ -821,7 +823,7 @@ class Boards(unittest.TestCase):
     def test_finish_analysis_moves_only_from_its_own_batch(self):
         asked, agreed, _ = self.mails()
         claim = self.store.begin_analysis(['work'], 10)
-        move = {'project': 'Paperkite', 'board': 'Listings', 'stages': self.STAGES, 'stage': 'Agreed', 'reason': 'Ann said yes', 'event_id': agreed}
+        move = {'project': 'Paperkite', 'board': 'Listings', 'stage': 'Agreed', 'reason': 'Ann said yes', 'event_id': agreed}
         with self.assertRaises(ValueError):
             self.store.finish_analysis(claim['analysis_id'], 'x', stages=[{**move, 'event_id': 999999}])
         with self.assertRaises(ValueError):
@@ -842,6 +844,69 @@ class Boards(unittest.TestCase):
         moved = self.app.action('graph_stage', {'node_id': node, 'stage': 'Live'}, owner_dashboard=True)
         self.assertEqual(moved['stage'], 'Live')
         self.assertIn('graph_stage', a.OWNER_ACTIONS)
+
+    def test_a_suggested_board_is_nothing_until_the_owner_saves_it(self):
+        self.mails()
+        with self.store.connect() as db:
+            for name in ('Hire: support lead', 'Hire: designer', 'Hire: backend'):
+                graph.project_id(db, name, NOW.isoformat())
+            args = {'name': 'Hiring', 'stages': ['Sourced', 'Interviews', 'Hired'], 'about': 'Roles we hire for', 'projects': ['Hire: support lead', 'Hire: designer']}
+            with self.assertRaises(ValueError):  # three projects or more
+                graph.suggest_board(db, args, 'review', NOW.isoformat())
+            args['projects'].append('Hire: backend')
+            with self.assertRaises(ValueError):  # a review can't make a board by moving a project onto it
+                graph.set_stage(db, 'Hire: designer', 'Sourced', 'review', NOW.isoformat(), board='Hiring', stages=args['stages'], reason='x', event_id=1)
+        said = self.app.action('graph', {'suggest_board': args})
+        self.assertEqual(said['projects'], 3)
+        with self.assertRaises(ValueError):  # once per name
+            self.app.action('graph', {'suggest_board': args})
+        with self.store.connect() as db:
+            self.assertEqual([b['name'] for b in graph.boards(db, NOW.isoformat())], ['Listings'])
+            sug, = graph.board_suggestions(db)
+            self.assertEqual(([s['name'] for s in sug['stages']], len(sug['projects'])), (['Sourced', 'Interviews', 'Hired'], 3))
+            self.assertIn('Hire: designer', graph.off_boards(db)['projects']); self.assertEqual(graph.off_boards(db)['suggested'], ['Hiring'])
+        with self.assertRaises(ValueError):
+            self.app.action('board_save', {'name': 'Hiring', 'stages': ['Sourced'], 'about': ''})  # owner only
+        self.app.graph_build = lambda *a, **k: None
+        ids = [p['id'] for p in sug['projects']][:2]  # the owner took one out before saving
+        saved = self.app.action('board_save', {'suggestion_id': sug['id'], 'name': 'Hiring', 'stages': ['Sourced', 'Interviews', 'Hired'], 'side': False,
+                                               'about': 'Roles we hire for', 'projects': ids}, owner_dashboard=True)
+        self.assertEqual(saved['added'], 2)
+        with self.store.connect() as db:
+            self.assertEqual(graph.board_suggestions(db), [])
+            board = next(b for b in graph.boards(db, NOW.isoformat()) if b['name'] == 'Hiring')
+            self.assertEqual([s['name'] for s in board['stages']], ['Sourced', 'Interviews', 'Hired'])  # no Stalled row
+            self.assertTrue(all(p['sorting'] and p['stage'] == 'Sourced' for p in board['projects']))
+            brief = next(b for b in graph.boards_brief(db) if b['board'] == 'Hiring')
+            self.assertEqual((brief['about'], sorted(brief['to_sort'])), ('Roles we hire for', sorted(p['name'] for p in board['projects'])))
+            # A review places one by its messages, with the reason, even in the stage it waits in
+            event = db.execute('SELECT id FROM events ORDER BY id LIMIT 1').fetchone()[0]
+            placed = graph.set_stage(db, board['projects'][0]['id'], 'Sourced', 'agent', NOW.isoformat(), reason='applied with a CV', event_id=event)
+            self.assertNotIn('kept', placed)
+            self.assertEqual(len(next(b for b in graph.boards_brief(db) if b['board'] == 'Hiring')['to_sort']), 1)
+
+    def test_editing_stages_renames_moves_to_the_nearest_earlier_stage_and_deleting_keeps_projects(self):
+        asked, agreed, later = self.mails()
+        with self.store.connect() as db:
+            board_id = db.execute("SELECT id FROM boards WHERE name='Listings'").fetchone()[0]
+            a = graph.set_stage(db, 'Paperkite', 'Agreed', 'review', NOW.isoformat(), board='Listings', reason='said yes', event_id=agreed)['node_id']
+            b = graph.set_stage(db, 'Bramblebox', 'Live', 'review', NOW.isoformat(), board='Listings', reason='live', event_id=later)['node_id']
+            c = graph.set_stage(db, 'Quillfeather', graph.STALLED, 'review', NOW.isoformat(), board='Listings', reason='declined', event_id=asked)['node_id']
+            # Contacted renamed to Asked, Agreed removed, Live renamed to Listed, a new stage added; Stalled row off
+            done = graph.save_board(db, {'board_id': board_id, 'name': 'Partner listings', 'about': 'Partners we list with',
+                                         'stages': [{'name': 'Asked', 'was': 'Contacted'}, {'name': 'Listed', 'was': 'Live'}, 'Renewed'], 'side': False}, NOW.isoformat())
+            self.assertEqual(done['moved'], [{'from': 'Agreed', 'to': 'Asked', 'count': 1}, {'from': graph.STALLED, 'to': None, 'count': 1}])
+            stage = lambda n: db.execute('SELECT board_id,stage,stage_reason FROM projects WHERE id=?', (n.split(':')[1],)).fetchone()[:]
+            self.assertEqual(stage(a), (board_id, 'Asked', 'Agreed was removed'))
+            self.assertEqual(stage(b)[:2], (board_id, 'Listed'))
+            self.assertEqual(stage(c), (None, None, None))  # no Stalled row: it left the board
+            with self.assertRaises(ValueError):
+                graph.save_board(db, {'name': 'Partner listings', 'stages': ['A'], 'about': ''}, NOW.isoformat())  # a second board by that name
+            gone = graph.delete_board(db, board_id, NOW.isoformat())
+            self.assertEqual(gone['projects'], 2)
+            self.assertEqual(stage(a), (None, None, None))
+            self.assertTrue(db.execute('SELECT 1 FROM projects WHERE id=? AND closed_at IS NULL', (a.split(':')[1],)).fetchone())  # the project stays
+            self.assertEqual(graph.boards(db, NOW.isoformat()), [])
 
 
 if __name__ == '__main__':
