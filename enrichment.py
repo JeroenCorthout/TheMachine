@@ -352,6 +352,13 @@ def folded(text):
     return re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD', str(text or '')).encode('ascii', 'ignore').decode().casefold())
 
 
+def same_person_name(found, asked):
+    """One common first name or surname is not an identity match. Allow accents and middle names, but
+    require the first and last name to agree when the provider supplies a name."""
+    left, right = folded(found), folded(asked)
+    return len(left) > 1 and len(right) > 1 and (left[0], left[-1]) == (right[0], right[-1])
+
+
 def same_domain(a, b):
     a, b = (re.sub(r'^(?:https?://)?(?:www\.)?', '', str(x or '').strip().lower()).split('/')[0] for x in (a, b))
     return bool(a and b) and (a == b or a.endswith('.' + b) or b.endswith('.' + a))
@@ -359,7 +366,7 @@ def same_domain(a, b):
 
 def normalise_person(data, asked_name, domain, fields=None):
     """The small person profile the dashboard shows, from whatever shape the service returns; None when it found
-    nothing, or when the answer is about someone else: a name with no word in common, or a company at another domain."""
+    nothing, or when the answer is about someone else: a name whose first and last names do not match, or a company at another domain."""
     if isinstance(data, list):
         data = data[0] if data else None
     for wrapper in PERSON_WRAPPERS:
@@ -369,7 +376,7 @@ def normalise_person(data, asked_name, domain, fields=None):
     if not isinstance(data, dict) or data.get('success') is False:
         return None
     name = next((v for v in (value(data, p) for p in PERSON_NAME) if isinstance(v, str) and v.strip()), '')
-    if name and asked_name and not {w for w in folded(name) if len(w) > 1} & {w for w in folded(asked_name) if len(w) > 1}:
+    if name and asked_name and not same_person_name(name, asked_name):
         return None
     profile = {}
     for field, paths in PERSON_FIELDS.items():

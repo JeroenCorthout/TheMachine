@@ -71,6 +71,11 @@ class Enrichment(unittest.TestCase):
                                       'headers': {'Authorization': 'Bearer {key}'}, 'key_file': str(self.key)}}
         Service.seen.clear()
 
+    def test_a_shared_first_name_or_surname_is_not_the_same_person(self):
+        for wrong in ('Lee Jones', 'Kai Parker'):
+            self.assertIsNone(enrichment.normalise_person({'name': wrong, 'position': 'CFO'}, 'Lee Parker', 'globex.com'))
+        self.assertEqual(enrichment.normalise_person({'name': 'Lée M. Parker', 'position': 'CFO'}, 'Lee Parker', 'globex.com'), {'title': 'CFO'})
+
     def test_any_service_shape_becomes_one_small_profile(self):
         flat = enrichment.normalise({'name': 'Acme', 'employees_num': 7, 'size': '2-10', 'industry': 'Software', 'founded': 2014,
                                      'headquarters': 'Antwerp', 'linkedin_id': 'acme', 'about_us': 'word ' * 100})
