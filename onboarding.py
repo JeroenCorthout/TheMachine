@@ -1982,7 +1982,9 @@ def doctor(config_path, workspace=None):
         for name, text, fix in found:
             add('✗' if name == 'message-key-missing' else '!', text, fix)
         sealed, _ = message_seal.state(db_path)
-        if sealed and not found and message_seal.held_elsewhere(db_path):
+        if sealed and not found and message_seal.in_keyring(db_path):
+            add('✓', 'messages encrypted; the key is in your keyring (back to a file: assistant message-key to-file)')
+        elif sealed and not found and message_seal.held_elsewhere(db_path):
             add('✓', 'messages encrypted; the key is kept off this disk by your hosting')
         elif sealed and not found:
             add('✓', f'messages encrypted; keep {message_seal.key_path(db_path)} in your backups with the database')
