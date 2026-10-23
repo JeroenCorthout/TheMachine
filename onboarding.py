@@ -1350,7 +1350,7 @@ def step_android(config, account, ui):
     nodes = android_nodes(tool(config, 'openclaw'))
     if not nodes:
         raise SetupError('No Android phone is paired with OpenClaw',
-                         'install the OpenClaw app on the phone, pair it with this Gateway (docs/getting-started.md, "Pairing your Android phone"), '
+                         'install the OpenClaw app on the phone, pair it with this Gateway (https://themachine.computer/help/android#connect-it), '
                          'allow notification access, then: assistant connect android')
     account['node_id'] = ui.choose('Which phone', [(n['nodeId'], f'{n.get("displayName") or n["nodeId"]}'
                                                    + ('' if n.get('connected') else ' (offline now)')) for n in nodes])
