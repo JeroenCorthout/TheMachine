@@ -13331,7 +13331,8 @@ class App:
         organisations yet (the first import), new signals."""
         with self.store.connect() as db:
             profiles = tuple(db.execute("SELECT count(*),max(fetched_at) FROM org_profiles WHERE status!='error'").fetchone()) \
-                + tuple(db.execute("SELECT count(*),max(fetched_at) FROM person_profiles WHERE status!='error'").fetchone())
+                + tuple(db.execute("SELECT count(*),max(fetched_at) FROM person_profiles WHERE status!='error'").fetchone()) \
+                + tuple(db.execute('SELECT count(*),max(saved_at) FROM person_photos').fetchone())
             empty = not db.execute("SELECT 1 FROM graph_nodes WHERE kind='org' LIMIT 1").fetchone()
             signals = tuple(db.execute('SELECT count(*),max(ingested_at) FROM events').fetchone()) if empty else None
         return profiles, signals
@@ -13368,9 +13369,11 @@ class App:
         wait = 120
         while not self.stop.wait(wait):
             try:
+                if enrichment.photos_step(self.store.connect, now()):  # the photos lookups brought in (hosted ones too, through the agent)
+                    self.graph_dirty.set()
                 if enrichment.step(self.store.connect, self.config, now()):
                     self.graph_dirty.set()  # show the new profiles
-                if enrichment.people_step(self.store.connect, self.config, now()):
+                if enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None))):
                     self.graph_dirty.set()
                 wait = 600
             except enrichment.EnrichmentError as error:
@@ -13742,6 +13745,21 @@ class App:
                     self.end_headers()
                     try:self.wfile.write(data)
                     except (BrokenPipeError, ConnectionResetError):self.close_connection = True
+                elif path.path == '/api/person-photo':  # a looked-up photo, saved on this Machine (enrichment.photos_step)
+                    with app.store.connect() as db:
+                        found = enrichment.photo(db, urllib.parse.parse_qs(path.query).get('p', [''])[0])
+                    if not found:
+                        self.output(404, {'error': 'Not available'})
+                        return
+                    self.send_response(200)
+                    self.send_header('Content-Type', found[1])
+                    self.send_header('Content-Length', str(len(found[0])))
+                    self.send_header('Cache-Control', 'private, max-age=86400')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+                    self.end_headers()
+                    try:self.wfile.write(found[0])
+                    except (BrokenPipeError, ConnectionResetError):self.close_connection = True
                 elif path.path == '/api/reviews/live':  # polled while a review runs: small, unlike /api/status
                     self.output(200, app.review_live())
                 elif path.path == '/api/progress':
@@ -13927,7 +13945,7 @@ class App:
             threading.Thread(target=self.skills.catalog.worker, args=(self.stop,), daemon=True).start()
         if embeddings.settings(self.config):
             threading.Thread(target=self.embedding_worker, daemon=True).start()
-        if enrichment.settings(self.config):
+        if enrichment.settings(self.config) or enrichment.people_available(self.config):
             threading.Thread(target=self.enrichment_worker, daemon=True).start()
         if getattr(self, 'protection_waits', False):
             threading.Thread(target=self.protection_waiter, daemon=True).start()
