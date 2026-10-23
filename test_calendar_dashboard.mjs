@@ -108,8 +108,9 @@ try{
   await page.locator('#calendar-view a.cal-item',{hasText:'Send the revised quote'}).click();
   await page.waitForFunction(id=>location.hash==='#chat='+id&&!document.querySelector('#inbox').hidden,cards[1].id);
   await page.goBack();await page.waitForFunction(()=>!document.querySelector('#calendar').hidden);
-  // A promise opens the Promises list on Suggestions
-  await page.locator('#calendar-view a.cal-item',{hasText:'Send the Q3 deck'}).click();await page.waitForFunction(()=>!document.querySelector('#inbox').hidden&&document.querySelector('#promises-list')?.open);
+  // A promise opens its own page, never Suggestions
+  await page.locator('#calendar-view a.cal-item',{hasText:'Send the Q3 deck'}).click();await page.waitForFunction(()=>/^#promise\/\d+$/.test(location.hash)&&!document.querySelector('#people').hidden&&document.querySelector('#inbox').hidden);
+  await page.goBack();await page.waitForFunction(()=>!document.querySelector('#calendar').hidden&&document.querySelector('#people').hidden);
   // The Week grid: seven columns, today first, remembered after a reload; Agenda again
   await page.evaluate(()=>showTab('calendar'));await page.locator('[data-cal-mode="week"]').click();
   assert.equal(await page.locator('.cal-week .cal-col').count(),7);assert.match(await page.locator('.cal-col.today .cal-col-head').textContent(),/^Today\d+$/);

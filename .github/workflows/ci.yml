@@ -47,6 +47,18 @@ jobs:
       - name: Check whitespace
         run: git diff --check
 
+  help:
+    # The help articles (docs/help/, the help at themachine.computer/help) against the code: every connector, dashboard
+    # tab and Settings tab has one, and each names only buttons, routes and commands that still exist.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check the help articles
+        run: python3 scripts/help_check.py
+
   portable:
     # macOS runs natively under launchd; Windows runs The Machine inside WSL2 (Linux), so this checks the portable core.
     runs-on: ${{ matrix.os }}

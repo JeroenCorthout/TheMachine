@@ -116,8 +116,8 @@ def watch(jobs):
 
 def _waiting(jobs):
     with jobs.connect() as db:
-        return [dict(r) for r in db.execute("SELECT * FROM agent_jobs WHERE place='remote' AND status IN ('waiting','running') "
-                                            "AND token_hash IS NOT NULL")]
+        return [dict(r) for r in db.execute("SELECT * FROM agent_jobs WHERE (place='remote' AND status IN ('waiting','running') "
+                                            "AND token_hash IS NOT NULL) OR token_hash IN (SELECT ticket_hash FROM agent_result_receipts WHERE acked=0)")]
 
 
 def _poll(jobs):
@@ -147,13 +147,20 @@ def fetch(jobs, rows=None):
     for result in found:
         row = by_hash.get(result.get('ticket_hash'))
         if row:
-            jobs.remote_result(row['id'], result)
-            took.append(row['token_hash'])
-    if took:
+            if jobs.remote_result(row['id'], result):
+                took.append(row['token_hash'])
+    with jobs.connect() as db:
+        receipts = [dict(r) for r in db.execute('SELECT ticket_hash,report FROM agent_result_receipts WHERE acked=0')]
+    if receipts:
         try:
-            jobs.network({'action': 'ack', 'tickets': took})
-        except Exception as error:  # noqa: BLE001 - acked on the next fetch
+            reply = jobs.network({'action': 'ack', 'receipts': receipts}) or {}
+        except Exception as error:  # noqa: BLE001 - durable receipts are retried after a restart too
             LOG.warning('agent results ack error=%s', type(error).__name__)
+        else:
+            with jobs.connect() as db:
+                db.executemany('UPDATE agent_result_receipts SET acked=1 WHERE ticket_hash=? AND report=?',
+                               [(r['ticket_hash'], r['report']) for r in reply.get('acked') or []
+                                if r in receipts])
     cutoff = time.time() - REMOTE_DAYS * 86400
     for row in rows:
         started = row['started_at'] or row['created_at']

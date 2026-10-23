@@ -80,7 +80,7 @@ class WeeklyRecap(unittest.TestCase):
         with self.store.connect() as db:
             return [dict(r) for r in db.execute('SELECT * FROM recap_items ORDER BY n')]
 
-    def test_what_needs_the_owner_comes_first_with_names_dates_and_card_links(self):
+    def test_what_needs_the_owner_comes_first_with_names_dates_and_promise_links(self):
         card = self.store.suggest('late', 'Chase Sam for the contract', 'Body.', [self.mail_event])['id']
         self.promise('theirs', 'Sam Lee', 'send the signed contract', due='2026-10-20', card=card, status='carded')
         self.promise('theirs', 'Kim', 'review the deck', made=ago(24 * 9), check_at=ago(24))  # undated, past its check: late too
@@ -93,10 +93,13 @@ class WeeklyRecap(unittest.TestCase):
         lines = text.split('\n')
         self.assertEqual(lines[0], '**Your week with The Machine** · 16–23 Oct')
         self.assertEqual(lines[2], '**Needs you**')
-        self.assertEqual(lines[3], f'• Waiting on Sam Lee: [send the signed contract](https://m.example/assistant/#card={card}), due Tue 20 Oct')
-        self.assertEqual(lines[4], '• Waiting on Kim: review the deck, since Wed 14 Oct')
-        self.assertEqual(lines[5], '• Promised Alex: send the Q3 deck, due Mon 26 Oct')
-        self.assertIn("**Next week**\n• Tue 27 Oct: Bo said they'd call back", text)
+        with self.store.connect() as db:  # a promise links to its own page, never to its card (the page links the card)
+            page = {(r[0], r[1]): f'https://m.example/assistant/#promise/{r[2]}' for r in db.execute('SELECT who,direction,id FROM promises')}
+        self.assertEqual(lines[3], f"• Waiting on Sam Lee: [send the signed contract]({page['Sam Lee', 'theirs']}), due Tue 20 Oct")
+        self.assertNotIn('#card=' + card, text)
+        self.assertEqual(lines[4], f"• Waiting on Kim: [review the deck]({page['Kim', 'theirs']}), since Wed 14 Oct")
+        self.assertEqual(lines[5], f"• Promised Alex: [send the Q3 deck]({page['Alex', 'mine']}), due Mon 26 Oct")
+        self.assertIn(f"**Next week**\n• Tue 27 Oct: Bo said they'd [call back]({page['Bo', 'theirs']})", text)
         self.assertNotIn('Dee', text)
         self.assertNotIn('Eli', text)
         self.assertEqual(text.count('send the Q3 deck'), 1)

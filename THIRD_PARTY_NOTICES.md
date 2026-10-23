@@ -1,6 +1,6 @@
 # Third-party notices
 
-The Machine is MIT licensed (see [LICENSE](LICENSE)). It does not copy or bundle third-party source code (one font aside, below): it runs on top of software you install yourself, which keeps its own licence. This file lists that software and its licence, for convenience.
+The Machine is open source under AGPL-3.0-only (see [LICENSE](LICENSE)). It does not copy or bundle third-party source code (one font aside, below): it runs on top of software you install yourself, which keeps its own licence. This file lists that software and its licence, for convenience.
 
 ## OpenClaw
 

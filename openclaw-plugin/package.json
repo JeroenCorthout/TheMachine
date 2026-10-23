@@ -1,6 +1,7 @@
 {
   "name": "personal-assistant-bridge",
   "version": "0.1.1",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "peerDependencies": {
     "openclaw": "2026.10.5"

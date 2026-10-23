@@ -72,6 +72,7 @@ BROWSER_LEASE = WORKSPACE / 'data/browser-lease/lease.json'
 # Served from the bundled brand/ folder. Replace these files to rebrand the dashboard.
 BRAND_ASSETS = {
     '/brand/avatar.png': ROOT / 'brand/app-icon-192.png',
+    '/brand/avatar-blink.png': ROOT / 'brand/avatar-blink.png',  # the same robot, eyes closed: replace it with avatar.png
     '/brand/favicon-32.png': ROOT / 'brand/app-icon-192.png',
     '/brand/favicon-512.png': ROOT / 'brand/app-icon-maskable-512.png',
     # Empty-state stickers: any image works; the defaults reuse the app icon.
@@ -441,7 +442,7 @@ class SourceError(Exception):
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -484,7 +485,7 @@ AUTO_UNDO_NEW = dt.timedelta(hours=1)
 # A message send whose outcome is unknown keeps its lock while the service checks the conversation
 # (it never resends by itself). After this long with no sign of it, the owner may send it again.
 SEND_RETRY_AFTER = dt.timedelta(minutes=30)
-MESSAGE_KINDS = ('email', 'linkedin', 'slack', 'x', 'whatsapp')
+MESSAGE_KINDS = ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')
 
 
 def send_retry_ok(job, kind):
@@ -2400,6 +2401,9 @@ class Store:
                 db.execute('DROP TABLE promises')
                 db.execute('ALTER TABLE promises_next RENAME TO promises')
             db.execute("CREATE INDEX IF NOT EXISTS promises_open ON promises(status,check_at)")
+            # What happened to a promise after it was recorded, for its page: a kind and a date or id, never message text
+            db.execute('CREATE TABLE IF NOT EXISTS promise_log(id INTEGER PRIMARY KEY,promise_id INTEGER NOT NULL,at TEXT NOT NULL,kind TEXT NOT NULL,detail TEXT)')
+            db.execute('CREATE INDEX IF NOT EXISTS promise_log_promise ON promise_log(promise_id)')
             if 'together' not in {r['name'] for r in db.execute('PRAGMA table_info(promises)')}:
                 db.execute('ALTER TABLE promises ADD COLUMN together INTEGER NOT NULL DEFAULT 0')  # a plan made with them: theirs and the owner's
             preparation_columns = {r['name'] for r in db.execute('PRAGMA table_info(preparations)')}
@@ -3285,6 +3289,8 @@ class Store:
                 by_key[('x-dm', action['account_id'], action['conversation_id'])] = card
             elif action.get('kind') == 'whatsapp' and action.get('chat_id'):
                 by_key[('whatsapp', action['account_id'], action['chat_id'])] = card
+            elif action.get('kind') == 'intercom' and action.get('conversation_id'):
+                by_key[('intercom', action['account_id'], action['conversation_id'])] = card
         found = {}
         for row in rows:
             m = row['metadata'] if isinstance(row['metadata'], dict) else json.loads(row['metadata'])
@@ -3301,6 +3307,8 @@ class Store:
                 card = by_key.get(('x-dm', row['account_id'], m.get('conversation_id')))
             elif row['kind'] == 'whatsapp.message' and not m.get('from_me'):
                 card = by_key.get(('whatsapp', row['account_id'], m.get('chat_id')))
+            elif row['kind'] == 'intercom.conversation' and m.get('last_author_type') in ('user', 'lead', 'contact'):
+                card = by_key.get(('intercom', row['account_id'], m.get('conversation_id')))  # the customer wrote last
             if card and row['occurred_at'] > card['sent_at']:
                 found[row['id']] = card
         return found
@@ -3944,6 +3952,7 @@ class Store:
                 if row['direction'] != direction:  # both sides said it: a plan made together, kept as the owner's
                     db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
                                (promise_check_at('mine', row['due'], row['made_at'], digest_at), stamp, row['id']))
+                    promise_logged(db, row['id'], 'together', event['id'])
                 return {'id': row['id'], 'status': row['status'], 'duplicate': True}
             cursor = db.execute('INSERT INTO promises(direction,who,what,due,check_at,event_id,account_id,watch,status,created_at,updated_at) '
                                 "VALUES(?,?,?,?,?,?,?,?,'open',?,?) ON CONFLICT(event_id,direction,who,what) DO NOTHING",
@@ -3965,14 +3974,16 @@ class Store:
                     raise ValueError('Say in a few words what shows it kept or no longer needed (reason), with the event_ids')
                 db.execute('UPDATE promises SET status=?,note=?,updated_at=? WHERE id=?',
                            (status, reason or ('Done' if status == 'kept' else 'Not needed') + ' (you)', now(), row['id']))
+                promise_logged(db, row['id'], status, source)
                 return {'id': row['id'], 'status': status}
-            if args.get('due') and source == 'assistant':
+            if args.get('due') and source in ('assistant', 'dashboard'):
                 try:
                     due = dt.date.fromisoformat(str(args['due'])[:10]).isoformat()
                 except ValueError:
                     raise ValueError('due must be YYYY-MM-DD') from None
                 check_at = promise_check_at(row['direction'], due, row['made_at'], digest_at)
-                db.execute('UPDATE promises SET due=?,check_at=?,note=?,updated_at=? WHERE id=?', (due, check_at, reason or None, now(), row['id']))
+                db.execute('UPDATE promises SET due=?,check_at=?,note=?,updated_at=? WHERE id=?', (due, check_at, reason or row['note'] if source == 'dashboard' else reason or None, now(), row['id']))
+                promise_logged(db, row['id'], 'due', due)
                 return {'id': row['id'], 'status': 'open', 'due': due, 'check_at': check_at}
         raise ValueError("Update a promise with status 'kept' or 'dropped' and a reason, or with a new due date")
 
@@ -4020,9 +4031,11 @@ class Store:
             if len({r['direction'] for r in rows}) > 1 and not (keep['together'] and keep['direction'] == 'mine'):
                 db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
                            (promise_check_at('mine', keep['due'], keep['made_at']), now(), keep['id']))
+                promise_logged(db, keep['id'], 'together')
             for r in rows:
                 if r['id'] != keep['id']:
                     db.execute("UPDATE promises SET status='dropped',note=?,updated_at=? WHERE id=?", (f"The same as promise {keep['id']}", now(), r['id']))
+                    promise_logged(db, r['id'], 'merged', keep['id'])
         for row in db.execute("SELECT id,watch FROM promises WHERE status='open' AND watch IS NOT NULL").fetchall():
             watch = {**json.loads(row['watch']), 'promise': True}
             answer = next((e for e in db.execute('SELECT id,account_id,kind,occurred_at,title,metadata FROM events WHERE account_id=? AND kind=? AND occurred_at>? AND deleted=0 ORDER BY occurred_at',
@@ -4030,6 +4043,7 @@ class Store:
             if answer:
                 db.execute("UPDATE promises SET status='answered',note=?,updated_at=? WHERE id=?",
                            (f"They wrote again: {answer['title'][:150]}", now(), row['id']))
+                promise_logged(db, row['id'], 'answered', answer['id'])
 
     def promises(self, days=14):
         """Open promises and those closed in the last days, soonest first."""
@@ -4042,6 +4056,33 @@ class Store:
         for row in rows:
             row['state'] = promise_state(row)
         return [r for r in rows if r['state'] in ('open', 'card') or r['updated_at'] >= since]
+
+    def promise_page(self, promise_id):
+        """One promise for its own dashboard page: who promised what to whom and by when, where it stands, the message
+        it came from, the people, organisation and project that message is on, its card and what happened since."""
+        with self.connect() as db:
+            row = db.execute('SELECT p.*,e.occurred_at made_at,e.kind source_kind,s.status card_status,s.title card_title FROM promises p '
+                             'JOIN events e ON e.id=p.event_id LEFT JOIN suggestions s ON s.id=p.suggestion_id WHERE p.id=?', (promise_id,)).fetchone()
+            if not row:
+                raise ValueError('Unknown promise')
+            p = dict(row)
+            try:
+                links = [dict(r) for r in db.execute("SELECT n.id,n.kind,n.name FROM graph_events g JOIN graph_nodes n ON n.id=g.node_id "
+                                                     "WHERE g.event_id=? AND n.kind IN ('person','org','project') ORDER BY n.kind DESC,n.name LIMIT 12", (p['event_id'],))]
+            except sqlite3.OperationalError:
+                links = []  # no graph yet
+            log = [dict(r) for r in db.execute('SELECT at,kind,detail FROM promise_log WHERE promise_id=? ORDER BY at,id', (promise_id,))]
+        p['state'] = promise_state(p)
+        history = [{'at': p['made_at'], 'kind': 'said', 'detail': p['source_kind']}, {'at': max(p['created_at'], p['made_at']), 'kind': 'noted'}]
+        history += [h for h in log if h['kind'] != 'together' or h['at'] > p['created_at']]
+        closed = {'kept': 'kept', 'dropped': 'dropped', 'answered': 'answered'}.get(p['status'])
+        if closed and not any(h['kind'] in (closed, 'merged') for h in log):
+            history.append({'at': p['updated_at'], 'kind': closed})  # closed before the log
+        if p['suggestion_id'] and not any(h['kind'] == 'carded' for h in log):
+            history.append({'at': p['updated_at'], 'kind': 'carded'})
+        card = {'id': p['suggestion_id'], 'title': p['card_title'], 'status': p['card_status']} if p['suggestion_id'] and p['card_title'] else None
+        keep = ('id', 'direction', 'together', 'who', 'what', 'due', 'check_at', 'status', 'state', 'note', 'made_at', 'event_id', 'account_id', 'created_at', 'updated_at')
+        return {**{k: p[k] for k in keep}, 'card': card, 'links': links, 'history': sorted(history, key=lambda h: h['at'] or '')}
 
     def promises_text(self, limit=30):
         """Open promises for the review prompt, so a later message can close them."""
@@ -5602,14 +5643,20 @@ class Store:
                 return {'status':'completed','note':'Result saved; the confirmed step went through, so the card is done.'}
         return {'status': 'prepared', 'note': 'Result saved. The service itself executed nothing.'}
 
-    def revise_draft(self,suggestion_id,revision,source,subject=None,body=None):
+    def revise_draft(self,suggestion_id,revision,source,subject=None,body=None,agent_job=None):
         # The owner edits a ready draft themselves: the edit replaces that draft under a new
         # revision, so Send always sends exactly what they last saw; the before/after teaches later drafts.
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            if agent_job is not None:
+                job = db.execute('SELECT * FROM agent_jobs WHERE id=?', (agent_job['id'],)).fetchone()
+                if (not job or job['suggestion_id'] != suggestion_id or job['status'] not in ((*agent_jobs.ACTIVE, 'result') if job['place'] == 'remote' else agent_jobs.ACTIVE)
+                        or job['turns'] != agent_job['turns'] or job['outcome'] is not None
+                        or job['draft_revision'] != revision):
+                    raise ValueError('This agent job stopped or the draft changed. Its result stays on the card without replacing the draft.')
             row=db.execute('SELECT * FROM suggestions WHERE id=?',(suggestion_id,)).fetchone()
             action=next_actions.selected(row['next_action'],revision) if row else None
-            if not row or row['status']!='prepared' or not action or action['kind'] not in ('email','linkedin','slack','x','whatsapp','finish'):
+            if not row or row['status']!='prepared' or not action or action['kind'] not in ('email','linkedin','slack','x','whatsapp','intercom','finish'):
                 raise ValueError('This draft changed or is no longer ready. Use its current buttons.')
             lock=send_lock(db,suggestion_id,revision,action['kind'])
             if lock:raise ValueError(lock)
@@ -5628,6 +5675,8 @@ class Store:
                 current=revised
             stamp=now()
             db.execute('UPDATE suggestions SET next_action=? WHERE id=?',(encoded(current),suggestion_id))
+            if agent_job is not None:
+                db.execute('UPDATE agent_jobs SET draft_revision=? WHERE id=? AND turns=?', (revised['revision'], agent_job['id'], agent_job['turns']))
             draft_saved(db,suggestion_id,revised,stamp)
             db.execute("UPDATE action_jobs SET status='cancelled',updated_at=? WHERE suggestion_id=? AND revision=? AND status IN ('queued','blocked')",(stamp,suggestion_id,revision))
             db.execute('INSERT INTO draft_edits(id,suggestion_id,old_revision,new_revision,kind,before_subject,before_body,after_subject,after_body,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -5644,7 +5693,7 @@ class Store:
             done=db.execute("SELECT status FROM action_jobs WHERE suggestion_id=? AND revision=? AND status IN ('sent','done')",(suggestion_id,revision)).fetchone() if row and row['status']=='completed' else None
             if done:
                 return {'status':done['status'],'duplicate':True}
-            if not row or row['status']!='prepared' or not action or action['kind'] not in ('email','linkedin','slack','x','whatsapp','merge','prepare','finish'):
+            if not row or row['status']!='prepared' or not action or action['kind'] not in ('email','linkedin','slack','x','whatsapp','intercom','merge','prepare','finish'):
                 raise ValueError('This result changed or is no longer ready. Use its current buttons.')
             if action.get('to_options'):
                 # The owner picked who gets it, only from the addresses the service found in the thread.
@@ -6794,6 +6843,26 @@ def code_version(root=APP_ROOT):
     return result.stdout.strip() or None
 
 
+SOURCE_REPO = 'https://github.com/Salesflare/TheMachine'
+_SOURCE_URL = {}
+
+
+def source_url(root=APP_ROOT):
+    """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else its commit, else the repo."""
+    if 'url' in _SOURCE_URL and _SOURCE_URL['at'] > time.monotonic() - 600:
+        return _SOURCE_URL['url']
+    ref = None
+    try:
+        tag = subprocess.run(['git', '-C', str(root), 'describe', '--tags', '--exact-match', 'HEAD'], capture_output=True, text=True, timeout=10)
+        ref = tag.stdout.strip() if tag.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    ref = ref or code_version(root)
+    url = f'{SOURCE_REPO}/tree/{urllib.parse.quote(ref, safe="")}' if ref else SOURCE_REPO
+    _SOURCE_URL.update(at=time.monotonic(), url=url)
+    return url
+
+
 class FaultLog(logging.Handler):
     def __init__(self, store, version=None, root=APP_ROOT):
         super().__init__(logging.ERROR)
@@ -6956,6 +7025,12 @@ def connector_services():
     return sorted(p.stem for p in CONNECTORS.glob('*.py') if re.fullmatch(r'[a-z][a-z0-9_]{0,30}', p.stem))
 
 
+def intercom_transport(config):
+    """Intercom replies, when the connector is here (connectors/intercom.py Replier: the one write it allows)."""
+    plugin = load_connector('intercom')
+    return next_actions.IntercomTransport(config, plugin, CONNECTOR_HELPERS) if plugin and hasattr(plugin, 'Replier') else None
+
+
 def load_connector(service):
     if not isinstance(service, str) or service not in connector_services():
         return None
@@ -7067,6 +7142,10 @@ def promise_check_at(direction, due, made_at, digest_at='08:30', current=None):
     if direction == 'mine':
         target = max(target, current + dt.timedelta(hours=3))
     return target.astimezone(dt.timezone.utc).isoformat()
+
+
+def promise_logged(db, promise_id, kind, detail=None):
+    db.execute('INSERT INTO promise_log(promise_id,at,kind,detail) VALUES(?,?,?,?)', (promise_id, now(), kind, None if detail is None else str(detail)))
 
 
 def promise_state(row):
@@ -7494,7 +7573,7 @@ CHAT_UNDONE = {('complete', 'reopen'), ('reject', 'reopen'), ('snooze', 'unsnooz
 # A conversation event's parts, one per line: "<unix time> · <author> · <part kind>: <text>"
 CHAT_PART = re.compile(r'^(\d{9,11}) · ([^·\n]{1,120}) · ([\w.-]{1,60}):[ \t]?(.*)$', re.M)
 CHAT_AGENTS = {'claude': 'Claude Code', 'codex': 'Codex'}
-CHAT_SENT = {'email': 'email', 'email_demo': 'email', 'linkedin': 'message', 'slack': 'message', 'x': 'post', 'whatsapp': 'message'}
+CHAT_SENT = {'email': 'email', 'email_demo': 'email', 'linkedin': 'message', 'slack': 'message', 'x': 'post', 'whatsapp': 'message', 'intercom': 'reply'}
 CHAT_SECRETS = (
     (re.compile(r'-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----'), '[redacted private key]'),
     (re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'), '[redacted token]'),
@@ -7606,7 +7685,7 @@ def chat_person(name):
 
 # A raw chat handle is never shown: a channel ("#DM", "#general"), a Slack or WhatsApp ID, or both together
 CHAT_HANDLE = re.compile(r'(?:#[\w.-]*|[CDGUW][A-Z0-9]{8,})(?:\s+[UW][A-Z0-9]{8,})?|\d{6,}@(?:s\.whatsapp\.net|g\.us|lid)')
-CHAT_ON = {'slack': ' on Slack', 'whatsapp': ' on WhatsApp', 'linkedin': ' on LinkedIn', 'x': ' on X'}
+CHAT_ON = {'slack': ' on Slack', 'whatsapp': ' on WhatsApp', 'linkedin': ' on LinkedIn', 'x': ' on X', 'intercom': ' in Intercom'}
 
 
 def chat_plain_name(name):
@@ -8141,12 +8220,12 @@ def card(row):
         sent=next((a for a in row.get('next_actions') or [] if a.get('state') is action_state),{})
         who=', '.join(sent.get('to') or []) if sent.get('kind')=='email' and not sent.get('to_options') else sent.get('to_name') or ''
         at=dt.datetime.fromisoformat(action_state['sent_at']).astimezone(local_tz()).strftime('%H:%M') if action_state.get('sent_at') else ''
-        to_at=(' to '+who if who else '')+(' at '+at if at else '')
+        to_at=(' to '+who if who and sent.get('kind')!='intercom' else '')+(' at '+at if at else '')
         auto=merging and action_state.get('auto')
         status={'queued':'Testing the fix. It merges by itself if every check passes.' if auto else 'Testing and merging the fix…' if merging else 'Sending your approved draft…','sending':'Testing and merging the fix…' if merging else 'Sending your approved draft…',
                 'sent':(('Merged by itself and restarted. You can undo it for 24 hours; it undoes itself if the error comes back.' if auto else 'Merged. The Machine restarts with the fix.')
                         +(' '+action_state['error'] if action_state.get('error') else '')) if merging else
-                ('✓ '+('LinkedIn message sent' if str(action_state.get('message_id') or '').startswith(('urn:li:','linkedin:')) else 'Slack message sent' if str(action_state.get('message_id') or '').startswith('slack:') else 'Reply posted on X' if str(action_state.get('message_id') or '').startswith('x:') else 'X message sent' if str(action_state.get('message_id') or '').startswith('xdm:') else 'WhatsApp message sent' if str(action_state.get('message_id') or '').startswith('whatsapp:') else 'Email sent')+to_at+'.'+thread_snooze_note(action_state)),'uncertain':action_state.get('error'),'blocked':(action_state.get('error') or '')+(' Tap Merge fix to merge it anyway.' if auto else ''),'failed':action_state.get('error'),
+                ('✓ '+('LinkedIn message sent' if str(action_state.get('message_id') or '').startswith(('urn:li:','linkedin:')) else 'Slack message sent' if str(action_state.get('message_id') or '').startswith('slack:') else 'Reply posted on X' if str(action_state.get('message_id') or '').startswith('x:') else 'X message sent' if str(action_state.get('message_id') or '').startswith('xdm:') else 'WhatsApp message sent' if str(action_state.get('message_id') or '').startswith('whatsapp:') else 'Sent as '+' '.join(str(sent.get('as_name') or 'your Intercom admin').split())+' in Intercom' if str(action_state.get('message_id') or '').startswith('intercom:') else 'Email sent')+to_at+'.'+thread_snooze_note(action_state)),'uncertain':action_state.get('error'),'blocked':(action_state.get('error') or '')+(' Tap Merge fix to merge it anyway.' if auto else ''),'failed':action_state.get('error'),
                 'undoing':'Undoing the merge…','undone':action_state.get('error') or 'Merge undone.'}.get(action_state['status'],status)
     try:
         handed = json.loads(row['awaiting']) if row.get('awaiting') else {}
@@ -8176,7 +8255,7 @@ def card(row):
     return ('**' + title + '**\n\n' + row['body'] + source + ('\n\n' + status if status else '')).strip()
 
 
-CARD_DRAFT_KINDS = ('email', 'linkedin', 'slack', 'x', 'whatsapp')
+CARD_DRAFT_KINDS = ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')
 ACTION_BUSY = ('queued', 'sending', 'sent', 'uncertain', 'local_preparation', 'undoing', 'undone')
 
 
@@ -8205,6 +8284,8 @@ def card_draft(row):
         head.append('Subject: ' + (a.get('subject') or ''))
     elif a['kind'] == 'x':
         head = ['Reply on X to @' + a.get('to_screen_name', '') if a.get('reply_to') else 'X message to ' + a.get('to_name', '')]
+    elif a['kind'] == 'intercom':
+        head = ['Intercom reply to ' + a.get('to_name', '') + ', as ' + a.get('as_name', '')]
     else:
         head = [{'linkedin': 'LinkedIn', 'slack': 'Slack', 'whatsapp': 'WhatsApp'}[a['kind']] + ' message to ' + a.get('to_name', '')]
     tail = []
@@ -8429,7 +8510,7 @@ def controls(row, root=''):
         for action in actions:
             state=action.get('state') or row.get('action_status',{})
             if action['kind']=='finish' and state.get('status')=='done':continue
-            if action['kind'] in ('email','email_demo','linkedin','slack','x','whatsapp','merge','prepare','finish') and not action_busy(state):
+            if action['kind'] in ('email','email_demo','linkedin','slack','x','whatsapp','intercom','merge','prepare','finish') and not action_busy(state):
                 if shown and shown['full'] and shown['action']['revision']==action['revision']:
                     # The card shows this draft in full: Send confirms it, Edit opens it in the dashboard editor.
                     buttons.append({'label':next_actions.label(action),'action':{'type':'callback','value':f"assistant:{row['id']}:confirm_{action['revision']}"}})
@@ -9495,13 +9576,14 @@ def weekly_recap_message(store, config, current=None, usage=None):
 
     # 1. What needs the owner: promises made to them that are late, then their own open ones with a date.
     promised = [p for p in store.promises(7) if p['state'] in ('open', 'card')]
-    card_of = lambda p: p['suggestion_id'] if p['state'] == 'card' and p['suggestion_id'] in open_cards else None
+    # A promise links to its own page on the dashboard, never to its card (the page links the card)
+    said = lambda p: f"[{recap_escape(recap_clip(p['what']))}]({root}#promise/{p['id']})" if root else recap_escape(recap_clip(p['what']))
     late_to = [p for p in promised if p['direction'] == 'theirs' and ((p['due'] and p['due'] < today.isoformat()) or (not p['due'] and p['check_at'] <= current.isoformat()))]
     soon = (today + dt.timedelta(days=14)).isoformat()  # their own: late ones and those due in the next two weeks
     mine = sorted((p for p in promised if p['direction'] == 'mine' and p['due'] and p['due'] <= soon), key=lambda p: p['due'])
-    needs = [f"• Waiting on {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+    needs = [f"• Waiting on {recap_escape(p['who'])}: {said(p)}, "
              + (f"due {recap_day(p['due'])}" if p['due'] else f"since {recap_day(p['made_at'])}") for p in late_to[:4]]
-    needs += [f"• Promised {recap_escape(p['who'])}: {link(recap_clip(p['what']), card_of(p))}, "
+    needs += [f"• Promised {recap_escape(p['who'])}: {said(p)}, "
               + (f"was due {recap_day(p['due'])}" if p['due'] < today.isoformat() else f"due {recap_day(p['due'])}") for p in mine[:4]]
     more = max(0, len(late_to) - 4) + max(0, len(mine) - 4)
     if needs:
@@ -9520,7 +9602,7 @@ def weekly_recap_message(store, config, current=None, usage=None):
     for p in promised:
         same = lambda q: q['direction'] == 'mine' and q['who'] == p['who'] and q['what'].lower() == p['what'].lower()
         if p['direction'] == 'theirs' and p['due'] and in_week(p['due']) and not any(map(same, mine)):  # today's are on time, late ones are under Needs you, a shared plan shows once
-            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {link(recap_clip(p['what']), card_of(p))}"))
+            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {said(p)}"))
     if week:
         when = lambda v: str(v) if len(str(v)) <= 10 else dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')).astimezone(tz).strftime('%Y-%m-%dT%H:%M')
         week.sort(key=lambda w: when(w[0]))
@@ -10018,7 +10100,7 @@ class App:
                 'task': card_task(card), 'note': note, 'about': agent_about(card, views), 'history': agent_history(*chat, skip=note),
                 'message_kinds': [v['kind'] for v in views]}
 
-    def agent_revise(self, suggestion_id, text):
+    def agent_revise(self, suggestion_id, text, job=None):
         """A message Claude Code or Codex rewrote (its draft.md) becomes the card's draft under a new revision, when the
         card has exactly one message draft: the owner still reads it there and sends it with the card's own Send."""
         with self.store.connect() as db:
@@ -10027,10 +10109,10 @@ class App:
             return False
         current = json.loads(row['next_action'])
         actions = current.get('actions') if current.get('kind') == 'menu' else [current]
-        editable = [a for a in actions or [] if isinstance(a, dict) and a.get('kind') in ('email', 'linkedin', 'slack', 'x', 'whatsapp') and a.get('revision')]
+        editable = [a for a in actions or [] if isinstance(a, dict) and a.get('kind') in ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom') and a.get('revision')]
         if len(editable) != 1:
             return False
-        return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text).get('status') == 'revised'
+        return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text, agent_job=job).get('status') == 'revised'
 
     def agent_action(self, name, args):
         if not self.agents:
@@ -10552,7 +10634,10 @@ class App:
                 whatsapp_chats={m['chat_id']:{'account_id':r[0],'name':m.get('chat_name') or 'WhatsApp chat'} for r in db.execute(
                     "SELECT e.account_id,e.metadata FROM events e JOIN json_each(?) ids ON ids.value=e.id WHERE e.kind='whatsapp.message' ORDER BY e.occurred_at",(row['event_ids'],))
                     for m in (json.loads(r[1]),) if m.get('chat_id')}
-            action=next_actions.validate(args.get('next_actions',args.get('next_action')),self.config,json.loads(row['account_ids']),options,threads,x_threads,whatsapp_chats)
+                intercom_conversations={m['conversation_id']:{'account_id':r[0],'name':m.get('from_name') or m.get('from') or 'Intercom conversation'} for r in db.execute(
+                    "SELECT e.account_id,e.metadata FROM events e JOIN json_each(?) ids ON ids.value=e.id WHERE e.kind='intercom.conversation' ORDER BY e.occurred_at",(row['event_ids'],))
+                    for m in (json.loads(r[1]),) if m.get('conversation_id')}
+            action=next_actions.validate(args.get('next_actions',args.get('next_action')),self.config,json.loads(row['account_ids']),options,threads,x_threads,whatsapp_chats,intercom_conversations)
             for item in next_actions.actions(action):
                 if item['kind']=='handoff' and not (getattr(self,'fleet',None) and self.fleet.teammate(item)):
                     raise ValueError('Hand off through The Machine only to a teammate in a Work Fleet (their email as listed); use a Slack message or email for anyone else')
@@ -10810,6 +10895,10 @@ class App:
             if not owner_dashboard or args.get('status') not in ('kept', 'dropped'):
                 raise ValueError('Only the owner closes a promise, on the dashboard')
             return self.store.update_promise({'id': args.get('id'), 'status': args['status']}, source='dashboard')
+        if name == 'promise_due':
+            if not owner_dashboard or not args.get('due'):
+                raise ValueError('Only the owner moves a promise’s date here, on the dashboard')
+            return self.store.update_promise({'id': args.get('id'), 'due': args['due']}, self.config.get('digest_at', '08:30'), source='dashboard')
         if name in ('set_signature', 'detect_signature'):
             if not owner_dashboard:
                 raise ValueError('Only the owner sets a signature, on the dashboard (Settings, Signatures)')
@@ -11609,7 +11698,7 @@ class App:
                 LOG.error('delivery error=%s', type(error).__name__)
 
     def action_step(self,transport=None):
-        transport=transport or next_actions.ActionTransport(next_actions.EmailTransport(self.config,credential,gog_read),next_actions.LinkedInTransport(self.config),next_actions.SlackTransport(self.config,credential),next_actions.XTransport(self.config),next_actions.MergeTransport(self.config,restart_self),next_actions.WhatsAppTransport(self.config))
+        transport=transport or next_actions.ActionTransport(next_actions.EmailTransport(self.config,credential,gog_read),next_actions.LinkedInTransport(self.config),next_actions.SlackTransport(self.config,credential),next_actions.XTransport(self.config),next_actions.MergeTransport(self.config,restart_self),next_actions.WhatsAppTransport(self.config),intercom_transport(self.config))
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             for candidate in db.execute("SELECT j.id,j.revision,s.status,s.next_action FROM action_jobs j JOIN suggestions s ON s.id=j.suggestion_id WHERE j.status IN ('queued','blocked')").fetchall():
@@ -11633,7 +11722,7 @@ class App:
                 else:
                     # Keep checking Sent mail, every five minutes for a day, then hourly.
                     wait=dt.timedelta(minutes=5 if dt.datetime.fromisoformat(job['created_at'])>dt.datetime.fromisoformat(now())-dt.timedelta(days=1) else 60)
-                    db.execute("UPDATE action_jobs SET status='uncertain',error=?,retry_at=? WHERE id=? AND status IN ('sending','uncertain')",('I couldn’t confirm whether the fix was merged. I’m checking the code; I won’t merge it again.' if action['kind']=='merge' else 'I couldn’t confirm whether this X '+('reply' if action.get('reply_to') else 'message')+' was sent. I’m checking X; I won’t send it again.' if action['kind']=='x' else 'I couldn’t confirm whether this WhatsApp message was sent. I’m checking the chat; I won’t send it again.' if action['kind']=='whatsapp' else 'I couldn’t confirm whether this '+('LinkedIn' if action['kind']=='linkedin' else 'Slack')+' message was sent. I’m checking the conversation; I won’t send it again.' if action['kind'] in ('linkedin','slack') else 'I couldn’t confirm whether this email was sent. I’m checking Sent mail; I won’t send it again.',(dt.datetime.fromisoformat(now())+wait).isoformat(),job['id']))
+                    db.execute("UPDATE action_jobs SET status='uncertain',error=?,retry_at=? WHERE id=? AND status IN ('sending','uncertain')",('I couldn’t confirm whether the fix was merged. I’m checking the code; I won’t merge it again.' if action['kind']=='merge' else 'I couldn’t confirm whether this X '+('reply' if action.get('reply_to') else 'message')+' was sent. I’m checking X; I won’t send it again.' if action['kind']=='x' else 'I couldn’t confirm whether this WhatsApp message was sent. I’m checking the chat; I won’t send it again.' if action['kind']=='whatsapp' else 'I couldn’t confirm whether this Intercom reply was sent. I’m checking the conversation; I won’t send it again.' if action['kind']=='intercom' else 'I couldn’t confirm whether this '+('LinkedIn' if action['kind']=='linkedin' else 'Slack')+' message was sent. I’m checking the conversation; I won’t send it again.' if action['kind'] in ('linkedin','slack') else 'I couldn’t confirm whether this email was sent. I’m checking Sent mail; I won’t send it again.',(dt.datetime.fromisoformat(now())+wait).isoformat(),job['id']))
             if result.get('message_id') and action['kind']=='merge':
                 self.merge_effect(job,action,result,'merge',transport.pick(action) if hasattr(transport,'pick') else transport)
             return
@@ -11644,7 +11733,7 @@ class App:
                 db.execute("UPDATE action_jobs SET retry_at=?,updated_at=? WHERE id=? AND status='queued'",((dt.datetime.fromisoformat(now())+dt.timedelta(minutes=2)).isoformat(),now(),job['id']))
             return 'waiting'
         except Exception as error:
-            reason=str(error) if isinstance(error,ValueError) else 'The fix could not be checked. Nothing was merged.' if action['kind']=='merge' else ({'linkedin':'LinkedIn','slack':'Slack','x':'X','whatsapp':'WhatsApp'}.get(action['kind'],mailbox_name(self.config,action))+' could not be checked. Nothing was sent.')
+            reason=str(error) if isinstance(error,ValueError) else 'The fix could not be checked. Nothing was merged.' if action['kind']=='merge' else ({'linkedin':'LinkedIn','slack':'Slack','x':'X','whatsapp':'WhatsApp','intercom':'Intercom'}.get(action['kind'],mailbox_name(self.config,action))+' could not be checked. Nothing was sent.')
             with self.store.connect() as db:
                 db.execute("UPDATE action_jobs SET status='blocked',error=?,updated_at=? WHERE id=? AND status='queued'",(reason,now(),job['id']))
                 db.execute('UPDATE deliveries SET needs_edit=1 WHERE suggestion_id=?',(job['suggestion_id'],))
@@ -11657,8 +11746,8 @@ class App:
                 db.execute("UPDATE action_jobs SET status='cancelled' WHERE id=?",(job['id'],));return
             # Commit admission before the one write. Later cancellation cannot recall
             # an admitted email, and restart/repeated clicks only reconcile it.
-            if action['kind'] == 'whatsapp':
-                action.setdefault('proof', {})['whatsapp_dispatched_at'] = now()
+            if action['kind'] in ('whatsapp', 'intercom'):
+                action.setdefault('proof', {})[action['kind'] + '_dispatched_at'] = now()
             db.execute("UPDATE action_jobs SET status='sending',updated_at=?,retry_at=? WHERE id=?",(now(),(dt.datetime.fromisoformat(now())+dt.timedelta(seconds=90)).isoformat(),job['id']))
             if action.get('proof'):db.execute('UPDATE action_jobs SET payload=? WHERE id=?',(encoded(action),job['id']))
         try:result=transport.send(action,job)
@@ -11669,7 +11758,7 @@ class App:
             return 'waiting'
         with self.store.connect() as db:
             status='sent' if result.get('message_id') else 'failed' if result.get('rejected') else 'uncertain'
-            what,where={'linkedin':('this LinkedIn message','LinkedIn'),'slack':('this Slack message','Slack'),'x':('this X '+('reply' if action.get('reply_to') else 'message'),'X'),'whatsapp':('this WhatsApp message','WhatsApp')}.get(action['kind'],('this email',mailbox_name(self.config,action)))
+            what,where={'linkedin':('this LinkedIn message','LinkedIn'),'slack':('this Slack message','Slack'),'x':('this X '+('reply' if action.get('reply_to') else 'message'),'X'),'whatsapp':('this WhatsApp message','WhatsApp'),'intercom':('this Intercom reply','Intercom')}.get(action['kind'],('this email',mailbox_name(self.config,action)))
             error={'sent':None,'failed':f"Last attempt failed: {where} refused {what} (error {result.get('rejected')}). Nothing was sent; change it or try again.",
                    'uncertain':f'I couldn’t confirm whether {what} was sent. I won’t resend it.'}[status]
             if action['kind']=='merge':
@@ -11862,7 +11951,8 @@ class App:
         saved = self.store.suggest('promise:%d' % p['id'], title[:90], body[:700], [p['event_id']], 'now', self.config.get('digest_at', '08:30'),
                                    work=self.is_work([p['account_id']]), due=p['due'], ahead=ahead, _db=_db)
         with contextlib.nullcontext(_db) as db:
-            db.execute("UPDATE promises SET status='carded',suggestion_id=?,updated_at=? WHERE id=? AND status='open'", (saved['id'], now(), p['id']))
+            if db.execute("UPDATE promises SET status='carded',suggestion_id=?,updated_at=? WHERE id=? AND status='open'", (saved['id'], now(), p['id'])).rowcount:
+                promise_logged(db, p['id'], 'carded')
             if p['watch'] and not saved.get('duplicate'):
                 # Their reply closes the card too while it is still on its way.
                 db.execute('UPDATE suggestions SET awaiting=? WHERE id=?', (encoded({**json.loads(p['watch']), 'promise': True}), saved['id']))
@@ -12343,6 +12433,9 @@ class App:
                 to = ', '.join(chat_name(t, names, about) for t in draft['to'][:3]) or (about.split() or ['them'])[0]
                 to += CHAT_ON.get(draft['kind'], '')
                 text = {'sent': f'Sent to {to}', 'cancelled': 'Send cancelled', 'failed': f'Didn’t go out to {to}'}.get(r['status'], f'Sending to {to}…')
+                if draft['kind'] == 'intercom':  # who it went as: the owner's own Intercom admin
+                    who = clamp(' '.join(str(payload.get('as_name') or 'your Intercom admin').split()), 100)
+                    text = {'sent': f'Sent as {who} in Intercom', 'cancelled': 'Send cancelled', 'failed': 'Didn’t go out in Intercom'}.get(r['status'], f'Sending as {who} in Intercom…')
                 owner.append({'kind': 'event', 'text': text, 'sent': draft['body'] if r['status'] == 'sent' else None,
                               'mine': r['source'] != 'auto' and r['status'] != 'failed', 'at': chat_ms(r['created_at'])})
             elif isinstance(payload.get('label'), str) and payload['label'].strip():
@@ -13503,7 +13596,8 @@ class App:
         organisations yet (the first import), new signals."""
         with self.store.connect() as db:
             profiles = tuple(db.execute("SELECT count(*),max(fetched_at) FROM org_profiles WHERE status!='error'").fetchone()) \
-                + tuple(db.execute("SELECT count(*),max(fetched_at) FROM person_profiles WHERE status!='error'").fetchone())
+                + tuple(db.execute("SELECT count(*),max(fetched_at) FROM person_profiles WHERE status!='error'").fetchone()) \
+                + tuple(db.execute('SELECT count(*),max(saved_at) FROM person_photos').fetchone())
             empty = not db.execute("SELECT 1 FROM graph_nodes WHERE kind='org' LIMIT 1").fetchone()
             signals = tuple(db.execute('SELECT count(*),max(ingested_at) FROM events').fetchone()) if empty else None
         return profiles, signals
@@ -13542,7 +13636,10 @@ class App:
             try:
                 if enrichment.step(self.store.connect, self.config, now()):
                     self.graph_dirty.set()  # show the new profiles
-                if enrichment.people_step(self.store.connect, self.config, now()):
+                found = enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None)), stop=self.stop.is_set)
+                photos = enrichment.photos_step(self.store.connect, now())  # straight after the lookups (hosted ones too, through the agent)
+                if found or photos:
+                    LOG.info('enrichment people found=%s photos=%s', found, photos)
                     self.graph_dirty.set()
                 wait = 600
             except enrichment.EnrichmentError as error:
@@ -13895,7 +13992,7 @@ class App:
                     asset = BRAND_ASSETS[path.path]
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
                 elif path.path == '/api/status':
-                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'browser_link': browser_link(app.config),
+                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'source_url': source_url(), 'browser_link': browser_link(app.config),
                                       'browser_embed': browser_embed(app.config, self.headers.get('Host', ''))})
                     try:
                         app.store.note_card_shown()
@@ -13946,6 +14043,15 @@ class App:
                         except (fleet.Off, ValueError, OSError):
                             pass
                         self.output(200, app.fleet_view())
+                elif path.path == '/api/promise':  # a promise's own page: read-only
+                    try:
+                        found = app.store.promise_page(int(urllib.parse.parse_qs(path.query).get('id', [''])[0]))
+                        rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[found['event_id']])
+                        found['source'] = [{'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
+                                            'source_url': r['metadata'].get('source_url'), **event_glance(r, app.config['accounts'])} for r in rows][:1]
+                        self.output(200, found)
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(404, {'error': 'No such promise'})
                 elif path.path == '/api/graph':
                     node = urllib.parse.parse_qs(path.query).get('node', [''])[0]
                     query = urllib.parse.parse_qs(path.query).get('q', [''])[0]
@@ -14029,6 +14135,21 @@ class App:
                     self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'" + ('' if mime == 'application/pdf' else '; sandbox'))
                     self.end_headers()
                     try:self.wfile.write(data)
+                    except (BrokenPipeError, ConnectionResetError):self.close_connection = True
+                elif path.path == '/api/person-photo':  # a looked-up photo, saved on this Machine (enrichment.photos_step)
+                    with app.store.connect() as db:
+                        found = enrichment.photo(db, urllib.parse.parse_qs(path.query).get('p', [''])[0])
+                    if not found:
+                        self.output(404, {'error': 'Not available'})
+                        return
+                    self.send_response(200)
+                    self.send_header('Content-Type', found[1])
+                    self.send_header('Content-Length', str(len(found[0])))
+                    self.send_header('Cache-Control', 'private, max-age=86400')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+                    self.end_headers()
+                    try:self.wfile.write(found[0])
                     except (BrokenPipeError, ConnectionResetError):self.close_connection = True
                 elif path.path == '/api/reviews/live':  # polled while a review runs: small, unlike /api/status
                     self.output(200, app.review_live())
@@ -14174,7 +14295,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_stage','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename','graph_stage','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
@@ -14220,7 +14341,7 @@ class App:
             threading.Thread(target=self.skills.catalog.worker, args=(self.stop,), daemon=True).start()
         if embeddings.settings(self.config):
             threading.Thread(target=self.embedding_worker, daemon=True).start()
-        if enrichment.settings(self.config):
+        if enrichment.settings(self.config) or enrichment.people_available(self.config):
             threading.Thread(target=self.enrichment_worker, daemon=True).start()
         if getattr(self, 'protection_waits', False):
             threading.Thread(target=self.protection_waiter, daemon=True).start()

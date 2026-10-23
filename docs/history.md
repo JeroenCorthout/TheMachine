@@ -513,9 +513,9 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for development and pull requests, and
 
 ## License
 
-MIT, see [LICENSE](../LICENSE). Built on OpenClaw (MIT); third-party licences are listed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+AGPL-3.0-only, see [LICENSE](../LICENSE). Built on OpenClaw (MIT); third-party licences are listed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
-The code is MIT licensed. The names The Machine and The Fleet, the logo, and the hosted service and The Machine Network are not covered by the license. See [TRADEMARKS.md](../TRADEMARKS.md).
+The code is open source under AGPL-3.0. The names The Machine and The Fleet, the logo, and the hosted service and The Machine Network are not covered by the license. See [TRADEMARKS.md](../TRADEMARKS.md).
 
 
 ## Final-step and self-repair recovery · October 17
