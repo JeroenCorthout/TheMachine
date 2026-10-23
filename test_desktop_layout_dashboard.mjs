@@ -188,15 +188,30 @@ try{
  for(const [w,h] of [[390,844],[360,740],[430,932],[900,1100]]){const {context,page}=await open(w,h);
   assert.ok(await page.locator('#drawer-open').isVisible(),'the menu button at '+w);assert.ok(!(await page.locator('#app-side').isVisible()),'the drawer is closed at '+w);
   // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
-  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#page-head .page-sub')}});
+  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#suggestions')}});
    assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
    assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
-  {const q=await page.evaluate(()=>{const t=document.querySelector('#page-head .page-title'),s=document.querySelector('#page-head .page-sub'),r=s.getBoundingClientRect();
-    return {tag:t.getBoundingClientRect().width,named:t.textContent.length>0,sub:s.textContent,top:r.top,bar:document.querySelector('#topbar').getBoundingClientRect().bottom,size:parseFloat(getComputedStyle(s).fontSize)}});
-   assert.ok(q.tag<=1&&q.named,'no tagline on a phone, still there for screen readers, at '+w);assert.ok(q.sub&&q.size>=14,'the counts stay, readable, at '+w);
-   assert.ok(q.top>=q.bar+4&&q.top<=q.bar+40,'the counts sit just under the top bar at '+w+': '+(q.top-q.bar))}
-  assert.ok(await page.locator('#page-head .page-sub').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
-  for(const t of TABS){await tab(page,t);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
+  {const q=await page.evaluate(()=>{const t=document.querySelector('#page-head .page-title'),s=document.querySelector('#page-head .page-sub'),h=[...document.querySelectorAll('[id^="section-"]')].find(n=>n.getBoundingClientRect().height>0);
+    return {tag:t.getBoundingClientRect().width,named:t.textContent.length>0,sub:s&&s.getBoundingClientRect().height,head:h&&h.getBoundingClientRect().top,bar:document.querySelector('#topbar').getBoundingClientRect().bottom}});
+   assert.ok(q.tag<=1&&q.named,'no tagline on a phone, still there for screen readers, at '+w);assert.ok(!q.sub,'no counts line over the cards on a phone (the section heads carry them) at '+w);
+   assert.ok(q.head>=q.bar+12&&q.head<=q.bar+64,'the first section head sits calmly under the top bar at '+w+': '+(q.head-q.bar))}
+  assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
+  // Find a card: a search icon in the top bar on the cards screen, left of the +; a tap turns the bar into the field with
+  // Cancel and the matching cards under it; Esc and Cancel close it, a pick opens the card's chat
+  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {t:r('#topbar-title'),f:r('#find-open'),p:r('#new-card-top'),bar:r('#topbar')}});
+   assert.ok(b.f.width>=40&&b.f.left>b.t.right&&b.f.right<=b.p.left+1&&b.p.right>=b.bar.right-14,'the search icon sits left of the + at '+w+': '+JSON.stringify(b))}
+  await page.locator('#find-open').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'find-q','the field has focus');
+  assert.ok(!(await page.locator('#topbar-title').isVisible())&&!(await page.locator('#drawer-open').isVisible()),'the field takes the bar');assert.ok(await page.locator('#find-cancel').isVisible());
+  await page.keyboard.type('number 7');await page.locator('#find-results a').first().waitFor();
+  assert.deepEqual(await page.locator('#find-results a').allTextContents(),[cards[7].title],'it finds the card');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'search fits at '+w);
+  await page.keyboard.press('Escape');assert.ok(await page.locator('#topbar-title').isVisible()&&!(await page.locator('#find-results').isVisible()),'Esc closes it');
+  await page.locator('#find-open').click();await page.keyboard.type('nothing like this');assert.equal(await page.locator('#find-results').innerText(),'No cards match.');
+  await page.locator('#find-cancel').click();assert.ok(await page.locator('#topbar-title').isVisible()&&!(await page.locator('#find-results').isVisible()),'Cancel closes it');
+  await page.locator('#find-open').click();await page.keyboard.type('number 4');await page.locator('#find-results a').first().click();await page.locator('#chat-log').waitFor();
+  assert.equal(new URL(page.url()).hash,'#chat='+cards[4].id,'a pick opens its chat');assert.ok(!(await page.locator('#find-results').isVisible()));
+  await page.goBack();await page.locator('#suggestions .chat-layout').waitFor({state:'detached'});assert.ok(!(await page.locator('#topbar-find').isVisible()),'back on the cards the bar is the bar again');
+  for(const t of TABS){await tab(page,t);assert.equal(await page.locator('#find-open').isVisible(),t==='inbox','the search icon only on the cards screen: '+t+' at '+w);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
   await tab(page,'inbox');await page.evaluate(()=>scrollTo(0,0));
   // The menu button opens it: nearly the full width, the rest of the page inert, focus on its ✕, the rows and the cards in it, Settings at the bottom
   await page.locator('#drawer-open').click();await settle(page);assert.ok(await isOpen(page));
@@ -204,6 +219,7 @@ try{
    settings:document.querySelector('#open-settings').getBoundingClientRect().bottom,wide:document.documentElement.scrollWidth<=innerWidth,label:document.querySelector('#side-toggle').getAttribute('aria-label')}});
   assert.equal(Math.round(d.x),0);assert.ok(d.w>=Math.min(w*.8,360)&&d.w<=w*.9,'drawer width '+d.w);assert.ok(d.inert,'the page behind is inert');assert.equal(d.focus,'side-toggle');assert.ok(d.settings>h-120,'Settings at the bottom');assert.ok(d.wide);
   assert.equal(await page.locator('[data-side-fold="done"]').getAttribute('aria-expanded'),'false');assert.ok(await page.locator('#side-cards a').first().isVisible());
+  assert.ok(!(await page.locator('#side-search').isVisible()),'no search field in the drawer');
   const rows=await page.locator('.app-side nav button[data-tab]:not([hidden])').evaluateAll(b=>b.map(x=>x.getBoundingClientRect().height));assert.ok(rows.every(x=>x>=44),'rows are a thumb high: '+rows);
   // Esc closes it and gives focus back; so do ✕, the shade and back, and none leaves an entry on the history
   await page.keyboard.press('Escape');await settle(page);assert.ok(!(await isOpen(page)));assert.equal(await page.evaluate(()=>document.activeElement.id),'drawer-open');assert.ok(!(await page.evaluate(()=>document.querySelector('main').inert)));
