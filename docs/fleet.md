@@ -317,16 +317,22 @@ Your Machine then shares the addresses of its work accounts with your Fleet, so 
 them, and nothing else about you. Everything in "You decide, per Fleet" and "Safe by construction" applies the same
 way. You can disconnect it from your account at any time; its key then stops working.
 
-**Sign-ins for it.** Some sources sign in on the account page, like Sign in with Intercom. For a paired Machine, each
-row under Self-hosted Machines has that button. The control plane seals what the sign-in hands back for the key this
-Machine published after pairing (`network_crypto.open_box`, in its own domain and never taken for a message from another
-Machine). It refuses when that key changed since, until you pair again. The Network's inbox says one waits, and the
-Machine fetches it once (`GET /connects`, main node only). It is deleted there as it is handed out, and is gone after 15
-minutes if not picked up. The Machine opens it and connects it as Connections, Add would (`onboarding.connect_delivered`:
-only the sources listed there, and only the key that source asks for). The connector checks the key first (Intercom:
-`GET /me`, its workspace and admin). Replies turn on only for the owner's own Sign in with Intercom, as that admin, and
-never for a token shared through a Fleet. Then the Machine reports back in a few words (`POST /connects`), and the row
-says "Connected to <workspace>". Nothing it carries is logged on either side.
+**Sign-ins for it.** Some sources sign in through The Machine's own app, like Sign in with Intercom. On a paired
+Machine you start that on its dashboard: Connections, **+ Add**, Intercom. Not paired yet, the dashboard says to pair
+first and links to the account page; pasting a token stays as a folded fallback. The Machine asks the control plane for a
+one-time start link (`fleet.py connect_start`, `POST /connect-start`, main node only), signed with the sign key it
+published after pairing, with a fresh nonce and the time. The control plane checks that signature against the key it
+pinned, and refuses when the key changed since, until you pair again; the link works once, for 10 minutes, and only
+signed in as the Machine's owner. It opens in a new tab and leads to the provider. The control plane checks the pin
+again at the callback and seals what the sign-in hands back for this Machine's box key (`network_crypto.open_box`, in
+its own domain and never taken for a message from another Machine). The tab then says you can close it. The Network's
+inbox says one waits, and the Machine fetches it once (`GET /connects`, main node only). It is deleted there as it is
+handed out, and is gone after 15 minutes if not picked up. The Machine opens it and connects it as Connections, Add would
+(`onboarding.connect_delivered`: only the sources listed there, and only the key that source asks for). The connector
+checks the key first (Intercom: `GET /me`, its workspace and admin). Replies turn on only for the owner's own Sign in
+with Intercom, as that admin, and never for a token shared through a Fleet. Then the Machine reports back in a few
+words (`POST /connects`), and the dashboard says "Connected to <workspace>". Nothing it carries is logged on either
+side, and neither is the start link.
 
 Pairing is free, and so are Friends and Family Fleets on the Network. In a Work Fleet, while a self-hosted Machine
 answers for someone, the Network costs €4 a month for that member, plus VAT where it applies, paid by the Fleet's owner

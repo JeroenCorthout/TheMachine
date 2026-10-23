@@ -199,6 +199,19 @@ def settings(config):
 
 
 CONTROL = 'https://app.themachine.computer'  # the control plane: the Account page, on the same node as NETWORK
+PAIR_PAGE = CONTROL + '/account?tab=fleet#devices'  # where a self-hosted Machine is paired with an account
+START_PREFIX = b'tm-device-connect-start/1\n'  # what a start request is signed as (the control plane's device_connect.start)
+SIGNIN_SOURCES = {'intercom'}  # sources this Machine can sign in through the control plane's app, from its dashboard
+SIGNIN_EXPIRES = 30 * 60  # a sign-in started on the dashboard and not finished by then is shown as stopped
+
+
+def connect_start_request(private, source, another=False, clock=None):
+    """A start request for a sign-in, signed with this Machine's own sign key: the control plane checks it against
+    the key it pinned after pairing, so only this Machine starts a sign-in for itself."""
+    import time
+    body = {'source': source, 'another': bool(another), 'nonce': secrets.token_hex(16), 'at': int((clock or time.time)())}
+    message = START_PREFIX + json.dumps(body, sort_keys=True, separators=(',', ':')).encode()
+    return {**body, 'sig': network.nc.b64(network.nc.ed25519_sign(network.nc.unb64(private['sign'], 32), message))}
 
 
 def account_url(config):
@@ -1565,7 +1578,7 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         self.task_pages = None
         self.last['removals'] = None
         # connect_delivered(body) -> {'ok', 'name'?, 'error'?, 'replies'?}: a sign-in the control plane sealed for this
-        # paired Machine (Sign in with Intercom on its owner's Account page), opened here (connects_round)
+        # paired Machine (Sign in with Intercom, started on its own dashboard: connect_start), opened here (connects_round)
         self.connect_delivered = None
         self.connects_due = False
         with self.connect() as db:
@@ -2781,9 +2794,44 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
             done.append(item['id'])
         return done
 
+    def connect_start(self, source, another=False):
+        """Sign in with <source> from this Machine's dashboard (Connections, + Add): asks the control plane for a one-time
+        start link, signed with this Machine's own key. Returns that link for the person to open, signed in as its owner.
+        The dashboard follows it with signin_state."""
+        if source not in SIGNIN_SOURCES:
+            raise ValueError('That source signs in another way')
+        private = getattr(self.relay, 'private', None)
+        if not private:
+            raise ValueError('This Machine has no Network keys yet. Pick it as your Machine in a Fleet first.')
+        try:
+            found = self.relay.call('POST', '/connect-start', connect_start_request(private, source, another), timeout=30)
+        except Off:
+            raise ValueError('The control plane does not take this yet. Try again later.') from None
+        except (Unavailable, OSError):
+            raise ValueError('The Network did not answer. Try again in a minute.') from None
+        url = str((found or {}).get('url') or '')
+        home = urllib.parse.urlsplit(str((settings(self.config) or {}).get('url') or ''))
+        link = urllib.parse.urlsplit(url)
+        # only the control plane this Machine is paired with, and only its start page
+        hosts = set(MAIN_HOSTS) if home.hostname in MAIN_HOSTS else {home.hostname}
+        if link.scheme != ('http' if home.scheme == 'http' and home.hostname == '127.0.0.1' else 'https') or link.hostname not in hosts or not re.fullmatch(r'/connect/start/[A-Za-z0-9_-]{32}', link.path) or link.query:
+            raise ValueError('The control plane gave no start link. Try again.')
+        import time
+        self.set_meta('signin:' + source, {'state': 'started', 'at': time.time()})
+        LOG.info('connect start source=%s', source)
+        return url
+
+    def signin_state(self, source, clock=None):
+        """How a sign-in started on the dashboard is going: {'state': 'started'|'connecting'|'done'|'failed'|'stopped', ...}."""
+        import time
+        found = self.meta('signin:' + str(source)) or {}
+        if found.get('state') in ('started', 'connecting') and (clock or time.time)() - float(found.get('at') or 0) > SIGNIN_EXPIRES:
+            return {'state': 'stopped'}
+        return {k: found[k] for k in ('state', 'name', 'error', 'replies') if k in found} or {'state': 'none'}
+
     def connects_round(self):
-        """Sign-ins for this paired self-hosted Machine: its owner pressed Sign in with Intercom for it on their Account
-        page, and the control plane sealed the token for this Machine's own key (network_crypto.open_box). Each is
+        """Sign-ins for this paired self-hosted Machine: its owner pressed Sign in with Intercom on its dashboard
+        (connect_start), and the control plane sealed the token for this Machine's own key (network_crypto.open_box). Each is
         handed out once; it is opened here, connected through connect_delivered (which checks it, GET /me, before
         keeping it) and how it went is reported back, in a few words. Nothing of what it carries is logged."""
         if not self.connects_due or not self.connect_delivered:
@@ -2803,8 +2851,14 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         for item in (found or {}).get('connects', [])[:5]:
             if not isinstance(item, dict) or not isinstance(item.get('id'), str):
                 continue
+            source = None
             try:
                 body = network.nc.open_box(item.get('sealed'), private, {'p': 'connect', 't': device, 'r': item['id']})
+                args = body.get('args') if isinstance(body, dict) and isinstance(body.get('args'), dict) else {}
+                source = args.get('source') if args.get('source') in SIGNIN_SOURCES else None
+                if source:
+                    import time
+                    self.set_meta('signin:' + source, {'state': 'connecting', 'at': time.time()})
                 result = self.connect_delivered(body)
             except network.nc.SealError:
                 LOG.warning('connect not opened id=%s', item['id'])
@@ -2812,6 +2866,11 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
             except Exception as error:  # noqa: BLE001 - reported, so the Account page says it did not happen
                 LOG.error('connect error=%s', type(error).__name__)
                 result = {'ok': False, 'error': 'The setup stopped unexpectedly.'}
+            if not source and not result.get('ok'):  # not opened: the sign-in waiting on the dashboard stopped
+                source = next((s for s in sorted(SIGNIN_SOURCES) if (self.meta('signin:' + s) or {}).get('state') == 'started'), None)
+            if source:  # what the dashboard shows: "Connected to <workspace>" or why not
+                self.set_meta('signin:' + source, {'state': 'done' if result.get('ok') else 'failed',
+                                                   **{k: result[k] for k in ('name', 'error', 'replies') if k in result}})
             try:
                 self.relay.call('POST', '/connects', {'id': item['id'], 'result': result}, timeout=30)
             except (Off, Unavailable, OSError, ValueError):

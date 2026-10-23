@@ -136,7 +136,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:16px;pa
 .head-side{display:flex;align-items:center;gap:8px}.manage{padding:6px 12px;border:1px solid var(--border);border-radius:999px;color:var(--muted);text-decoration:none;font-size:.85rem}.manage:hover,.head-link:hover{color:var(--text)}
 .head-link{display:inline-flex;align-items:center;padding:6px 12px;border:1px solid var(--border);border-radius:999px;color:var(--muted);text-decoration:none;white-space:nowrap}.head-link[hidden]{display:none}
 .connect-more{margin:14px 0 0}
-.connect-sources{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:10px}.connect-source{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none;cursor:pointer}.connect-source:hover{border-color:var(--border-strong)}.connect-source small{color:var(--muted);font-size:.8rem}.connect-source small.count{margin-top:4px;color:var(--faint)}.connect-run{max-width:640px}.connect-lines{list-style:none;margin:8px 0;padding:0;font-size:.88rem;color:var(--muted)}.connect-lines li{overflow-wrap:anywhere;margin:2px 0}.connect-lines li:last-child{color:var(--text)}.connect-form{display:grid;gap:8px;margin-top:8px}.connect-form input{width:100%}.connect-choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.connect-q{margin:8px 0 0}
+.connect-sources{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:10px}.connect-source{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:inherit;text-decoration:none;cursor:pointer}.connect-source:hover{border-color:var(--border-strong)}.connect-source small{color:var(--muted);font-size:.8rem}.connect-source small.count{margin-top:4px;color:var(--faint)}.connect-run{max-width:640px}.connect-lines{list-style:none;margin:8px 0;padding:0;font-size:.88rem;color:var(--muted)}.connect-lines li{overflow-wrap:anywhere;margin:2px 0}.connect-lines li:last-child{color:var(--text)}.connect-form{display:grid;gap:8px;margin-top:8px}.connect-form input{width:100%}.connect-choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.connect-q{margin:8px 0 0}.connect-signin p{margin:6px 0}.connect-signin .actions{margin-top:12px}.connect-signin a.btn-link.primary{background:var(--mint);border-color:var(--mint);color:var(--charcoal)}.connect-other{margin-top:18px;font-size:.88rem}.connect-other summary{cursor:pointer;color:var(--muted);width:max-content;max-width:100%}.connect-other p{color:var(--muted)}
 .brand{display:flex;align-items:center;gap:16px;min-width:0}
 .avatar{display:block;width:68px;height:68px;flex:none;object-fit:contain}
 h1{font-size:1.75rem;letter-spacing:-.035em;font-weight:750}
@@ -2222,19 +2222,44 @@ function renderHealthTabs(){const cs=state.connectors||[],bad=g=>cs.filter(c=>he
  for(const a of document.querySelectorAll('#connectors>article'))a.hidden=a.dataset.group!==current;if(current==='add')connectAdd()}
 // Connections, Add: every source this install can add, set up right here with the same steps as `assistant connect`;
 // its questions show one at a time. On a hosted machine Google and Microsoft are signed in on the account page, and a
-// source with its own sign-in there (Intercom) links to that page, which also offers pasting its token.
-let connectList=null,connectListAt=0,connectRun=null,connectTimer=0;
+// source with its own sign-in there (Intercom) links to that page, which also offers pasting its token. On a self-hosted
+// one such a source signs in through The Machine's own app (fleet.py connect_start), once this Machine is paired with
+// an account, and its row follows how that goes; pasting a token stays, folded away.
+let connectList=null,connectListAt=0,connectRun=null,connectTimer=0,connectSignin=null,signinTimer=0;
 const BROKER_LINK={gmail:'#google',calendar:'#google',outlook:'#microsoft',outlook_calendar:'#microsoft',zoom:'#source-zoom'};
 const connectPost=(action,args={})=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
 async function connectAdd(force){if(connectRun)return;if(!force&&connectList&&Date.now()-connectListAt<60000)return;connectListAt=Date.now();
  try{connectList=await connectPost('connect_sources')}catch(e){$('#connect-add').innerHTML=`<p class="error">${esc(e.message)}</p>`;return}renderConnectAdd()}
-function renderConnectAdd(){const box=$('#connect-add');if(connectRun)return renderConnectRun();if(!connectList)return;
+function renderConnectAdd(){const box=$('#connect-add');if(connectRun)return renderConnectRun();if(connectSignin)return renderConnectSignin();if(!connectList)return;
  const items=connectList.sources.map(x=>{const more=x.connected?`<small class="count">${x.connected} connected</small>`:'',what=x.what?`<small>${esc(x.what)}</small>`:'';
   if(x.account_page&&connectList.manage_url)return `<a class="connect-source" href="${esc(connectList.manage_url+'#'+x.account_page)}" target="_blank" rel="noopener"><b>${esc(x.label)} ↗</b>${what}${more}</a>`;
+  if(x.signin&&!connectList.manage_url)return `<button type="button" class="connect-source" data-connect-signin="${esc(x.name)}"><b>${esc(x.label)}</b>${what}${more}</button>`;
   return x.broker?(connectList.manage_url?`<a class="connect-source" href="${esc(connectList.manage_url+(BROKER_LINK[x.service]||'#sources'))}" target="_blank" rel="noopener"><b>${esc(x.label)} ↗</b>${what}${more}</a>`:''):`<button type="button" class="connect-source" data-connect="${esc(x.name)}"><b>${esc(x.label)}</b>${what}${more}</button>`}).join('');
  box.innerHTML=`<p class="sub-note">Pick a source to connect.${connectList.saveable||connectList.manage_url?'':' This service can’t save its settings: use <code>assistant connect</code> in a terminal.'}</p><div class="connect-sources">${items}</div>`}
 // `name`, not `source`: the dashboard's requests carry their own `source`. With an account: that one signs in again.
 async function connectStart(name,account){try{connectRun=await connectPost('connect_start',account?{name,account}:{name});$('#connect-add').dataset.sig='';renderConnectRun();connectPoll();return true}catch(err){toast(err.message,true);return false}}
+// Sign in with <provider> on a self-hosted Machine: the Machine asks the control plane for a one-time start link,
+// signed with its own key, and it opens in a new tab. The token comes back sealed for this Machine, which checks it.
+const SIGNIN_COPY={intercom:{about:'Reads your conversations. Replies only after you approve them, as yourself. Never assigns or closes.',paste:'From an app in Intercom’s Developer Hub.'}};
+function renderConnectSignin(){const s=connectSignin,box=$('#connect-add'),paired=connectList?.paired;
+ const back='<button type="button" data-connect-back>Back</button>';let body;
+ if(s.state==='started')body=`<p>Sign in at ${esc(s.label)} in the tab that opened. This updates by itself.</p><div class="actions"><button type="button" data-signin-go>Start again</button>${back}</div>`;
+ else if(s.state==='connecting')body='<p class="muted">Connecting…</p>';
+ else if(s.state==='done')body=`<p class="note sent-ok">✓ Connected${s.name?' to '+esc(s.name):''}.${s.replies?' Replies go as you, after you approve each one.':''} Restarting to start reading it…</p><div class="actions">${back}</div>`;
+ else if(s.state==='failed'||s.state==='stopped')body=`<p class="alert">${esc(s.state==='stopped'?'That sign-in didn’t finish.':s.error||'Not connected.')}</p><div class="actions"><button type="button" class="primary" data-signin-go>Try again</button>${back}</div>`;
+ else body=`<p class="muted">${esc(SIGNIN_COPY[s.name]?.about||'')}</p>`+(paired?`<div class="actions"><button type="button" class="primary" data-signin-go>Sign in with ${esc(s.label)}</button>${back}</div>`
+  :`<p>To sign in here, pair this Machine with your account first.</p><div class="actions"><a class="btn-link primary" href="${esc(connectList.pair_url)}" target="_blank" rel="noopener">Pair this Machine first ↗</a>${back}</div>`);
+ const paste=s.state==='done'||s.state==='connecting'?'':`<details class="connect-other"><summary>Or paste an access token</summary><p>${esc(SIGNIN_COPY[s.name]?.paste||'')}</p><div class="actions"><button type="button" data-connect="${esc(s.name)}">Paste a token</button></div></details>`;
+ const html=`<div class="connect-run connect-signin"><h3>${esc(s.label)}</h3>${body}${paste}</div>`;
+ const sig=JSON.stringify(['signin',s.state,s.name,s.error,s.replies,paired]);if(box.dataset.sig===sig)return;box.dataset.sig=sig;box.innerHTML=html}
+function signinPoll(){clearTimeout(signinTimer);if(!connectSignin||!['started','connecting'].includes(connectSignin.state))return;
+ signinTimer=setTimeout(async()=>{try{const r=await connectPost('connect_signin_state',{name:connectSignin.name});if(!connectSignin)return;
+  if(r.state!=='none')connectSignin={...connectSignin,...r};renderConnectSignin();if(r.state==='done')setTimeout(()=>{connectList=null;refresh()},8000)}catch{}signinPoll()},2500)}
+async function signinGo(){const s=connectSignin;if(!s)return;
+ const tab=window.open('about:blank','_blank');  // opened now, while it is the click: a browser blocks it after a wait
+ try{const r=await connectPost('connect_signin',{name:s.name});if(tab){tab.opener=null;tab.location.href=r.url}else location.assign(r.url);
+  connectSignin={name:s.name,label:s.label,state:'started'}}catch(err){tab?.close();connectSignin={...s,state:'failed',error:err.message}}
+ $('#connect-add').dataset.sig='';renderConnectSignin();signinPoll()}
 // Reconnect on a card or in Needs you: the same steps as + Add, for that account, shown in the + Add pane.
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-reconnect]');if(!b)return;
  if(connectRun&&connectRun.state==='running'){showHealthPane('add');document.querySelector('nav button[data-tab="health"]')?.click();return}
@@ -2256,10 +2281,12 @@ function connectPoll(){clearTimeout(connectTimer);if(!connectRun||connectRun.sta
  if(connectRun.state==='done'&&connectRun.restarting)setTimeout(()=>{connectList=null;refresh()},8000)}catch(e){connectRun={...connectRun,state:'failed',error:e.message};renderConnectRun()}connectPoll()},connectRun.question?3000:1000)}
 async function connectAnswer(value){const q=connectRun?.question;if(!q)return;try{connectRun={...connectRun,...await connectPost('connect_answer',{session:connectRun.session,question:q.id,value})}}catch(e){toast(e.message,true)}renderConnectRun();connectPoll()}
 $('#connect-add').addEventListener('click',async e=>{const t=e.target;
- const start=t.closest('[data-connect]');if(start){start.disabled=true;if(!await connectStart(start.dataset.connect,start.dataset.connectAccount))start.disabled=false;return}
+ const signin=t.closest('[data-connect-signin]');if(signin){const x=connectList.sources.find(v=>v.name===signin.dataset.connectSignin);connectSignin={name:x.name,label:x.label,state:'intro'};$('#connect-add').dataset.sig='';renderConnectSignin();return}
+ if(t.closest('[data-signin-go]')){signinGo();return}
+ const start=t.closest('[data-connect]');if(start){connectSignin=null;clearTimeout(signinTimer);start.disabled=true;if(!await connectStart(start.dataset.connect,start.dataset.connectAccount))start.disabled=false;return}
  const pick=t.closest('[data-connect-pick]');if(pick){const v=pick.dataset.connectPick;connectAnswer(v==='yes'?true:v==='no'?false:+v);return}
  if(t.closest('[data-connect-stop]')&&connectRun){try{connectRun={...connectRun,...await connectPost('connect_cancel',{session:connectRun.session})}}catch{}renderConnectRun();connectPoll();return}
- if(t.closest('[data-connect-back]')){connectRun=null;$('#connect-add').dataset.sig='';connectAdd(true)}});
+ if(t.closest('[data-connect-back]')){connectRun=null;connectSignin=null;clearTimeout(signinTimer);$('#connect-add').dataset.sig='';connectAdd(true)}});
 $('#connect-add').addEventListener('submit',e=>{if(!e.target.closest('[data-connect-form]'))return;e.preventDefault();connectAnswer($('#connect-answer').value)});
 function showHealthPane(id){healthPane=id;healthPicked=true;localStorage.setItem('health-pane',id);renderHealthTabs()}
 $('#health-tabs').onclick=e=>{const b=e.target.closest('[data-health-pane]');if(b)showHealthPane(b.dataset.healthPane)};

@@ -1598,7 +1598,7 @@ def enable_replies(config_path, account_id, token):
     return admin, name
 
 
-DELIVERED = {'intercom'}  # sources a sign-in on the account page connects on a paired self-hosted Machine
+DELIVERED = {'intercom'}  # sources a sign-in started on the dashboard connects on a paired self-hosted Machine (fleet.SIGNIN_SOURCES)
 
 
 class AnswersUI(UI):
@@ -1635,7 +1635,7 @@ class AnswersUI(UI):
 
 
 def connect_delivered(config_path, args):
-    """A sign-in from the owner's account page, sealed for this paired self-hosted Machine (fleet.py connects_round):
+    """A sign-in started on this Machine's dashboard, sealed for this paired self-hosted Machine (fleet.py connects_round):
     {source, answers, secrets, replies?, another?}, as a hosted Machine's `connect` command. Only the sources in
     DELIVERED, and only the key that source asks for. The connector checks the key first (Intercom: GET /me, its
     workspace and admin) and keeps it in its private credential file. replies: the owner's own Sign in with Intercom,
@@ -1648,7 +1648,7 @@ def connect_delivered(config_path, args):
     given = args.get('secrets') if isinstance(args.get('secrets'), dict) else {}
     token = given.get(prompt)
     if set(given) != {prompt} or not isinstance(token, str) or not 8 <= len(token) <= 512 or any(c.isspace() for c in token):
-        raise SetupError(f'No {prompt} came with it', 'sign in again on your account page')
+        raise SetupError(f'No {prompt} came with it', 'sign in again from Connections, + Add')
     answers = {k: v for k, v in (args.get('answers') or {}).items() if isinstance(k, str) and isinstance(v, str) and len(k) < 200 and len(v) < 200} \
         if isinstance(args.get('answers'), dict) else {}
     if args.get('another') is True:  # a new account next to the ones you have, not one of those again
