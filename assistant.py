@@ -7884,6 +7884,11 @@ def event_glance(event, accounts, chars=240):
         out['dm'] = m.get('conversation_type') == 'dm'
         if not out['dm'] and m.get('channel_name'):
             out['place'] = '#' + str(m['channel_name'])[:80]
+    # The conversation a chat message is part of, so the Graph shows a run of them as one row. Mail and meetings: none.
+    thread = {'whatsapp.message': m.get('chat_id'), 'slack.message': m.get('channel_id'), 'linkedin.message': m.get('conversation_id'),
+              'x.dm': m.get('conversation_id'), 'intercom.conversation': m.get('conversation_id')}.get(event.get('kind'))
+    if thread:
+        out['thread'] = f"{event.get('account_id')}:{event.get('kind')}:{thread}"
     return out
 
 
@@ -9129,10 +9134,10 @@ class App:
             return self.agents.set_outcome(args['job_id'], args.get('outcome'))
         raise ValueError('Unknown operation')
 
-    def originals(self, suggestion_id, event_id=''):
+    def originals(self, suggestion_id, event_id='', event_ids=None):
         """Source messages for the dashboard, with Gmail attachments looked up live (read-only):
-        a card's, or one collected event opened from the Events or People tab."""
-        items = self.store.originals(suggestion_id) if suggestion_id else self.store.event_views([event_id])
+        a card's, one collected event opened from the Events or People tab, or a conversation's messages in order."""
+        items = self.store.originals(suggestion_id) if suggestion_id else self.store.event_views(event_ids or [event_id])
         cache = self.__dict__.setdefault('_attachments', {})
         for item in items:
             source = item.pop('gmail')
@@ -12350,7 +12355,7 @@ class App:
         with self.store.connect() as db:
             marks = self.graph_fleet_marks(db)
             if args.get('node_id'):
-                found = graph.detail(db, str(args['node_id']), max(1, min(int(args.get('events') or 12), 40)))
+                found = graph.detail(db, str(args['node_id']), max(1, min(int(args.get('events') or 12), 120)))
                 if not found:
                     raise ValueError('Unknown node_id; find people and projects with query')
                 found['around'] = graph.spread(db, [found['id']], limit)
@@ -12563,7 +12568,7 @@ class App:
                         if query.strip():
                             self.output(200, app.graph_action({'query': query, 'limit': 20}))
                         elif node:
-                            found = app.graph_action({'node_id': node, 'limit': 10, 'events': 40})
+                            found = app.graph_action({'node_id': node, 'limit': 10, 'events': 120})  # a run of chat messages is one row
                             rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[int(line.split(' ', 1)[0]) for line in found['recent']])
                             found['recent'] = [{'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
                                                 'source_url': r['metadata'].get('source_url'), 'probable': r['id'] in found['probable_ids'],
@@ -12619,7 +12624,8 @@ class App:
                 elif path.path == '/api/originals':
                     try:
                         args = urllib.parse.parse_qs(path.query)
-                        self.output(200, {'originals': app.originals(args.get('id', [''])[0], args.get('event', [''])[0])})
+                        events = [int(v) for v in args.get('events', [''])[0].split(',') if v.strip()][:60]  # one conversation from the Graph
+                        self.output(200, {'originals': app.originals(args.get('id', [''])[0], args.get('event', [''])[0], events)})
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'Original not available'})
                 elif path.path == '/api/email':

@@ -622,6 +622,9 @@ class Graph(unittest.TestCase):
                          {'from': 'You', 'from_me': True, 'preview': 'see the doc', 'dm': True})
         self.assertEqual(glance('slack.message', 'done', user_id='U0ANN', conversation_type='channel', channel_name='standup')['place'], '#standup')
         self.assertEqual(glance('whatsapp.message', 'x' * 300, from_me=False, sender_display='Ann')['preview'], 'x' * 240 + '…')
+        # Chat messages carry their conversation, so a run of them is one row; mail does not.
+        self.assertEqual(glance('whatsapp.message', 'hi', chat_id='g1@g.us')['thread'], 'slack:whatsapp.message:g1@g.us')
+        self.assertNotIn('thread', glance('gmail.message', 'Hi', thread_id='t1'))
 
 
 def linkedin(days_ago, conv, name, text, mine=False, headline=None):
