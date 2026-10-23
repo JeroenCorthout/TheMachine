@@ -137,10 +137,38 @@ def load(directory, states, port=8870, network_port=8871, fixture_path=HERE / 'f
             load_reviews(db, ids, base, assistant)
     if not fresh:
         with store.connect() as db:
+            load_job(db, fixture, base)
+            db.commit()  # graph.build opens its own transaction
             graph.build(db, config, base.isoformat())
             load_roles(db, base)
             load_skills(db, states, fixture, base)
+        load_logins(directory, fixture)
     return config, config_path
+
+
+def load_job(db, fixture, base):
+    """A card handed to Claude Code earlier, with its result: the card's job block (agent_jobs.py)."""
+    import agent_jobs
+    job = fixture.get('agent_job')
+    if not job:
+        return
+    db.executescript(agent_jobs.SCHEMA)
+    card_id = hashlib.sha256(job['card'].encode()).hexdigest()[:16]
+    at = stamp(40, base)
+    db.execute('INSERT INTO agent_jobs(id,suggestion_id,tool,place,status,brief,session_id,summary,files,turns,created_at,updated_at,started_at,finished_at) '
+               'VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?)',
+               ('sandbox-job-1', card_id, job['tool'], 'local', 'result', 'Answer the question on the card.', 'sandbox-session', job['summary'],
+                json.dumps([{'path': f} for f in job['files']]), stamp(55, base), at, stamp(54, base), at))
+
+
+def load_logins(directory, fixture):
+    """Connections > Sign-ins: sites the browser signs back in to. Made-up sites; the password is a placeholder."""
+    import browser_login
+    import message_seal
+    message_seal.load_key(directory / 'events.sqlite', create=True)  # the app makes it at start too; sealed in-process, no openssl
+    logins = browser_login.LoginStore(directory)
+    for entry in fixture.get('saved_logins', []):
+        logins.save(entry['site'], entry['username'], 'sandbox-placeholder')
 
 
 def load_roles(db, base):
@@ -179,6 +207,7 @@ def load_skills(db, states, fixture, base):
 
 
 def load_cards(db, fixture, ids, base):
+    import graph
     for name in fixture['projects']:
         db.execute('INSERT OR IGNORE INTO projects(name,created_at) VALUES(?,?)', (name, stamp(30 * 24 * 60, base)))
     for card in fixture['cards']:
@@ -195,6 +224,8 @@ def load_cards(db, fixture, ids, base):
                     int(bool(card.get('urgent'))), f"Source: {card['source']} · {(base - dt.timedelta(minutes=card['minutes_ago'])).strftime('%a %-d %b')}",
                     card.get('project')))
         db.execute('INSERT INTO deliveries(suggestion_id,status,updated_at) VALUES(?,?,?)', (card_id, 'sent', created))
+        if card.get('project'):  # Graph > Projects: the card's thread carries its project, as a review labels it
+            graph.label(db, event_ids, card['project'], 'review', created)
         if card.get('choice'):
             db.execute('INSERT INTO decisions(id,suggestion_id,choice,feedback,source,created_at) VALUES(?,?,?,?,?,?)',
                        ('d' + card_id, card_id, card['choice'], '', 'dashboard', stamp(max(card['minutes_ago'] - 30, 1), base)))
