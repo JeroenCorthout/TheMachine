@@ -13084,7 +13084,7 @@ class App:
                     self.graph_dirty.set()
                 if enrichment.step(self.store.connect, self.config, now()):
                     self.graph_dirty.set()  # show the new profiles
-                if enrichment.people_step(self.store.connect, self.config, now()):
+                if enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None))):
                     self.graph_dirty.set()
                 wait = 600
             except enrichment.EnrichmentError as error:

@@ -315,6 +315,9 @@ def lookup(connect, config, domain, now):
 # only), a LinkedIn address and city and country. Kept on this Machine only (person_profiles).
 PEOPLE_PER_PASS = 5
 PEOPLE_PER_DAY = 50
+# A self-hosted Machine paired with the Network gets what a hosted one gets: 3,000 a day, 25 a pass (every ten minutes).
+PAIRED_PEOPLE_PER_DAY = 3000
+PAIRED_PEOPLE_PER_PASS = 25
 PERSON_FIELDS = {
     'title': ['position', 'job_title', 'title', 'employment.title', 'experience.0.position', 'experience.0.title'],
     'company': ['company.name', 'job_company_name', 'employment.name', 'organization.name', 'experience.0.company.name'],
@@ -517,15 +520,18 @@ def people_available(config):
     return bool(cfg and cfg.get('people_url') and cfg.get('people') is not False)
 
 
-def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
+def people_step(connect, config, now, per_pass=None, paired=False):
     """Look up a few work contacts with the Machine's own service. Returns how many got a profile; stops at the first
-    service error."""
+    service error. Paired with the Network: hosted's budget (PAIRED_PEOPLE_PER_DAY, PAIRED_PEOPLE_PER_PASS) unless
+    people_per_day says otherwise."""
     cfg = settings(config)
     if not cfg or not cfg.get('people_url') or cfg.get('people') is False:
         return 0
+    per_pass = per_pass or (PAIRED_PEOPLE_PER_PASS if paired else PEOPLE_PER_PASS)
+    per_day = int(cfg.get('people_per_day') or (PAIRED_PEOPLE_PER_DAY if paired else PEOPLE_PER_DAY))
     with connect() as db:
         used = db.execute("SELECT count(*) FROM person_profiles WHERE substr(fetched_at,1,10)=?", (now[:10],)).fetchone()[0]
-        due = people_due(db, now, max(0, min(per_pass, int(cfg.get('people_per_day') or PEOPLE_PER_DAY) - used)))
+        due = people_due(db, now, max(0, min(per_pass, per_day - used)))
     found = 0
     for person in due:
         try:
@@ -545,7 +551,7 @@ def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
 # daily lookups, no retries. A link that has already expired is skipped and the person looked up again in 30 days.
 PHOTO_BYTES = 200_000
 PHOTO_RETRY_DAYS = 30
-PHOTOS_PER_PASS = 10
+PHOTOS_PER_PASS = 30  # keeps up with 3,000 lookups a day
 
 
 def photo_key(identifier):

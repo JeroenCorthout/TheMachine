@@ -439,5 +439,23 @@ class Enrichment(unittest.TestCase):
         self.assertEqual(get('/api/person-photo?p=' + 'f' * 32)[0], 404)
         self.assertEqual(get('/api/person-photo?p=email:lee@globex.com')[0], 404)
 
+    def test_a_paired_self_hosted_machine_gets_the_hosted_budget(self):
+        asked = []
+        real = enrichment.people_due
+        def due(db, now, limit):
+            asked.append(limit)
+            return real(db, now, limit)
+        now = tg.NOW.isoformat()
+        with patch.object(enrichment, 'people_due', side_effect=due):
+            enrichment.people_step(self.store.connect, self.people_config(), now)
+            enrichment.people_step(self.store.connect, self.people_config(), now, paired=True)
+            with self.store.connect() as db:
+                db.executemany('INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,?,?,?)',
+                               [(f'email:p{n}@x.example', 'none', None, now) for n in range(2990)])
+            enrichment.people_step(self.store.connect, self.people_config(), now, paired=True)  # 10 left of today's 3,000
+            enrichment.people_step(self.store.connect, self.people_config(people_per_day=100), now, paired=True)  # the owner's own cap wins
+        self.assertEqual(asked, [5, 25, 10, 0])
+        self.assertEqual(enrichment.PAIRED_PEOPLE_PER_DAY, 3000)
+
 if __name__ == '__main__':
     unittest.main()
