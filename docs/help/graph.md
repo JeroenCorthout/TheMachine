@@ -1,0 +1,46 @@
+---
+title: The Graph
+area: graph
+summary: The people, organisations and projects in your messages, kept up to date by themselves.
+covers: tab:people
+code: graph.py, enrichment.py, dashboard.html
+order: 1
+---
+Your Machine builds a map of who you deal with and what's going on, from your messages, meetings and decisions. Nothing to set up, and it stays on your Machine.
+
+## People
+
+Everyone you're in touch with, closest first. A person's page shows how often you talk, their organisation and projects, **Open between you** (promises both ways, with **Done** and **Drop**), and their recent messages.
+
+- **Edit**: say what they are to you, like "accountant".
+- **Rename**: give them the name you use. An empty name brings back the one from their messages.
+- Same-name people on different channels are joined by themselves. To join or split two people, ask in a card's chat.
+
+## Job title and photo
+
+People with a company address get a job title, photo, LinkedIn and city, looked up like [organisation details](organisation-data.md). Only their name and company domain are sent on a hosted Machine. Turn it off in **Settings**, under Graph: **Look up work contacts**.
+
+## Delete someone permanently
+
+On their page, open the ⋯ menu and pick **Delete permanently…**, then **Delete**. It removes them and what your Machine knows about them: their entry, addresses, looked-up details, the messages only between the two of you, and notes about them. Cards that involve them stay, with their name taken out. They won't be added again. It can't be undone.
+
+## Who's who
+
+Roles your Machine read in your messages, waiting for your word. **✓ Right** confirms one; **Edit** changes it. It learns from your edits. This shows only when roles are waiting.
+
+## Organisations
+
+Companies, from the addresses and names in your messages. See [Organisation details](organisation-data.md).
+
+Mail from email warm-up tools is kept out, under "Hidden as warm-up", with **Undo** per domain.
+
+## Projects
+
+Named by your Machine from what your messages are about. Signals that look like they belong show as "probably part of it". **Rename** a project; renaming it to another project's name joins the two.
+
+## What it knows about someone
+
+Under Known about, each fact has a menu:
+
+- **Forget** deletes it everywhere.
+- Not about them only takes it off that page.
