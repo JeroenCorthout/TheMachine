@@ -152,6 +152,39 @@ class SamePerson(unittest.TestCase):
         self.build()
         self.assertEqual(set(self.people()), {'email:kit@globex.example'})
 
+    def test_merge_all_takes_every_listed_pair_but_never_a_not_the_same_and_one_undo_splits_them(self):
+        self.add(tg.mail(3, 'Sam Rivera <sam.rivera@one.example>', 'sam@acme.com'), tg.mail(3, 'Sam Rivera <rivera@two.example>', 'sam@acme.com'),
+                 tg.mail(2, 'Kit Lane <kit@globex.example>', 'sam@acme.com'), tg.mail(2, 'Kit <k.lane@globex.example>', 'sam@acme.com'),
+                 tg.mail(1, 'Lee Ames <lee@north.example>', 'sam@acme.com'), tg.mail(1, 'Lee Ames <ames@south.example>', 'sam@acme.com'))
+        self.build()
+        listed = [[s['a']['id'], s['b']['id']] for s in self.app.graph_action({})['same_person']]
+        self.assertEqual(len(listed), 3)
+        self.say('email:ames@south.example', 'email:lee@north.example', False)  # the list on screen still shows it
+        with self.assertRaisesRegex(ValueError, 'Only the owner'):
+            self.app.action('graph_same_all', {'pairs': listed})
+        said = self.app.action('graph_same_all', {'pairs': listed}, owner_dashboard=True)
+        self.assertEqual(said['merged'], 2)
+        people = self.people()
+        self.assertEqual(len(people), 4)
+        self.assertIn('email:lee@north.example', people)
+        self.assertIn('email:ames@south.example', people)  # Not the same is never merged
+        self.assertEqual(self.same_pairs(), set())
+        # One Undo: every pair of the batch is two people again, and asked again; Not the same stays.
+        self.assertEqual(self.app.action('graph_same_all', {'undo': said['batch']}, owner_dashboard=True)['split'], 2)
+        self.assertEqual(len(self.people()), 6)
+        self.assertEqual(self.same_pairs(), {('email:rivera@two.example', 'email:sam.rivera@one.example'),
+                                              ('email:k.lane@globex.example', 'email:kit@globex.example')})
+        # Undo on one pair of a Merge all still works on its own.
+        said = self.app.action('graph_same_all', {'pairs': listed}, owner_dashboard=True)
+        self.say('email:k.lane@globex.example', 'email:kit@globex.example', False)
+        self.build()
+        people = self.people()
+        self.assertEqual(len(people), 5)
+        self.assertIn('email:k.lane@globex.example', people)
+        self.assertEqual(sorted(next(ids for ids in people.values() if 'email:rivera@two.example' in ids)),
+                         ['email:rivera@two.example', 'email:sam.rivera@one.example'])
+        self.assertEqual(self.app.action('graph_same_all', {'pairs': listed}, owner_dashboard=True)['batch'], None)  # nothing left to merge
+
     def test_a_domain_or_a_placeholder_is_not_a_name(self):
         self.assertIsNone(graph.plain_name('HelloShop.example'))
         self.assertIsNone(graph.plain_name('Unknown sender'))

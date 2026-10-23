@@ -20,6 +20,8 @@ Everyone you're in touch with, closest first. A person's page shows how often yo
 
 When two people might be one, their page asks if they are the same person, and People lists them under **Same person?**. **Merge** joins them, with all their messages, notes, roles and projects. **Not the same** keeps them apart for good.
 
+**Merge all** merges every pair in the list at once, except the ones you marked **Not the same**. **Undo** right after splits them all again.
+
 A joined person's page lists why under **Joined from**. **Undo** splits them again.
 
 ## Job title and photo
