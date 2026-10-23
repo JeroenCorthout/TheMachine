@@ -9095,7 +9095,7 @@ class App:
         except (ValueError, sqlite3.Error):
             views = []
         note = note['feedback'].strip() if note else ''
-        return {'card': card, 'drafts': drafts, 'links': links, 'files': files, 'messages': agent_messages(views),
+        return {'card': card, 'drafts': drafts, 'links': links, 'files': files, 'messages': agent_messages(views), 'sources': views,
                 'task': card_task(card), 'note': note, 'about': agent_about(card, views), 'history': agent_history(*chat, skip=note)}
 
     def agent_revise(self, suggestion_id, text):

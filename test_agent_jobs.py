@@ -586,6 +586,38 @@ class TaskFirstBrief(unittest.TestCase):
         self.assertIn('To: me@example.com', text)
         self.assertTrue((work / 'BRIEF.md').read_text().startswith('Task: Add the agreed Listly link'))
 
+    def test_a_job_that_runs_elsewhere_carries_the_messages_newest_first(self):
+        # Remote Claude Code and Codex cloud don't get the job folder: the source text travels in the job, under a cap.
+        later = 'Robin again. ' + 'The banner size is 600 by 300. ' * 400
+        self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'm2', 'kind': 'gmail.message', 'occurred_at': '2026-10-22T11:00:00+00:00',
+                                             'title': 'One more thing', 'body': later, 'deleted': False,
+                                             'metadata': {'from': 'Robin Vendor <robin@listly.example>', 'thread_id': 't1', 'labels': ['INBOX']}}])
+        with self.store.connect() as db:
+            ids = [r[0] for r in db.execute('SELECT id FROM events ORDER BY id')]
+            db.execute('UPDATE suggestions SET event_ids=? WHERE id=?', (json.dumps(ids), self.sid))
+        jobs = self.jobs()
+        with patch.object(agent_jobs.AgentJobs, 'tools', lambda self: [{'id': 'codex', 'name': 'Codex', 'place': 'cloud'}]):
+            brief = jobs.draft(self.sid)['brief']
+        self.assertTrue(brief.startswith('Task: Add the agreed Listly link'))
+        self.assertIn('The source messages, newest first, with their text', brief)
+        self.assertNotIn('card/messages.md', brief)  # not a file it can read there
+        self.assertLess(brief.index('### One more thing'), brief.index('### Final entry for the agency list'))
+        self.assertIn('Robin again.', brief)
+        self.assertRegex(brief, r'\(Cut here: \d+ more characters in the original\.\)')
+        self.assertLessEqual(len(brief), agent_jobs.BRIEF_MAX)
+        self.assertTrue(brief.splitlines()[-1].startswith('- Leave anything that sends, publishes, pays or submits for me'))
+        # On this computer the folder has them, so the job only points there.
+        with patch.object(agent_jobs.AgentJobs, 'tools', lambda self: [{'id': 'codex', 'name': 'Codex', 'place': 'local'}]):
+            local = jobs.draft(self.sid)['brief']
+        self.assertIn('card/messages.md', local)
+        self.assertNotIn('Robin again.', local)
+        # Many messages: the older ones that don't fit are named as left out.
+        many = [{'title': f'Mail {n}', 'from': 'x@example.com', 'occurred_at': f'2026-10-{10 + n}', 'body': 'word ' * 600} for n in range(9)]
+        text = agent_jobs.inline_messages(many, 7000)
+        self.assertTrue(text.startswith('### Mail 8'))
+        self.assertRegex(text, r'\(\d+ older messages left out here, to keep this short\.\)$')
+        self.assertLessEqual(len(text), 7000)
+
     def test_the_task_follows_the_card(self):
         row = {'status': 'prepared', 'title': 'Pick a venue', 'outcome': json.dumps({'state': 'needs_you', 'needs': 'which venue do we book?'})}
         self.assertEqual(a.card_task(row), 'Help me answer this: Which venue do we book?')
