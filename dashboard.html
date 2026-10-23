@@ -3707,13 +3707,15 @@ function calRender(){const box=$('#calendar-view');if(!box||!state)return;const 
  // Earlier days coming in above, or a week's meetings arriving, never move what is on screen; the time grid keeps its hour
  const keep=list&&!$('#calendar').hidden?calAnchor(box):null,pane=box.querySelector('.cal-tg-scroll'),hash=calHash(),y=pane&&calGridShown===hash?pane.scrollTop:null;
  if(box.innerHTML!==html){box.innerHTML=html;if(keep){const el=box.querySelector(`[data-day="${keep.day}"]`),d=el?el.getBoundingClientRect().top-keep.top:0;if(Math.abs(d)>.5)scrollBy(0,d)}calObserve(box)}
- const p=box.querySelector('.cal-tg-scroll');if(p){if(y!=null)p.scrollTop=y;else if(calMeetings){p.scrollTop=calFirstHour(box)*CAL_HOUR;calGridShown=hash}}
+ const p=box.querySelector('.cal-tg-scroll');if(p){if(y!=null)p.scrollTop=y;else if(calMeetings&&p.clientHeight){p.scrollTop=calFirstHour(box,p.clientHeight/CAL_HOUR)*CAL_HOUR;calGridShown=hash}}  // a hidden pane can't scroll: wait until it shows
  calBadge();pageHead()}
-// The time grid opens an hour before now on today's week while there is more to come, else an hour before the first
-// meeting (08:00 when there is none)
+// The time grid opens a little before the range's first timed meeting, or 08:00 when that is earlier; later in
+// the day the now line stays in view. Also on ‹ › and Today
 let calGridShown='';
-function calFirstHour(box){const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR),h=new Date().getHours()-1;
- if(box.querySelector('.cal-now')&&tops.some(t=>t>=h))return Math.max(0,h);return tops.length?Math.max(0,Math.floor(Math.min(...tops))-1):8}
+function calFirstHour(box,shown=8){const tops=[...box.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)/CAL_HOUR).filter(t=>t>=0);
+ let h=Math.max(0,Math.min(8,...tops)-.5);const now=box.querySelector('.cal-now');
+ if(now){const n=parseFloat(now.style.top)/CAL_HOUR;if(n>h+shown-.5)h=Math.max(0,n-Math.min(2,shown/3))}
+ return Math.min(h,Math.max(0,24-shown))}
 // The row's count: what is on today, also before the Calendar is opened (its meetings come once, a moment after the start)
 function calBadge(){if(!state)return;const {items}=calItems(),n=items.filter(i=>i.day===localDay(new Date())).length,b=$('#badge-calendar');if(b&&b.textContent!==(n?String(n):''))b.textContent=n?String(n):''}
 setTimeout(()=>calFetch().then(calBadge),2000);

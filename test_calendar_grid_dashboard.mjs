@@ -50,6 +50,15 @@ const open=async(width,height,scheme='dark',hash='')=>{const mobile=width<600;
  const page=await context.newPage();page.on('pageerror',e=>errors.push(width+': '+e.message));await page.goto(base+hash);await page.locator('#task-'+cards[0].id).waitFor();return {context,page}};
 const go=async(page,hash)=>{await page.evaluate(h=>{location.hash=h},hash);await page.waitForFunction(h=>location.hash===h&&!document.querySelector('#calendar').hidden,hash)};
 const range=page=>page.locator('.cal-range').textContent();
+// Where the time grid opens: the first timed meeting (or 08:00 when earlier) with a little room above, and the now
+// line in view later in the day
+const opensAt=async(page,where)=>{await page.waitForFunction(()=>{const p=document.querySelector('.cal-tg-scroll');return p&&p.clientHeight&&p.scrollTop>0});
+ const s=await page.evaluate(()=>{const p=document.querySelector('.cal-tg-scroll'),tops=[...p.querySelectorAll('.cal-blk')].map(b=>parseFloat(b.style.top)),n=p.querySelector('.cal-now');
+  return {top:p.scrollTop,h:p.clientHeight,first:Math.min(8*CAL_HOUR,...tops),now:n?parseFloat(n.style.top):null,hour:CAL_HOUR}});
+ const seen=y=>y>=s.top&&y<=s.top+s.h;
+ if(s.now!=null&&s.now>s.first)assert.ok(seen(s.now),where+': the now line is in view '+JSON.stringify(s));
+ else assert.ok(Math.abs(s.top-(s.first-s.hour/2))<2,where+': opens half an hour before the first meeting '+JSON.stringify(s));
+ return s};
 const fits=(page,where)=>page.evaluate(()=>({page:document.documentElement.scrollWidth,vw:innerWidth})).then(s=>assert.ok(s.page<=s.vw,`${where}: wider than the screen ${JSON.stringify(s)}`));
 const shot=async(page,name)=>{if(process.env.CALENDAR_SHOT)await page.screenshot({path:`${process.env.CALENDAR_SHOT}/${name}.png`,fullPage:true})};
 const swipe=(page,dx)=>page.evaluate(dx=>{const el=document.querySelector('.cal-tg-body'),r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+40;
@@ -80,11 +89,18 @@ try{
   assert.equal(await page.locator('#calendar-view .cal-block[data-day="2026-10-14"] .cal-item').count(),5);
   // The weekend of the clock change: 07:00 sits at 07:00 on both days
   await go(page,'#calendar?view=week&date=2026-10-19');await page.locator('.cal-tg-col[data-col="2026-10-25"] .cal-blk',{hasText:'Sunday walk'}).waitFor();
+  await opensAt(page,'week of 19 October');
+  // The rule itself: half an hour before the first meeting or 08:00, whichever is earlier; the now line once it is
+  // past the screen; never past the end of the day
+  const first=await page.evaluate(()=>{const box=(tops,now)=>{const d=document.createElement('div');d.innerHTML=tops.map(h=>`<a class="cal-blk" style="top:${h*CAL_HOUR}px"></a>`).join('')+(now==null?'':`<i class="cal-now" style="top:${now*CAL_HOUR}px"></i>`);return d};
+   return [calFirstHour(box([9,14])),calFirstHour(box([6.5,9])),calFirstHour(box([])),calFirstHour(box([9],3)),calFirstHour(box([9],11)),calFirstHour(box([9],20)),calFirstHour(box([9],23.5),8)]});
+  assert.deepEqual(first,[7.5,6,7.5,7.5,7.5,16,16]);
   assert.equal(await range(page),'19 – 25 Oct 2026');
   const tops=await page.evaluate(()=>[['2026-10-24','Saturday run'],['2026-10-25','Sunday walk']].map(([k,t])=>{const b=[...document.querySelectorAll(`.cal-tg-col[data-col="${k}"] .cal-blk`)].find(b=>b.textContent.includes(t));return [parseFloat(b.style.top),parseFloat(b.style.height)]}));
   assert.deepEqual(tops,[[476,66],[476,66]],'an hour at 07:00 on both sides of the change');
   // This week: seven columns from Monday, today marked with the now line, overlaps side by side, All day on top
   await page.keyboard.press('t');await page.locator('.cal-tg-col.today').waitFor();
+  await opensAt(page,'Today');
   assert.ok(await page.locator('.cal-today.now').count(),'Today is quiet on this week');
   const days=await page.locator('.cal-tg-day').evaluateAll(d=>d.map(x=>x.dataset.day));assert.equal(days.length,7);assert.equal(new Date(days[0]+'T12:00').getDay(),1);
   assert.equal(await page.locator('.cal-tg-col.today .cal-now').count(),1);
@@ -109,12 +125,19 @@ try{
   await page.locator('.cal-tg-col.today .cal-tg-more').click();await page.waitForFunction(()=>location.hash.startsWith('#calendar?view=agenda'));
   assert.ok(await page.locator('#calendar-view .cal-block[data-day="'+key(at(0,0))+'"] .cal-item',{hasText:'Vendor demo'}).count()&&await page.locator('#calendar-view .cal-item',{hasText:'Pilot call'}).count(),'the agenda lists all three');
   await page.keyboard.press('w');await page.locator('.cal-tg').waitFor();
+  // › and ‹ open each week at its own first meeting again
+  await page.keyboard.press('ArrowRight');await page.waitForFunction(()=>!document.querySelector('.cal-today.now'));await opensAt(page,'next week');
+  await page.keyboard.press('ArrowLeft');await page.locator('.cal-tg-col.today').waitFor();await opensAt(page,'back to this week');
   // m picks Month, on this month; the view is remembered on this device, and the Calendar opens on the current period
   await page.keyboard.press('m');await page.locator('.cal-mg').waitFor();assert.equal(await range(page),new Date().toLocaleDateString('en-GB',{month:'long',year:'numeric'}));
   await page.keyboard.press('ArrowLeft');await page.waitForFunction(()=>!document.querySelector('.cal-today.now'));
   await page.reload();await page.locator('#task-'+cards[0].id).waitFor({state:'attached'});await page.evaluate(()=>{history.replaceState(null,'',location.pathname);showTab('inbox')});
   await page.locator('nav [data-tab="calendar"]').click();await page.locator('.cal-mg').waitFor();assert.ok(await page.locator('.cal-today.now').count(),'opens on this month');
-  await page.keyboard.press('a');await page.waitForFunction(()=>!document.querySelector('.cal-mg'));
+  // Week remembered, the Calendar opened from another tab: the grid is drawn while hidden, and still opens at the morning
+  await page.keyboard.press('w');await page.locator('.cal-tg').waitFor();
+  await page.reload();await page.locator('#task-'+cards[0].id).waitFor({state:'attached'});await page.evaluate(()=>{history.replaceState(null,'',location.pathname);showTab('inbox')});
+  await page.waitForTimeout(2500);await page.locator('nav [data-tab="calendar"]').click();await page.locator('.cal-tg').waitFor();await opensAt(page,'opened from another tab');
+  await page.keyboard.press('a');await page.waitForFunction(()=>!document.querySelector('.cal-mg')&&!document.querySelector('.cal-tg'));
   await context.close()}
  // Phone: Week is three days, swiped through (and ‹ ›); Month shows dots, and a tap lists the day under the grid
  for(const scheme of ['dark','light']){const {context,page}=await open(390,844,scheme);
