@@ -29,6 +29,7 @@ import re
 
 import family
 import graph
+import meeting_notes
 import next_actions
 
 LOG = logging.getLogger('personal-assistant')
@@ -932,6 +933,63 @@ class Requests:
                 promised = []
         return fleet.clean('; '.join(dict.fromkeys(cards + promised)), 200)
 
+    def split_notes(self):
+        """Proposed splits whose meeting has notes (meeting_notes.py) not read for them yet: for the review to fill in."""
+        since = (dt.date.today() - dt.timedelta(days=FOLLOWUP_DAYS + 1)).isoformat()
+        out = []
+        with self.connect() as db:
+            done = {r['key'][12:] for r in db.execute("SELECT key FROM fleet_meta WHERE key LIKE 'split_notes:%'")}
+            for split in db.execute("SELECT * FROM fleet_splits WHERE direction='out' AND status='proposed' AND day>=? AND event_id IS NOT NULL "
+                                    'ORDER BY day DESC LIMIT 10', (since,)).fetchall():
+                if split['id'] in done:
+                    continue
+                notes = meeting_notes.for_event(db, split['event_id'], split['day'])
+                if notes:
+                    out.append({'split_id': split['id'], 'title': split['title'] or 'a meeting', 'day': split['day'], 'event_id': notes['id'],
+                                'source': meeting_notes.SOURCE.get(notes['kind'], 'meeting'), 'parts': json.loads(split['parts'])})
+        return out
+
+    def split_notes_text(self):
+        """The review's list: each split's people (the owner marked), and the notes event to read."""
+        lines = []
+        for s in self.split_notes():
+            people = ', '.join(f"{p['member_id']} = {'the owner' if p['mine'] else p['name']}" for p in s['parts'])
+            lines.append(f"- split_id {s['split_id']}: “{s['title']}” on {s['day']}, {s['source']} notes event_id {s['event_id']}. People: {people}")
+        return '\n'.join(lines)
+
+    def fill_split(self, split_id, event_id, parts):
+        """The review read a meeting's notes and gave its next steps to the people in the split ({member_id: text}).
+        Only empty fields are filled, marked as suggested; the owner edits them and nothing goes before Send the split.
+        Called once per split: an empty `parts` says the notes give nobody anything clear."""
+        if isinstance(event_id, str) and event_id.strip().isdigit():
+            event_id = int(event_id.strip())
+        with self.connect() as db:
+            split = db.execute("SELECT * FROM fleet_splits WHERE id=? AND direction='out' AND status='proposed'", (str(split_id),)).fetchone()
+            if not split:
+                raise ValueError('That split was sent or set aside already, or is not this Machine\'s to propose')
+            notes = meeting_notes.for_event(db, split['event_id'], split['day']) if split['event_id'] else None
+        if not notes or notes['id'] != event_id:
+            raise ValueError('event_id is the notes event listed with that split')
+        given = parts if isinstance(parts, dict) else {}
+        split_parts = json.loads(split['parts'])
+        known = {p['member_id'] for p in split_parts}
+        if set(given) - known:
+            raise ValueError('parts names only the member_ids listed with that split')
+        filled = 0
+        for p in split_parts:
+            text = fleet.clean(given.get(p['member_id']) or '', 200)
+            if text and not p.get('what'):
+                p['what'], p['from_notes'] = text, True
+                filled += 1
+        with self.connect() as db:
+            if not db.execute("UPDATE fleet_splits SET parts=?,updated_at=? WHERE id=? AND status='proposed'",
+                              (json.dumps(split_parts), fleet.now(), split['id'])).rowcount:
+                raise ValueError('That split was sent or set aside already')
+            db.execute('INSERT OR REPLACE INTO fleet_meta(key,value) VALUES(?,?)',
+                       ('split_notes:' + split['id'], json.dumps({'event_id': notes['id'], 'source': meeting_notes.SOURCE.get(notes['kind'], ''),
+                                                               'filled': filled, 'at': fleet.now()})))
+        return {'filled': filled}
+
     def send_split(self, split_id, items):
         """The owner sends the split as they filled it in: {member_id: what}. Each teammate with a part gets it; the
         owner's own part becomes their card."""
@@ -1006,7 +1064,9 @@ class Requests:
     def requests_view(self):
         since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=SPLIT_SHOWN_DAYS)).isoformat(timespec='seconds')
         with self.connect() as db:
-            splits = [{**{k: r[k] for k in ('id', 'fleet', 'title', 'day', 'status')}, 'parts': json.loads(r['parts'])}
+            noted = {r['key'][12:]: json.loads(r['value']) for r in db.execute("SELECT key,value FROM fleet_meta WHERE key LIKE 'split_notes:%'")}
+            splits = [{**{k: r[k] for k in ('id', 'fleet', 'title', 'day', 'status')}, 'parts': json.loads(r['parts']),
+                       **({'notes': noted[r['id']]['source']} if (noted.get(r['id']) or {}).get('filled') else {})}
                       for r in db.execute("SELECT * FROM fleet_splits WHERE direction='out' AND ((status='proposed' AND day>=?) OR (status='sent' AND updated_at>=?)) "
                                           'ORDER BY day DESC LIMIT 20', (since[:10], since))]
             asked = {(r['fleet'], r['member_id'], json.loads(r['question']).get('about')) for r in db.execute("SELECT * FROM fleet_out WHERE kind='intro'")}

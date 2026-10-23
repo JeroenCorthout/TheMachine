@@ -239,7 +239,7 @@ def catalog(config):
         service = SERVICES.get(name, name)
         setup = setup_of(service) or {}
         found.append({'name': name, 'service': service, 'label': label(service), 'note': setup.get('note'), 'what': setup.get('what'),
-                      'connected': have.get(service, 0), 'broker': service in brokered})
+                      'connected': have.get(service, 0), 'broker': service in brokered or bool(setup.get('broker'))})
     return found
 
 
@@ -666,6 +666,10 @@ def missing(config, account):
         if not (config.get('microsoft_broker') or {}).get('url'):
             return 'microsoft_broker url is not set'
         names.append('microsoft-broker')
+    elif account.get('transport') == 'broker' and account.get('service') == 'zoom':
+        if not (config.get('zoom_broker') or {}).get('url'):
+            return 'zoom_broker url is not set'
+        names.append('zoom-broker')
     elif account.get('transport') == 'broker':
         if not (config.get('google_broker') or {}).get('url'):
             return 'google_broker url is not set'
