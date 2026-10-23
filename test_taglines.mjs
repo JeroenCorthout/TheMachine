@@ -23,7 +23,10 @@ assert.equal(slack.length,generic.length+TAGLINES.filter(([,s])=>s?.includes('sl
 const mail=taglinePool(TAGLINES,[{service:'gmail'},{service:'calendar'}],FRI);
 assert.ok(mail.includes('I found the email you were avoiding.')&&mail.includes('Your calendar called. I took notes.'));
 assert.ok(!mail.some(t=>/Slack/.test(t)));
+// Outlook gets the email and calendar lines too.
+const ms=taglinePool(TAGLINES,[{service:'outlook'},{service:'outlook_calendar'}],FRI);
+assert.ok(ms.includes('I read your email so you don’t have to.')&&ms.includes('Your inbox, but with opinions.')&&ms.includes('Your calendar called. I took notes.'));
 // Every tagged source is one the dashboard knows.
-const known=new Set(['gmail','calendar','slack','salesflare','whatsapp','linkedin','android','github','stripe','rss','x','trello']);
+const known=new Set(['gmail','outlook','calendar','outlook_calendar','slack','salesflare','whatsapp','linkedin','android','github','stripe','rss','x','trello']);
 for(const [,src] of TAGLINES)for(const s of src||[])assert.ok(known.has(s),s);
 console.log('taglines ok');
