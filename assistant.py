@@ -3447,14 +3447,14 @@ class Store:
 
     def boards_text(self, run_id, every_hours=24, limit=60):
         """Open projects on no board, for one review a day to look over for a board suggestion: only when no
-        suggestion is open and three or more are on no board. A review that didn't finish gets them again."""
+        suggestion is open and three or more are on no board. Until a review answers it (finish_analysis boards),
+        the next one gets it again."""
         with self.connect() as db:
             if db.execute("SELECT 1 FROM board_suggestions WHERE state='open'").fetchone():
                 return ''
-            last = db.execute('SELECT run_id,offered_at FROM board_offers WHERE id=1').fetchone()
+            last = db.execute('SELECT run_id,offered_at,answer FROM board_offers WHERE id=1').fetchone()
             since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=every_hours)).isoformat()
-            if last and last['run_id'] != run_id and last['offered_at'] > since and not db.execute(
-                    "SELECT 1 FROM review_runs WHERE run_id=? AND finished_at IS NOT NULL AND status<>'ok'", (last['run_id'],)).fetchone():
+            if last and last['answer'] and last['offered_at'] > since:
                 return ''
             rows = db.execute('SELECT id,name FROM projects WHERE board_id IS NULL AND closed_at IS NULL ORDER BY created_at DESC LIMIT ?', (limit,)).fetchall()
             if len(rows) < 3:
@@ -10065,7 +10065,7 @@ Follow-up splits waiting for the owner to send, with the notes of their meeting.
 Possibly one piece of work nobody named: threads that read alike and share people. If one is a deal, hire, launch, case or other ongoing work, name it with graph (project and its event_ids); if not, skip it without comment.
 {unnamed}''' if unnamed else '') + (f'''
 
-Boards to suggest, once a day: the open projects on no board, with the people they're with. Look them over before finish_analysis. When three or more are the same kind of work, each with its own counterpart (partner listings, hires, customer onboardings, evaluations), suggest one board for them with graph suggest_board, as in Boards above. Judge the kind from what the projects are, not the words in their names. If no group fits, skip it without comment.
+Boards to suggest, once a day: the open projects on no board, with the people they're with. When three or more are the same kind of work, each with its own counterpart (partner listings, hires, customer onboardings, evaluations), suggest one board for them with graph suggest_board, as in Boards above. Judge the kind from what the projects are, not the words in their names. Then answer in finish_analysis: boards "suggested", or "none: <why, in a few words>" when no group fits.
 {boards}''' if boards else '') + (f'''
 
 Who they are to the owner: people with no role yet (those on open cards matter now). For each, open graph with its node_id and read enough of their messages (events, search) to see what they are to the owner, in a few words from the owner's side ("cofounder", "accountant", "investor", "customer at Globex", "sister"; "automated sender" only for a tool or newsletter with no person behind it, not for someone whose software sends their mail). Be as specific as the messages allow: their job or title, not just "colleague", and leave out the owner's own company name. Set it with graph node_id, role, event_id (the message that shows it) and quote (a short line copied from it) when the messages show it: a title or signature, an introduction, how they talk about each other, what they do together. Hints say where someone appears, not what they are: use them only together with what the messages show. When the messages don't make it clear, leave it; a wrong role is worse than none. Organisations get a role the same way (node_id org:…); when an organisation's mail is only an email warm-up tool's traffic (templated exchanges with no real conversation behind them), set graph node_id org:… with warmup true and an event_id instead. When messages show how two people are related, add it with graph node_id, related_to and relation ("assistant of", "introduced by"). {ORG_STEP}
@@ -10761,6 +10761,9 @@ class App:
                     result['boards'] = graph.boards_brief(db)  # projects of one kind in stages, moved with finish_analysis stages
             return result
         if name == 'finish_analysis':
+            if args.get('_review_run'):  # a review that got "Boards to suggest" answers it before it finishes
+                with self.store.connect() as db:
+                    graph.board_check_answer(db, args['_review_run'], args.get('boards'))
             return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
                                              args.get('stages'))
         if name == 'graph':

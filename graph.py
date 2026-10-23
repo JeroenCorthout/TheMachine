@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS boards(id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQ
 CREATE TABLE IF NOT EXISTS project_moves(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL,board_id INTEGER,stage TEXT NOT NULL,reason TEXT,
   event_id INTEGER,source TEXT NOT NULL,at TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS project_moves_project ON project_moves(project_id,at);
-CREATE TABLE IF NOT EXISTS board_offers(id INTEGER PRIMARY KEY CHECK(id=1),run_id TEXT,offered_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS board_offers(id INTEGER PRIMARY KEY CHECK(id=1),run_id TEXT,offered_at TEXT NOT NULL,answer TEXT);
 CREATE TABLE IF NOT EXISTS board_suggestions(id INTEGER PRIMARY KEY,name TEXT NOT NULL,stages TEXT NOT NULL,about TEXT,projects TEXT NOT NULL,
   reason TEXT,source TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',board_id INTEGER,created_at TEXT NOT NULL,decided_at TEXT);
 '''
@@ -129,6 +129,8 @@ STUCK_DAYS = 10         # no reply for this long after the owner wrote: the tile
 def ensure(db):
     """Create the graph tables, and add columns that came later."""
     db.executescript(SCHEMA)
+    if 'answer' not in {r[1] for r in db.execute('PRAGMA table_info(board_offers)')}:
+        db.execute('ALTER TABLE board_offers ADD COLUMN answer TEXT')
     if 'probable' not in {r[1] for r in db.execute('PRAGMA table_info(graph_events)')}:
         db.execute('ALTER TABLE graph_events ADD COLUMN probable INTEGER NOT NULL DEFAULT 0')
     if 'direct' not in {r[1] for r in db.execute('PRAGMA table_info(graph_events)')}:
@@ -2094,6 +2096,22 @@ def suggest_board(db, args, source, now):
     sid = db.execute('INSERT INTO board_suggestions(name,stages,about,projects,reason,source,created_at) VALUES(?,?,?,?,?,?,?)',
                      (name, json.dumps(stages), about, json.dumps([r['id'] for r in rows]), one_line(args.get('reason'), 160), source, now)).lastrowid
     return {'suggestion_id': sid, 'name': name, 'projects': len(rows), 'status': 'suggested: it becomes a board once the owner saves it'}
+
+
+def board_check_answer(db, run_id, answer):
+    """A review that got "Boards to suggest" answers it before it finishes: "suggested" once it called suggest_board,
+    or "none: why". None when this run has no open check."""
+    row = db.execute('SELECT offered_at FROM board_offers WHERE id=1 AND run_id=? AND answer IS NULL', (run_id,)).fetchone()
+    if not row:
+        return None
+    text = one_line(answer, 200)
+    if not text:
+        raise ValueError('This review has "Boards to suggest": look over those projects, then finish with boards: "suggested" '
+                         '(after graph suggest_board) or "none: <why, in a few words>"')
+    if text.casefold().startswith('suggested') and not db.execute('SELECT 1 FROM board_suggestions WHERE created_at>=?', (row['offered_at'],)).fetchone():
+        raise ValueError('No board was suggested in this review: call graph suggest_board first, or finish with boards: "none: <why>"')
+    db.execute('UPDATE board_offers SET answer=? WHERE id=1', (text,))
+    return text
 
 
 def board_suggestions(db):
