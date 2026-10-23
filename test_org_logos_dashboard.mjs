@@ -34,7 +34,7 @@ try{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port);
   await navClick(page.locator('nav [data-tab="people"]'));
-  await page.locator('[data-graph-pane="orgs"]').click();
+  await navClick(page.locator('.side-sub a[data-graph-sub="orgs"]'));
   const row=id=>page.locator(`#people-view article[data-node="org:${id}"] .org-pic`);
   await row('globex.example').waitFor();
   const img=row('globex.example').locator('img');

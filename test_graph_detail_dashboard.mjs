@@ -59,8 +59,8 @@ try{
  await navClick(page.locator('nav [data-tab="people"]'));
  await page.locator('#people-view article[data-node="wa:3247000001"] button.node').click();
  await page.locator('.graph-crumbs').waitFor();
- // The page's title stays, Graph current (in the drawer on a phone); the breadcrumb says where this is.
- assert.ok(await page.locator('#page-head .page-title',{hasText:'Graph'}).isVisible()&&await page.locator('nav [data-tab="people"].active').count()===1);
+ // The page's title stays (the pane, under a quiet Graph), Graph current (in the drawer on a phone); the breadcrumb says where this is.
+ assert.ok(await page.locator('#page-head .page-title',{hasText:'People'}).isVisible()&&await page.locator('#page-head .page-crumb',{hasText:'Graph'}).isVisible()&&await page.locator('nav [data-tab="people"].active').count()===1);
  assert.equal(await page.evaluate(()=>scrollY),0);
  assert.equal((await page.locator('.graph-crumbs').textContent()).replace(/\s+/g,' '),'Graph›People›Ann Example');
  assert.equal(await page.locator('.graph-back').count(),0);
@@ -149,12 +149,12 @@ try{
  await page.waitForFunction(()=>!document.querySelector('.graph-known'));
  // The breadcrumb goes back to the list; the browser's back button returns to Ann, forward to the list again.
  await page.locator('.graph-crumbs [data-crumb="people"]').click();
- await page.locator('#people-view [data-graph-pane="people"]').waitFor();
+ await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();
  assert.ok(await page.locator('.people-search').isVisible());
  await page.goBack();
  await page.locator('.graph-crumbs').waitFor();
  await page.goBack();
- await page.locator('#people-view [data-graph-pane="people"]').waitFor();
+ await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();
  // Another tab drops the link; a deep link opens the page straight away, with the tabs.
  await navClick(page.locator('nav [data-tab="events"]'));
  assert.equal(new URL(page.url()).hash,'');

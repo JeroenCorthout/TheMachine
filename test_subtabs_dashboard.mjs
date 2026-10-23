@@ -33,20 +33,23 @@ const base='http://127.0.0.1:'+server.address().port;
 const errors=[];let browser;
 const tabs=(page,row)=>page.locator(row+' [role=tab]').allInnerTexts();
 const selected=(page,row)=>page.locator(row+' [role=tab][aria-selected="true"]').innerText();
+const rows=page=>page.locator('.side-sub a:not([hidden])').evaluateAll(a=>a.map(x=>x.querySelector('.nl').textContent+(x.querySelector('.badge').textContent?'\n'+x.querySelector('.badge').textContent:'')));
+const lit=page=>page.locator('.side-sub a[aria-current="page"] .nl').textContent();
 try{
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  const context=await browser.newContext({viewport:{width:1280,height:900}}),page=await context.newPage();
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base);
- // Graph: People first, then Projects and Organisations; Who's who, with its count, last. The Graph tab counts it too.
- await page.locator('#badge-people',{hasText:/^2$/}).waitFor();
+ // Graph: its panes are rows in the sidebar (no pills on the page): People, Organisations, Projects, and Who's who with
+ // its count last. The Graph row counts it too while the rows are folded away.
+ await page.locator('#badge-people',{hasText:/^2$/}).waitFor({state:'attached'});
  await navClick(page.locator('nav [data-tab="people"]'));
- await page.locator('#people-view .sub-tabs').waitFor();
- assert.deepEqual(await tabs(page,'#people-view'),['People','Projects','Organisations','Who’s who\n2']);
- assert.equal(await selected(page,'#people-view'),'People');
+ await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();assert.equal(await page.locator('#people-view .sub-tabs').count(),0);
+ assert.deepEqual((await rows(page)).map(r=>r.replace(/\n\d+$/,m=>m)),['People','Organisations','Projects','Who’s who\n2']);
+ assert.equal(await lit(page),'People');assert.equal(await page.locator('#page-head .page-title').textContent(),'People');
  assert.equal(await page.locator('#people-view .whos').first().isVisible(),false);
- await page.locator('#people-view [data-graph-pane="roles"]').click();
+ await navClick(page.locator('.side-sub a[data-graph-sub="roles"]'));
  await page.locator('#people-view .whos').first().waitFor();
  assert.equal(await page.locator('#people-view [data-graph-panel="people"]').isHidden(),true);
  // The Who's who head: heading and count pill on one line, the short explainer on its own line below.
@@ -54,13 +57,13 @@ try{
   return {lines:Math.round(hr.height/parseFloat(getComputedStyle(h).lineHeight)),inline:cr.top<hr.bottom&&cr.left>hr.left,below:pr.top>=hr.bottom-1,text:p.textContent}});
  assert.deepEqual(head,{lines:1,inline:true,below:true,text:'Roles your Machine picked up. Confirm or edit; it learns from your edits.'});
  // The choice is kept; a link picks one.
- await page.reload();await navClick(page.locator('nav [data-tab="people"]'));await page.locator('#people-view .sub-tabs').waitFor();
- assert.equal(await selected(page,'#people-view'),'Who’s who\n2');
+ await page.goto(base);await navClick(page.locator('nav [data-tab="people"]'));await page.locator('[data-graph-panel="roles"]:not([hidden])').waitFor();
+ assert.equal(await lit(page),'Who’s who');assert.equal(await page.locator('#page-head .page-sub').textContent(),'2 roles to confirm');
  await page.goto(base+'/#graph=people');await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();
  await page.goto(base+'/#graph=roles');await page.locator('[data-graph-panel="roles"]:not([hidden])').waitFor();
  // Confirming one drops both counts.
  page.once('dialog',d=>d.accept());await page.locator('[data-graph-panel="roles"] [data-role-confirm]').first().click();
- await page.locator('#badge-people',{hasText:/^1$/}).waitFor();assert.equal(await selected(page,'#people-view'),'Who’s who\n1');
+ await page.locator('#badge-people',{hasText:/^1$/}).waitFor({state:'attached'});await page.locator('#count-roles',{hasText:/^1$/}).waitFor({state:'attached'});
  await page.goto(base+'/#graph=projects');await page.locator('[data-graph-panel="projects"]:not([hidden])').waitFor();
  assert.equal(await page.locator('#people').isVisible(),true);assert.equal(await page.evaluate(()=>location.hash),'#graph=projects');  // the pane stays in the address
  await page.goto(base+'/#people');await page.locator('#people:not([hidden])').waitFor();

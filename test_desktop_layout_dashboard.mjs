@@ -134,7 +134,7 @@ try{
  // screen is lit, the counts show, and the group folds (remembered); folded to icons each row has its name and count
  {const {context,page}=await open(1440,900);
   await page.waitForFunction(()=>document.querySelector('#count-people').textContent==='214');
-  assert.deepEqual(await page.locator('.side-sub a').evaluateAll(a=>a.map(x=>x.textContent)),['People214','Organisations38','Projects9']);
+  assert.deepEqual(await page.locator('.side-sub a:not([hidden])').evaluateAll(a=>a.map(x=>x.textContent)),['People214','Organisations38','Projects9']);
   const lit=()=>page.evaluate(()=>[...document.querySelectorAll('.side-sub a[aria-current="page"]')].map(a=>a.dataset.graphSub).join());
   const pane=()=>page.evaluate(()=>[...document.querySelectorAll('[data-graph-panel]')].find(p=>!p.hidden)?.dataset.graphPanel);
   await page.locator('.side-sub a[data-graph-sub="orgs"]').click();await page.locator('[data-graph-panel="orgs"]').waitFor();
@@ -142,7 +142,10 @@ try{
   await page.locator('.side-sub a[data-graph-sub="projects"]').click();await page.waitForFunction(()=>location.hash==='#graph=projects');assert.equal(await pane(),'projects');assert.equal(await lit(),'projects');
   await page.goBack();await page.waitForFunction(()=>location.hash==='#graph=orgs');await page.waitForTimeout(200);assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
   await page.reload();await page.locator('[data-graph-panel="orgs"]').waitFor();await page.waitForTimeout(300);assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
-  await page.locator('#people-view [data-graph-pane="people"]').click();assert.equal(new URL(page.url()).hash,'#graph=people');assert.equal(await lit(),'people');
+  assert.equal(await page.locator('#people-view .sub-tabs').count(),0,'no pills: the rows are the panes');
+  assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations');assert.equal(await page.locator('#page-head .page-sub').textContent(),'38 organisations');
+  assert.equal(await page.locator('#page-head .page-crumb').textContent(),'Graph');
+  await page.locator('.side-sub a[data-graph-sub="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');assert.equal(await lit(),'people');assert.equal(await page.locator('#page-head .page-sub').textContent(),'214 people');
   // Graph itself shows the overview as before, the pane it was on
   await tab(page,'events');assert.equal(new URL(page.url()).hash,'');assert.equal(await lit(),'');
   await page.locator('nav [data-tab="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');assert.equal(await lit(),'people');
@@ -162,6 +165,10 @@ try{
  const settle=page=>page.waitForTimeout(350);
  for(const [w,h] of [[390,844],[360,740],[430,932],[900,1100]]){const {context,page}=await open(w,h);
   assert.ok(await page.locator('#drawer-open').isVisible(),'the menu button at '+w);assert.ok(!(await page.locator('#app-side').isVisible()),'the drawer is closed at '+w);
+  // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
+  {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#page-head .page-title')}});
+   assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
+   assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine')}
   assert.ok(await page.locator('#page-head .page-title').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
   for(const t of TABS){await tab(page,t);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
   await tab(page,'inbox');await page.evaluate(()=>scrollTo(0,0));

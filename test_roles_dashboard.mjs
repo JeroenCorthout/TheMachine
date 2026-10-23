@@ -49,7 +49,7 @@ try{
  assert.deepEqual(order.slice(0,2),['task-bbbbbbbbbbbbbbbb','task-aaaaaaaaaaaaaaaa']);
  await navClick(page.locator('nav [data-tab="people"]'));
  const list=page.locator('#people-view');
- await list.locator('[data-graph-pane="roles"]').click();  // Who's who is its own sub-tab, last
+ await navClick(page.locator('.side-sub a[data-graph-sub="roles"]'));  // Who's who is its own row under Graph, last
  await list.locator('.whos').first().waitFor();
  let text=await list.textContent();
  assert.ok(text.includes('Who’s who')&&text.includes('“As the CFO at Client Ltd I look after the renewal”'));
