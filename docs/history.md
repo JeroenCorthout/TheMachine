@@ -513,7 +513,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for development and pull requests, and
 
 ## License
 
-AGPL-3.0-only, see [LICENSE](../LICENSE). Versions up to and including `release-20261023-1633` were released under MIT. Built on OpenClaw (MIT); third-party licences are listed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+AGPL-3.0-only, see [LICENSE](../LICENSE). Versions up to and including `release-20261023-1648` were released under MIT. Built on OpenClaw (MIT); third-party licences are listed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 The code is open source under AGPL-3.0. The names The Machine and The Fleet, the logo, and the hosted service and The Machine Network are not covered by the license. See [TRADEMARKS.md](../TRADEMARKS.md).
 
