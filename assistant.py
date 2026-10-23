@@ -7676,6 +7676,64 @@ def ask_text(row):
     return ' '.join(q['question'] for q in questions) if questions else str(row.get('preparation_reason') or '').strip()
 
 
+def card_task(row):
+    """A card's next step as a task for whoever takes it on (Hand to Claude Code or Codex): its Needs you line (the
+    outcome's needs, or the question its run stopped on), else the final step left, else its title. Never its latest
+    chat reply: that is background."""
+    try:
+        outcome = json.loads(row.get('outcome') or '{}') if row.get('status') == 'prepared' else {}
+    except (ValueError, TypeError):
+        outcome = {}
+    outcome = outcome if isinstance(outcome, dict) else {}
+    needs = ' '.join(str(outcome.get('needs') or '').split()) if outcome.get('state') == 'needs_you' else ''
+    if not needs and ask_blocked(row):
+        needs = ' '.join(ask_text(row).split())
+    if needs:
+        needs = sentence(needs[0].upper() + needs[1:])
+        return 'Help me answer this: ' + needs if needs.endswith('?') else needs
+    if outcome.get('state') == 'your_step' and outcome.get('step'):
+        return f'Check that everything is ready for me to {outcome["step"]}, and fix what isn’t.'
+    title = ' '.join(str(row.get('title') or '').split())
+    return sentence(title) if title else ''
+
+
+def agent_messages(views):
+    """The card's source messages as card/messages.md for a coding agent: who, to whom, when, and the full text, so
+    it needs no mailbox of its own. The link goes last, as a reference."""
+    out = []
+    for v in views:
+        head = [f"## {v.get('title') or v.get('kind') or 'Message'}", f"From: {v.get('from') or 'unknown'}"]
+        head += [f'{k}: {v[k.lower()]}' for k in ('To', 'Cc') if v.get(k.lower())]
+        head.append(f"When: {v.get('occurred_at') or ''}")
+        body = str(v.get('body') or '').strip() or '(no text)'
+        out.append('\n'.join(head) + '\n\n' + body + ('\n\n(Cut short here: the rest is in the original.)' if v.get('clipped') else '')
+                   + (f"\n\nOriginal: {v['url']}" if v.get('url') else ''))
+    return '\n\n'.join(out)
+
+
+def agent_about(card, views):
+    """Who and what a card is about, in plain lines: the people who wrote, the source, the due date."""
+    people = list(dict.fromkeys(str(v.get('from') or '').strip() for v in views if v.get('from') and v.get('from') != 'You'))[:3]
+    lines = [f"With: {', '.join(people)}" + (f" ({views[0]['kind']})" if views and views[0].get('kind') else '')] if people else []
+    if card.get('source_line'):
+        lines.append(str(card['source_line']).strip())
+    if card.get('due'):
+        lines.append(f"Due: {card['due']}")
+    return lines
+
+
+def agent_history(owner, results, skip='', keep=6):
+    """The card's chat so far, as short background lines, newest last: what the owner asked and what came back. The
+    owner's latest note is skipped (it goes in the brief word for word)."""
+    turns = [(i['at'], 'I asked', i['text']) for i in owner if i.get('kind') == 'you' and i.get('via') != 'agent']
+    turns += [(i['at'], f"{i.get('name') or 'The agent'} answered", i['text']) for i in owner if i.get('kind') == 'agent']
+    turns += [(r['at'], 'The Machine answered', r['text']) for replies in results.values() for r in replies if r.get('kind') == 'reply']
+    skip = ' '.join(str(skip or '').split())
+    lines = [f'{who}: {agent_jobs.gist(text, 400)}' for at, who, text in sorted(turns, key=lambda t: t[0] or 0)
+             if str(text or '').strip() and ' '.join(str(text).split()) != skip]
+    return lines[-keep:]
+
+
 def retry_pointless(row):
     """Try again already ran without new input and stopped asking again: retrying alone won't help."""
     return row.get('preparation_cause') == 'retry' and ask_blocked(row)
@@ -9011,13 +9069,23 @@ class App:
         return account, message
 
     def agent_card(self, suggestion_id):
-        """What a Claude Code or Codex brief is made of: the card, its drafts, links, result files and source messages."""
+        """What a Claude Code or Codex brief is made of: the card, its next step as the task, the owner's note, who it is
+        about, its chat so far (background), drafts, links, result files and source messages (agent_jobs.brief_for)."""
         with self.store.connect() as db:
-            row = db.execute('SELECT * FROM suggestions WHERE id=?', (str(suggestion_id),)).fetchone()
+            row = db.execute('SELECT s.*,p.status preparation_status,p.reason preparation_reason,p.error preparation_error,'
+                             'p.questions preparation_questions FROM suggestions s LEFT JOIN preparations p ON s.id=p.suggestion_id '
+                             'WHERE s.id=?', (str(suggestion_id),)).fetchone()
             if not row:
                 return None
             card = dict(row)
             extra = self.store.suggestion_result(card, db)
+            note = db.execute("SELECT feedback FROM decisions WHERE suggestion_id=? AND trim(feedback)<>'' AND source IN ('telegram','dashboard') "
+                              'AND id NOT IN (SELECT decision_id FROM decision_annotations) ORDER BY created_at DESC,rowid DESC LIMIT 1',
+                              (card['id'],)).fetchone()
+            try:
+                chat = self.card_chat_service(db, card['id'])
+            except (sqlite3.Error, ValueError, TypeError, KeyError):
+                chat = ([], {})
         actions = extra.get('next_actions') or []
         drafts = [a for a in actions if a.get('body') or a.get('message')]
         links = [*extra.get('original_urls', []), *[a['url'] for a in actions if a.get('kind') == 'open' and str(a.get('url') or '').startswith('https://')]]
@@ -9026,9 +9094,9 @@ class App:
             views = self.store.originals(card['id'])[:5]
         except (ValueError, sqlite3.Error):
             views = []
-        messages = '\n\n'.join(f"## {v['title'] or v['kind']}\nFrom: {v['from']}\nWhen: {v['occurred_at']}" + (f"\nLink: {v['url']}" if v.get('url') else '')
-                                 + '\n\n' + str(v['body'] or '')[:6000] for v in views)
-        return {'card': card, 'drafts': drafts, 'links': links, 'files': files, 'messages': messages}
+        note = note['feedback'].strip() if note else ''
+        return {'card': card, 'drafts': drafts, 'links': links, 'files': files, 'messages': agent_messages(views),
+                'task': card_task(card), 'note': note, 'about': agent_about(card, views), 'history': agent_history(*chat, skip=note)}
 
     def agent_revise(self, suggestion_id, text):
         """A message Claude Code or Codex rewrote (its draft.md) becomes the card's draft under a new revision, when the

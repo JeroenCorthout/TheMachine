@@ -1,11 +1,12 @@
 # Coding agents
 
 A card can go to Claude Code or Codex. **Hand to Claude Code** and **Hand to Codex** sit with the card's other
-actions when that tool is there. You read and edit the brief first: the task, the card's drafts, links and files, and
-what done looks like. Nothing goes without your tap.
+actions when that tool is there. You read and edit the brief first. It opens with the task, the card's next step
+(its Needs you line), then your note on the card word for word, who it's about, what happened so far as background,
+the card's drafts and files, what done looks like and the limits. Nothing goes without your tap.
 
 The job runs in its own folder under the Machine's data folder (`agent-jobs/<job>/work`), with the card's messages in
-`card/`. The card shows its progress, then a short result with the files it made. Details stay folded away. **Ask for
+`card/messages.md`, full text included, so it needs no mailbox of its own. The card shows its progress, then a short result with the files it made. Details stay folded away. **Ask for
 changes** sends a follow-up to the same job. Cancel stops it.
 
 A job never sends anything for you. If it rewrites a message (`draft.md`), that text becomes the card's draft, and you
