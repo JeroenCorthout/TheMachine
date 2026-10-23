@@ -1152,6 +1152,50 @@ def turn_answers(job, folder=None):
     return out
 
 
+def card_work(rows, folder=None, when=None, chars=700):
+    """What Claude Code or Codex did or is doing on one card, oldest first, one line per job: the tool, where it stands
+    and when, the last thing asked of it and its latest answer (its progress while it runs). The card's chat turns, its
+    preparations and the review read it as part of the card's state, like a sent email or the owner's taps."""
+    when = when or (lambda value: str(value or '')[:16].replace('T', ' '))
+    lines = []
+    for row in rows:
+        job = dict(row)
+        name = TOOLS.get(job.get('tool'), str(job.get('tool') or 'The agent').capitalize())
+        status = job.get('status')
+        if status == 'result':
+            head = f"{name} finished {when(job.get('finished_at') or job.get('updated_at'))}"
+        elif status in ('running', 'waiting'):
+            head = f"{name} is still working on it (started {when(job.get('started_at') or job.get('created_at'))})"
+            if str(job.get('progress') or '').strip():
+                head += f": {gist(job['progress'], 200)}"
+        elif status == 'sent':
+            head = f"{name} was handed it {when(job.get('updated_at') or job.get('created_at'))} and has not started yet"
+        elif status == 'failed':
+            head = f"{name} stopped {when(job.get('finished_at') or job.get('updated_at'))} without finishing" + (
+                f" ({gist(job['error'], 160)})" if str(job.get('error') or '').strip() else '')
+        elif status == 'cancelled':
+            head = f"{name} was cancelled {when(job.get('updated_at'))}"
+        else:
+            head = f"{name}: {status}"
+        parts = [head]
+        try:
+            asks = [x for x in json.loads(job.get('asks') or '[]') if isinstance(x, dict) and str(x.get('text') or '').strip()]
+        except (ValueError, TypeError):
+            asks = []
+        if asks:
+            parts.append(f'last asked of it: "{gist(asks[-1]["text"], 300)}"')
+        answers = turn_answers(job, folder(job.get('id')) if folder else None)
+        if answers:
+            latest = answers[-1]
+            parts.append(f'its {"latest " if len(answers) > 1 or status != "result" else ""}answer: "{gist(latest["summary"], chars)}"')
+            if latest.get('files'):
+                parts.append('files: ' + ', '.join(str(f) for f in latest['files'][:5]))
+        parts.append({'done': 'the owner took its result as what they needed', 'set_aside': 'the owner set its result aside',
+                      'again': 'the card was handed off again after it'}.get(job.get('outcome'), ''))
+        lines.append('- ' + '; '.join(p for p in parts if p))
+    return lines
+
+
 def app_link(runner, session):
     """Where the owner opens the job in their own app: the Codex app's thread, the Claude Code session's page."""
     if isinstance(runner, AppServerCodex) and re.fullmatch(r'[0-9a-f-]{36}', str(session or '')):

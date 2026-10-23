@@ -7272,6 +7272,11 @@ def unseen_draft(db, suggestion_id, revision, job_id=None):
     return None
 
 
+AGENT_WORK_NOTE = ('Work handed to Claude Code or Codex on this card, oldest first. It is part of the card\'s state, like a sent '
+                   'message or the owner\'s taps: what it reports done is done, even where earlier turns of this session said it was still to do. '
+                   'Build on it: never offer or describe work it already did as the next step; when it is still running, say so.')
+
+
 def chat_prompt(job, config=None):
     """The next turn of a card's chat, in the session that already has the card's full context: a short message, so
     a long chat doesn't resend that context with every reply. Only the job's own handles change from turn to turn."""
@@ -8602,6 +8607,21 @@ Draft rules from the owner's notes that fit this card (follow them unless their 
 Drafts the owner edited themselves before sending. Write the next drafts the way they ended up writing these (length, tone, what they cut or added):
 {edits}''' if edits else '')
 
+def agent_work_status(job):
+    """A card's latest Claude Code or Codex job in the compact status: what it did (or is doing) and when."""
+    if not isinstance(job, dict):
+        return {}
+    work = {'tool': job.get('name') or job.get('tool'), 'status': job.get('status'),
+            'at': job.get('finished_at') or job.get('started_at') or job.get('created_at')}
+    if str(job.get('summary') or '').strip():
+        work['result'] = agent_jobs.gist(job['summary'], 500)
+    if job.get('status') in ('running', 'waiting') and str(job.get('progress') or '').strip():
+        work['progress'] = agent_jobs.gist(job['progress'], 200)
+    if job.get('error'):
+        work['error'] = clamp(job['error'], 200)
+    return {'agent_work': work}
+
+
 def compact_status(result):
     """The agent's view of status, well under OpenClaw's tool-result cut. The CLI and
     dashboard read the full version."""
@@ -8612,7 +8632,7 @@ def compact_status(result):
         'suggestion_counts': result['suggestion_counts'],
         'connectors': [{k: clamp(c[k], 200) for k in keep if c.get(k) not in (None, '', 0, [], {})} for c in result['connectors']],
         'suggestions': [{**{k: s[k] for k in ('id', 'status', 'title', 'dedupe_key', 'created_at', 'deliver_after', 'snoozed_until', 'latest_feedback', 'preparation_status', 'handled_hint') if s.get(k)},
-                         'body': clamp(s.get('body') or '', 400)} for s in result['suggestions']],
+                         'body': clamp(s.get('body') or '', 400), **agent_work_status(s.get('agent_job'))} for s in result['suggestions']],
         'decisions': [{k: clamp(d[k], 300) for k in ('id', 'suggestion_id', 'choice', 'source', 'feedback', 'created_at') if d.get(k)} for d in result['decisions'][:30]],
         'recent_reviews': [{'started_at': a['started_at'], 'status': a['status'], 'checked': a.get('checked_count'),
                             'claimed': len(json.loads(a['items'] or '[]')), 'summary': clamp(a.get('summary') or a.get('last_error') or '', 300)}
@@ -8935,7 +8955,7 @@ def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promis
     return f'''This is a signal review started by the personal-assistant service (review run {run_id}). It is not a chat with the owner and not a preparation task.
 The assistant instructions (tools/personal-assistant/AGENTS.md) and the owner's profile (USER.md) are included in this turn's context; follow the "Reviewing signals" section. Don't re-read those files.
 With the assistant_signals tool: call status, then ONE begin_analysis with account_ids {json.dumps(accounts)} and limit 120. The reply is paged: read every page with analysis_page before finishing, including next_row_offset continuations on the same page. Where body_clipped matters, read the rest with events (the account, event_ids and body_offset). Events replies contain events and remaining_event_ids; read the remaining IDs with the same accounts. Follow body_next_offset to the end of long bodies.
-Save only genuinely useful, distinct suggestions with suggest; the service delivers them. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
+Save only genuinely useful, distinct suggestions with suggest; the service delivers them. A card's agent_work in status is what Claude Code or Codex did (or is doing) on it, the latest truth of what was done: when you update a card, start from there and never offer work it reports done as the next step. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
@@ -11043,6 +11063,10 @@ class App:
                         lines=self.skills.hint_prompt(clawhub=True)
                         if lines and len(request['message'])+len(lines)<18500:request['message']+='\n\n'+lines
                     except Exception as error:LOG.error('skill hint error=%s',type(error).__name__)
+            try:
+                lines=self.agent_work(job['suggestion_id'])
+                if len(request['message'])+len(lines)<19000:request['message']+=lines  # the runner refuses over 20,000
+            except Exception as error:LOG.error('agent work error=%s',type(error).__name__)
             if request['session_job_id'] != job['job_id']:
                 request['message']+='\nThis continues the SAME session, with earlier work in context. Before changing anything in an app, read assistant_signals preparation_history (offset 0, then any next_offset): a compact list of earlier calls. Summaries are shortened: when reconciling a call, request preparation_history with its call_ref, offset 0 and any next_offset for exact saved parameters and receipts. If detail_complete=false, check the retained transcript or original app for the missing suffix. Do not repeat an external step that already happened; check uncertain ones against the app first. If the owner\'s latest note asks for something different (a rewrite, another approach), do that. Saving your result or a blocker is always allowed.'
         result=runner(request)
@@ -11399,6 +11423,22 @@ class App:
         for i in owner:
             i.pop('choice', None)
         return owner, results
+
+    def agent_work(self, suggestion_id):
+        """Work handed to Claude Code or Codex on this card (agent_jobs.card_work), as a block for its chat turn or
+        preparation: part of the card's state and the latest truth of what was done. Empty without any."""
+        with self.store.connect() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_jobs'").fetchone():
+                return ''
+            rows = db.execute('SELECT * FROM agent_jobs WHERE suggestion_id=? ORDER BY created_at', (str(suggestion_id),)).fetchall()
+        def when(value):
+            try:
+                found = dt.datetime.fromisoformat(str(value))
+            except ValueError:
+                return ''
+            return (found if found.tzinfo else found.replace(tzinfo=dt.timezone.utc)).astimezone(local_tz()).strftime('%a %Y-%m-%d %H:%M')
+        lines = agent_jobs.card_work(rows[-3:], self.agent_folder, when)
+        return ('\n\n' + AGENT_WORK_NOTE + '\n' + '\n'.join(lines)) if lines else ''
 
     def agent_folder(self, job_id):
         """A coding agent job's own folder (its turn transcripts), or None."""
