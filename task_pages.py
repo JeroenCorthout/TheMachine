@@ -29,7 +29,7 @@ SCHEMA = 'CREATE TABLE IF NOT EXISTS task_pages(card_id TEXT PRIMARY KEY, state 
 DAYS = (7, 14, 30)
 DEFAULT_DAYS = 14
 LIVE = ('shared', 'done')
-ACTIONS = ('task_page_share', 'task_page_dismiss', 'task_page_stop', 'task_page_done')
+ACTIONS = ('task_page_share', 'task_page_dismiss', 'task_page_stop')  # Mark done on the card closes the page (card_closed)
 TOLD = {'on': "they're on it", 'done': 'they marked it done', 'cant': "they can't do this"}
 STATUS_AFTER = {'on': 'in_progress', 'done': 'in_progress', 'cant': 'back'}  # their Done waits for the owner's own
 
@@ -40,6 +40,20 @@ def today():
 
 def stamp():
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
+
+
+LEAD = {'on': 'is on it', 'done': 'marked it done', 'cant': "can't do this"}
+
+
+def lead(to, answers, state):
+    """The card's first line once the email went out: where it stands with them, their latest answer quoted."""
+    who = to or 'Your contact'
+    if answers:
+        last = answers[-1]
+        return f'{who} {LEAD[last["answer"]]}' + (f': \u201c{last["note"]}\u201d' if last['note'] else '.')
+    if state == 'shared':
+        return f'Waiting for {who} on the task page.'
+    return f'Handed to {who} by email.'
 
 
 class TaskPages:
@@ -129,7 +143,7 @@ class TaskPages:
         except ValueError:
             self.relay().call('POST', '/task-invite', {'action': 'revoke', 'id': made['id']})
             raise
-        self.save(card_id, 'shared', {'task': task, 'leave_out': leave_out, 'invite_id': made['id'], 'key': pending['key'],
+        self.save(card_id, 'shared', {'task': task, 'to': (action.get('to') or [''])[0], 'leave_out': leave_out, 'invite_id': made['id'], 'key': pending['key'],
                                       'version': 1, 'seen': 0, 'until': str(made.get('expires_at') or '')[:10],
                                       'updates': updates, 'status': 'waiting', 'answers': []})
         return self.view(card_id)
@@ -155,7 +169,7 @@ class TaskPages:
         revision, action = self.draft_action(card_id)
         if action and 'Status and replies: ' in next_actions.draft_text(action):
             self.app.store.revise_draft(str(card_id), revision, 'agent', None, task_invites.without_link(next_actions.draft_text(action)))
-        self.save(card_id, 'stopped', {'task': record['task'], 'answers': record.get('answers', []), 'invite_id': record['invite_id']})
+        self.save(card_id, 'stopped', {'task': record['task'], 'to': record.get('to', ''), 'answers': record.get('answers', []), 'invite_id': record['invite_id']})
         return {'state': 'stopped'}
 
     def done(self, card_id):
@@ -167,6 +181,14 @@ class TaskPages:
         self.save(card_id, 'done', self.push(card_id, record, done=True))
         return self.view(card_id)
 
+    def card_closed(self, card_id):
+        """The owner marked the card done: its page shows it done too (and ends within 7 days). Never fails the decision."""
+        try:
+            if self.load(card_id)[0] == 'shared':
+                self.done(card_id)
+        except (ValueError, OSError, KeyError) as error:
+            LOG.warning('task page done error=%s', type(error).__name__)
+
     def round(self):
         """New answers from live task pages: onto their cards, told to the owner, and onto the page's updates."""
         with self.app.store.connect() as db:
@@ -175,7 +197,7 @@ class TaskPages:
         records = {r['card_id']: (r['state'], json.loads(r['record'])) for r in rows}
         for card_id, (state, record) in list(records.items()):
             if record.get('until') and record['until'] < today():
-                self.save(card_id, 'expired', {'task': record['task'], 'answers': record.get('answers', [])})
+                self.save(card_id, 'expired', {'task': record['task'], 'to': record.get('to', ''), 'answers': record.get('answers', [])})
                 records.pop(card_id)
         if not records:
             return 0
@@ -251,7 +273,7 @@ class TaskPages:
             return {'state': 'offered', 'repeats': repeats, 'days': DEFAULT_DAYS, 'choices': list(DAYS),
                     'preview': {k: task[k] for k in ('title', 'summary', 'due') if task.get(k)} | {'from': task_invites.first_name(task.get('from_name')) or 'You'}}
         answers = [{'answer': a['answer'], 'note': a.get('note', ''), 'at': a.get('at', '')} for a in (record.get('answers') or [])][-5:]
-        return {'state': state, 'until': record.get('until', ''), 'answers': answers}
+        return {'state': state, 'until': record.get('until', ''), 'answers': answers, 'lead': lead(record.get('to'), answers, state)}
 
     def annotate(self, db, suggestions):
         db.execute(SCHEMA)
@@ -272,6 +294,4 @@ class TaskPages:
             return self.dismiss(card_id)
         if name == 'task_page_stop':
             return self.stop(card_id)
-        if name == 'task_page_done':
-            return self.done(card_id)
         raise ValueError('Unknown task page action')

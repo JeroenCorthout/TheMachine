@@ -91,8 +91,9 @@ default, Always accept, Never), and nothing happens on your side until you accep
    other cards; details that repeat the original email are refused. The page is sealed on your Machine with a key that
    exists only in the link (after the #), so the Network keeps an unreadable copy; it never changes when someone only
    opens the link (an email scanner, a preview), and an answer needs a check only that key can make. Answers come back
-   quoted on the card and as a notification, and the page shows them as updates. **Mark done** closes the page (it
-   ends within 7 days); **Stop sharing** deletes it from the Network at once. If they get a Machine of their own
+   on the card (it leads with their latest answer, and the sent email folds into one line) and as a notification, and
+   the page shows them as updates. Can't do this brings the card back to Ready. Marking the card done closes the page
+   (it ends within 7 days); **Stop sharing** deletes it from the Network at once. If they get a Machine of their own
    (hosted, or self-hosted with `assistant task-import '<link>'`), the task arrives there as a card with your words
    quoted, and their dashboard offers to connect with you on the Network. The Network only counts how far each link
    got (opened, answered, done, signed up, task added, connected), never what was in it.

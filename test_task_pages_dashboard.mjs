@@ -49,7 +49,8 @@ try{
  await c.locator('[data-tp-share]').click();
  await c.locator('.tp-shared').waitFor();
  assert.deepEqual(calls.at(-1),{action:'task_page_share',args:{suggestion_id:'c1',leave_out:['due'],days:7}});
- assert.match(await c.locator('.tp-shared').innerText(),/Task page until Fri 30 Oct\. Goes out with this email\./);
+ assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri 30 Oct\s*·\s*Stop sharing$/);  // one quiet row, no Mark done of its own
+ assert.equal(await c.locator('[data-tp-done]').count(),0);
  assert.match(await c.locator('.draft').first().innerText(),/Status and replies: https:\/\/app\.example\.test\/t\//);
  // An answer from the page: quoted, as text, never markup
  card.task_page.answers=[{answer:'on',note:'<img src=x onerror="window.pwned=1">Signing tomorrow.',at:'2026-10-24'}];
@@ -58,18 +59,28 @@ try{
  assert.match(await reply.innerText(),/Reply on the task page: I’m on it[\s\S]*<img src=x[\s\S]*Signing tomorrow\./);
  assert.equal(await reply.locator('img').count(),0);
  assert.equal(await page.evaluate(()=>window.pwned),undefined);
- assert.equal(await c.locator('[data-tp-done]').count(),0);  // the email is still a draft: nothing to mark done yet
- // Sent and Done: the page row keeps only Stop sharing
+ // Sent and Done: the card leads with where it stands, the email folds into one line, the row keeps Stop sharing
+ email.state={status:'sent',sent_at:'2026-10-23T09:10:00+00:00'};card.task_page.lead='alex@other.example is on it: “Signing tomorrow.”';
  Object.assign(card,{status:'completed'});state.suggestion_counts={completed:1};
  await page.evaluate(()=>refresh());
  for(const d of await page.locator('details:has(#task-c1)').all())await d.evaluate(x=>x.open=true);
- assert.equal(await c.locator('[data-tp-done]').count(),0);
- assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri 30 Oct\.\s*Stop sharing$/);
- // Back in Ready after the send (reopened by Can't do this): a page row with Mark done, no "Goes out with this email"
- Object.assign(card,{status:'prepared',action_status:{status:'sent'}});state.suggestion_counts={prepared:1};
+ assert.equal(await c.locator('.tp-lead').innerText(),'alex@other.example is on it: “Signing tomorrow.”');
+ assert.doesNotMatch(await c.innerText(),/Read it, change it|Email sent/);
+ const sent=c.locator('details.tp-sent');
+ assert.match(await sent.locator('summary').innerText(),/^Sent to alex@other\.example · Fri 23 Oct\s*›$/);
+ assert.equal(await sent.evaluate(x=>x.open),false);
+ assert.equal(await c.locator('.tp-reply').count(),0);  // the latest answer leads the card, not repeated below
+ await sent.locator('summary').click();
+ assert.match(await sent.innerText(),/Could you take this on\?/);
+ assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri 30 Oct\s*·\s*Stop sharing$/);
+ // Back in Ready after Can't do this: same calm card, with its Ready buttons
+ card.task_page.answers.push({answer:'cant',note:'Out until Monday.',at:'2026-10-25'});card.task_page.lead='alex@other.example can’t do this: “Out until Monday.”';
+ Object.assign(card,{status:'prepared'});state.suggestion_counts={prepared:1};
  await page.evaluate(()=>refresh());
- assert.equal(await c.locator('[data-tp-done]').count(),1);
- assert.doesNotMatch(await c.locator('.tp-shared').innerText(),/Goes out/);
+ assert.match(await c.locator('.tp-lead').innerText(),/can’t do this: “Out until Monday\.”/);
+ assert.equal(await c.locator('.draft:visible').count(),0);
+ assert.equal(await c.locator('.tp-reply').count(),1);  // the earlier answer stays below
+ assert.equal(await c.locator('[data-tp-done]').count(),0);
  await c.locator('[data-tp-stop]').click();
  await page.waitForTimeout(300);
  assert.deepEqual(calls.at(-1),{action:'task_page_stop',args:{suggestion_id:'c1'}});

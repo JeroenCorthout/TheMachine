@@ -10048,6 +10048,8 @@ class App:
                                      args.get('snoozed_until'), args.get('snooze_option'),terminal_job,self.is_work_suggestion(args['suggestion_id']))
             if args['choice'] == 'complete' and getattr(self, 'agents', None):
                 self.agents.card_closed(args['suggestion_id'])  # its Claude Code or Codex result did the job
+            if args['choice'] == 'complete':
+                self.task_pages.card_closed(args['suggestion_id'])  # its task page shows it done (task_pages.py)
             if args['choice'] == 'accept':
                 try:self.apply_skill_clusters()
                 except Exception as error:LOG.error('skill from notes error=%s',type(error).__name__)

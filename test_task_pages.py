@@ -167,6 +167,7 @@ class TaskPages(unittest.TestCase):
             why = db.execute("SELECT feedback,source FROM decisions WHERE suggestion_id=? ORDER BY rowid DESC LIMIT 1", (card,)).fetchone()
         self.assertEqual(tuple(why), ('They can\'t do this (task page): "Out until Monday."', 'fleet'))
         self.assertEqual(self.status(card)['answers'][-1]['note'], 'Out until Monday.')
+        self.assertEqual(self.status(card)['lead'], "kim@other.example can't do this: \u201cOut until Monday.\u201d")  # the card leads with it
         # An "on it" never reopens a card the owner closed
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -181,13 +182,17 @@ class TaskPages(unittest.TestCase):
         key = task_invites.LINK.search(self.body(card)).group(2)
         with self.store.connect() as db:
             db.execute("UPDATE suggestions SET status='completed' WHERE id=?", (card,))  # the email went out
-        done = self.app.action('task_page_done', {'suggestion_id': card}, owner_dashboard=True)
+        with self.store.connect() as db:
+            db.execute("UPDATE suggestions SET status='prepared' WHERE id=?", (card,))
+        self.app.action('decide', {'suggestion_id': card, 'choice': 'complete', 'decision_id': 'dash-done-1'}, owner_dashboard=True)  # Mark done on the card
+        done = self.status(card)
         self.assertEqual((done['state'], done['until']), ('done', '2099-10-30'))
+        self.assertNotIn('task_page_done', task_pages.ACTIONS)  # no separate Mark done for the page
         self.assertTrue(self.network.pages[LINK_ID]['done'])
         self.assertEqual(task_invites._open(self.network.pages[LINK_ID]['sealed'], key)['status'], 'done')
         self.app.action('task_page_stop', {'suggestion_id': card}, owner_dashboard=True)
         self.assertNotIn(LINK_ID, self.network.pages)  # deleted from the Network
-        self.assertEqual(self.status(card), {'state': 'stopped', 'until': '', 'answers': []})
+        self.assertEqual(self.status(card), {'state': 'stopped', 'until': '', 'answers': [], 'lead': 'Handed to kim@other.example by email.'})
         state, record = self.app.task_pages.load(card)
         self.assertNotIn('key', record)  # and the key is gone here
         with self.assertRaisesRegex(ValueError, 'no task page to stop'):
