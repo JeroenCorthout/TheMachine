@@ -99,11 +99,11 @@ try{
  await page.locator('.org-form input[name="industry"]').fill('Freight');
  await page.locator('.org-form input[name="name"]').fill('Client Group');
  let mark=calls.length;
- await page.locator('.org-form button:not([type])').click();
+ await page.locator('.graph-detail .name-row [data-org-save]').click();
  for(let i=0;i<100&&calls.length<=mark;i++)await page.waitForTimeout(20);
  assert.deepEqual(calls.at(-1),{action:'graph_org_edit',args:{node_id:org.id,fields:{industry:'Freight'},name:'Client Group'}});
- assert.equal(await page.locator('[data-org-edit]').isDisabled(),true);
- await page.locator('[data-org-edit]:not(:disabled)').waitFor();
+ assert.equal(await page.locator('[data-org-save]').isDisabled(),true);
+ await page.locator('[data-org-edit]').waitFor();
  await page.locator('[data-org-edit]').click();
  page.once('dialog',d=>{assert.ok(d.message().startsWith('Clear the looked-up details?'));d.accept()});
  mark=calls.length;

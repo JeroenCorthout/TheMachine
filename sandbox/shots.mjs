@@ -18,7 +18,7 @@ const out = args.out || '/tmp/machine-shots';
 const widths = (args.widths || '390,1280').split(',').map(Number);
 const themes = (args.themes || 'light,dark').split(',');
 const PAGES = {
-  suggestions: {tab: 'inbox'}, calendar: {tab: 'calendar'}, events: {tab: 'events'}, graph: {tab: 'people'}, fleet: {tab: 'fleet'},
+  suggestions: {tab: 'inbox'}, calendar: {tab: 'calendar'}, events: {tab: 'events'}, graph: {tab: 'people'}, projects: {tab: 'people', sub: 'projects'}, fleet: {tab: 'fleet'},
   feedback: {tab: 'feedback'}, connections: {tab: 'health'}, settings: {click: '#open-settings'},
 };
 const pages = (args.pages || Object.keys(PAGES).join(',')).split(',');
@@ -119,6 +119,7 @@ try {
         const target = spec.tab ? page.locator(`nav [data-tab="${spec.tab}"]`) : page.locator(spec.click);
         if (!await target.isVisible()) { report.push({page: key, width, theme, skipped: 'not shown in this state'}); continue; }
         await target.click();
+        if (spec.sub) await page.evaluate(sub => document.querySelector(`[data-graph-sub="${sub}"]`).click(), spec.sub);  // a Graph pane: Projects opens on its board
       }
       await page.waitForLoadState('networkidle').catch(() => {});
       await page.waitForTimeout(400);

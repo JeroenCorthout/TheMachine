@@ -71,6 +71,7 @@ BROWSER_LEASE = WORKSPACE / 'data/browser-lease/lease.json'
 # Served from the bundled brand/ folder. Replace these files to rebrand the dashboard.
 BRAND_ASSETS = {
     '/brand/avatar.png': ROOT / 'brand/app-icon-192.png',
+    '/brand/avatar-blink.png': ROOT / 'brand/avatar-blink.png',  # the same robot, eyes closed: replace it with avatar.png
     '/brand/favicon-32.png': ROOT / 'brand/app-icon-192.png',
     '/brand/favicon-512.png': ROOT / 'brand/app-icon-maskable-512.png',
     # Empty-state stickers: any image works; the defaults reuse the app icon.
@@ -441,7 +442,7 @@ class SourceError(Exception):
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
                    'connect_signin', 'connect_signin_state')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -2338,6 +2339,12 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS note_kinds(decision_id TEXT PRIMARY KEY,suggestion_id TEXT NOT NULL,kind TEXT NOT NULL,source TEXT NOT NULL,created_at TEXT NOT NULL)')
             # Changes to how cards and drafts are made, shown on the hit-rate chart.
             db.execute('CREATE TABLE IF NOT EXISTS rule_changes(id INTEGER PRIMARY KEY,at TEXT NOT NULL,kind TEXT NOT NULL,text TEXT NOT NULL,ref TEXT)')
+            # The weekly recap as sent (its text, so a tap's result shows in place) and the lines it offers a choice on:
+            # a busy source to filter or keep, a card snoozed again and again to drop, do now or keep.
+            if 'text' not in {r[1] for r in db.execute('PRAGMA table_info(recaps)')}:
+                db.execute('ALTER TABLE recaps ADD COLUMN text TEXT')
+            db.execute('CREATE TABLE IF NOT EXISTS recap_items(id TEXT PRIMARY KEY,week TEXT NOT NULL,n INTEGER NOT NULL,kind TEXT NOT NULL,ref TEXT,'
+                       'line TEXT NOT NULL,data TEXT NOT NULL,status TEXT NOT NULL,decision_id TEXT,decided_at TEXT)')
             # How the owner writes, a short block per channel (and All): learned from their style notes, their edits
             # and their own messages, editable in Settings. Like facts, what was learned, not what messages say.
             db.execute('CREATE TABLE IF NOT EXISTS voices(channel TEXT PRIMARY KEY,text TEXT NOT NULL,source TEXT NOT NULL,ref TEXT,updated_at TEXT NOT NULL)')
@@ -2386,6 +2393,9 @@ class Store:
                 db.execute('DROP TABLE promises')
                 db.execute('ALTER TABLE promises_next RENAME TO promises')
             db.execute("CREATE INDEX IF NOT EXISTS promises_open ON promises(status,check_at)")
+            # What happened to a promise after it was recorded, for its page: a kind and a date or id, never message text
+            db.execute('CREATE TABLE IF NOT EXISTS promise_log(id INTEGER PRIMARY KEY,promise_id INTEGER NOT NULL,at TEXT NOT NULL,kind TEXT NOT NULL,detail TEXT)')
+            db.execute('CREATE INDEX IF NOT EXISTS promise_log_promise ON promise_log(promise_id)')
             if 'together' not in {r['name'] for r in db.execute('PRAGMA table_info(promises)')}:
                 db.execute('ALTER TABLE promises ADD COLUMN together INTEGER NOT NULL DEFAULT 0')  # a plan made with them: theirs and the owner's
             preparation_columns = {r['name'] for r in db.execute('PRAGMA table_info(preparations)')}
@@ -3437,7 +3447,7 @@ class Store:
                   'next_row_offset': row_offset + len(shown) if row_offset + len(shown) < len(views) else None}
         return {'analysis_id': analysis_id, 'page': int(page), 'pages': pages, **result}
 
-    def finish_analysis(self, analysis_id, summary='', owner_session=None, owner_run=None, reviewed_ids=None, projects=None):
+    def finish_analysis(self, analysis_id, summary='', owner_session=None, owner_run=None, reviewed_ids=None, projects=None, stages=None):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM analyses WHERE id=?', (analysis_id,)).fetchone()
@@ -3463,6 +3473,18 @@ class Store:
                         raise ValueError('Project event IDs must belong to this batch')
                     if ids:
                         graph.label(db, ids, name, 'review', now())
+            moved = []
+            if stages is not None:
+                # Projects on a board moved by what a message in this batch means (graph.set_stage): the owner's own move wins
+                # until a newer message, and an older message never undoes a newer move.
+                if not isinstance(stages, list) or not all(isinstance(m, dict) for m in stages):
+                    raise ValueError('stages is [{"project", "board", "stage", "reason", "event_id", "next"}]')
+                batch = {i['id'] for i in items}
+                for m in stages:
+                    if not str(m.get('event_id') or '').isdigit() or int(m['event_id']) not in batch:
+                        raise ValueError('A move\'s event_id must belong to this batch')
+                    moved.append(graph.set_stage(db, m.get('project'), m.get('stage'), 'review', now(), board=m.get('board'), stages=m.get('stages'),
+                                                 reason=m.get('reason'), event_id=m['event_id'], next_step=m.get('next'), org=m.get('org')))
             for item in items:
                 if item.get('excluded'):
                     continue
@@ -3474,7 +3496,7 @@ class Store:
                            (item['version'], item['id'], item['version']))
             db.execute("UPDATE analyses SET status='complete',finished_at=?,summary=?,items=? WHERE id=?",
                        (now(), summary[:4000], encoded(items), analysis_id))
-        return {'status': 'complete'}
+        return {'status': 'complete', **({'stages': moved} if moved else {})}
 
     def suggest(self, dedupe_key, title, body, event_ids, when='now', digest_at='08:30', work=False, urgent=False, due=None, ahead=False, awaiting=None, project=None,
                 card_id=None, separate=False, reopen=False, match=False, _db=None, suggestion_id=None):
@@ -3913,6 +3935,7 @@ class Store:
                 if row['direction'] != direction:  # both sides said it: a plan made together, kept as the owner's
                     db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
                                (promise_check_at('mine', row['due'], row['made_at'], digest_at), stamp, row['id']))
+                    promise_logged(db, row['id'], 'together', event['id'])
                 return {'id': row['id'], 'status': row['status'], 'duplicate': True}
             cursor = db.execute('INSERT INTO promises(direction,who,what,due,check_at,event_id,account_id,watch,status,created_at,updated_at) '
                                 "VALUES(?,?,?,?,?,?,?,?,'open',?,?) ON CONFLICT(event_id,direction,who,what) DO NOTHING",
@@ -3934,14 +3957,16 @@ class Store:
                     raise ValueError('Say in a few words what shows it kept or no longer needed (reason), with the event_ids')
                 db.execute('UPDATE promises SET status=?,note=?,updated_at=? WHERE id=?',
                            (status, reason or ('Done' if status == 'kept' else 'Not needed') + ' (you)', now(), row['id']))
+                promise_logged(db, row['id'], status, source)
                 return {'id': row['id'], 'status': status}
-            if args.get('due') and source == 'assistant':
+            if args.get('due') and source in ('assistant', 'dashboard'):
                 try:
                     due = dt.date.fromisoformat(str(args['due'])[:10]).isoformat()
                 except ValueError:
                     raise ValueError('due must be YYYY-MM-DD') from None
                 check_at = promise_check_at(row['direction'], due, row['made_at'], digest_at)
-                db.execute('UPDATE promises SET due=?,check_at=?,note=?,updated_at=? WHERE id=?', (due, check_at, reason or None, now(), row['id']))
+                db.execute('UPDATE promises SET due=?,check_at=?,note=?,updated_at=? WHERE id=?', (due, check_at, reason or row['note'] if source == 'dashboard' else reason or None, now(), row['id']))
+                promise_logged(db, row['id'], 'due', due)
                 return {'id': row['id'], 'status': 'open', 'due': due, 'check_at': check_at}
         raise ValueError("Update a promise with status 'kept' or 'dropped' and a reason, or with a new due date")
 
@@ -3989,9 +4014,11 @@ class Store:
             if len({r['direction'] for r in rows}) > 1 and not (keep['together'] and keep['direction'] == 'mine'):
                 db.execute("UPDATE promises SET together=1,direction='mine',check_at=?,updated_at=? WHERE id=?",
                            (promise_check_at('mine', keep['due'], keep['made_at']), now(), keep['id']))
+                promise_logged(db, keep['id'], 'together')
             for r in rows:
                 if r['id'] != keep['id']:
                     db.execute("UPDATE promises SET status='dropped',note=?,updated_at=? WHERE id=?", (f"The same as promise {keep['id']}", now(), r['id']))
+                    promise_logged(db, r['id'], 'merged', keep['id'])
         for row in db.execute("SELECT id,watch FROM promises WHERE status='open' AND watch IS NOT NULL").fetchall():
             watch = {**json.loads(row['watch']), 'promise': True}
             answer = next((e for e in db.execute('SELECT id,account_id,kind,occurred_at,title,metadata FROM events WHERE account_id=? AND kind=? AND occurred_at>? AND deleted=0 ORDER BY occurred_at',
@@ -3999,6 +4026,7 @@ class Store:
             if answer:
                 db.execute("UPDATE promises SET status='answered',note=?,updated_at=? WHERE id=?",
                            (f"They wrote again: {answer['title'][:150]}", now(), row['id']))
+                promise_logged(db, row['id'], 'answered', answer['id'])
 
     def promises(self, days=14):
         """Open promises and those closed in the last days, soonest first."""
@@ -4011,6 +4039,33 @@ class Store:
         for row in rows:
             row['state'] = promise_state(row)
         return [r for r in rows if r['state'] in ('open', 'card') or r['updated_at'] >= since]
+
+    def promise_page(self, promise_id):
+        """One promise for its own dashboard page: who promised what to whom and by when, where it stands, the message
+        it came from, the people, organisation and project that message is on, its card and what happened since."""
+        with self.connect() as db:
+            row = db.execute('SELECT p.*,e.occurred_at made_at,e.kind source_kind,s.status card_status,s.title card_title FROM promises p '
+                             'JOIN events e ON e.id=p.event_id LEFT JOIN suggestions s ON s.id=p.suggestion_id WHERE p.id=?', (promise_id,)).fetchone()
+            if not row:
+                raise ValueError('Unknown promise')
+            p = dict(row)
+            try:
+                links = [dict(r) for r in db.execute("SELECT n.id,n.kind,n.name FROM graph_events g JOIN graph_nodes n ON n.id=g.node_id "
+                                                     "WHERE g.event_id=? AND n.kind IN ('person','org','project') ORDER BY n.kind DESC,n.name LIMIT 12", (p['event_id'],))]
+            except sqlite3.OperationalError:
+                links = []  # no graph yet
+            log = [dict(r) for r in db.execute('SELECT at,kind,detail FROM promise_log WHERE promise_id=? ORDER BY at,id', (promise_id,))]
+        p['state'] = promise_state(p)
+        history = [{'at': p['made_at'], 'kind': 'said', 'detail': p['source_kind']}, {'at': max(p['created_at'], p['made_at']), 'kind': 'noted'}]
+        history += [h for h in log if h['kind'] != 'together' or h['at'] > p['created_at']]
+        closed = {'kept': 'kept', 'dropped': 'dropped', 'answered': 'answered'}.get(p['status'])
+        if closed and not any(h['kind'] in (closed, 'merged') for h in log):
+            history.append({'at': p['updated_at'], 'kind': closed})  # closed before the log
+        if p['suggestion_id'] and not any(h['kind'] == 'carded' for h in log):
+            history.append({'at': p['updated_at'], 'kind': 'carded'})
+        card = {'id': p['suggestion_id'], 'title': p['card_title'], 'status': p['card_status']} if p['suggestion_id'] and p['card_title'] else None
+        keep = ('id', 'direction', 'together', 'who', 'what', 'due', 'check_at', 'status', 'state', 'note', 'made_at', 'event_id', 'account_id', 'created_at', 'updated_at')
+        return {**{k: p[k] for k in keep}, 'card': card, 'links': links, 'history': sorted(history, key=lambda h: h['at'] or '')}
 
     def promises_text(self, limit=30):
         """Open promises for the review prompt, so a later message can close them."""
@@ -5546,11 +5601,17 @@ class Store:
                 return {'status':'completed','note':'Result saved; the confirmed step went through, so the card is done.'}
         return {'status': 'prepared', 'note': 'Result saved. The service itself executed nothing.'}
 
-    def revise_draft(self,suggestion_id,revision,source,subject=None,body=None):
+    def revise_draft(self,suggestion_id,revision,source,subject=None,body=None,agent_job=None):
         # The owner edits a ready draft themselves: the edit replaces that draft under a new
         # revision, so Send always sends exactly what they last saw; the before/after teaches later drafts.
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            if agent_job is not None:
+                job = db.execute('SELECT * FROM agent_jobs WHERE id=?', (agent_job['id'],)).fetchone()
+                if (not job or job['suggestion_id'] != suggestion_id or job['status'] not in ((*agent_jobs.ACTIVE, 'result') if job['place'] == 'remote' else agent_jobs.ACTIVE)
+                        or job['turns'] != agent_job['turns'] or job['outcome'] is not None
+                        or job['draft_revision'] != revision):
+                    raise ValueError('This agent job stopped or the draft changed. Its result stays on the card without replacing the draft.')
             row=db.execute('SELECT * FROM suggestions WHERE id=?',(suggestion_id,)).fetchone()
             action=next_actions.selected(row['next_action'],revision) if row else None
             if not row or row['status']!='prepared' or not action or action['kind'] not in ('email','linkedin','slack','x','whatsapp','intercom','finish'):
@@ -5572,6 +5633,8 @@ class Store:
                 current=revised
             stamp=now()
             db.execute('UPDATE suggestions SET next_action=? WHERE id=?',(encoded(current),suggestion_id))
+            if agent_job is not None:
+                db.execute('UPDATE agent_jobs SET draft_revision=? WHERE id=? AND turns=?', (revised['revision'], agent_job['id'], agent_job['turns']))
             draft_saved(db,suggestion_id,revised,stamp)
             db.execute("UPDATE action_jobs SET status='cancelled',updated_at=? WHERE suggestion_id=? AND revision=? AND status IN ('queued','blocked')",(stamp,suggestion_id,revision))
             db.execute('INSERT INTO draft_edits(id,suggestion_id,old_revision,new_revision,kind,before_subject,before_body,after_subject,after_body,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -6738,6 +6801,26 @@ def code_version(root=APP_ROOT):
     return result.stdout.strip() or None
 
 
+SOURCE_REPO = 'https://github.com/Salesflare/TheMachine'
+_SOURCE_URL = {}
+
+
+def source_url(root=APP_ROOT):
+    """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else its commit, else the repo."""
+    if 'url' in _SOURCE_URL and _SOURCE_URL['at'] > time.monotonic() - 600:
+        return _SOURCE_URL['url']
+    ref = None
+    try:
+        tag = subprocess.run(['git', '-C', str(root), 'describe', '--tags', '--exact-match', 'HEAD'], capture_output=True, text=True, timeout=10)
+        ref = tag.stdout.strip() if tag.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    ref = ref or code_version(root)
+    url = f'{SOURCE_REPO}/tree/{urllib.parse.quote(ref, safe="")}' if ref else SOURCE_REPO
+    _SOURCE_URL.update(at=time.monotonic(), url=url)
+    return url
+
+
 class FaultLog(logging.Handler):
     def __init__(self, store, version=None, root=APP_ROOT):
         super().__init__(logging.ERROR)
@@ -7017,6 +7100,10 @@ def promise_check_at(direction, due, made_at, digest_at='08:30', current=None):
     if direction == 'mine':
         target = max(target, current + dt.timedelta(hours=3))
     return target.astimezone(dt.timezone.utc).isoformat()
+
+
+def promise_logged(db, promise_id, kind, detail=None):
+    db.execute('INSERT INTO promise_log(promise_id,at,kind,detail) VALUES(?,?,?,?)', (promise_id, now(), kind, None if detail is None else str(detail)))
 
 
 def promise_state(row):
@@ -9209,137 +9296,314 @@ def assistant_token_usage(since_ms, path=None):
     return totals
 
 
-def recap_graph_lines(store):
-    """What's alive this week: projects heating up or cooling, who has gone quiet (with what they are to
-    the owner, or their organisation's role: "a customer went quiet"), and roles waiting for the owner's ✓."""
+def recap_escape(text):
+    """Owner data in the recap's Telegram markdown: shown as written, never as formatting or a link."""
+    return re.sub(r'([\\`*_\[\]~])', r'\\\1', str(text))
+
+
+def recap_clip(text, limit=70):
+    text = ' '.join(str(text or '').split())
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + '…'
+
+
+def recap_day(value, with_time=False):
+    """Fri 23 Oct (and 09:30) in the owner's time zone, from a date or a time."""
+    if len(str(value)) <= 10:
+        d = dt.date.fromisoformat(str(value)[:10])
+        return f'{d:%a} {d.day} {d:%b}'
+    t = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(local_tz())
+    return f'{t:%a} {t.day} {t:%b}' + (f' {t:%H:%M}' if with_time else '')
+
+
+def recap_noise(db, since):
+    """Automated sources that were busy this week and led to no card, each with the `exclude` rule that would filter it:
+    {(account, where): {'n', 'rule'}}. Only automated sources are candidates, never people's own conversations: a group chat
+    the owner writes in this week, or a small circle of people, is someone's own chat (friends, family), not noise."""
+    used = set()
+    for (ids,) in db.execute('SELECT event_ids FROM suggestions'):
+        used |= set(json.loads(ids))
+    noise, circle = {}, collections.defaultdict(lambda: {'mine': 0, 'people': set()})
+    for i, account, kind, m in db.execute('SELECT id,account_id,kind,metadata FROM events WHERE ingested_at>=?', (since,)):
+        m = json.loads(m)
+        if kind == 'whatsapp.message' and str(m.get('chat_id', '')).endswith('@g.us'):
+            chat = circle[(account, m['chat_id'])]  # who takes part, from every message in it (cards or not)
+            if m.get('from_me'):
+                chat['mine'] += 1
+            elif m.get('sender_id') or m.get('from'):
+                chat['people'].add(m.get('sender_id') or m.get('from'))
+        if i in used:
+            continue
+        sender = re.sub(r'.*<|>.*', '', str(m.get('from') or '')).strip()
+        if kind == 'slack.message' and m.get('channel_name') and not str(m['channel_name']).startswith('DM '):
+            where, rule = '#' + m['channel_name'], {'channels': [m['channel_name']]}
+        elif kind == 'whatsapp.message' and str(m.get('chat_id', '')).endswith('@g.us'):
+            where, rule = m.get('chat_name') or 'WhatsApp group', {'chats': [m['chat_id']]}
+        elif kind == 'android.notification' and m.get('package_name'):
+            app = str(m.get('app_name') or android_app_name(m['package_name']))
+            app = app.rsplit('.', 1)[-1] if re.fullmatch(r'[\w]+(?:\.[\w]+)+', app) else app  # com.Slack → Slack
+            where, rule = app[:1].upper() + app[1:] + ' notifications', {'packages': [m['package_name']]}
+        elif kind in ('gmail.message', 'salesflare.email') and sender and re.search(r'(?i)no-?reply|notification|alert|digest|news|mailer|updates?@', sender):
+            where, rule = sender, {'senders': [sender.lower()]}
+        else:
+            continue
+        noise.setdefault((account, where), {'n': 0, 'rule': rule})['n'] += 1
+    own = lambda account, rule: any(c['mine'] or len(c['people']) <= RECAP_CIRCLE for c in [circle[(account, rule['chats'][0])]]) if 'chats' in rule else False
+    return {k: v for k, v in noise.items() if not own(k[0], v['rule'])}
+
+
+def recap_named(node):
+    """Someone known by a name of their own: not an address or a domain, and not their organisation's own name
+    (a company's desk writing as the company, like a support team signing with the product's name)."""
+    name = ' '.join(str(node.get('name') or '').split())
+    if not name or '@' in name or re.search(r'\S\.[a-z]{2,}\b', name, re.I):
+        return False
+    org = str(node.get('org') or '').removeprefix('org:').casefold()
+    labels = [label for label in org.split('.')[:-1] if label]
+    return not (len(name.split()) == 1 and any(name.casefold() in label for label in labels))
+
+
+def recap_graph_lines(store, since=None):
+    """What's alive this week: projects heating up or cooling, who is new (by name), who has gone quiet (with what they
+    are to the owner, or their organisation's role: "a customer went quiet"), and roles waiting for the owner's ✓."""
     try:
         with store.connect() as db:
             view = graph.overview(db, 3)
             orgs = {r['id']: (r['name'], json.loads(r['info']).get('role')) for r in db.execute("SELECT id,name,info FROM graph_nodes WHERE kind='org'")}
+            made = [(r['name'], r['made']) for r in db.execute("SELECT name,json_extract(info,'$.created_at') made FROM graph_nodes WHERE kind='project' "
+                                                                "AND json_extract(info,'$.closed_at') IS NULL ORDER BY strength DESC")]
     except sqlite3.Error:
         return []
     out = []
     for state in ('heating up', 'active', 'cooling'):
-        names = [p['name'] for p in view['projects'] if p['state'] == state][:3]
+        names = [recap_escape(p['name']) for p in view['projects'] if p['state'] == state][:3]
         if names:
             out.append(f"• {state[0].upper() + state[1:]}: {', '.join(names)}")
 
     def who(p):
         org, org_role = orgs.get(p.get('org'), (None, None))
         what = p.get('role') or (f'at {org}, {org_role}' if org_role else None)
-        return p['name'] + ' (' + (what + ', ' if what else '') + ('usually daily)' if round(p['usual_gap_days']) <= 1 else f"usually every {round(p['usual_gap_days'])} days)")
+        return recap_escape(p['name'] + ' (' + (what + ', ' if what else '') + ('usually daily)' if round(p['usual_gap_days']) <= 1 else f"usually every {round(p['usual_gap_days'])} days)"))
+    named = [p for p in view['new'] if recap_named(p)]
+    unnamed = sum(1 for p in view['new'] if '@' in str(p.get('name') or ''))  # known only by their address so far
+    if named:
+        more = f', and {unnamed} more known only by address' if unnamed else ''
+        out.append(f"• New people: {', '.join(recap_escape(p['name']) for p in named[:4])}{more}")
+    # New projects, once the graph is older than this week (on its first week every project is new).
+    if since and made and all(m for _, m in made) and min(m for _, m in made) < since:
+        fresh = [recap_escape(n) for n, m in made if m >= since][:3]
+        if fresh:
+            out.append(f"• New projects: {', '.join(fresh)}")
     if view['quiet']:
         out.append('• Gone quiet: ' + ', '.join(who(p) for p in view['quiet']))
-    if view['new']:
-        out.append(f"• New this week: {', '.join(p['name'] for p in view['new'][:3])}")
     if view['whos_who']:
         n = len(view['whos_who'])
         out.append(f"• {n} role{'s' if n != 1 else ''} to confirm in the Graph tab's Who's who")
     return out
 
 
-def weekly_recap(store, config, current=None, usage=None):
-    """Friday recap: what the assistant suggested, what the owner did, what it cost, what's noisy."""
+RECAP_CIRCLE = 8  # a group chat with this many others or fewer is a circle of people, not a broadcast
+RECAP_CHOICES = {'noise': ('filter', 'keep', 'undo'), 'snoozed': ('drop', 'now', 'keep')}
+RECAP_DONE = {'filtered': 'Filtered', 'kept': 'Kept', 'dropped': 'Dropped', 'started': 'Started'}
+
+
+def recap_buttons(items):
+    """One row per line still open: Filter / Keep for a busy source, Drop / Do it now / Keep for a card snoozed again and
+    again; a filtered source keeps Undo. The number matches the line's number in the text."""
+    rows = []
+    for item in items:
+        n, value = item['n'], f"assistant:recap:{item['id']}:"
+        if item['status'] == 'open':
+            labels = [('Filter', 'filter'), ('Keep', 'keep')] if item['kind'] == 'noise' else [('Drop', 'drop'), ('Do it now', 'now'), ('Keep', 'keep')]
+            rows.append([{'text': f'{label} {n}', 'value': value + choice} for label, choice in labels])
+        elif item['status'] == 'filtered':
+            rows.append([{'text': f'Undo {n}', 'value': value + 'undo'}])
+    return rows
+
+
+def recap_view(text, items):
+    """The recap as it stands now: each decided line says what was done, and only open lines keep their buttons."""
+    for item in items:
+        if item['status'] in RECAP_DONE:
+            text = text.replace(item['line'], item['line'] + ' · **' + RECAP_DONE[item['status']] + '**', 1)
+    return {'text': text, 'buttons': recap_buttons(items)}
+
+
+def recap_presentation(buttons):
+    """The same rows as Telegram presentation blocks for the message tool (send and edit)."""
+    blocks = [{'type': 'buttons', 'buttons': [{'label': b['text'], 'action': {'type': 'callback', 'value': b['value']}} for b in row]} for row in buttons]
+    return {'blocks': blocks or [{'type': 'buttons', 'buttons': []}]}
+
+
+def recap_meetings(db, start, end, cards):
+    """The week ahead's meetings worth a line: the owner's own (calendar_owned: on a shared calendar, only those they
+    organise or are invited to), with other people, said yes or not answered, and either a one-off or one with a card on
+    it (a weekly one-on-one is routine, unless something is prepared for it). A meeting on two calendars shows once."""
+    seen, out = set(), []
+    for r in db.execute("SELECT id,title,occurred_at,metadata FROM events WHERE kind='calendar.event' AND deleted=0 AND occurred_at>=? AND occurred_at<? "
+                        'ORDER BY occurred_at,id LIMIT 300', (start, end)):
+        m = json.loads(r['metadata'])
+        if not calendar_owned(m):
+            continue
+        people = [x for x in m.get('attendees') or [] if isinstance(x, dict)]
+        if m.get('access') == 'shared_read_only':  # 'self' there is the calendar's owner: the Machine's owner is by address
+            mine = str(m.get('credential_account') or '').lower()
+            is_me = lambda x: str(x.get('email') or '').lower() == mine
+        else:
+            is_me = lambda x: bool(x.get('self'))
+        me = next((x for x in people if is_me(x)), {})
+        card = cards.get(r['id'])
+        if m.get('all_day') or me.get('responseStatus') == 'declined' or m.get('status') == 'cancelled':
+            continue
+        others = [x for x in people if not is_me(x)]
+        if not others or (m.get('recurring_event_id') and not card):
+            continue
+        keys = calendar_keys(m, r['title'], r['occurred_at'], None)
+        if keys & seen:
+            continue
+        seen |= keys
+        out.append({'at': r['occurred_at'], 'title': r['title'], 'guests': len(others), 'card': card})
+    return out
+
+
+def weekly_recap_message(store, config, current=None, usage=None):
+    """Friday recap, made to act on: what needs the owner first (late promises, their own with a date), the week ahead,
+    what changed and whether it works, then busy sources and cards snoozed again and again, each with a one-tap choice
+    that changes only the owner's own filters or cards. Behind the scenes in one line at the end.
+    Returns {'text', 'items'}: items are the numbered lines with a choice (not stored yet)."""
     current = current or dt.datetime.fromisoformat(now())
+    tz = local_tz()
     since = (current - dt.timedelta(days=7)).isoformat()
+    today = current.astimezone(tz).date()
+    # The week ahead: tomorrow through the same weekday next week (a Friday recap: Saturday to Friday).
+    tomorrow = today + dt.timedelta(days=1)
+    start_ahead = dt.datetime.combine(tomorrow, dt.time(), tz).astimezone(dt.timezone.utc).isoformat()
+    ahead = dt.datetime.combine(tomorrow + dt.timedelta(days=7), dt.time(), tz).astimezone(dt.timezone.utc).isoformat()
+    in_week = lambda day: tomorrow.isoformat() <= str(day)[:10] < (tomorrow + dt.timedelta(days=7)).isoformat()
+    root = 'https://' + config['dashboard_host'] + config.get('dashboard_path', '/') if config.get('dashboard_host') else ''
+    link = lambda text, card: f'[{recap_escape(text)}]({root}#card={card})' if root and card else recap_escape(text)
+    names = {x['id']: x.get('display_name') or x.get('email') or x['id'] for x in config.get('accounts', [])}
     with store.connect() as db:
-        sug = [dict(r) for r in db.execute('SELECT id,status,created_at,account_ids FROM suggestions WHERE created_at>=?', (since,))]
-        dec = [dict(r) for r in db.execute("SELECT suggestion_id,choice,created_at FROM decisions WHERE created_at>=? AND source IN ('telegram','dashboard')", (since,))]
-        preps = dict(db.execute("SELECT status,count(*) FROM preparations WHERE updated_at>=? GROUP BY status", (since,)).fetchall())
         runs = db.execute("SELECT count(*) FROM review_runs WHERE started_at>=?", (since,)).fetchone()[0]
         batches = [json.loads(r[0]) for r in db.execute("SELECT items FROM analyses WHERE status='complete' AND finished_at>=?", (since,))]
         reviewed = sum(sum(1 for i in items if not i.get('deferred') and not i.get('excluded')) for items in batches)
-        backlog, aside = db.execute('SELECT count(*),coalesce(sum(deferrals>=?),0) FROM events WHERE analyzed_version<version', (SET_ASIDE_AFTER,)).fetchone()
-        collected = db.execute('SELECT count(*) FROM events WHERE ingested_at>=?', (since,)).fetchone()[0]
-        used = set()
-        for (ids,) in db.execute('SELECT event_ids FROM suggestions'):
-            used |= set(json.loads(ids))
-        noise = collections.Counter()
-        for i, account, kind, m in db.execute('SELECT id,account_id,kind,metadata FROM events WHERE ingested_at>=?', (since,)):
-            if i in used:
-                continue
-            m = json.loads(m)
-            # Only automated sources are filter candidates, never people's conversations.
-            sender = re.sub(r'.*<|>.*', '', str(m.get('from') or ''))
-            if kind == 'slack.message' and not str(m.get('channel_name', '')).startswith('DM '):
-                where = '#' + m['channel_name']
-            elif kind == 'whatsapp.message' and str(m.get('chat_id', '')).endswith('@g.us'):
-                where = m.get('chat_name') or 'WhatsApp group'
-            elif kind == 'android.notification':
-                where = str(m.get('app_name') or m.get('package_name') or 'app').rsplit('.', 1)[-1] + ' notifications'  # com.Slack → Slack
-            elif kind in ('gmail.message', 'salesflare.email') and re.search(r'(?i)no-?reply|notification|alert|digest|news|mailer|updates?@', sender):
-                where = sender
-            else:
-                continue
-            noise[(account, where)] += 1
-    choices = collections.Counter(d['choice'] for d in dec)
-    first = {}
-    for d in sorted(dec, key=lambda d: d['created_at']):
-        first.setdefault(d['suggestion_id'], d['created_at'])
-    waits = sorted((dt.datetime.fromisoformat(first[x['id']]) - dt.datetime.fromisoformat(x['created_at'])).total_seconds() / 60
-                   for x in sug if x['id'] in first)
-    open_now = collections.Counter(x['status'] for x in sug if x['status'] not in ('completed', 'rejected'))
-    # Short sections with a bold heading and one point per line, so it reads at a glance on a phone.
-    n = lambda v: f'{v:,}'
-    tz = local_tz()
+        backlog = db.execute('SELECT count(*) FROM events WHERE analyzed_version<version').fetchone()[0]
+        noise = recap_noise(db, since)
+        open_cards = {r['id']: dict(r) for r in db.execute(
+            "SELECT id,title,status,due,event_ids FROM suggestions WHERE status IN ('pending','accepted','instructions','prepared','snoozed')")}
+        on_event = {}
+        for card in open_cards.values():
+            for e in json.loads(card['event_ids']):
+                on_event.setdefault(e, card)
+        meetings = recap_meetings(db, start_ahead, ahead, on_event)
+        snoozed = [dict(r) for r in db.execute(
+            "SELECT d.suggestion_id id,count(*) n,max(d.created_at) last FROM decisions d JOIN suggestions s ON s.id=d.suggestion_id WHERE d.choice='snooze' "
+            "AND d.source IN ('telegram','dashboard') AND d.created_at>=? AND s.status IN ('snoozed','pending') GROUP BY d.suggestion_id HAVING n>=2 ORDER BY n DESC,last DESC",
+            (since,))]
+        # A source or card the owner said Keep to in an earlier recap isn't offered again (a card only until it is snoozed again).
+        kept = [dict(r) for r in db.execute("SELECT kind,ref,data,decided_at FROM recap_items WHERE status='kept'")]
+        changes = [dict(r) for r in db.execute('SELECT at,kind,text FROM rule_changes WHERE at>=? ORDER BY at', (since,))]
+    kept_rules = [json.loads(k['data']).get('rule') for k in kept if k['kind'] == 'noise']
+    kept_cards = {k['ref']: k['decided_at'] for k in kept if k['kind'] == 'snoozed'}
     start_local, end_local = dt.datetime.fromisoformat(since).astimezone(tz), current.astimezone(tz)
     span = f"{start_local.day}–{end_local.day} {end_local:%b}" if (start_local.month, start_local.year) == (end_local.month, end_local.year) else f"{start_local.day} {start_local:%b} – {end_local.day} {end_local:%b}"
-    lines = ['**Your week with The Machine**', span]
-    week, before = store.quality(7, current.isoformat()), store.quality(7, since)
-    if week['hit_rate'] is not None:
-        then = f" (week before: {before['hit_rate']}%)" if before['hit_rate'] is not None else ''
-        lines += ['', f"**{week['hit_rate']}% worth it**{then}",
-                  f"{week['worth_it']} of the {week['worth_it'] + week['dismissed']} cards you decided on were worth it."
-                  + (f" Do it got it right the first time {week['first_time']} of {week['do_it']} times"
-                     + (f" (week before: {before['first_time_rate']}%)" if before['first_time_rate'] is not None else '') + '.' if week['do_it'] else '')]
-    cards = [f"• {n(len(sug))} new: {choices['accept']} accepted, {choices['complete']} done, {choices['reject']} dismissed, {choices['snooze']} snoozed"]
-    if waits:
-        cards.append(f"• You usually responded within {round(waits[len(waits) // 2])} min")
-    if open_now:
-        cards.append(f"• Open now: {sum(open_now.values())} ({', '.join(f'{v} {k}' for k, v in open_now.items())})")
-    if preps:
-        cards.append(f"• Do it: {preps.get('done', 0)} ready, {preps.get('cancelled', 0)} stopped by you, {preps.get('blocked', 0) or 'none'} stuck")
-    lines += ['', '**Cards**', *cards]
-    promised = store.promises(7)
-    if promised:
-        today = current.astimezone(tz).date().isoformat()
-        count = lambda direction, *states: sum(1 for p in promised if p['direction'] == direction and p['state'] in states)
-        late = sum(1 for p in promised if p['state'] in ('open', 'card') and p['due'] and p['due'] < today)
-        lines += ['', '**Promises**', f"• Yours: {count('mine', 'kept')} kept, {count('mine', 'open', 'card')} open",
-                  f"• To you: {count('theirs', 'kept', 'answered')} came through, {count('theirs', 'open', 'card')} still waiting"]
-        if late:
-            lines.append(f"• {late} past {'its' if late == 1 else 'their'} date")
-    alive = recap_graph_lines(store)
+    lines = [f'**Your week with The Machine** · {span}']
+
+    # 1. What needs the owner: promises made to them that are late, then their own open ones with a date.
+    promised = [p for p in store.promises(7) if p['state'] in ('open', 'card')]
+    # A promise links to its own page on the dashboard, never to its card (the page links the card)
+    said = lambda p: f"[{recap_escape(recap_clip(p['what']))}]({root}#promise/{p['id']})" if root else recap_escape(recap_clip(p['what']))
+    late_to = [p for p in promised if p['direction'] == 'theirs' and ((p['due'] and p['due'] < today.isoformat()) or (not p['due'] and p['check_at'] <= current.isoformat()))]
+    soon = (today + dt.timedelta(days=14)).isoformat()  # their own: late ones and those due in the next two weeks
+    mine = sorted((p for p in promised if p['direction'] == 'mine' and p['due'] and p['due'] <= soon), key=lambda p: p['due'])
+    needs = [f"• Waiting on {recap_escape(p['who'])}: {said(p)}, "
+             + (f"due {recap_day(p['due'])}" if p['due'] else f"since {recap_day(p['made_at'])}") for p in late_to[:4]]
+    needs += [f"• Promised {recap_escape(p['who'])}: {said(p)}, "
+              + (f"was due {recap_day(p['due'])}" if p['due'] < today.isoformat() else f"due {recap_day(p['due'])}") for p in mine[:4]]
+    more = max(0, len(late_to) - 4) + max(0, len(mine) - 4)
+    if needs:
+        lines += ['', '**Needs you**', *needs] + ([f'• {more} more in Promises' + (f' on the [dashboard]({root})' if root else '')] if more else [])
+
+    # 2. The week ahead: meetings worth preparing, cards due and dates others promised.
+    week = []
+    for m in meetings[:5]:
+        card = m['card']
+        prep = (' · ' + link('prep ready' if card['status'] == 'prepared' else 'card', card['id'])) if card else ''
+        week.append((m['at'], f"• {recap_day(m['at'], True)} {recap_escape(recap_clip(m['title'], 60))}, {m['guests']} {'person' if m['guests'] == 1 else 'people'}{prep}"))
+    listed = {m['card']['id'] for m in meetings[:5] if m['card']}
+    for card in open_cards.values():
+        if card['due'] and in_week(card['due']) and card['id'] not in listed:
+            week.append((card['due'], f"• {recap_day(card['due'][:10])}: {link(recap_clip(card['title']), card['id'])} is due"))
+    for p in promised:
+        same = lambda q: q['direction'] == 'mine' and q['who'] == p['who'] and q['what'].lower() == p['what'].lower()
+        if p['direction'] == 'theirs' and p['due'] and in_week(p['due']) and not any(map(same, mine)):  # today's are on time, late ones are under Needs you, a shared plan shows once
+            week.append((p['due'], f"• {recap_day(p['due'])}: {recap_escape(p['who'])} said they'd {said(p)}"))
+    if week:
+        when = lambda v: str(v) if len(str(v)) <= 10 else dt.datetime.fromisoformat(str(v).replace('Z', '+00:00')).astimezone(tz).strftime('%Y-%m-%dT%H:%M')
+        week.sort(key=lambda w: when(w[0]))
+        lines += ['', '**Next week**', *[w for _, w in week[:8]]]
+
+    # 3. What changed: the hit rate in one line, what it learned and whether that works.
+    q, before = store.quality(7, current.isoformat()), store.quality(7, since)
+    changed = []
+    if q['hit_rate'] is not None:
+        was = before['hit_rate']
+        trend = '' if was is None else ', same as the week before' if was == q['hit_rate'] else f", up from {was}%" if q['hit_rate'] > was else f", down from {was}%"
+        first = f" Do it was right first time in {q['first_time']} of {q['do_it']}." if q['do_it'] else ''
+        changed.append(f"• {q['hit_rate']}% of cards worth it ({q['worth_it']} of {q['worth_it'] + q['dismissed']}){trend}.{first}")
+    learned = store.behaviour(7)
+    rules = sum(1 for c in changes if c['kind'] == 'draft_rule' and not c['text'].startswith('Removed'))
+    voices = sum(1 for c in changes if c['kind'] == 'voice')
+    guide = sum(1 for c in changes if c['kind'] == 'file' and c['text'] == 'PREPARATION.md edited')  # what behaviour() counts as a rule change
+    filters = sum(1 for c in changes if c['kind'] == 'filter' and not c['text'].startswith('Removed'))
+    plural = lambda n, one, many: f'{n} {one if n == 1 else many}'
+    bits = [b for n, b in ((rules, plural(rules, 'writing rule', 'writing rules')), (voices, plural(voices, 'update', 'updates') + ' to how you write'),
+                           (guide, plural(guide, 'edit', 'edits') + ' to the drafting guide'), (filters, plural(filters, 'new filter', 'new filters'))) if n]
+    sent = learned['sent_as_written'] + learned['sent_edited']
+    s = learned['since_rules']
+    if bits:
+        done = (s['as_written'] + s['edited']) if s else 0
+        works = (f" Since then, {s['as_written']} of {done} drafts went out as written" + (f" ({learned['sent_as_written'] - s['as_written']} of {sent - done} before)." if sent > done else '.')
+                 if s and done else ' No drafts sent since then yet.' if s else '')
+        changed.append('• Adjusted: ' + ', '.join(bits) + '.' + works)
+    elif sent:
+        changed.append(f"• Drafts: {learned['sent_as_written']} of {sent} went out as written.")
+    if changed:
+        lines += ['', '**What changed**', *changed]
+    alive = recap_graph_lines(store, since)
     if alive:
         lines += ['', '**People and projects**', *alive]
-    learned = store.behaviour(7)
-    noticed = []
-    if learned['sent_as_written'] or learned['sent_edited']:
-        noticed.append(f"• Drafts: {learned['sent_as_written']} sent as written, {learned['sent_edited']} changed by you first")
-        if learned['since_rules']:
-            s, day = learned['since_rules'], dt.datetime.fromisoformat(learned['since_rules']['at']).astimezone(tz)
-            done = s['as_written'] + s['edited']
-            noticed.append(f"\u00a0\u00a0\u00a0◦ Since the writing rules last changed ({day:%a} {day.day} {day:%b}): "
-                           + (f"{s['as_written']} of {done} sent as written" if done else 'none sent yet'))
-    if learned['quick_dismissed']:
-        noticed.append(f"• {len(learned['quick_dismissed'])} dismissed within minutes")
-    if learned['snoozed_again']:
-        noticed.append('• Snoozed more than once:')
-        noticed += ['\u00a0\u00a0\u00a0◦ ' + t for t, _ in learned['snoozed_again'][:3]]
-    if noticed:
-        lines += ['', '**What I noticed**', *noticed, "I'll take this into account in my next reviews and drafts."]
-    names = {x['id']: x.get('display_name') or x.get('email') or x['id'] for x in config.get('accounts', [])}
-    busy = [(k, v) for k, v in noise.most_common() if k and v >= 20][:3]
-    if busy:
-        lines += ['', '**Busy without results**', *(f"• {where} ({names.get(account, account)}): {n(v)} this week" for (account, where), v in busy),
-                  'Tell me if any of these should be filtered.']
-    lines += ['', '**Behind the scenes**',
-              f"• {n(reviewed)} signals reviewed in {n(len(batches))} batches over {n(runs)} runs",
-              f"• {n(collected)} new this week, {n(backlog)} waiting" + (f" ({n(aside)} set aside)" if aside else '')]
+
+    # 4. One-tap choices: nothing changes until the owner taps, and a tap changes only their own filters or cards.
+    items = []
+    busy = [(k, v) for k, v in sorted(noise.items(), key=lambda kv: -kv[1]['n']) if k[0] and v['n'] >= 20 and v['rule'] not in kept_rules][:3]
+    for (account, where), v in busy:
+        items.append({'kind': 'noise', 'ref': account, 'data': {'account': account, 'rule': v['rule'], 'label': f'{where} ({names.get(account, account)})'},
+                      'line': f"{len(items) + 1}. {recap_escape(where)} ({recap_escape(names.get(account, account))}): {v['n']:,} this week, no cards"})
+    if items:
+        lines += ['', '**Busy without results**', *(i['line'] for i in items)]
+    again = [s for s in snoozed if s['id'] in open_cards and not (s['id'] in kept_cards and s['last'] <= kept_cards[s['id']])][:3]
+    first_card = len(items)
+    for s in again:
+        items.append({'kind': 'snoozed', 'ref': s['id'], 'data': {'title': open_cards[s['id']]['title']},
+                      'line': f"{len(items) + 1}. {link(recap_clip(open_cards[s['id']]['title']), s['id'])}, {s['n']} times"})
+    if len(items) > first_card:
+        lines += ['', '**Snoozed more than once**', *(i['line'] for i in items[first_card:])]
+    if items:
+        lines.append('Nothing changes until you tap.')
+
+    # 5. Behind the scenes, in one line.
+    tail = f"{reviewed:,} signals reviewed in {runs:,} runs, {backlog:,} waiting"
     if usage:
-        lines.append(f"• Tokens: {usage['input'] / 1e6:.1f}M in, {usage['cacheRead'] / 1e6:.1f}M cached, {usage['output'] / 1e3:.0f}K out over {usage['runs']} sessions."
-                     f" About ${usage['usd']:.2f} at Azure list price (GPT-6.1 Sol, Sweden Central); it runs on your subscription.")
-    return '\n'.join(lines)
+        tail += f"; about ${usage['usd']:.2f} at API list price, on your subscription"
+    lines += ['', f'_Behind the scenes: {tail}._']
+    for n, item in enumerate(items, 1):
+        item.update(id='r_' + secrets.token_hex(6), n=n, status='open')
+    return {'text': '\n'.join(lines), 'items': items}
+
+
+def weekly_recap(store, config, current=None, usage=None):
+    """The recap's text (weekly_recap_message without storing its choices)."""
+    return weekly_recap_message(store, config, current, usage)['text']
 
 
 def profile_prompt(run_id, counts, room=PROFILE_ROOM):
@@ -9492,6 +9756,7 @@ The assistant instructions (tools/personal-assistant/AGENTS.md) and the owner's 
 With the assistant_signals tool: call status, then ONE begin_analysis with account_ids {json.dumps(accounts)} and limit 120. The reply is paged: read every page with analysis_page before finishing, including next_row_offset continuations on the same page. Where body_clipped matters, read the rest with events (the account, event_ids and body_offset). Events replies contain events and remaining_event_ids; read the remaining IDs with the same accounts. Follow body_next_offset to the end of long bodies.
 Save only genuinely useful, distinct suggestions with suggest; the service delivers them. A card's agent_work in status is what Claude Code or Codex did (or is doing) on it, the latest truth of what was done: when you update a card, start from there and never offer work it reports done as the next step. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
+Boards: projects of one kind (partner listings, hires, onboardings), one project per counterpart, stand in stages on boards the owner saved; begin_analysis boards lists them with each project's stage and the board's about (which projects belong). When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new project that fits a board's about goes on it the same way. A board's to_sort are projects the owner put on it: place each with graph project, board, stage, event_id (its message that shows where it stands) and reason. Only the owner makes boards: when off_boards projects has three or more open projects of the same kind of work, each with its own counterpart, and none of off_boards suggested fits, suggest one board once with graph suggest_board {{"name", "stages", "about", "projects", "reason"}}: stages that fit how that kind of work goes, in order (partner listings: Contacted, Agreed, In review, Live; hiring: Sourced, Screening, Interviews, Offer, Hired), about one sentence on which projects belong. Judge the kind from what the projects are, not from words in their names. The owner's own move stands until a newer message changes things.
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
 Meeting notes (a Zoom summary or transcript) are that meeting's own record: use them for follow-ups on it, its next steps and who took them on, with the notes and the calendar event as evidence.
@@ -9751,7 +10016,7 @@ class App:
                 'task': card_task(card), 'note': note, 'about': agent_about(card, views), 'history': agent_history(*chat, skip=note),
                 'message_kinds': [v['kind'] for v in views]}
 
-    def agent_revise(self, suggestion_id, text):
+    def agent_revise(self, suggestion_id, text, job=None):
         """A message Claude Code or Codex rewrote (its draft.md) becomes the card's draft under a new revision, when the
         card has exactly one message draft: the owner still reads it there and sends it with the card's own Send."""
         with self.store.connect() as db:
@@ -9763,7 +10028,7 @@ class App:
         editable = [a for a in actions or [] if isinstance(a, dict) and a.get('kind') in ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom') and a.get('revision')]
         if len(editable) != 1:
             return False
-        return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text).get('status') == 'revised'
+        return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text, agent_job=job).get('status') == 'revised'
 
     def agent_action(self, name, args):
         if not self.agents:
@@ -10152,6 +10417,8 @@ class App:
             if not owner_dashboard:
                 raise ValueError('Task pages are shared from the dashboard')
             return self.task_pages.action(name, args)
+        if name == 'recap_decide':  # a tap on the weekly recap's Filter, Keep, Undo, Drop or Do it now
+            return self.recap_decide(args, owner_dashboard)
         if name.startswith('fleet_') or name in FAMILY_ACTIONS:
             return self.fleet_action(name, args, owner_dashboard)
         if name == 'related':
@@ -10196,9 +10463,12 @@ class App:
             if isinstance(result, dict) and result.get('analysis_id'):
                 with self.store.connect() as db:
                     result['projects'] = graph.active_projects(db)  # reuse these names in finish_analysis and suggest
+                    result['boards'] = graph.boards_brief(db)  # projects of one kind in stages, moved with finish_analysis stages
+                    result['off_boards'] = graph.off_boards(db)  # projects on no board, for a board suggestion (graph suggest_board)
             return result
         if name == 'finish_analysis':
-            return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'))
+            return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
+                                             args.get('stages'))
         if name == 'graph':
             return self.graph_action(args)
         if name == 'enrich':  # the CLI: status, or one domain now
@@ -10417,6 +10687,22 @@ class App:
                 renamed = graph.rename(db, args.get('node_id'), args.get('name'), now())
             self.graph_build()
             return renamed
+        if name in ('board_save', 'board_delete', 'board_dismiss'):
+            if not owner_dashboard:
+                raise ValueError('Only the owner saves, deletes or dismisses a board, on the dashboard; reviews suggest one with graph suggest_board')
+            with self.store.connect() as db:
+                done = graph.save_board(db, args, now()) if name == 'board_save' else graph.delete_board(db, args.get('board_id'), now()) \
+                    if name == 'board_delete' else graph.dismiss_board_suggestion(db, args.get('suggestion_id'), now())
+            if name != 'board_dismiss':
+                self.graph_build()
+            return done
+        if name == 'graph_stage':
+            if not owner_dashboard:
+                raise ValueError('Only the owner moves a project by hand, on the dashboard; reviews use finish_analysis stages')
+            with self.store.connect() as db:
+                moved = graph.set_stage(db, str(args.get('node_id') or ''), args.get('stage'), 'owner', now())
+            self.graph_build()
+            return moved
         if name in ('graph_org_edit', 'graph_org_wrong'):
             if not owner_dashboard:
                 raise ValueError("Only the owner edits an organisation's details, on the dashboard")
@@ -10526,6 +10812,10 @@ class App:
             if not owner_dashboard or args.get('status') not in ('kept', 'dropped'):
                 raise ValueError('Only the owner closes a promise, on the dashboard')
             return self.store.update_promise({'id': args.get('id'), 'status': args['status']}, source='dashboard')
+        if name == 'promise_due':
+            if not owner_dashboard or not args.get('due'):
+                raise ValueError('Only the owner moves a promise’s date here, on the dashboard')
+            return self.store.update_promise({'id': args.get('id'), 'due': args['due']}, self.config.get('digest_at', '08:30'), source='dashboard')
         if name in ('set_signature', 'detect_signature'):
             if not owner_dashboard:
                 raise ValueError('Only the owner sets a signature, on the dashboard (Settings, Signatures)')
@@ -11569,7 +11859,8 @@ class App:
         saved = self.store.suggest('promise:%d' % p['id'], title[:90], body[:700], [p['event_id']], 'now', self.config.get('digest_at', '08:30'),
                                    work=self.is_work([p['account_id']]), due=p['due'], ahead=ahead, _db=_db)
         with contextlib.nullcontext(_db) as db:
-            db.execute("UPDATE promises SET status='carded',suggestion_id=?,updated_at=? WHERE id=? AND status='open'", (saved['id'], now(), p['id']))
+            if db.execute("UPDATE promises SET status='carded',suggestion_id=?,updated_at=? WHERE id=? AND status='open'", (saved['id'], now(), p['id'])).rowcount:
+                promise_logged(db, p['id'], 'carded')
             if p['watch'] and not saved.get('duplicate'):
                 # Their reply closes the card too while it is still on its way.
                 db.execute('UPDATE suggestions SET awaiting=? WHERE id=?', (encoded({**json.loads(p['watch']), 'promise': True}), saved['id']))
@@ -12777,20 +13068,22 @@ class App:
         return {'run_id': run_id, 'started_at': started, 'waiting': waiting, 'signals': min(waiting, budget)}
 
     def recap_push(self, message, week):
-        """Without Telegram the recap's start goes to the dashboard app as a notification."""
+        """Without Telegram the recap's start goes to the dashboard app as a notification: what needs the owner first."""
         with self.store.connect() as db:
             subscriptions = [dict(r) for r in db.execute('SELECT endpoint,p256dh,auth FROM push_subscriptions')]
         if subscriptions and self.config.get('dashboard_host'):
             root = 'https://' + self.config['dashboard_host'] + self.config.get('dashboard_path', '/')
+            body = '\n'.join(message.split('\n')[1:])  # the title says it is the week; the first section leads
             try:
                 push_node(self.config, {'action': 'send', 'subscriptions': subscriptions,
-                                        'payload': {'title': 'Your week', 'body': plain(message), 'url': root, 'tag': 'recap-' + week}})
+                                        'payload': {'title': 'Your week', 'body': plain(body), 'url': root, 'tag': 'recap-' + week}})
             except (subprocess.TimeoutExpired, ValueError, KeyError) as error:
                 LOG.warning('push recap error=%s', type(error).__name__)
         return {'messageId': 'web-recap-' + week}
 
     def recap_step(self, sender=None, current=None):
-        """Send the weekly recap once, Fridays from 16:00."""
+        """Send the weekly recap once, Fridays from 16:00. Its choices are stored with it, so a tap on one of its
+        buttons is checked against the message it came from."""
         settings = self.config.get('weekly_recap') or {}
         if not settings.get('enabled'):
             return None
@@ -12808,11 +13101,22 @@ class App:
             usage = assistant_token_usage(int((current - dt.timedelta(days=7)).timestamp() * 1000))
         except Exception:
             usage = None
-        text = weekly_recap(self.store, self.config, current, usage)
-        if sender is None and not telegram_on(self.config):
+        recap = weekly_recap_message(self.store, self.config, current, usage)
+        text, items = recap['text'], recap['items']
+        on_telegram = sender is not None or telegram_on(self.config)
+        if not on_telegram:  # the dashboard app gets the text; its buttons need Telegram
+            items = []
+        with self.store.connect() as db:
+            db.execute('UPDATE recaps SET text=? WHERE week=?', (text, week))
+            for item in items:
+                db.execute("INSERT INTO recap_items(id,week,n,kind,ref,line,data,status) VALUES(?,?,?,?,?,?,?,'open')",
+                           (item['id'], week, item['n'], item['kind'], item['ref'], item['line'], encoded(item['data'])))
+        if sender is None and not on_telegram:
             sender = lambda message: self.recap_push(message, week)
+        buttons = recap_buttons(items)
         sender = sender or (lambda message: telegram_request(self.config, {'action': 'send', 'channel': 'telegram', 'accountId': telegram_account(self.config),
-                                                                           'target': self.config.get('telegram_owner'), 'message': message}))
+                                                                           'target': self.config.get('telegram_owner'), 'message': message,
+                                                                           'presentation': recap_presentation(buttons)}))
         status, message_id, error = 'uncertain', None, None
         try:
             receipt = sender(text)
@@ -12824,10 +13128,102 @@ class App:
             error = 'delivery_outcome_unknown'  # never resend blindly
         with self.store.connect() as db:
             if status == 'not_sent':
+                db.execute('DELETE FROM recap_items WHERE week=?', (week,))
                 db.execute('DELETE FROM recaps WHERE week=?', (week,))  # nothing went out; try again later
             else:
                 db.execute('UPDATE recaps SET status=?,message_id=?,error=? WHERE week=?', (status, message_id, error, week))
         return status
+
+    def recap_view(self, week):
+        with self.store.connect() as db:
+            row = db.execute('SELECT text,message_id FROM recaps WHERE week=?', (week,)).fetchone()
+            items = [dict(r) for r in db.execute('SELECT * FROM recap_items WHERE week=? ORDER BY n', (week,))]
+        return (recap_view(row['text'] or '', items), row['message_id']) if row else (None, None)
+
+    def recap_retell(self, week):
+        """The recap message brought up to date after a tap: the line says what was done, its buttons go."""
+        try:
+            view, message_id = self.recap_view(week)
+            if view and message_id and telegram_on(self.config) and not str(message_id).startswith('web-'):
+                telegram_request(self.config, {'action': 'edit', 'channel': 'telegram', 'accountId': telegram_account(self.config),
+                                               'target': self.config.get('telegram_owner'), 'messageId': str(message_id),
+                                               'message': view['text'], 'presentation': recap_presentation(view['buttons'])})
+        except Exception as error:
+            LOG.warning('recap edit error=%s', type(error).__name__)
+
+    def recap_filter(self, data, add):
+        """Add (or, for Undo, take out) one `exclude` rule on one of the owner's own accounts, in config.json and at
+        once for new signals. Signals already stored stay; only new ones are skipped."""
+        import onboarding
+        if not getattr(self, 'config_path', None):
+            raise ValueError('Filters on this Machine are set in config.json')
+        config = onboarding.load(self.config_path)
+        account = next((x for x in config.get('accounts', []) if x.get('id') == data.get('account')), None)
+        if not account or not isinstance(data.get('rule'), dict):
+            raise ValueError('That source is no longer connected')
+        rules = account.setdefault('exclude', [])
+        if add and data['rule'] not in rules:
+            rules.append(data['rule'])
+        elif not add:
+            account['exclude'] = [r for r in rules if r != data['rule']]
+        onboarding.save(self.config_path, config)
+        live = next((x for x in self.config.get('accounts', []) if x.get('id') == account['id']), None)
+        if live is not None:
+            live['exclude'] = account['exclude']
+            self.store.exclusions[account['id']] = (live.get('exclude') or []) + default_exclusions(self.config, live)
+
+    def recap_decide(self, args, owner_dashboard=False):
+        """A tap on the weekly recap: Filter, Keep or Undo on a busy source; Drop, Do it now or Keep on a card snoozed
+        again and again. Only the owner's own filters and cards change; nothing is sent to anyone. From Telegram only
+        on the recap message that offered it."""
+        item_id, choice = str(args.get('id') or ''), str(args.get('choice') or '')
+        if not owner_dashboard and args.get('source') != 'telegram':
+            raise ValueError('Recap choices come from the recap message')
+        with self.store.connect() as db:
+            item = db.execute('SELECT i.*,r.message_id FROM recap_items i JOIN recaps r ON r.week=i.week WHERE i.id=?', (item_id,)).fetchone()
+        if not item:
+            raise ValueError('That recap line is no longer known')
+        item = dict(item)
+        if not owner_dashboard and str(item['message_id'] or '') != str(args.get('message_id') or ''):
+            raise ValueError('That Telegram message is not the recap this line was sent in')
+        if choice not in RECAP_CHOICES[item['kind']]:
+            raise ValueError('Unknown choice')
+        decision = str(args.get('decision_id') or '') or 'recap:' + secrets.token_hex(8)
+        if item['decision_id'] == decision:
+            return {'status': item['status'], 'duplicate': True}
+        if (choice == 'undo') != (item['status'] == 'filtered') or (choice != 'undo' and item['status'] != 'open'):
+            return {'status': item['status'], 'reason': 'Already done: ' + RECAP_DONE.get(item['status'], 'open').lower() + '.'}
+        data, status = json.loads(item['data']), {'filter': 'filtered', 'keep': 'kept', 'undo': 'open', 'drop': 'dropped', 'now': 'started'}[choice]
+        source = 'dashboard' if owner_dashboard else 'telegram'
+        if choice in ('filter', 'undo'):
+            self.recap_filter(data, choice == 'filter')
+            with self.store.connect() as db:
+                db.execute("INSERT INTO rule_changes(at,kind,text,ref) VALUES(?,'filter',?,?)",
+                           (now(), ('Filter: ' if choice == 'filter' else 'Removed filter: ') + data.get('label', ''), item['id']))
+        elif choice in ('drop', 'now'):
+            card = item['ref']
+            with self.store.connect() as db:
+                row = db.execute('SELECT status FROM suggestions WHERE id=?', (card,)).fetchone()
+            if not row or row['status'] in ('completed', 'rejected'):
+                status = 'dropped' if row and row['status'] == 'rejected' else 'kept'
+                reason = 'That card is already closed.'
+            else:
+                reason = None
+                if choice == 'drop':
+                    self.store.decide(card, 'reject', 'Dropped from the weekly recap', decision + ':drop', source)
+                else:  # Unsnooze, then Do it: preparing never sends anything without the owner's own tap on the card
+                    result = self.store.decide(card, 'accept', '', decision + ':back', source) if row['status'] == 'snoozed' else {'status': row['status']}
+                    if result.get('status') == 'pending':
+                        self.store.decide(card, 'accept', '', decision + ':do', source)
+            if reason:
+                with self.store.connect() as db:
+                    db.execute('UPDATE recap_items SET status=?,decision_id=?,decided_at=? WHERE id=?', (status, decision, now(), item['id']))
+                threading.Thread(target=self.recap_retell, args=(item['week'],), daemon=True).start()
+                return {'status': status, 'reason': reason}
+        with self.store.connect() as db:
+            db.execute('UPDATE recap_items SET status=?,decision_id=?,decided_at=? WHERE id=?', (status, decision, now(), item['id']))
+        threading.Thread(target=self.recap_retell, args=(item['week'],), daemon=True).start()
+        return {'status': status}
 
     def profile_step(self, runner=None):
         """Start and follow the one profile turn `assistant profile` asked for (reviews may be off)."""
@@ -13083,7 +13479,8 @@ class App:
         organisations yet (the first import), new signals."""
         with self.store.connect() as db:
             profiles = tuple(db.execute("SELECT count(*),max(fetched_at) FROM org_profiles WHERE status!='error'").fetchone()) \
-                + tuple(db.execute("SELECT count(*),max(fetched_at) FROM person_profiles WHERE status!='error'").fetchone())
+                + tuple(db.execute("SELECT count(*),max(fetched_at) FROM person_profiles WHERE status!='error'").fetchone()) \
+                + tuple(db.execute('SELECT count(*),max(saved_at) FROM person_photos').fetchone())
             empty = not db.execute("SELECT 1 FROM graph_nodes WHERE kind='org' LIMIT 1").fetchone()
             signals = tuple(db.execute('SELECT count(*),max(ingested_at) FROM events').fetchone()) if empty else None
         return profiles, signals
@@ -13122,7 +13519,10 @@ class App:
             try:
                 if enrichment.step(self.store.connect, self.config, now()):
                     self.graph_dirty.set()  # show the new profiles
-                if enrichment.people_step(self.store.connect, self.config, now()):
+                found = enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None)), stop=self.stop.is_set)
+                photos = enrichment.photos_step(self.store.connect, now())  # straight after the lookups (hosted ones too, through the agent)
+                if found or photos:
+                    LOG.info('enrichment people found=%s photos=%s', found, photos)
                     self.graph_dirty.set()
                 wait = 600
             except enrichment.EnrichmentError as error:
@@ -13175,6 +13575,8 @@ class App:
         """People and projects for the agent: look up, explore around, label, merge and say who someone is."""
         changed = False
         with self.store.connect() as db:
+            if isinstance(args.get('suggest_board'), dict):  # a board for a group of projects of one kind; the owner saves it or not
+                return graph.suggest_board(db, args['suggest_board'], source, now())
             if args.get('merge') or args.get('different'):
                 pair = args.get('merge') or args.get('different')
                 if not isinstance(pair, list) or len(pair) != 2:
@@ -13187,6 +13589,10 @@ class App:
                     raise ValueError('Every event must exist and be live')
                 graph.label(db, args['event_ids'], args['project'], 'agent', now())
                 changed = True
+            if args.get('project') and (args.get('stage') or args.get('board')):
+                said = graph.set_stage(db, args['project'], args.get('stage'), 'agent', now(), board=args.get('board'), stages=args.get('stages'),
+                                       reason=args.get('reason'), event_id=args.get('event_id'), next_step=args.get('next'), org=args.get('org'))
+                changed = changed or 'kept' not in said
             if args.get('close_project'):
                 if not db.execute('UPDATE projects SET closed_at=? WHERE name=? COLLATE NOCASE AND closed_at IS NULL', (now(), str(args['close_project']).strip())).rowcount:
                     raise ValueError('No open project by that name')
@@ -13417,7 +13823,7 @@ class App:
                     asset = BRAND_ASSETS[path.path]
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
                 elif path.path == '/api/status':
-                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'browser_link': browser_link(app.config),
+                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'source_url': source_url(), 'browser_link': browser_link(app.config),
                                       'browser_embed': browser_embed(app.config, self.headers.get('Host', ''))})
                     try:
                         app.store.note_card_shown()
@@ -13468,6 +13874,15 @@ class App:
                         except (fleet.Off, ValueError, OSError):
                             pass
                         self.output(200, app.fleet_view())
+                elif path.path == '/api/promise':  # a promise's own page: read-only
+                    try:
+                        found = app.store.promise_page(int(urllib.parse.parse_qs(path.query).get('id', [''])[0]))
+                        rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[found['event_id']])
+                        found['source'] = [{'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
+                                            'source_url': r['metadata'].get('source_url'), **event_glance(r, app.config['accounts'])} for r in rows][:1]
+                        self.output(200, found)
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(404, {'error': 'No such promise'})
                 elif path.path == '/api/graph':
                     node = urllib.parse.parse_qs(path.query).get('node', [''])[0]
                     query = urllib.parse.parse_qs(path.query).get('q', [''])[0]
@@ -13483,7 +13898,13 @@ class App:
                                                for r in sorted(rows, key=lambda r: r['occurred_at'], reverse=True)]
                             self.output(200, found)
                         else:
-                            self.output(200, app.graph_action({'limit': 15}))
+                            found = app.graph_action({'limit': 15})
+                            with app.store.connect() as db:
+                                found['boards'] = graph.boards(db, now())  # the Projects board view
+                                found['board_suggestions'] = graph.board_suggestions(db)  # "Start a board for …?", saved by the owner or not
+                                found['project_names'] = [{'id': 'project:' + str(r['id']), 'name': r['name'], 'board_id': r['board_id']} for r in db.execute(
+                                    'SELECT id,name,board_id FROM projects WHERE closed_at IS NULL ORDER BY name COLLATE NOCASE LIMIT 2000')]  # the board editor's picker
+                            self.output(200, found)
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'Not in the graph'})
                 elif path.path == '/api/agent-jobs':  # polled while a Claude Code or Codex job runs: small, unlike /api/status
@@ -13513,6 +13934,21 @@ class App:
                     self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'" + ('' if mime == 'application/pdf' else '; sandbox'))
                     self.end_headers()
                     try:self.wfile.write(data)
+                    except (BrokenPipeError, ConnectionResetError):self.close_connection = True
+                elif path.path == '/api/person-photo':  # a looked-up photo, saved on this Machine (enrichment.photos_step)
+                    with app.store.connect() as db:
+                        found = enrichment.photo(db, urllib.parse.parse_qs(path.query).get('p', [''])[0])
+                    if not found:
+                        self.output(404, {'error': 'Not available'})
+                        return
+                    self.send_response(200)
+                    self.send_header('Content-Type', found[1])
+                    self.send_header('Content-Length', str(len(found[0])))
+                    self.send_header('Cache-Control', 'private, max-age=86400')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+                    self.end_headers()
+                    try:self.wfile.write(found[0])
                     except (BrokenPipeError, ConnectionResetError):self.close_connection = True
                 elif path.path == '/api/reviews/live':  # polled while a review runs: small, unlike /api/status
                     self.output(200, app.review_live())
@@ -13653,7 +14089,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','graph_role','graph_fact_unlink','graph_rename','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
@@ -13699,7 +14135,7 @@ class App:
             threading.Thread(target=self.skills.catalog.worker, args=(self.stop,), daemon=True).start()
         if embeddings.settings(self.config):
             threading.Thread(target=self.embedding_worker, daemon=True).start()
-        if enrichment.settings(self.config):
+        if enrichment.settings(self.config) or enrichment.people_available(self.config):
             threading.Thread(target=self.enrichment_worker, daemon=True).start()
         if getattr(self, 'protection_waits', False):
             threading.Thread(target=self.protection_waiter, daemon=True).start()

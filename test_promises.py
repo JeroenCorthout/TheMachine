@@ -100,6 +100,27 @@ class Promises(unittest.TestCase):
         self.assertEqual([(self.row(i)['status'], self.row(i)['note']) for i in (1, 4)],
                          [('dropped', 'The same as promise 2'), ('dropped', 'The same as promise 3')])
 
+    def test_a_promise_has_its_own_page_with_its_history(self):
+        saved = self.record(due='2026-10-23')
+        page = self.store.promise_page(saved['id'])
+        self.assertEqual({k: page[k] for k in ('who', 'what', 'due', 'state', 'direction')},
+                         {'who': 'Sam Lee', 'what': 'send the signed contract', 'due': '2026-10-23', 'state': 'open', 'direction': 'theirs'})
+        self.assertEqual([h['kind'] for h in page['history']], ['said', 'noted'])
+        self.assertEqual(page['history'][0]['detail'], 'gmail.message')
+        self.assertIsNone(page['card'])
+        self.assertNotIn('watch', page)
+        # The owner moves its date and marks it done on the dashboard: both show in its history, as kinds and dates only
+        app = self.app()
+        app.action('promise_due', {'id': saved['id'], 'due': '2026-10-30'}, owner_dashboard=True)
+        app.action('promise_close', {'id': saved['id'], 'status': 'kept'}, owner_dashboard=True)
+        page = self.store.promise_page(saved['id'])
+        self.assertEqual((page['due'], page['state']), ('2026-10-30', 'kept'))
+        self.assertEqual([(h['kind'], h.get('detail')) for h in page['history']][2:], [('due', '2026-10-30'), ('kept', 'dashboard')])
+        with self.assertRaisesRegex(ValueError, 'Only the owner'):
+            app.action('promise_due', {'id': saved['id'], 'due': '2026-11-02'})
+        with self.assertRaisesRegex(ValueError, 'Unknown promise'):
+            self.store.promise_page(999)
+
     def test_direction_must_match_who_wrote_the_message(self):
         with self.assertRaisesRegex(ValueError, 'messages they sent'):
             self.record(direction='mine')
@@ -233,12 +254,13 @@ class Promises(unittest.TestCase):
         self.assertIn('Open promises (the owner\'s and those made to them):\n- #', prompt)
         self.assertNotIn('Open promises', a.review_prompt('run', ['work']))
 
-    def test_weekly_recap_counts_promises(self):
+    def test_weekly_recap_leaves_out_settled_and_undated_promises(self):
         promise = self.record(due='2026-10-16')['id']
         self.app().action('promise', {'direction': 'mine', 'event_id': self.mine, 'who': 'Alex', 'what': 'send the Q3 deck'})
         self.app().action('promise_close', {'id': promise, 'status': 'kept'}, owner_dashboard=True)
         recap = a.weekly_recap(self.store, {'accounts': [GMAIL]}, a.dt.datetime.fromisoformat('2026-10-23T15:00:00+00:00'))
-        self.assertIn('**Promises**\n• Yours: 0 kept, 1 open\n• To you: 1 came through, 0 still waiting', recap)
+        self.assertNotIn('Sam Lee', recap)  # kept: nothing left to do
+        self.assertNotIn('Alex', recap)  # open, but without a date it isn't due yet
 
     def test_cli_lists_open_promises(self):
         self.record(due='2026-10-23')

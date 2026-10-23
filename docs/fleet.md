@@ -63,7 +63,9 @@ default, Always accept, Never), and nothing happens on your side until you accep
    three, about 6,000 characters each: sender, date, subject and text; attachments don't travel). The contact is the
    person who wrote, by Reply-To if there is one, never a Google Group's own address on a "via" email. If they already
    have an open card on it (the same email, recognised by a key of its Message-ID, or else the one open card on email
-   from the same contact), your handoff joins that card, sources included, instead of making a second one. Your card says "Handed off to <teammate>" and how it went. While it waits for them
+   from the same contact), your handoff joins that card, sources included, instead of making a second one. Your card says "Handed off to <teammate>" and how it went. The Fleet tab
+   lists your handoffs in their own **Handoffs** box, both ways: open ones first (waiting, declined, or one waiting for
+   you), accepted and done ones after them, with **Open** to go to the card. While it waits for them
    it leaves Ready and sits under Later, with nothing to send again, saying when it comes back to check in if they
    haven't answered ("Check in with <teammate> Mon 09:00 if no answer"), with **Check in now**, **Change time** and
    **Not needed**. That time follows the card's own urgency and deadline: about 3 hours later (within your hours, else

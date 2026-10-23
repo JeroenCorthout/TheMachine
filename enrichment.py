@@ -13,9 +13,14 @@ Work contacts are looked up too, on their own budget, with `people_url` (see peo
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import http.client
+import ipaddress
 import json
 import os
 import re
+import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -310,6 +315,9 @@ def lookup(connect, config, domain, now):
 # only), a LinkedIn address and city and country. Kept on this Machine only (person_profiles).
 PEOPLE_PER_PASS = 5
 PEOPLE_PER_DAY = 50
+# A self-hosted Machine paired with the Network gets what a hosted one gets: 3,000 a day, 25 a pass (every ten minutes).
+PAIRED_PEOPLE_PER_DAY = 3000
+PAIRED_PEOPLE_PER_PASS = 200  # a pass every ten minutes: a backfill of a few thousand people takes hours, not a day
 PERSON_FIELDS = {
     'title': ['position', 'job_title', 'title', 'employment.title', 'experience.0.position', 'experience.0.title'],
     'company': ['company.name', 'job_company_name', 'employment.name', 'organization.name', 'experience.0.company.name'],
@@ -344,24 +352,55 @@ def folded(text):
     return re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD', str(text or '')).encode('ascii', 'ignore').decode().casefold())
 
 
+def same_person_name(found, asked):
+    """One common first name or surname is not an identity match. Allow accents and middle names, but
+    require the first and last name to agree when the provider supplies a name."""
+    left, right = folded(found), folded(asked)
+    return len(left) > 1 and len(right) > 1 and (left[0], left[-1]) == (right[0], right[-1])
+
+
 def same_domain(a, b):
     a, b = (re.sub(r'^(?:https?://)?(?:www\.)?', '', str(x or '').strip().lower()).split('/')[0] for x in (a, b))
     return bool(a and b) and (a == b or a.endswith('.' + b) or b.endswith('.' + a))
 
 
-def normalise_person(data, asked_name, domain, fields=None):
+SECOND_LEVEL = {'co', 'com', 'net', 'org', 'ac', 'gov', 'edu', 'ltd', 'plc', 'or', 'ne', 'gv'}
+
+
+def registrable(domain):
+    """The company's own domain for an address's domain: eu.example.com and team.example.com are example.com
+    (example.co.uk keeps its three parts)."""
+    labels = str(domain or '').strip('.').lower().split('.')
+    keep = 3 if len(labels) >= 3 and labels[-2] in SECOND_LEVEL and len(labels[-1]) == 2 else 2
+    return '.'.join(labels[-keep:])
+
+
+def same_company(a, b):
+    """Whether a looked-up company domain is the address's company: the same domain or a subdomain of it, or the same
+    name at another top-level domain (example.nl for example.com)."""
+    if same_domain(a, b):
+        return True
+    a, b = (registrable(re.sub(r'^(?:https?://)?(?:www\.)?', '', str(x or '').strip().lower()).split('/')[0]) for x in (a, b))
+    name = a.split('.')[0]
+    return len(name) >= 3 and name == b.split('.')[0]
+
+
+def normalise_person(data, asked_name, domain, fields=None, why=None):
     """The small person profile the dashboard shows, from whatever shape the service returns; None when it found
-    nothing, or when the answer is about someone else: a name with no word in common, or a company at another domain."""
+    nothing, or when the answer is about someone else: a name whose first and last names do not match, or a company at another domain."""
     if isinstance(data, list):
         data = data[0] if data else None
     for wrapper in PERSON_WRAPPERS:
         if isinstance(data, dict) and isinstance(data.get(wrapper), dict):
             data = data[wrapper]
             break
+    why = why if why is not None else []
     if not isinstance(data, dict) or data.get('success') is False:
+        why.append('unknown')
         return None
     name = next((v for v in (value(data, p) for p in PERSON_NAME) if isinstance(v, str) and v.strip()), '')
-    if name and asked_name and not {w for w in folded(name) if len(w) > 1} & {w for w in folded(asked_name) if len(w) > 1}:
+    if name and asked_name and not same_person_name(name, asked_name):
+        why.append('another person')
         return None
     profile = {}
     for field, paths in PERSON_FIELDS.items():
@@ -371,8 +410,8 @@ def normalise_person(data, asked_name, domain, fields=None):
                 continue
             found = ' '.join(str(found).split())
             if field == 'photo':
-                if not LOGO.fullmatch(found):
-                    continue  # only a plain https address; the dashboard loads it as an image, nothing else
+                if not LOGO.fullmatch(found) or placeholder(found):
+                    continue  # only a plain https address to a real photo; the Machine saves it as an image, nothing else
             elif field == 'linkedin_url':
                 if not found.startswith('http'):
                     found = 'https://www.linkedin.com/in/' + found.strip('/').rsplit('/', 1)[-1]
@@ -386,14 +425,25 @@ def normalise_person(data, asked_name, domain, fields=None):
             profile[field] = found
             break
     if profile.get('company_domain'):
-        if not same_domain(profile['company_domain'], domain):
+        if not same_company(profile['company_domain'], domain):
+            why.append('another company')
             return None  # someone of the same name at another company
         profile['company_domain'] = domain
-    return profile if profile.get('title') or profile.get('company') or profile.get('photo') else None
+    if profile.get('title') or profile.get('company') or profile.get('photo'):
+        return profile
+    why.append('nothing to show')
+    return None
 
 
-def fetch_person(cfg, person, timeout=15):
-    """The profile for one person ({email, name, domain}), None when the service doesn't know them."""
+def placeholder(url):
+    """LinkedIn's stock silhouette for someone without a photo (served from its static host, not its media one)."""
+    return (urllib.parse.urlsplit(url).hostname or '').lower() == 'static.licdn.com'
+
+
+def fetch_person(cfg, person, timeout=15, why=None):
+    """The profile for one person ({email, name, domain}), None when the service doesn't know them (why says what
+    it said: unknown, another person, another company or nothing to show)."""
+    why = why if why is not None else []
     template = cfg['people_url']
     secret = key(cfg)
     if not secret and ('{key}' in template or '{key}' in json.dumps(cfg.get('headers') or {})):
@@ -405,9 +455,10 @@ def fetch_person(cfg, person, timeout=15):
         url = url.replace('{' + k + '}', urllib.parse.quote(str(v)))
     body = answer(cfg, url, secret, timeout)
     if body is None:
+        why.append('unknown')
         return None
     try:
-        return normalise_person(json.loads(body or b'null'), person['name'], person['domain'], cfg.get('people_fields'))
+        return normalise_person(json.loads(body or b'null'), person['name'], person['domain'], cfg.get('people_fields'), why)
     except ValueError:
         raise EnrichmentError('the answer was not JSON') from None
 
@@ -430,7 +481,10 @@ def work_contact(info, name):
         if domain in graph.FREEMAIL or FREEMAIL.match(domain) or MARKETING.match(domain) or graph.bulk(address) or graph.ROLE.match(address):
             continue
         addresses.append((domain != preferred, address, domain))
-    return min(addresses)[1:] if addresses else None
+    if not addresses:
+        return None
+    address, domain = min(addresses)[1:]
+    return address, registrable(domain)  # their company's own domain, not a mail subdomain
 
 
 def people_due(db, now, limit):
@@ -441,7 +495,14 @@ def people_due(db, now, limit):
     current = dt.datetime.fromisoformat(now)
     fresh = (current - dt.timedelta(days=REFRESH_DAYS)).isoformat()
     retry = (current - dt.timedelta(hours=RETRY_HOURS)).isoformat()
-    looked = {r[0]: (r[1], r[2]) for r in db.execute('SELECT identifier,status,fetched_at FROM person_profiles')}
+    again = (current - dt.timedelta(days=PHOTO_RETRY_DAYS)).isoformat()
+    since = backfill_since(db, now)
+    try:
+        saved = {r[0] for r in db.execute('SELECT identifier FROM person_photos')}
+    except Exception:  # before the app made the table
+        saved = set()
+    left = False
+    looked = {r[0]: (r[1], r[2], r[3]) for r in db.execute('SELECT identifier,status,fetched_at,profile FROM person_profiles')}
     ranked = []
     for node, name, strength, raw in db.execute("SELECT id,name,strength,info FROM graph_nodes WHERE kind='person'"):
         try:
@@ -452,16 +513,44 @@ def people_due(db, now, limit):
         if not found:
             continue
         identifier = 'email:' + found[0]
-        status, at = looked.get(identifier, (None, None))
-        if status and not ((status != 'error' and at < fresh) or (status == 'error' and at < retry)):
+        status, at, profile = looked.get(identifier, (None, None, None))
+        if status and not due_again(status, at, profile, identifier in saved, fresh, retry, again, since):
             continue
+        left = left or bool(since and status and status != 'error' and at < since)
         both = info.get('met') or (info.get('wrote') and info.get('heard'))
         ranked.append((-(3 if both else 1), -(strength or 0), identifier, {'identifier': identifier, 'email': found[0], 'name': ' '.join(str(name).split()), 'domain': found[1]}))
+    if since and not left:
+        db.execute("UPDATE enrich_prefs SET value=? WHERE key='people_backfill'", ('done ' + now,))
     return [item for *_, item in sorted(ranked, key=lambda r: r[:3])[:limit]]
 
 
+def due_again(status, at, profile, has_photo, fresh, retry, again, since):
+    """Whether someone looked up before is due again: after 90 days (a day after an error), after 30 when the photo
+    link had already expired and none is saved here, and once in the one-time backfill (looked up before it began)."""
+    if status == 'error':
+        return at < retry
+    if at < fresh or (since and at < since):
+        return True
+    return status == 'found' and not has_photo and '"photo_gone": true' in (profile or '') and at < again
+
+
+def backfill_since(db, now):
+    """The one-time backfill: every work contact already looked up is looked up once more, closest first, within the
+    daily limit (a large graph spreads over days). It starts the first time this code runs and is marked done in
+    enrich_prefs (by people_due) once nobody looked up before it is left, so it never repeats. Returns its start while
+    it runs. Someone with no match goes back to the normal interval."""
+    row = db.execute("SELECT value FROM enrich_prefs WHERE key='people_backfill'").fetchone()
+    if row is None:
+        db.execute("INSERT OR IGNORE INTO enrich_prefs(key,value) VALUES('people_backfill',?)", (now,))
+        return now
+    return None if row[0].startswith('done') else row[0]
+
+
 def save_person(db, identifier, status, profile, now):
-    """Stores a person look-up; an error keeps what was there."""
+    """Stores a person look-up; an error keeps what was there. A photo link that has already expired is not kept
+    (photo_gone: looked up again after 30 days)."""
+    if profile and profile.get('photo') and link_expired(profile['photo'], now):
+        profile = {**{k: v for k, v in profile.items() if k != 'photo'}, 'photo_gone': True}
     db.execute('INSERT INTO person_profiles(identifier,status,profile,fetched_at) VALUES(?,?,?,?) '
                "ON CONFLICT(identifier) DO UPDATE SET status=excluded.status,profile=CASE WHEN excluded.status='error' THEN person_profiles.profile ELSE excluded.profile END,fetched_at=excluded.fetched_at",
                (identifier, status, json.dumps(profile) if profile else None, now))
@@ -477,27 +566,175 @@ def people_available(config):
     return bool(cfg and cfg.get('people_url') and cfg.get('people') is not False)
 
 
-def people_step(connect, config, now, per_pass=PEOPLE_PER_PASS):
+def people_step(connect, config, now, per_pass=None, paired=False, stop=None):
     """Look up a few work contacts with the Machine's own service. Returns how many got a profile; stops at the first
-    service error."""
+    service error. Paired with the Network: hosted's budget (PAIRED_PEOPLE_PER_DAY, PAIRED_PEOPLE_PER_PASS) unless
+    people_per_day says otherwise."""
     cfg = settings(config)
     if not cfg or not cfg.get('people_url') or cfg.get('people') is False:
         return 0
+    per_pass = per_pass or (PAIRED_PEOPLE_PER_PASS if paired else PEOPLE_PER_PASS)
+    per_day = int(cfg.get('people_per_day') or (PAIRED_PEOPLE_PER_DAY if paired else PEOPLE_PER_DAY))
     with connect() as db:
         used = db.execute("SELECT count(*) FROM person_profiles WHERE substr(fetched_at,1,10)=?", (now[:10],)).fetchone()[0]
-        due = people_due(db, now, max(0, min(per_pass, int(cfg.get('people_per_day') or PEOPLE_PER_DAY) - used)))
+        due = people_due(db, now, max(0, min(per_pass, per_day - used)))
     found = 0
     for person in due:
+        if stop and stop():
+            break
+        why = []
         try:
-            profile = fetch_person(cfg, person)
+            profile = fetch_person(cfg, person, why=why)
         except EnrichmentError:
             with connect() as db:
                 save_person(db, person['identifier'], 'error', None, now)
             raise
         with connect() as db:
-            save_person(db, person['identifier'], 'found' if profile else 'none', profile, now)
+            save_person(db, person['identifier'], 'found' if profile else 'none', profile or ({'why': why[0]} if why else None), now)
         found += bool(profile)
     return found
+
+
+# Photos: a person's photo is saved once on this Machine (person_photos), small and only as an image, so it shows from
+# here and never expires. Right after a lookup: the photo link it brought, while that still works; otherwise their
+# Gravatar, asked by a hash of their work address (gravatar.com never sees the address itself). One try per lookup, no
+# retries beyond that, so never more outside calls than the day's lookups. Nobody with a photo: looked up again in 30 days.
+PHOTO_BYTES = 200_000
+PHOTO_RETRY_DAYS = 30
+PHOTOS_PER_PASS = 250  # keeps up with a pass's lookups
+GRAVATAR = 'https://gravatar.com/avatar/{hash}?s=160&d=404'
+
+
+def photo_key(identifier):
+    return hashlib.sha256(identifier.encode()).hexdigest()[:32]
+
+
+def gravatar(identifier):
+    """The Gravatar address for a work address (by its SHA-256, as Gravatar asks), None for anything else."""
+    if not str(identifier).startswith('email:') or '@' not in identifier:
+        return None
+    return GRAVATAR.format(hash=hashlib.sha256(identifier.split(':', 1)[1].strip().lower().encode()).hexdigest())
+
+
+def link_expired(url, now):
+    """Whether a signed image link says it has expired: LinkedIn's e=<epoch>, Expires=<epoch>, or S3's
+    X-Amz-Date with X-Amz-Expires."""
+    try:
+        query = {k.lower(): v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).items()}
+        at = dt.datetime.fromisoformat(now).timestamp()
+        for name in ('e', 'expires'):
+            value = query.get(name, '')
+            if value.isdigit() and len(value) in (10, 13):
+                return int(value) / (1000 if len(value) == 13 else 1) <= at
+        if query.get('x-amz-date') and query.get('x-amz-expires', '').isdigit():
+            start = dt.datetime.strptime(query['x-amz-date'], '%Y%m%dT%H%M%SZ').replace(tzinfo=dt.timezone.utc)
+            return start.timestamp() + int(query['x-amz-expires']) <= at
+    except (ValueError, TypeError, OverflowError):
+        return False
+    return False
+
+
+def image_type(data):
+    if data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    return None
+
+
+class _Pinned(http.client.HTTPSConnection):
+    """HTTPS to the address checked beforehand (a public one), with the host's own name for TLS."""
+    def __init__(self, host, address, **kwargs):
+        super().__init__(host, **kwargs)
+        self.address = address
+
+    def connect(self):
+        sock = socket.create_connection((self.address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def download_photo(url, timeout=10):
+    """(bytes, type) of a photo, or None: https only, to a public address, no redirects, at most PHOTO_BYTES, and only
+    a JPEG, PNG or WebP image (by its own bytes, not only its header)."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != 'https' or not parts.hostname or not LOGO.fullmatch(url):
+        return None
+    try:
+        port = parts.port or 443
+        addresses = {info[4][0] for info in socket.getaddrinfo(parts.hostname, port, type=socket.SOCK_STREAM)}
+        if not addresses or not all(ipaddress.ip_address(a.split('%')[0]).is_global for a in addresses):
+            return None
+        connection = _Pinned(parts.hostname, sorted(addresses)[0], port=port, timeout=timeout, context=ssl.create_default_context())
+    except (OSError, ValueError):
+        return None
+    try:
+        connection.request('GET', (parts.path or '/') + ('?' + parts.query if parts.query else ''),
+                           headers={'Accept': 'image/jpeg,image/png,image/webp', 'User-Agent': 'the-machine/1 (+https://themachine.computer)'})
+        response = connection.getresponse()
+        if response.status != 200 or not (response.getheader('Content-Type') or '').lower().startswith('image/'):
+            return None
+        if int(response.getheader('Content-Length') or 0) > PHOTO_BYTES:
+            return None
+        data = response.read(PHOTO_BYTES + 1)
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+    finally:
+        connection.close()
+    kind = image_type(data)
+    return (data, kind) if kind and len(data) <= PHOTO_BYTES else None
+
+
+def photos_step(connect, now, limit=PHOTOS_PER_PASS, fetch=None):
+    """Saves a photo for the people looked up since their last try, once each: the lookup's own link while it still
+    works, else their Gravatar. Returns how many were saved."""
+    fetch = fetch or download_photo
+    with connect() as db:
+        db.execute('CREATE TABLE IF NOT EXISTS person_photo_tries(identifier TEXT PRIMARY KEY,tried_at TEXT NOT NULL)')
+        if not people_on(db):
+            return 0
+        rows = db.execute("SELECT p.identifier,p.status,p.fetched_at,CASE WHEN p.status='found' THEN json_extract(p.profile,'$.photo') END FROM person_profiles p "
+                          "LEFT JOIN person_photo_tries t ON t.identifier=p.identifier "
+                          "WHERE p.status IN ('found','none') AND (t.tried_at IS NULL OR t.tried_at<p.fetched_at) "
+                          "AND NOT EXISTS(SELECT 1 FROM person_photos s WHERE s.identifier=p.identifier) ORDER BY p.fetched_at DESC LIMIT ?", (limit,)).fetchall()
+    saved = 0
+    for identifier, status, fetched_at, url in rows:
+        got = fetch(url) if url and not link_expired(url, now) and not placeholder(url) else None
+        if not got and gravatar(identifier):
+            got = fetch(gravatar(identifier))
+        with connect() as db:
+            row = db.execute('SELECT status,profile,fetched_at FROM person_profiles WHERE identifier=?', (identifier,)).fetchone()
+            if not row or row[2] != fetched_at:
+                continue  # looked up again meanwhile
+            db.execute('INSERT INTO person_photo_tries(identifier,tried_at) VALUES(?,?) ON CONFLICT(identifier) DO UPDATE SET tried_at=excluded.tried_at', (identifier, now))
+            if got:
+                db.execute('INSERT INTO person_photos(identifier,key,type,data,saved_at) VALUES(?,?,?,?,?) ON CONFLICT(identifier) DO UPDATE SET '
+                           'type=excluded.type,data=excluded.data,saved_at=excluded.saved_at', (identifier, photo_key(identifier), got[1], got[0], now))
+                saved += 1
+            if row[0] != 'found':
+                continue
+            try:
+                profile = json.loads(row[1]) if row[1] else None
+            except ValueError:
+                profile = None
+            if not profile:
+                continue
+            had = profile.pop('photo', None)
+            if got:
+                profile.pop('photo_gone', None)
+            elif had:
+                profile['photo_gone'] = True
+            db.execute('UPDATE person_profiles SET profile=? WHERE identifier=?', (json.dumps(profile), identifier))
+    return saved
+
+
+def photo(db, key):
+    """(bytes, type) of a saved photo by its key, for the dashboard."""
+    if not re.fullmatch(r'[0-9a-f]{32}', str(key or '')):
+        return None
+    row = db.execute('SELECT data,type FROM person_photos WHERE key=?', (key,)).fetchone()
+    return (bytes(row[0]), row[1]) if row and row[1] in ('image/jpeg', 'image/png', 'image/webp') else None
 
 
 def people_status(db):
