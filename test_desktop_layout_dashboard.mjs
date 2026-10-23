@@ -168,7 +168,7 @@ try{
   // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
   {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#page-head .page-title')}});
    assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
-   assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine')}
+   assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);assert.equal(await page.locator('#topbar-title').textContent(),'The Machine');assert.equal(await page.locator('#page-head .page-avatar').isVisible(),false,'one mascot, in the bar')}
   assert.ok(await page.locator('#page-head .page-title').isVisible());assert.ok(!(await page.locator('#suggestion-stats').isVisible()));assert.ok(!(await page.locator('#tagline').isVisible()));
   for(const t of TABS){await tab(page,t);await scrolls(page,t+' at '+w);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),t+' fits at '+w)}
   await tab(page,'inbox');await page.evaluate(()=>scrollTo(0,0));
