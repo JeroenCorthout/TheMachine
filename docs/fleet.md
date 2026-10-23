@@ -42,8 +42,9 @@ their answers, and the log.
    Machines they say OK to get it as a work source, sealed Machine to Machine. Connections shows "Shared by <Fleet>".
    How it's kept safe: [Network](network.md#shared-connectors).
 5. **Shared Graph.** Work People, Organisations and Projects are shared with the Fleet: name, role, company, stage,
-   next step, a short timeline and client threads. Sensitive client threads show only that they exist; colleague
-   threads and Personal never leave. Every thread has Team or Only you, every record Keep private. Graph has
+   next step, a short timeline and client threads with their attachments, as far back as the Machine has them.
+   Sensitive client threads show only that they exist; colleague threads and Personal never leave. Every thread has
+   Team or Only you, every record Keep private. Stopping altogether takes an admin's OK on the Fleet tab. Graph has
    **Mine / Team**, "via <name>" and **Ask <name>**. Design: [Shared Graph](shared-graph.md).
 
 A Family Fleet asks three things: when everyone is free, to-dos for one another, and family plans to say yes or no to.

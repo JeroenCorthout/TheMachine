@@ -133,10 +133,6 @@ class SharedGraph(unittest.TestCase):
         prompt = next(p for p in box._prompts() if p['kind'] == kind and p['name'] == name)
         return box.share_ok(prompt['id'], 'yes')
 
-    def start(self, *boxes):
-        for box in boxes:
-            box.set_meta('graph_start:' + FLEET, ago(1))
-
     def add(self, box, *events):
         for e in events:
             box.store.commit_page(e['account_id'], {}, [e])
@@ -172,7 +168,6 @@ class SharedGraph(unittest.TestCase):
     # -- the whole way
     def test_client_thread_reaches_teammates_and_the_network_reads_none_of_it(self):
         self.olive_mail()
-        self.start(self.own)
         self.rounds()
         for box in (self.adm, self.mem):
             people = [json.loads(r['body']) for r in self.team(box) if r['kind'] == 'person']
@@ -188,7 +183,6 @@ class SharedGraph(unittest.TestCase):
 
     def test_personal_never_shared_not_even_that_it_exists(self):
         self.olive_mail()
-        self.start(self.own)
         self.rounds()
         received = json.dumps(self.team(self.mem) + self.team(self.mem, 'team_mail'))
         for text in ('Sam', 'friends.example', 'Saturday', PERSONAL):
@@ -200,7 +194,6 @@ class SharedGraph(unittest.TestCase):
     def test_a_personal_thread_in_a_work_account_stays_out_until_the_owner_says_team(self):
         self.add(self.own, mail('work', 6, 'Lee Park <lee@client.example>', 'own1@acme.example', 'Your daughter', 'Congrats on the graduation!', 1, 't-p'))
         self.judge(self.own, ('work-6', 'personal', 'Lee wrote'))
-        self.start(self.own)
         self.rounds()
         self.assertNotIn('graduation', json.dumps(self.team(self.mem, 'team_mail')))
         self.assertEqual(self.team(self.mem, 'team_mail'), [])
@@ -209,7 +202,6 @@ class SharedGraph(unittest.TestCase):
         self.olive_mail()
         with self.own.store.connect() as db:
             sg.set_hand(db, self.event_id(self.own, 'work-4'), 'team')
-        self.start(self.own)
         self.rounds()
         self.assertNotIn(INTERNAL, json.dumps(self.team(self.mem, 'team_mail')))
         self.assertNotIn('Standup', json.dumps(self.team(self.mem, 'team_mail') + self.team(self.mem)))
@@ -222,7 +214,6 @@ class SharedGraph(unittest.TestCase):
 
     def test_sensitive_client_thread_shows_only_that_it_exists(self):
         self.olive_mail()
-        self.start(self.own)
         self.rounds()
         held = [json.loads(r['body']) for r in self.team(self.mem, 'team_mail') if json.loads(r['body']).get('private')]
         self.assertEqual(len(held), 1)
@@ -238,7 +229,6 @@ class SharedGraph(unittest.TestCase):
         with self.own.store.connect() as db:
             sg.set_hand(db, self.event_id(self.own, 'work-3'), 'team')     # the review said sensitive; the owner shares it
             sg.set_hand(db, self.event_id(self.own, 'work-1'), 'private')  # the review said client; the owner keeps it
-        self.start(self.own)
         self.rounds()
         threads = json.dumps(self.team(self.mem, 'team_mail'))
         self.assertIn(HEALTH, threads)
@@ -253,13 +243,11 @@ class SharedGraph(unittest.TestCase):
     def test_a_later_review_never_turns_sensitive_into_client(self):
         self.olive_mail()
         self.judge(self.own, ('work-3', 'client', 'Lee wrote'))
-        self.start(self.own)
         self.rounds()
         self.assertNotIn(HEALTH, json.dumps(self.team(self.mem, 'team_mail')))
 
     def test_keep_private_holds(self):
         self.olive_mail()
-        self.start(self.own)
         self.rounds()
         self.assertTrue(self.team(self.mem))
         with self.own.store.connect() as db:
@@ -268,18 +256,139 @@ class SharedGraph(unittest.TestCase):
         self.assertEqual(self.team(self.mem), [])
         self.assertEqual(self.team(self.mem, 'team_mail'), [])
 
-    def test_nothing_before_the_start_day(self):
+    def test_sharing_starts_as_soon_as_the_machine_is_confirmed(self):
+        self.olive_mail()
+        self.rounds(1)
+        self.assertTrue(self.team(self.mem))
+        self.assertIsNone(self.own.meta('graph_start:' + FLEET))
+
+    # -- all the Work history, a batch at a time
+    def client_threads(self, box, n, days):
+        self.add(box, *[mail('work', 100 + i, 'Lee Park <lee@client.example>', box.email, f'Order {i}', f'Order number {i}', days + i, f't-order-{i}')
+                        for i in range(n)])
+        self.judge(box, *[(f'work-{100 + i}', 'client', f'Lee placed order {i}') for i in range(n)])
+
+    def mail_puts(self, box, kind='mail'):
+        return [c[3]['blob']['header'] for c in self.net.calls
+                if c[0] == box.member_id and c[2] == '/graph' and c[3] and c[3].get('op') == 'put' and c[3]['blob']['header']['kind'] == kind]
+
+    def test_history_goes_as_far_back_as_the_machine_has_it(self):
+        self.client_threads(self.own, 2, 500)  # well past a year
+        self.rounds()
+        subjects = {json.loads(r['body']).get('subject') for r in self.team(self.mem, 'team_mail')}
+        self.assertEqual(subjects, {'Order 0', 'Order 1'})
+
+    def test_the_backfill_is_batched_newest_first_and_resumes_where_it_stopped(self):
+        self.client_threads(self.own, 6, 10)
+        hour = sg.PER_HOUR
+        sg.PER_HOUR = 4; self.addCleanup(setattr, sg, 'PER_HOUR', hour)
+        self.own.set_meta('graph_puts', [])
+        self.own.graph_round(force=True)  # the snapshot and three threads
+        for box in (self.adm, self.mem):
+            box.graph_round(force=True)
+        first = sorted(json.loads(r['body'])['subject'] for r in self.team(self.mem, 'team_mail'))
+        self.assertEqual(first, ['Order 0', 'Order 1', 'Order 2'])  # the newest
+        self.own.graph_round(force=True)
+        self.assertEqual(len(self.mail_puts(self.own)), 3)  # the budget is spent: nothing more this hour
+        self.own.set_meta('graph_puts', [])  # an hour later
+        self.rounds()
+        self.assertEqual(len({json.loads(r['body'])['subject'] for r in self.team(self.mem, 'team_mail')}), 6)
+        tags = [h['tag'] for h in self.mail_puts(self.own)]
+        self.assertEqual(len(tags), len(set(tags)))  # each thread went once
+
+    def test_the_history_pass_judges_old_threads_through_the_same_labels(self):
+        self.add(self.own, mail('work', 7, 'Lee Park <lee@client.example>', 'own1@acme.example', 'Old order', BODY, 300, 't-old'),
+                 mail('work', 8, 'Ada <adm2@acme.example>', 'own1@acme.example', 'Old standup', INTERNAL, 300, 't-old-standup'))
+        waiting = self.own.graph_unjudged()
+        self.assertEqual([t['subject'] for t in waiting], ['Old order'])  # colleagues only: never asked about, never shared
+        run = 'r' * 32
+        with self.own.store.connect() as db:
+            db.execute("INSERT INTO profile_runs(run_id,status,started_at,updated_at,evidence,kind,auto) VALUES(?,'running',?,?,?,'share',1)",
+                       (run, a.now(), a.now(), json.dumps({'threads': waiting, 'page_size': 20})))
+        self.assertEqual(self.own.store.profile_evidence(1, a.PROFILE_SESSION_PREFIX + run)['threads'][0]['subject'], 'Old order')
+        with self.assertRaises(ValueError):  # only threads this pass was given
+            self.own.store.save_profile({'team': [{'event_id': self.event_id(self.own, 'work-8'), 'share': 'client', 'line': 'x'}]}, a.PROFILE_SESSION_PREFIX + run)
+        self.own.store.save_profile({'team': [{'event_id': waiting[0]['event_id'], 'share': 'client', 'line': 'Lee placed an old order'}]},
+                                    a.PROFILE_SESSION_PREFIX + run)
+        self.assertEqual(self.own.graph_unjudged(), [])
+        self.rounds()
+        self.assertIn('Old order', {json.loads(r['body']).get('subject') for r in self.team(self.mem, 'team_mail')})
+
+    # -- attachments go with a whole client thread
+    def files(self, box, big=False):
+        asked = []
+        def fetch(event_id, part=None):
+            asked.append((event_id, part))
+            if part is None:
+                return [{'id': 'p1', 'name': 'quote.pdf', 'mime': 'application/pdf', 'size': 9, 'kind': 'file'},
+                        {'id': 'p2', 'name': 'logo.png', 'mime': 'image/png', 'size': 10, 'kind': 'file', 'inline': True},
+                        {'id': 'p3', 'name': 'all-hands.mp4', 'mime': 'video/mp4', 'size': sg.MAX_FILE + 1, 'kind': 'file'}]
+            return b'%PDF-1.4 ' if part == 'p1' else b'x' * (sg.MAX_FILE + 1)
+        box.mail_files = fetch
+        return asked
+
+    def test_attachments_go_with_a_shared_client_thread_sealed_and_never_with_a_sensitive_one(self):
+        self.olive_mail()
+        asked = self.files(self.own)
+        self.rounds()
+        renewal, health = self.event_id(self.own, 'work-1'), self.event_id(self.own, 'work-3')
+        self.assertNotIn(health, [e for e, _ in asked])  # a sensitive thread: no files, not even looked up
+        self.assertNotIn('p3', [p for _, p in asked])  # too large: not even read
+        with self.mem.store.connect() as db:
+            rows = db.execute('SELECT fleet,member,tag,body FROM team_mail').fetchall()
+            tid = next(f"{r['fleet']}:{r['member']}:{r['tag']}" for r in rows if not json.loads(r['body']).get('private'))
+            thread = self.mem.team_thread(db, tid)
+            listed = thread['messages'][0]['attachments']
+            self.assertEqual([(x['name'], bool(x.get('file')), bool(x.get('too_large'))) for x in listed],
+                             [('quote.pdf', True, False), ('all-hands.mp4', False, True)])
+            self.assertEqual(self.mem.team_file(db, tid, listed[0]['file']), (b'%PDF-1.4 ', 'application/pdf', 'quote.pdf'))
+            with self.assertRaises(ValueError):
+                self.mem.team_file(db, tid, 'f' * 32)
+        self.assertNotIn(nc.b64(b'%PDF-1.4 '), json.dumps(self.net.blobs))  # the replica has it sealed only
+        self.assertNotIn('quote.pdf', json.dumps(self.net.blobs))
+        files = len(self.mail_puts(self.own, 'file'))
+        self.assertEqual(files, 2)  # one per message that has it
+        self.rounds()
+        self.assertEqual(len(self.mail_puts(self.own, 'file')), files)  # once, not every round
+
+    # -- stopping takes an admin's OK, like in any CRM
+    def test_stopping_needs_an_admins_ok_and_what_went_before_stays(self):
         self.olive_mail()
         self.rounds()
-        self.assertEqual(self.team(self.mem), [])
-        self.assertGreater(self.own.meta('graph_start:' + FLEET), a.now())  # a day after the owner was told
-        self.own.graph_share_now(FLEET)
+        self.assertEqual(self.own.graph_optout(FLEET, True)['off'], 'asked')
+        self.add(self.own, mail('work', 20, 'Lee Park <lee@client.example>', 'own1@acme.example', 'Asked meanwhile', BODY, 0, 't-meanwhile'))
+        self.judge(self.own, ('work-20', 'client', 'Lee wrote again'))
         self.rounds()
-        self.assertTrue(self.team(self.mem))
+        subjects = lambda: {json.loads(r['body']).get('subject') for r in self.team(self.mem, 'team_mail')}
+        self.assertIn('Asked meanwhile', subjects())  # still on until an admin agrees
+        self.assertFalse([p for p in self.own._prompts() if p['kind'] == 'optout'])  # nobody approves their own
+        self.assertFalse([p for p in self.mem._prompts() if p['kind'] == 'optout'])  # not an admin
+        self.assertEqual(self.ok(self.adm, 'optout', 'Olive'), {'ok': True, 'done': True})
+        self.rounds()
+        self.assertEqual(self.own.sharing()[0]['off'], 'off')
+        self.add(self.own, mail('work', 21, 'Lee Park <lee@client.example>', 'own1@acme.example', 'After the OK', BODY, 0, 't-after'))
+        self.judge(self.own, ('work-21', 'client', 'Lee wrote after'))
+        self.rounds()
+        self.assertNotIn('After the OK', subjects())
+        self.assertIn('Renewal quote', subjects())  # what was shared before stays with the Fleet
+        self.assertEqual(self.own.graph_optout(FLEET, False)['off'], None)  # sharing again: at once
+        self.rounds()
+        self.assertIn('After the OK', subjects())
+
+    def test_the_network_cant_stop_someones_sharing(self):
+        self.olive_mail()
+        self.rounds()
+        self.own.graph_optout(FLEET, True)
+        wish = self.own.meta('graph_off:' + FLEET)['at']
+        forged = ft.sign(self.mem._private(), ft.optout(FLEET, 'own1', self.net.keys['own1']['sign'], 'mem3', wish, a.now()))  # not an admin
+        own_ok = ft.sign(self.own._private(), ft.optout(FLEET, 'own1', self.net.keys['own1']['sign'], 'own1', wish, a.now()))  # their own
+        other = ft.sign(self.adm._private(), ft.optout(FLEET, 'own1', self.net.keys['own1']['sign'], 'adm2', 'an earlier ask', a.now()))
+        self.net.trust += [forged, own_ok, other]
+        self.rounds()
+        self.assertEqual(self.own.sharing()[0]['off'], 'asked')
 
     def test_member_who_left_gets_no_new_updates(self):
         self.olive_mail()
-        self.start(self.own)
         self.rounds()
         self.assertTrue(self.team(self.mem))
         before = len(self.net.wraps)
@@ -301,7 +410,6 @@ class SharedGraph(unittest.TestCase):
     def test_what_someone_who_left_shared_stays_with_the_fleet(self):
         self.add(self.mem, mail('work', 8, 'Kim Wu <kim@globex.example>', 'mem3@acme.example', 'Pilot', 'Pilot starts Monday.', 2, 't-pilot'))
         self.judge(self.mem, ('work-8', 'client', 'Kim confirmed the pilot'))
-        self.start(self.mem)
         self.rounds()
         self.assertIn('Kim Wu', json.dumps(self.team(self.own)))
         del self.net.people['mem3']
@@ -314,7 +422,6 @@ class SharedGraph(unittest.TestCase):
     # -- a dishonest control plane
     def test_a_changed_blob_or_a_forged_one_is_refused(self):
         self.olive_mail()
-        self.start(self.own)
         self.rounds()
         self.assertTrue(self.team(self.mem))
         blob_id, _, wrap, by = next(w for w in self.net.wraps if w[1] == 'mem3' and self.net.blobs[w[0]]['header']['kind'] == 'snapshot')
@@ -336,7 +443,6 @@ class SharedGraph(unittest.TestCase):
         """The control plane lists a Machine of its own with its own keys and signs a member statement for it: no
         teammate's Machine seals anything for it, and nothing it publishes is taken."""
         self.olive_mail()
-        self.start(self.own)
         evil = nc.new_keys()
         public = nc.public_keys(evil)
         self.net.extra_members = [{'member_id': 'cp9', 'name': 'Support', 'label': 'Support', 'role': 'admin', 'account_email': 'x@acme.example',
@@ -392,7 +498,6 @@ class SharedGraph(unittest.TestCase):
                              for i in range(1, 9)],
                  *[mail('work', 30 + i, 'Ada <adm2@acme.example>', 'lee@client.example', f'Re: Call {i}', 'Thanks!', i, f't-call{i}') for i in range(1, 9)])
         self.judge(self.adm, *[(f'work-{10 + i}', 'client', 'Lee and Ada spoke') for i in range(1, 9)])
-        self.start(self.own, self.adm)
         self.rounds(3)
         with self.mem.store.connect() as db:
             people = self.mem.team_overview(db, {})['people']
@@ -428,7 +533,6 @@ class SharedGraph(unittest.TestCase):
 
     def test_weekly_report_line(self):
         self.olive_mail()
-        self.start(self.own)
         self.rounds()
         lines = a.recap_share_lines(self.own.store, {'dashboard_host': 'box.example', 'dashboard_path': '/'})
         self.assertEqual(len(lines), 1)

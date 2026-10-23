@@ -31,15 +31,16 @@ import network_crypto as nc
 
 LOG = logging.getLogger('personal-assistant')
 TAG = b'tm-shared-graph/1\n'
-KINDS = ('key', 'snapshot', 'delta', 'mail')
+KINDS = ('key', 'snapshot', 'delta', 'mail', 'file', 'ask')
+TAGGED = ('mail', 'file', 'ask')  # one blob per tag: a newer one replaces it, an empty one says it's gone
 VERDICTS = ('client', 'sensitive', 'internal', 'personal')
 HANDS = ('team', 'private')
 ROUND_EVERY = 300           # publish and fetch, at most this often
 SNAPSHOT_EVERY = 86400      # a full snapshot at least daily
-START_AFTER = 86400         # the first share waits a day after the owner was told (or until Share now)
-MAIL_DAYS = 90              # client threads this recent
 MAX_RECORDS = 3000
-MAX_THREADS = 400
+MAX_THREADS = 20000         # all the Work history the Machine has, newest first
+PER_HOUR, PER_DAY = 100, 1800  # blobs this Machine puts, under the Network's own limits (120 and 2000): a backfill takes days
+MAX_FILE = 2560 * 1024     # bytes of one attachment that goes with a shared thread; bigger ones say "too large to share"
 MAX_MESSAGES = 30           # per thread
 MAX_BODY = 20000            # characters of one message
 TIMELINE = 12               # lines per record
@@ -58,6 +59,10 @@ CREATE TABLE IF NOT EXISTS team_mail(fleet TEXT NOT NULL,member TEXT NOT NULL,ta
   at TEXT NOT NULL,PRIMARY KEY(fleet,member,tag));
 CREATE TABLE IF NOT EXISTS team_sources(fleet TEXT NOT NULL,member TEXT NOT NULL,name TEXT,sign TEXT,snapshot INTEGER NOT NULL DEFAULT 0,
   seq INTEGER NOT NULL DEFAULT 0,threads TEXT NOT NULL DEFAULT '[]',left_at TEXT,at TEXT NOT NULL,PRIMARY KEY(fleet,member));
+CREATE TABLE IF NOT EXISTS team_files(fleet TEXT NOT NULL,member TEXT NOT NULL,tag TEXT NOT NULL,seq INTEGER NOT NULL,name TEXT,mime TEXT,
+  size INTEGER NOT NULL DEFAULT 0,data TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(fleet,member,tag));
+CREATE TABLE IF NOT EXISTS team_asks(fleet TEXT NOT NULL,member TEXT NOT NULL,off INTEGER NOT NULL,asked TEXT NOT NULL,seq INTEGER NOT NULL,
+  at TEXT NOT NULL,PRIMARY KEY(fleet,member));
 CREATE TABLE IF NOT EXISTS team_pending(id TEXT PRIMARY KEY,item TEXT NOT NULL,at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS team_blobs(id TEXT PRIMARY KEY,fleet TEXT NOT NULL,member TEXT NOT NULL,kind TEXT NOT NULL,dk TEXT NOT NULL,
   header TEXT NOT NULL,sha TEXT NOT NULL,at TEXT NOT NULL);
@@ -73,6 +78,9 @@ class Later(ValueError):
 
 def ensure(db):
     db.executescript(SCHEMA)
+    import message_seal
+    if message_seal.is_protected(db):  # teammates' mail, records, files and the review's lines: sealed at rest like the owner's own
+        message_seal.ensure_triggers(db)
 
 
 def now():
@@ -93,10 +101,23 @@ def _keys(dk, nonce, header):
     return nc._hkdf(dk, nonce, b'tm-shared-graph/1' + canon(header))
 
 
+def _stream(key, nonce, data):
+    """network_crypto._stream, byte for byte, quick enough for an attachment: the pad in one go, XORed as integers."""
+    if not data:
+        return b''
+    base = hmac.new(key, nonce, hashlib.sha256)
+    def block(i):
+        mac = base.copy()
+        mac.update(i.to_bytes(8, 'big'))
+        return mac.digest()
+    pad = b''.join(map(block, range(0, len(data), 32)))[:len(data)]
+    return (int.from_bytes(data, 'big') ^ int.from_bytes(pad, 'big')).to_bytes(len(data), 'big')
+
+
 def encrypt(dk, header, body):
     nonce = secrets.token_bytes(16)
     keys = _keys(dk, nonce, header)
-    ct = nc._stream(keys[:32], nonce, canon(body))
+    ct = _stream(keys[:32], nonce, canon(body))
     return nonce + hmac.new(keys[32:], canon(header) + nonce + ct, hashlib.sha256).digest() + ct
 
 
@@ -108,7 +129,7 @@ def decrypt(dk, header, data):
     if not hmac.compare_digest(hmac.new(keys[32:], canon(header) + nonce + ct, hashlib.sha256).digest(), mac):
         raise nc.SealError('changed on the way')
     try:
-        return json.loads(nc._stream(keys[:32], nonce, ct))
+        return json.loads(_stream(keys[:32], nonce, ct))
     except ValueError:
         raise nc.SealError('not readable') from None
 
@@ -129,7 +150,7 @@ def make(private, header, body, recipients):
     """A blob: header in the clear, the body encrypted with a fresh key, signed by this Machine, and that key sealed for
     each recipient ({member id: their public keys})."""
     dk = secrets.token_bytes(32)
-    data = b'' if body is None else encrypt(dk, header, body)  # None: a mail tombstone, no longer shared (an empty blob)
+    data = b'' if body is None else encrypt(dk, header, body)  # None: a tombstone, no longer shared (an empty blob)
     h = digest(header, data)
     wraps = {mid: nc.seal({'dk': nc.b64(dk), 'h': h}, private, keys, wrap_context(header, header['from'], mid)) for mid, keys in recipients.items()}
     return {'header': header, 'ct': nc.b64(data), 'sig': nc.b64(nc.ed25519_sign(nc.unb64(private['sign'], 32), _signed(header, data))),
@@ -158,7 +179,7 @@ def open_blob(item, private, me, wrapper_keys, sender_sign):
         raise nc.SealError('not signed by its publisher')
     dk = nc.unb64(inner.get('dk'), 32)
     if not data:
-        if header['kind'] != 'mail':
+        if header['kind'] not in TAGGED:
             raise nc.SealError('empty')
         return header, {}, inner['dk']
     return header, decrypt(dk, header, data), inner['dk']
@@ -241,6 +262,7 @@ class Scope:
     def __init__(self, db, accounts, internal, mine):
         self.accounts, self.internal, self.mine = set(accounts), set(internal), {m.lower() for m in mine}
         self.private = {r[0] for r in db.execute('SELECT node_id FROM share_private')}
+        self.calls = {r[0]: (r[1], r[2]) for r in db.execute('SELECT thread,verdict,hand FROM share_threads')}  # the review's and the owner's
         self.private_ids = set()
         self.org_of = {}
         for row in db.execute("SELECT id,kind,info FROM graph_nodes WHERE kind IN ('person','org')"):
@@ -276,8 +298,7 @@ def visibility(db, scope, event):
     people = addresses(metadata)
     if any(scope.private_address(a) for a in people):
         return 'private'
-    row = db.execute('SELECT verdict,hand FROM share_threads WHERE thread=?', (thread_of(event['kind'], metadata, event['id']),)).fetchone()
-    verdict, hand = (row['verdict'], row['hand']) if row else (None, None)
+    verdict, hand = scope.calls.get(thread_of(event['kind'], metadata, event['id']), (None, None))
     if verdict == 'personal' and not hand:
         return 'personal'
     if people and not any(outside(a, scope.internal) and a not in scope.mine for a in people):
@@ -325,27 +346,29 @@ def _events(db, accounts, since):
 
 
 def collect(db, scope, key, secret, today=None):
-    """Everything this Machine shares with one Fleet: (records {rid: record}, threads {tag: body}). key: the Fleet graph
-    key (hashes); secret: this Machine's own (record ids and thread tags)."""
+    """Everything this Machine shares with one Fleet: (records {rid: record}, threads {tag: body}, stats, files). key: the
+    Fleet graph key (hashes); secret: this Machine's own (record ids and thread tags). Threads go as far back as the
+    Machine has mail, the newest first. files: {tag: [(event id, account id, kind)]}, the messages of each whole thread,
+    whose attachments go with it (fetched when it is sent, never for a sensitive one)."""
     today = today or dt.datetime.now(dt.timezone.utc)
-    since = (today - dt.timedelta(days=MAIL_DAYS)).isoformat()
     rid = lambda local: keyed(secret, 'record|' + local)
     keys = key if isinstance(key, list) else [key]
     key = keys[0]
     every = lambda value: [keyed(k, value) for k in keys]  # with every graph key held: teammates on another one still match
     views, threads, by_thread = {}, collections.defaultdict(list), {}
-    for e in _events(db, sorted(scope.accounts), (today - dt.timedelta(days=graph.HORIZON_DAYS)).isoformat()):
+    for e in _events(db, sorted(scope.accounts), ''):
         e = dict(e)
         e['metadata'] = json.loads(e['metadata'] or '{}')
         view = visibility(db, scope, e)
         views[e['id']] = view
-        if view in ('team', 'line') and e['occurred_at'] >= since:
+        if view in ('team', 'line'):
             thread = thread_of(e['kind'], e['metadata'], e['id'])
             threads[thread].append(e)
             by_thread[e['id']] = thread
     lines = {r['event_id']: r['line'] for r in db.execute('SELECT event_id,line FROM share_lines')}
-    out_threads = {}
-    for thread, items in list(threads.items())[-MAX_THREADS:]:
+    out_threads, files = {}, {}
+    newest = sorted(threads.items(), key=lambda t: t[1][-1]['occurred_at'], reverse=True)[:MAX_THREADS]
+    for thread, items in newest:
         tag = keyed(secret, 'thread|' + thread)
         last = items[-1]
         if views[last['id']] == 'line':
@@ -354,11 +377,10 @@ def collect(db, scope, key, secret, today=None):
         if last['kind'] not in MAIL_KINDS:
             continue
         messages = [{'at': e['occurred_at'], 'from': str(e['metadata'].get('from') or '')[:200], 'to': str(e['metadata'].get('to') or '')[:500],
-                     'cc': str(e['metadata'].get('cc') or '')[:500], 'body': str(e['body'] or '')[:MAX_BODY],
-                     'attachments': [{'name': str(a.get('name') or '')[:120], 'size': a.get('size') if isinstance(a.get('size'), int) else None}
-                                     for a in (e['metadata'].get('attachments') or []) if isinstance(a, dict)][:20]}
+                     'cc': str(e['metadata'].get('cc') or '')[:500], 'body': str(e['body'] or '')[:MAX_BODY]}
                     for e in items[-MAX_MESSAGES:]]
         out_threads[tag] = {'tag': tag, 'subject': str(items[0]['title'] or '')[:200], 'at': last['occurred_at'], 'messages': messages}
+        files[tag] = [(e['id'], e['account_id'], e['kind']) for e in items[-MAX_MESSAGES:]]
 
     def thread_tags(node_id):
         tags = []
@@ -455,7 +477,34 @@ def collect(db, scope, key, secret, today=None):
     stats = {'threads': sum(1 for v in recent.values() if v == 'team'), 'held': sum(1 for v in recent.values() if v == 'line') + len(held_private),
              'people': sum(1 for r in records.values() if r['t'] == 'person'), 'orgs': sum(1 for r in records.values() if r['t'] == 'org'),
              'projects': sum(1 for r in records.values() if r['t'] == 'project')}
-    return records, out_threads, stats
+    return records, out_threads, stats, files
+
+
+def unjudged(db, scope, limit, skip=()):
+    """Work client threads the review hasn't judged yet, the newest first: for the history pass (one run judges a batch,
+    the next one goes on), so all the Work history the Machine has goes through the same review labels."""
+    found, seen = [], set(skip)
+    if not scope.accounts:
+        return found
+    rows = db.execute(f"SELECT id,account_id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 "
+                      f"AND account_id IN ({','.join('?' * len(scope.accounts))}) ORDER BY occurred_at DESC", sorted(scope.accounts))
+    for e in rows:
+        if e['kind'] not in MAIL_KINDS:
+            continue
+        e = dict(e)
+        e['metadata'] = json.loads(e['metadata'] or '{}')
+        thread = thread_of(e['kind'], e['metadata'], e['id'])
+        if thread in seen:
+            continue
+        seen.add(thread)
+        if visibility(db, scope, e) != 'pending':
+            continue
+        found.append({'event_id': e['id'], 'subject': str(e['title'] or '')[:200], 'with': _who(e['metadata'], scope), 'at': e['occurred_at'],
+                      'from': str(e['metadata'].get('from') or '')[:200], 'to': str(e['metadata'].get('to') or '')[:300],
+                      'text': ' '.join(str(e['body'] or '').split())[:700]})
+        if len(found) >= limit:
+            break
+    return found
 
 
 # ---------------------------------------------------------------- the team's view: Mine plus what teammates shared
@@ -530,8 +579,16 @@ class SharedGraph:
             return None
         header = self._header(group, me, kind, recipients, **extra)
         blob, _ = make(self._private(), header, body, recipients)
-        self.relay.call('POST', '/graph', {'op': 'put', 'fleet': group['id'], 'blob': blob}, timeout=60)
+        self.relay.call('POST', '/graph', {'op': 'put', 'fleet': group['id'], 'blob': blob}, timeout=120 if kind == 'file' else 60)
+        stamp = time.time()
+        self.set_meta('graph_puts', [t for t in (self.meta('graph_puts', []) or []) if t > stamp - 86400][-PER_DAY:] + [stamp])
         return header
+
+    def _budget(self):
+        """How many more blobs may go now: PER_HOUR and PER_DAY over this Machine's own puts. A long history goes over days."""
+        stamp = time.time()
+        puts = [t for t in (self.meta('graph_puts', []) or []) if t > stamp - 86400]
+        return max(0, min(PER_HOUR - sum(1 for t in puts if t > stamp - 3600), PER_DAY - len(puts)))
 
     # -- every round
     def graph_round(self, force=False):
@@ -568,14 +625,13 @@ class SharedGraph:
                     self._prompt('member', group, '', members[mid])
             self._drop_prompts(lambda p: p['kind'] == 'member' and p['fleet'] == group['id'] and (p['member'] in found or p['member'] not in members))
             self._graph_keys_round(group, me, found)
+            self._optout_prompts(group, me, found, trusted, members)
         if me['member_id'] not in found:
             return
-        start = self.meta('graph_start:' + group['id'])
-        if not start:
-            self.set_meta('graph_start:' + group['id'], (dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=START_AFTER)).isoformat(timespec='seconds'))
-            return
-        if start > now():
-            return
+        self._graph_ask_round(group, me, found)
+        if self.graph_off(group, trusted) == 'off':
+            self.set_meta('graph_off_ok:' + group['id'], (self.meta('graph_off:' + group['id']) or {}).get('at'))
+            return  # an admin agreed: nothing new goes; what was shared before stays with the Fleet
         self.graph_publish(group, me, found)
 
     def _graph_keys_round(self, group, me, found):
@@ -598,7 +654,9 @@ class SharedGraph:
 
     def graph_publish(self, group, me, found):
         """Publishes what changed since the last round: a snapshot when the recipients or the key changed, or daily;
-        else a delta; and each client thread that changed as its own mail blob."""
+        else a delta. Then each client thread that changed as its own mail blob, with its attachments as file blobs,
+        the newest first and within this Machine's budget: share_out keeps what went, so the next round goes on from
+        there (a long history, or everything again for someone who joined, takes a few days)."""
         fleet = group['id']
         kv, key = self.graph_key(fleet)
         if not kv:
@@ -610,20 +668,23 @@ class SharedGraph:
             ensure(db)
             scope = Scope(db, self.fleet_accounts(fleet), self.internal(fleet), self.my_emails())
             others = [k['key'] for kv_, k in sorted(self.graph_keys(fleet).items(), key=lambda x: x[1]['at'], reverse=True) if kv_ != kv][:3]
-            records, threads, stats = collect(db, scope, [key, *others], self.graph_secret())
+            records, threads, stats, files = collect(db, scope, [key, *others], self.graph_secret())
             before = {(r['kind'], r['key']): r['hash'] for r in db.execute('SELECT kind,key,hash FROM share_out WHERE fleet=?', (fleet,))}
         state = self.meta('graph_out:' + fleet, {}) or {}
+        who = hashlib.sha256(canon([kv, to])).hexdigest()[:16]  # sent to other people (or under another key): it goes again
         hashes = {rid: hashlib.sha256(canon(r)).hexdigest() for rid, r in records.items()}
-        thread_hashes = {tag: hashlib.sha256(canon(t)).hexdigest() for tag, t in threads.items()}
+        thread_hashes = {tag: hashlib.sha256(canon([t, who])).hexdigest() for tag, t in threads.items()}
         new_people = state.get('to') != to or state.get('kv') != kv
         snapshot = new_people or not state.get('snapshot_at') or time.time() - state.get('snapshot_at', 0) > SNAPSHOT_EVERY
         changed = [rid for rid, h in hashes.items() if before.get(('record', rid)) != h]
         removed = [k for (kind, k) in before if kind == 'record' and k not in hashes]
+        if self._budget() <= 0:
+            return
         if snapshot:
             header = self._put(group, me, 'snapshot', {'kv': kv, 'records': list(records.values()), 'threads': sorted(threads)}, to, kv=kv)
             if header:
                 state.update(snapshot_at=time.time(), to=to, kv=kv, last=header['seq'])
-        elif changed or removed or set(thread_hashes) != {k for (kind, k) in before if kind == 'thread'}:
+        elif changed or removed or set(threads) != set(state.get('threads') or []):
             header = self._put(group, me, 'delta', {'kv': kv, 'prev': state.get('last'), 'records': [records[r] for r in changed], 'removed': removed,
                                                      'threads': sorted(threads)}, to, kv=kv)
             if header:
@@ -632,21 +693,89 @@ class SharedGraph:
             header = True
         if not header:
             return
-        sent_threads = 0
-        for tag, body in threads.items():
-            if not new_people and before.get(('thread', tag)) == thread_hashes[tag]:
-                continue
-            self._put(group, me, 'mail', body, to, tag=tag)
-            sent_threads += 1
-        for (kind, tag) in before:
-            if kind == 'thread' and tag not in threads:
-                self._put(group, me, 'mail', None, to, tag=tag)  # no longer shared: gone from the replica and the team
+        state['threads'] = sorted(threads)
         with self.connect() as db:
-            db.execute('DELETE FROM share_out WHERE fleet=?', (fleet,))
-            db.executemany('INSERT INTO share_out(fleet,kind,key,hash,at) VALUES(?,?,?,?,?)',
-                           [(fleet, 'record', k, h, now()) for k, h in hashes.items()] + [(fleet, 'thread', k, h, now()) for k, h in thread_hashes.items()])
+            db.execute("DELETE FROM share_out WHERE fleet=? AND kind='record'", (fleet,))
+            db.executemany('INSERT INTO share_out(fleet,kind,key,hash,at) VALUES(?,?,?,?,?)', [(fleet, 'record', k, h, now()) for k, h in hashes.items()])
         self.set_meta('graph_out:' + fleet, state)
+        budget = self._budget()
+        try:
+            for tag in [k for (kind, k) in before if kind == 'thread' and k not in threads]:  # no longer shared: gone from the replica and the team
+                if budget <= 0:
+                    break
+                budget -= self._unshare(group, me, to, tag, before)
+            for tag, body in threads.items():  # the newest first
+                if budget <= 0:
+                    break
+                if before.get(('thread', tag)) == thread_hashes[tag]:
+                    continue
+                body, used = self._with_files(group, me, to, tag, body, files.get(tag) or [], who, before, budget - 1)
+                if body is None:
+                    break  # the budget is spent halfway through its files: the rest next round
+                self._put(group, me, 'mail', body, to, tag=tag)
+                budget -= used + 1
+                with self.connect() as db:
+                    db.execute('INSERT OR REPLACE INTO share_out(fleet,kind,key,hash,at) VALUES(?,?,?,?,?)', (fleet, 'thread', tag, thread_hashes[tag], now()))
+        except Exception as error:  # noqa: BLE001 - the Network's own limit, or away: what went is kept, the rest next round
+            LOG.info('shared graph threads paused fleet=%s error=%s', fleet, type(error).__name__)
+        with self.connect() as db:
+            sent = {r['key'] for r in db.execute("SELECT key FROM share_out WHERE fleet=? AND kind='thread'", (fleet,))}
+        stats['waiting'] = sum(1 for t in threads if t not in sent)
         self.set_meta('graph_week:' + fleet, {**stats, 'at': now()})
+
+    def _unshare(self, group, me, to, tag, before):
+        """A thread no longer shared: an empty blob for it and each of its files. Returns how many blobs went."""
+        fleet, used = group['id'], 0
+        for (kind, ftag), h in before.items():
+            if kind == 'file' and h.split(':', 1)[0] == tag:
+                self._put(group, me, 'file', None, to, tag=ftag)
+                used += 1
+                with self.connect() as db:
+                    db.execute("DELETE FROM share_out WHERE fleet=? AND kind='file' AND key=?", (fleet, ftag))
+        self._put(group, me, 'mail', None, to, tag=tag)
+        with self.connect() as db:
+            db.execute("DELETE FROM share_out WHERE fleet=? AND kind='thread' AND key=?", (fleet, tag))
+        return used + 1
+
+    def _with_files(self, group, me, to, tag, body, sources, who, before, budget):
+        """The thread's messages with their attachments: each file up to MAX_FILE goes as its own sealed blob (once per
+        recipients), bigger ones are listed as too large to share. Returns (body, file blobs sent), or (None, n) when
+        the budget ran out first. Read-only from the mailbox, and only for a whole client thread."""
+        fetch = getattr(self, 'mail_files', None)
+        used = 0
+        if not fetch or body.get('private'):
+            return body, 0
+        body = {**body, 'messages': [dict(m) for m in body['messages']]}
+        for message, (event_id, _account, _kind) in zip(body['messages'], sources):
+            try:
+                listed = fetch(event_id) or []
+            except Exception as error:  # noqa: BLE001 - the mailbox is away: the thread goes without its files this time
+                LOG.info('shared graph attachments unavailable error=%s', type(error).__name__)
+                listed = []
+            out = []
+            for a in listed[:20]:
+                if not isinstance(a, dict) or a.get('inline') or a.get('kind', 'file') != 'file' or not a.get('id'):
+                    continue
+                entry = {'name': str(a.get('name') or 'attachment')[:120], 'size': int(a.get('size') or 0), 'mime': str(a.get('mime') or '')[:100]}
+                if entry['size'] > MAX_FILE:
+                    out.append({**entry, 'too_large': True})
+                    continue
+                ftag = keyed(self.graph_secret(), f'file|{tag}|{event_id}|{a["id"]}')
+                if before.get(('file', ftag)) != f'{tag}:{who}':
+                    if used >= budget:
+                        return None, used
+                    data = fetch(event_id, a['id'])
+                    if not isinstance(data, bytes) or len(data) > MAX_FILE:
+                        out.append({**entry, 'too_large': True})
+                        continue
+                    self._put(group, me, 'file', {'name': entry['name'], 'mime': entry['mime'], 'data': nc.b64(data)}, to, tag=ftag)
+                    used += 1
+                    with self.connect() as db:
+                        db.execute('INSERT OR REPLACE INTO share_out(fleet,kind,key,hash,at) VALUES(?,?,?,?,?)', (group['id'], 'file', ftag, f'{tag}:{who}', now()))
+                    entry['size'] = len(data)
+                out.append({**entry, 'file': ftag})
+            message['attachments'] = out
+        return body, used
 
     # -- receiving
     def graph_fetch(self):
@@ -756,6 +885,11 @@ class SharedGraph:
                            (seq, seq, json.dumps(self._tags(body)), now(), fleet, sender))
                 db.execute('DELETE FROM team_mail WHERE fleet=? AND member=? AND tag NOT IN (SELECT value FROM json_each(?))',
                            (fleet, sender, json.dumps(self._tags(body))))
+                listed = {a.get('file') for r in db.execute('SELECT body FROM team_mail WHERE fleet=? AND member=?', (fleet, sender))
+                          for m in json.loads(r['body']).get('messages') or [] for a in m.get('attachments') or []}
+                for r in db.execute('SELECT tag FROM team_files WHERE fleet=? AND member=?', (fleet, sender)).fetchall():
+                    if r['tag'] not in listed:
+                        db.execute('DELETE FROM team_files WHERE fleet=? AND member=? AND tag=?', (fleet, sender, r['tag']))
             elif kind == 'delta':
                 if body.get('prev') != row['seq'] or seq <= row['seq']:
                     raise ValueError('a delta out of order: waits for the next snapshot')
@@ -777,6 +911,31 @@ class SharedGraph:
                 else:
                     db.execute('INSERT OR REPLACE INTO team_mail(fleet,member,tag,seq,body,at) VALUES(?,?,?,?,?,?)',
                                (fleet, sender, tag, seq, json.dumps(_clean_mail(body, tag)), header['at']))
+            elif kind == 'file':
+                tag = header.get('tag')
+                if not HEX.fullmatch(str(tag)):
+                    raise ValueError('a file without a tag')
+                old = db.execute('SELECT seq FROM team_files WHERE fleet=? AND member=? AND tag=?', (fleet, sender, tag)).fetchone()
+                if old and old['seq'] >= seq:
+                    raise ValueError('an older file')
+                if not body:
+                    db.execute('DELETE FROM team_files WHERE fleet=? AND member=? AND tag=?', (fleet, sender, tag))
+                else:
+                    data = nc.unb64(body.get('data'))
+                    if len(data) > MAX_FILE:
+                        raise ValueError('a file over the limit')
+                    db.execute('INSERT OR REPLACE INTO team_files(fleet,member,tag,seq,name,mime,size,data,at) VALUES(?,?,?,?,?,?,?,?,?)',
+                               (fleet, sender, tag, seq, _clean_text(body.get('name'), 120) or 'attachment', _mime(body.get('mime')), len(data),
+                                nc.b64(data), header['at']))
+            elif kind == 'ask':  # a member asks to stop sharing their Work (or not any more): for the admins' OK
+                old = db.execute('SELECT seq FROM team_asks WHERE fleet=? AND member=?', (fleet, sender)).fetchone()
+                if old and old['seq'] >= seq:
+                    raise ValueError('an older ask')
+                asked = _clean_text(body.get('asked'), 25)
+                if not asked:
+                    raise ValueError('an ask without its time')
+                db.execute('INSERT OR REPLACE INTO team_asks(fleet,member,off,asked,seq,at) VALUES(?,?,?,?,?,?)',
+                           (fleet, sender, int(body.get('off') is True), asked, seq, now()))
 
     @staticmethod
     def _tags(body):
@@ -797,9 +956,9 @@ class SharedGraph:
             ensure(db)
             for (fleet,) in db.execute('SELECT DISTINCT fleet FROM team_sources').fetchall():
                 if fleet not in ids:
-                    for table in ('team_records', 'team_mail', 'team_sources', 'team_blobs', 'share_out'):
+                    for table in ('team_records', 'team_mail', 'team_files', 'team_asks', 'team_sources', 'team_blobs', 'share_out'):
                         db.execute(f'DELETE FROM {table} WHERE fleet=?', (fleet,))
-                    for key in ('graph_keys:', 'graph_out:', 'graph_members:', 'graph_start:', 'graph_week:'):
+                    for key in ('graph_keys:', 'graph_out:', 'graph_members:', 'graph_off:', 'graph_off_ok:', 'graph_ask_sent:', 'graph_week:'):
                         db.execute('DELETE FROM fleet_meta WHERE key=?', (key + fleet,))
             for group in groups:
                 now_in = {m.get('member_id') for m in group.get('members', [])}
@@ -825,7 +984,7 @@ class SharedGraph:
                               (group['id'],)).fetchall()
             blobs = []
             for g in gone:
-                for b in db.execute("SELECT * FROM team_blobs WHERE fleet=? AND member=? AND kind IN ('snapshot','mail')", (group['id'], g['member'])):
+                for b in db.execute("SELECT * FROM team_blobs WHERE fleet=? AND member=? AND kind IN ('snapshot','mail','file')", (group['id'], g['member'])):
                     header = json.loads(b['header'])
                     if b['kind'] == 'snapshot' and header['seq'] != g['snapshot']:
                         continue
@@ -843,10 +1002,92 @@ class SharedGraph:
         self.set_meta('graph_rewrapped:' + group['id'], done)
 
     # -- the owner's controls
-    def graph_share_now(self, fleet):
-        self.set_meta('graph_start:' + fleet, now())
-        self.graph_round(force=True)
-        return {'ok': True}
+    def graph_unjudged(self, limit=120):
+        """Work client threads still to be judged for each Work Fleet this Machine shares with (confirmed, not off)."""
+        groups = []
+        for group in self._kept_groups():
+            me = self._me_in(group)
+            if me:
+                found, trusted, _ = self.confirmed(group)
+                if me['member_id'] in found and self.graph_off(group, trusted) != 'off':
+                    groups.append(group)
+        out, skip = [], set()
+        with self.connect() as db:
+            ensure(db)
+            for group in groups:
+                for item in unjudged(db, Scope(db, self.fleet_accounts(group['id']), self.internal(group['id']), self.my_emails()), limit - len(out)):
+                    if item['event_id'] not in skip:
+                        skip.add(item['event_id'])
+                        out.append(item)
+        return out[:limit]
+
+    def graph_off(self, group, trusted=None):
+        """This Machine's sharing with one Work Fleet: None (on), 'asked' (asked an admin to stop it; it stays on until
+        one agrees) or 'off' (an admin agreed to that very ask). Like in any CRM, nobody stops on their own."""
+        wish = self.meta('graph_off:' + group['id'])
+        if not wish:
+            return None
+        if self.meta('graph_off_ok:' + group['id']) == wish.get('at'):
+            return 'off'  # kept once seen: an admin who agreed and left since doesn't turn it back on
+        if trusted is None:
+            trusted, _ = self.trust(group)
+        me = self._me_in(group)
+        agreed = ft.optouts(group, trusted).get(me['member_id']) if me else None
+        return 'off' if agreed and agreed.get('asked') == wish.get('at') else 'asked'
+
+    def graph_optout(self, fleet, off=True):
+        """Ask the admins to stop sharing this Machine's Work with the team (off), or share again (at once, no OK
+        needed). Keep private on a record works any time, without asking."""
+        group = next((g for g in (self.directory().get('fleets') or []) if g.get('id') == fleet and g.get('kind') == 'work'), None)
+        if not group or not self._me_in(group):
+            raise ValueError('Not a Work Fleet of yours')
+        if off:
+            if not self.meta('graph_off:' + fleet):
+                self.set_meta('graph_off:' + fleet, {'at': now()})
+        else:
+            self.set_meta('graph_off:' + fleet, None)
+            self.set_meta('graph_off_ok:' + fleet, None)
+        try:
+            self.graph_round(force=True)
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            LOG.info('shared graph after an opt-out change error=%s', type(error).__name__)
+        return {'ok': True, 'off': self.graph_off(group)}
+
+    def _graph_ask_round(self, group, me, found):
+        """The member's ask (or that it is withdrawn) reaches the admins' Machines, sealed like everything else; sent
+        again when the Fleet's members change."""
+        wish = self.meta('graph_off:' + group['id']) or {}
+        to = sorted(set(found) - {me['member_id']})
+        want = {'off': bool(wish), 'asked': wish.get('at') or now(), 'to': to}
+        sent = self.meta('graph_ask_sent:' + group['id'])
+        if not to or (not sent and not wish) or (sent and sent.get('off') == want['off'] and sent.get('to') == to
+                                                 and (not wish or sent.get('asked') == wish.get('at'))):
+            return
+        if self._budget() <= 0:
+            return
+        if self._put(group, me, 'ask', {'off': want['off'], 'asked': want['asked']}, to, tag=keyed(self.graph_secret(), 'ask')):
+            self.set_meta('graph_ask_sent:' + group['id'], want)
+
+    def _optout_prompts(self, group, me, found, trusted, members):
+        """A confirmed admin's Machine: a member's standing ask to stop sharing becomes an OK for its owner, on the
+        Fleet tab. Gone once an admin agreed, the member withdrew it, or they left."""
+        with self.connect() as db:
+            ensure(db)
+            asks = {r['member']: dict(r) for r in db.execute('SELECT * FROM team_asks WHERE fleet=?', (group['id'],))}
+        agreed = ft.optouts(group, trusted)
+        declined = self.meta('optout_declined', []) or []
+        standing = {mid: a for mid, a in asks.items() if a['off'] and mid in found and mid != me['member_id'] and mid in members
+                    and (agreed.get(mid) or {}).get('asked') != a['asked'] and [group['id'], mid, a['asked']] not in declined}
+        self._drop_prompts(lambda p: p['kind'] == 'optout' and p['fleet'] == group['id'] and (p['member'] not in standing or p.get('asked') != standing[p['member']]['asked']))
+        for mid, a in standing.items():
+            self._prompt('optout', group, '', members[mid], asked=a['asked'])
+
+    def optout_ok(self, prompt, group, me, member, keys):
+        """The admin's owner agreed: a signed statement for that member's key and that very ask."""
+        item = ft.sign(self._private(), ft.optout(group['id'], member['member_id'], keys['sign'], me['member_id'], prompt.get('asked'), now()))
+        self.relay.call('POST', '/trust', {'fleet': group['id'], 'item': item}, timeout=30)
+        self.directory(refresh=True)
+        return {'ok': True, 'done': True}
 
     # -- the team's view
     def team_sources(self):
@@ -937,7 +1178,8 @@ class SharedGraph:
         return bool(db.execute('SELECT 1 FROM share_private WHERE node_id=?', (node_id,)).fetchone())
 
     def sharing(self):
-        """Per Work Fleet: confirmed or waiting, when sharing starts, and this week's counts. For the dashboard card."""
+        """Per Work Fleet: confirmed or waiting, whether this Machine's sharing is on, asked off or off, and this week's
+        counts. For the dashboard."""
         out = []
         for group in self._kept_groups():
             me = self._me_in(group)
@@ -946,7 +1188,7 @@ class SharedGraph:
             found, trusted, waiting = self.confirmed(group)
             prompts = [{k: p.get(k) for k in ('id', 'name', 'email', 'fp')} for p in self._prompts() if p['kind'] == 'member' and p['fleet'] == group['id']]
             out.append({'fleet': group['id'], 'name': str(group.get('name') or '')[:80], 'confirmed': me['member_id'] in found,
-                        'start': self.meta('graph_start:' + group['id']), 'week': self.meta('graph_week:' + group['id']),
+                        'off': self.graph_off(group, trusted), 'week': self.meta('graph_week:' + group['id']),
                         'waiting': len([m for m in waiting if m != me['member_id']]), 'admin': me['member_id'] in trusted, 'prompts': prompts})
         return out
 
@@ -1076,7 +1318,8 @@ class SharedGraph:
                 'org_name': org.get('name'), 'state': 'active', 'stage': rec.get('stage'), 'board': rec.get('board'), 'next': rec.get('next'), 'team': section}
 
     def team_thread(self, db, thread_id):
-        """A client thread a teammate shared, in full: subject, messages with their text and the names of attachments."""
+        """A client thread a teammate shared, in full: subject, messages with their text and their attachments (each one
+        here to open, or too large to share)."""
         ensure(db)
         fleet, member, tag = (str(thread_id).split(':') + ['', '', ''])[:3]
         row = db.execute('SELECT body FROM team_mail WHERE fleet=? AND member=? AND tag=?', (fleet, member, tag)).fetchone()
@@ -1086,7 +1329,23 @@ class SharedGraph:
         if body.get('private'):
             raise ValueError('Only the people on it read this one')
         source = db.execute('SELECT name,left_at FROM team_sources WHERE fleet=? AND member=?', (fleet, member)).fetchone()
+        here = {r['tag'] for r in db.execute('SELECT tag FROM team_files WHERE fleet=? AND member=?', (fleet, member))}
+        for m in body.get('messages') or []:
+            for a in m.get('attachments') or []:
+                if a.get('file') and a['file'] not in here:
+                    a['waiting'] = True  # listed, its file not here yet
         return {**body, 'via': _first_name(source['name']) if source else '', 'left': bool(source and source['left_at'])}
+
+    def team_file(self, db, thread_id, tag):
+        """(bytes, mime, name) of an attachment that came with a client thread a teammate shared; only one its thread lists."""
+        thread = self.team_thread(db, thread_id)
+        if not HEX.fullmatch(str(tag)) or not any(a.get('file') == tag for m in thread.get('messages') or [] for a in m.get('attachments') or []):
+            raise ValueError('Not shared with you')
+        fleet, member = str(thread_id).split(':')[:2]
+        row = db.execute('SELECT name,mime,data FROM team_files WHERE fleet=? AND member=? AND tag=?', (fleet, member, tag)).fetchone()
+        if not row:
+            raise ValueError('Not here yet')
+        return nc.unb64(row['data']), row['mime'] or 'application/octet-stream', row['name'] or 'attachment'
 
     def held_back(self, db, days=7):
         """This week's Work threads that didn't go to the team as a whole (sensitive, or Only you by hand), to look over."""
@@ -1188,6 +1447,11 @@ def _clean_record(r):
     return out
 
 
+def _mime(value):
+    value = str(value or '').strip().lower()
+    return value if re.fullmatch(r'[a-z0-9.+-]{1,40}/[a-z0-9.+-]{1,60}', value) else 'application/octet-stream'
+
+
 def _clean_mail(body, tag):
     if body.get('private'):
         return {'tag': tag, 'private': True, 'at': _clean_text(body.get('at'), 25), 'line': _clean_text(body.get('line'), 120) or 'Private thread'}
@@ -1196,6 +1460,7 @@ def _clean_mail(body, tag):
         if isinstance(m, dict):
             messages.append({'at': _clean_text(m.get('at'), 25), 'from': _clean_text(m.get('from'), 200), 'to': _clean_text(m.get('to'), 500),
                              'cc': _clean_text(m.get('cc'), 500), 'body': str(m.get('body') or '')[:MAX_BODY],
-                             'attachments': [{'name': _clean_text(a.get('name'), 120), 'size': a.get('size') if isinstance(a.get('size'), int) else None}
+                             'attachments': [{'name': _clean_text(a.get('name'), 120) or 'attachment', 'size': a.get('size') if isinstance(a.get('size'), int) else None,
+                                              **({'file': a['file']} if HEX.fullmatch(str(a.get('file'))) else {'too_large': True} if a.get('too_large') else {})}
                                              for a in (m.get('attachments') or [])[:20] if isinstance(a, dict)]})
     return {'tag': tag, 'subject': _clean_text(body.get('subject'), 200), 'at': _clean_text(body.get('at'), 25), 'messages': messages}

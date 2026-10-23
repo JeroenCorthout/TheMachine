@@ -222,6 +222,8 @@ class SharedConnectors:
                 self._set_state(prompt['fleet'], prompt['service'], state)
             elif prompt['kind'] in ('admin', 'successor', 'member'):  # not asked again for these keys
                 self.set_meta('trust_declined', (self.meta('trust_declined', []) or [])[-200:] + [[prompt['fleet'], prompt['member'], prompt.get('fp')]])
+            elif prompt['kind'] == 'optout':  # not asked again for this ask; sharing stays on (shared_graph.py)
+                self.set_meta('optout_declined', (self.meta('optout_declined', []) or [])[-200:] + [[prompt['fleet'], prompt['member'], prompt.get('asked')]])
             return {'ok': True, 'done': False}
         keys = ft.keys_of(member)
         if not keys or keys['fp'] != prompt.get('fp'):
@@ -229,6 +231,8 @@ class SharedConnectors:
         trusted, _ = self.trust(group)
         if me['member_id'] not in trusted:
             raise ValueError('Only a confirmed admin can do that')
+        if prompt['kind'] == 'optout':  # they asked to stop sharing their Work with the team (shared_graph.py)
+            return self.optout_ok(prompt, group, me, member, keys)
         if prompt['kind'] in ('admin', 'successor', 'member'):  # member: their Machine gets the team's Graph (shared_graph.py)
             item = ft.sign(self._private(), ft.statement(prompt['kind'], group['id'], member['member_id'], keys['sign'], me['member_id']))
             self.relay.call('POST', '/trust', {'fleet': group['id'], 'item': item}, timeout=30)
@@ -559,7 +563,12 @@ class SharedConnectors:
                                                for m in group.get('members', []) if not m.get('me')]})
         own = [{'id': a['id'], 'service': a['service'], 'label': SHAREABLE[a['service']]['label'], 'workspace': a.get('workspace_name') or ''}
                for a in self.config.get('accounts', []) if a.get('service') in SHAREABLE and not a.get('shared') and a.get(SHAREABLE[a['service']]['identity'])]
-        return {'prompts': prompts, 'shares': shares, 'can_share': candidates, 'accounts': own}
+        try:  # the Shared Graph: whether this Machine's Work is shared, asked off or off, per Work Fleet (shared_graph.py)
+            graph = self.sharing() if hasattr(self, 'sharing') else []
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            LOG.info('shared graph view error=%s', type(error).__name__)
+            graph = []
+        return {'prompts': prompts, 'shares': shares, 'can_share': candidates, 'accounts': own, 'graph': graph}
 
 
 def _write_private(path, text):

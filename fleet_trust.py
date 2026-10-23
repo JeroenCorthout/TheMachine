@@ -11,6 +11,9 @@ by Machine keys, in a chain that starts at the Fleet owner's key:
   over if they delete their account. It only counts once that member is the owner and the signer is gone.
 - member: a trusted admin signs {t: member, fleet, member, key, by} after their owner's OK, so that member's Machine
   gets the team's Graph (shared_graph.py). Trusted admins are members too.
+- optout: a trusted admin signs {t: optout, fleet, member, key, by, asked, at} after their owner's OK, when a member
+  asked (at `asked`) to stop sharing their Work with the team. Their Machine stops only on such a statement from an admin
+  other than themselves, for their key and for that very ask. What they shared before stays with the Fleet.
 
 An admin is trusted when they are an owner or admin in the directory now, with the very key a trusted admin vouched
 for (or the pinned root key). The trusted set is pinned between rounds. Being demoted or leaving drops someone at once;
@@ -29,7 +32,7 @@ import network_crypto as nc
 
 TAG = b'tm-fleet-trust/1\n'
 ADMIN_ROLES = ('owner', 'admin')
-KINDS = ('root', 'admin', 'successor', 'member', 'grant')
+KINDS = ('root', 'admin', 'successor', 'member', 'grant', 'optout')
 GRANT_ID = re.compile(r'[a-f0-9]{32}')
 
 
@@ -127,6 +130,25 @@ def members(group, trusted, pins=None):
             found[s['member']] = s['key']
     waiting = sorted(mid for mid in current if mid not in found)
     return found, waiting, dict(found)
+
+
+def optout(fleet, member, key, by, asked, at):
+    return {'t': 'optout', 'fleet': fleet, 'member': member, 'key': key, 'by': by, 'asked': str(asked), 'at': str(at)}
+
+
+def optouts(group, trusted):
+    """{member: the newest optout statement} a trusted admin other than that member signed, for their current key."""
+    fleet = group.get('id')
+    current = {m.get('member_id'): k['sign'] for m in group.get('members', []) if m.get('member_id') and (k := keys_of(m))}
+    found = {}
+    for item in group.get('trust') or []:
+        s = item.get('s') if isinstance(item, dict) else None
+        if (isinstance(s, dict) and s.get('t') == 'optout' and s.get('fleet') == fleet and s.get('by') in trusted and s.get('by') != s.get('member')
+                and s.get('member') in current and s.get('key') == current[s['member']] and isinstance(s.get('asked'), str)
+                and verified(item, trusted[s['by']])):
+            if s['member'] not in found or str(s.get('at')) > str(found[s['member']].get('at')):
+                found[s['member']] = s
+    return found
 
 
 def statement(kind, fleet, member, key, by):

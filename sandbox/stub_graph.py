@@ -32,6 +32,13 @@ PARTNERS = ['Contacted', 'Agreed', 'In review', 'Partly live', 'Live', 'Stalled 
 PIPELINE = ['Qualified', 'Proposal', 'Negotiation', 'Won', 'Stalled or declined']
 
 
+PLAN_TAG = secrets.token_hex(16)
+PLAN = (b'%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj '
+        b'3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 120]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj '
+        b'4 0 obj<</Length 52>>stream\nBT /F1 14 Tf 20 60 Td (Rollout plan: Ghent, then Antwerp) Tj ET\nendstream endobj '
+        b'5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')  # made up
+
+
 def shared(key):
     """{member id: (records, threads)}: what each teammate's Machine shares."""
     rid = lambda: secrets.token_hex(16)
@@ -54,7 +61,8 @@ def shared(key):
     priya_threads = {rollout: {'tag': rollout, 'subject': 'Rollout timeline', 'at': ago(1), 'messages': [
         {'at': ago(2), 'from': 'Priya Okonedo <priya@lumenlabs.example>', 'to': 'mila@northwindanalytics.example', 'cc': '',
          'body': 'Hi Mila,\n\nHere is the plan we discussed: training for the Ghent team on Monday, Antwerp the week after. SSO will be on before the first session.\n\nPriya',
-         'attachments': [{'name': 'rollout-plan.pdf', 'size': 182000}]},
+         'attachments': [{'name': 'rollout-plan.pdf', 'size': len(PLAN), 'mime': 'application/pdf', 'file': PLAN_TAG},
+                         {'name': 'training-recording.mp4', 'size': 48_000_000, 'mime': 'video/mp4', 'too_large': True}]},
         {'at': ago(1), 'from': 'Mila Underhay <mila@northwindanalytics.example>', 'to': 'priya@lumenlabs.example', 'cc': '',
          'body': 'Thanks Priya, that works. Ghent first is confirmed. Could you send the calendar invites?\n\nMila', 'attachments': []}]}}
     private_tag = secrets.token_hex(16)
@@ -76,6 +84,15 @@ def shared(key):
     return {'m_team_priya': (priya, priya_threads), 'm_team_tomasz': (tomasz, tomasz_threads)}
 
 
+def extras(member):
+    """Beyond records and mail: Priya's rollout plan as a file, and Tomasz asking the admins to stop sharing his Work."""
+    if member == 'm_team_priya':
+        return [('file', {'name': 'rollout-plan.pdf', 'mime': 'application/pdf', 'data': sg.nc.b64(PLAN)}, {'tag': PLAN_TAG})]
+    if member == 'm_team_tomasz':
+        return [('ask', {'off': True, 'asked': ago(0, 2)}, {'tag': secrets.token_hex(16)})]
+    return []
+
+
 def blobs(network, fleet, me, key):
     """The teammates' blobs, sealed for this Machine with their own Machines' keys: a snapshot and their mail each."""
     out = []
@@ -83,7 +100,7 @@ def blobs(network, fleet, me, key):
         private = network.peer(member)
         base = int(time.time() * 1000)
         for n, (kind, body, extra) in enumerate([('snapshot', {'kv': None, 'records': records, 'threads': sorted(threads)}, {})]
-                                                + [('mail', t, {'tag': tag}) for tag, t in threads.items()]):
+                                                + [('mail', t, {'tag': tag}) for tag, t in threads.items()] + extras(member)):
             header = {'v': 1, 'fleet': fleet, 'from': member, 'id': secrets.token_hex(16), 'seq': base + n, 'kind': kind, 'at': sg.now(), 'to': [me], **extra}
             blob, _ = sg.make(private, header, body, {me: network.keys})
             out.append({'header': blob['header'], 'ct': blob['ct'], 'sig': blob['sig'], 'wrap': blob['wraps'][me], 'by': member})

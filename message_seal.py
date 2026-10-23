@@ -60,7 +60,8 @@ SEALED_KEY = 'mc1_sealed'
 PLAIN_METADATA = frozenset({'thread_id', 'from', 'to', 'labels', 'notification_key_hash', 'user_id', 'from_me',
                             'channel_id', 'chat_id', 'conversation_id'})
 # Text the app derives from messages: card text and the drafts behind it, edits, what a preparation's tools returned,
-# a review's own summary, what teammates' Machines asked and answered, a Claude Code or Codex job's brief and result, a task page's record (with its link's key), the weekly recap as sent and the lines it offers a choice on, the line a role or an organisation was read from, promises (what
+# a review's own summary, what teammates' Machines asked and answered, what they shared in the team's Graph (and the review's
+# line for each shared thread), a Claude Code or Codex job's brief and result, a task page's record (with its link's key), the weekly recap as sent and the lines it offers a choice on, the line a role or an organisation was read from, promises (what
 # and the note closing one), and the messages a profile, roles or skills run was given. JSON columns keep the named
 # keys in the clear. Not here, on purpose: columns the app matches in SQL, and what the Machine learned (facts, rules,
 # feedback, skills, profile, voices, roles), which support may read (docs/configuration.md).
@@ -71,6 +72,7 @@ DERIVED = {'suggestions': ('title', 'body', 'handled_hint', 'owner_words', 'titl
            'fleet_in': ('question', 'draft'), 'fleet_out': ('question', 'answer'), 'network_replies': ('body',),
            'task_pages': ('record',), 'projects': ('stage_reason', 'next_step'), 'project_moves': ('reason',),
            'recaps': ('text',), 'recap_items': ('line', 'data'),
+           'team_mail': ('body',), 'team_records': ('body',), 'team_files': ('data',), 'share_lines': ('line',),
            'agent_jobs': ('brief', 'asks', 'progress', 'summary', 'diff', 'files', 'error', 'answers')}
 DERIVED_JSON = (('action_jobs', 'payload', frozenset({'kind'})), ('suggestions', 'next_action', frozenset({'kind'})),
                 ('suggestions', 'outcome', frozenset({'state'})))
