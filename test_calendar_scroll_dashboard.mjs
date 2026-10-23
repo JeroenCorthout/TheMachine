@@ -40,7 +40,7 @@ const open=async(width,height,scheme='dark',hash='')=>{const mobile=width<600;
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  const page=await context.newPage();page.on('pageerror',e=>errors.push(width+': '+e.message));await page.goto(base+hash);return {context,page}};
 const toCal=async page=>{await page.locator('#task-'+cards[0].id).waitFor();await page.evaluate(()=>showTab('calendar'));await page.locator('#calendar-view [data-day]').first().waitFor();await page.waitForFunction(()=>document.querySelectorAll('#calendar-view .cal-item').length>2)};
-const view=page=>page.evaluate(()=>({hash:location.hash,range:document.querySelector('.cal-range')?.textContent,now:document.querySelector('.cal-today')?.classList.contains('now'),days:[...document.querySelectorAll('#calendar-view [data-day]')].map(e=>e.dataset.day),week:!!document.querySelector('.cal-week')}));
+const view=page=>page.evaluate(()=>({hash:location.hash,range:document.querySelector('.cal-range')?.textContent,now:document.querySelector('.cal-today')?.classList.contains('now'),days:[...document.querySelectorAll('#calendar-view [data-day]')].map(e=>e.dataset.day),week:!!document.querySelector('.cal-tg')}));
 const fits=(page,where)=>page.evaluate(()=>({page:document.documentElement.scrollWidth,vw:innerWidth})).then(s=>assert.ok(s.page<=s.vw,`${where}: wider than the screen ${JSON.stringify(s)}`));
 const headBottom=page=>page.evaluate(()=>document.querySelector('#page-head').getBoundingClientRect().bottom);
 const topOf=(page,k)=>page.evaluate(k=>document.querySelector(`#calendar-view [data-day="${k}"]`)?.getBoundingClientRect().top,k);
@@ -56,7 +56,7 @@ try{
   assert.deepEqual(r.days,['2026-10-19','2026-10-20','2026-10-21','2026-10-22','2026-10-23','2026-10-24','2026-10-25'],'seven days, Sunday 25 once');
   assert.deepEqual(r.spans,['26 Oct – 1 Nov 2026','2 – 8 Nov 2026','28 Dec 2026 – 3 Jan 2027','28 Sept – 4 Oct 2026']);
   // A shared link to that week opens it in Week: one ask, Monday midnight in summer time to Monday midnight in winter time
-  asks=[];await page.evaluate(()=>{location.hash='#calendar?view=week&date=2026-10-21'});await page.locator('.cal-week').waitFor();
+  asks=[];await page.evaluate(()=>{location.hash='#calendar?view=week&date=2026-10-21'});await page.locator('.cal-tg').waitFor();
   const v=await view(page);assert.equal(v.range,'19 – 25 Oct 2026');assert.deepEqual(v.days,r.days);
   assert.ok(asks.some(([a,b])=>a.toISOString()==='2026-10-18T22:00:00.000Z'&&b.toISOString()==='2026-10-25T23:00:00.000Z'),JSON.stringify(asks));
   await context.close()}
@@ -90,15 +90,15 @@ try{
   // Keys: w Week, → next week, k back, t this week, a Agenda
   // Week opens on the week in view: back at this week first
   await page.keyboard.press('t');await page.waitForFunction(k=>location.hash.endsWith(k),thisMon);
-  await page.keyboard.press('w');await page.locator('.cal-week').waitFor();v=await view(page);assert.equal(v.hash,'#calendar?view=week&date='+thisMon);assert.equal(v.days[0],thisMon);
+  await page.keyboard.press('w');await page.locator('.cal-tg').waitFor();v=await view(page);assert.equal(v.hash,'#calendar?view=week&date='+thisMon);assert.equal(v.days[0],thisMon);
   await page.keyboard.press('ArrowRight');await page.waitForFunction(k=>location.hash.endsWith(k),nextMon);v=await view(page);assert.equal(v.days[0],nextMon);assert.equal(v.days.length,7);
-  assert.equal(await page.locator('.cal-col.today').count(),0,'no today in next week');
+  assert.equal(await page.locator('.cal-tg-day.today').count(),0,'no today in next week');
   if(process.env.CALENDAR_SHOT)for(const scheme of ['dark','light']){await page.emulateMedia({colorScheme:scheme});await page.waitForTimeout(300);await page.screenshot({path:`${process.env.CALENDAR_SHOT}/week-1440-${scheme}-next.png`})}
   await page.keyboard.press('k');await page.keyboard.press('k');await page.waitForFunction(k=>location.hash.endsWith(k),lastMon);
-  await page.keyboard.press('t');await page.waitForFunction(k=>location.hash.endsWith(k),thisMon);assert.equal(await page.locator('.cal-col.today').count(),1);
+  await page.keyboard.press('t');await page.waitForFunction(k=>location.hash.endsWith(k),thisMon);assert.equal(await page.locator('.cal-tg-day.today').count(),1);
   await fits(page,'week 1440');
   await page.goBack();await page.waitForFunction(k=>location.hash.endsWith(k),lastMon);assert.equal((await view(page)).range,(await page.evaluate(k=>calSpan(calOf(k)),lastMon)));
-  await page.keyboard.press('a');await page.waitForFunction(()=>!document.querySelector('.cal-week'));
+  await page.keyboard.press('a');await page.waitForFunction(()=>!document.querySelector('.cal-tg'));
   // Typing in a field is never a shortcut
   await page.evaluate(()=>{const i=document.createElement('input');i.id='typing';document.querySelector('#calendar').prepend(i)});await page.locator('#typing').press('w');assert.equal((await view(page)).week,false);
   await context.close()}

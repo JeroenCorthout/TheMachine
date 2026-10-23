@@ -115,25 +115,25 @@ try{
   await page.goBack();await page.waitForFunction(()=>!document.querySelector('#calendar').hidden&&document.querySelector('#people').hidden);
   // The Week grid: the calendar week, Monday to Sunday, today marked; remembered after a reload; Agenda again
   await page.evaluate(()=>showTab('calendar'));await page.locator('[data-cal-go="0"]').click();await page.locator('[data-cal-mode="week"]').click();  // Week opens on the week in view
-  assert.equal(await page.locator('.cal-week .cal-col').count(),7);assert.match(await page.locator('.cal-col.today .cal-col-head').textContent(),/^Today\d+$/);
-  assert.match(await page.locator('.cal-col').first().locator('.cal-col-head').textContent(),/^(Mon|Today)\d+$/);
-  const wd=(new Date().getDay()+6)%7;assert.equal(await page.locator('.cal-week .cal-chip',{hasText:'Team offsite'}).count(),[3,4].filter(n=>wd+n<=6).length);
+  assert.equal(await page.locator('.cal-tg .cal-tg-day').count(),7);assert.match(await page.locator('.cal-tg-day.today').textContent(),/^Today\d+$/);
+  assert.match(await page.locator('.cal-tg-day').first().textContent(),/^(Mon|Today)\d+$/);
+  const wd=(new Date().getDay()+6)%7;assert.equal(await page.locator('.cal-tg-strip .cal-chip',{hasText:'Team offsite'}).count(),[3,4].filter(n=>wd+n<=6).length);
   assert.equal(await page.locator('#calendar-view .cal-block .cal-day span').first().textContent(),'Overdue');
   const w=await page.locator('main').evaluate(m=>m.getBoundingClientRect().width);assert.ok(w>1000,'the week gets a wider main area '+w);await fits(page,'week 1440');
   if(process.env.CALENDAR_SHOT){for(const scheme of ['dark','light']){await page.emulateMedia({colorScheme:scheme});await page.waitForTimeout(500);await page.screenshot({path:`${process.env.CALENDAR_SHOT}/calendar-1440-${scheme}-week.png`,fullPage:true})}await page.emulateMedia({colorScheme:'dark'})}
-  await page.reload();await page.waitForFunction(()=>!document.querySelector('#calendar').hidden);await showCal(page);assert.equal(await page.locator('.cal-week').count(),1,'Week is remembered');
-  await page.locator('[data-cal-mode="agenda"]').click();assert.equal(await page.locator('.cal-week').count(),0);
+  await page.reload();await page.waitForFunction(()=>!document.querySelector('#calendar').hidden);await showCal(page);assert.equal(await page.locator('.cal-tg').count(),1,'Week is remembered');
+  await page.locator('[data-cal-mode="agenda"]').click();assert.equal(await page.locator('.cal-tg').count(),0);
   if(process.env.CALENDAR_SHOT)for(const scheme of ['dark','light']){await page.emulateMedia({colorScheme:scheme});await page.waitForTimeout(500);await page.screenshot({path:`${process.env.CALENDAR_SHOT}/calendar-1440-${scheme}.png`,fullPage:true})}
   // The link: #calendar opens it
   await page.evaluate(()=>showTab('inbox'));await page.evaluate(()=>{location.hash='#calendar'});await page.waitForFunction(()=>!document.querySelector('#calendar').hidden);
   await context.close()}
- // Below 1024px: the row in the drawer, the agenda only (no toggle), and it fits
+ // Below 1024px: the row in the drawer, the agenda by default, and it fits
  for(const [width,height] of [[900,1000],[390,844],[360,780]]){for(const scheme of ['dark','light']){const {context,page}=await open(width,height,scheme);
   await page.evaluate(()=>drawerOpen());const row=page.locator('nav [data-tab="calendar"]');await row.waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('#app-side').getAnimations().length);
   if(process.env.CALENDAR_SHOT&&width<900)await page.screenshot({path:`${process.env.CALENDAR_SHOT}/calendar-${width}-${scheme}-drawer.png`});
   await row.click();await showCal(page);assert.equal(await page.evaluate(()=>document.documentElement.dataset.drawer||''),'','picking it closes the drawer');
-  assert.ok(!(await page.locator('.cal-mode').isVisible()),'no Week toggle at '+width);
-  assert.equal(await page.locator('.cal-week').count(),0);await fits(page,'agenda '+width);
+  assert.equal(await page.locator('.cal-mode [aria-pressed="true"]').textContent(),'Agenda','the agenda by default at '+width);
+  assert.equal(await page.locator('.cal-tg').count(),0);await fits(page,'agenda '+width);
   if(width<=390){const t=await page.locator('.cal-item .cal-title').first().evaluate(e=>getComputedStyle(e).textOverflow);assert.equal(t,'ellipsis')}
   // On a phone the meeting's card says so in its line
   if(width<=560)assert.match(await page.locator('a.cal-item',{hasText:'Pilot review'}).locator('.cal-sub').textContent(),/^Prep ready · /);
