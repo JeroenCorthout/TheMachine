@@ -200,3 +200,76 @@ class WhatsAppTransportTest(unittest.TestCase):
    with patch.object(n.subprocess,'run',return_value=ok({'messages':rows})) as run:self.assertEqual(t.reconcile(self.action,job),expected)
    self.assertIn('--read-only',run.call_args[0][0]);self.assertIn('--from-me',run.call_args[0][0])
 if __name__=='__main__':unittest.main()
+
+
+# A card from email whose owner says they talk to the person on WhatsApp (2026-10-23): the card switches to their existing
+# chat in the owner's WhatsApp account, with the normal review-and-send. The chat is looked up read-only; never a new
+# number, never an excluded chat, never sent without the owner's Send. wacli is always faked.
+from test_assistant import event
+class WhatsAppSwitch(unittest.TestCase):
+ row=ux.UX.row;decide=ux.UX.decide
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.store=a.Store(Path(self.tmp.name)/'events.sqlite')
+  self.store.commit_page('work',{},[event()])
+  self.sid=self.store.suggest('task','Arrange the installer','Ask them about the speakers.',[1])['id']
+  self.accounts=[{**WA,'exclude':[{'chats':['32471111111@s.whatsapp.net']}]},{'id':'work','email':'owner@example.com','service':'gmail','transport':'gog','boundary':'work:Example'}]
+  self.reads=[]
+ def app(self):
+  app=object.__new__(a.App);app.store=self.store;app.config={'accounts':self.accounts};return app
+ def wacli(self,chats):
+  def read(source,command):
+   self.reads.append(command)
+   if command[:2]==['chats','show']:
+    found=[c for c in chats if c['jid']==command[3]]
+    if not found:raise a.SourceError('whatsapp_source_unavailable')
+    return found[0]
+   if command[:2]==['chats','list']:return [c for c in chats if command[3].lower() in c['name'].lower()]
+   self.fail('only read-only chat lookups: '+str(command))
+  return patch.object(a.WhatsApp,'read',read)
+ def save(self,**draft):
+  action={k:v for k,v in {'kind':'whatsapp','label':'Send','account_id':WA['id'],'body':'Hi Sam! We’d like ceiling speakers put in. Could you help?',**draft}.items() if v is not None}
+  return self.app().action('prepare',{'suggestion_id':self.sid,'body':'Switched to WhatsApp.','next_action':action})
+ def test_switches_to_the_persons_existing_chat_by_name(self):
+  self.decide('accept')
+  with self.wacli([{'jid':CHAT,'kind':'dm','name':'Sam Lee'},{'jid':'120363000000000000@g.us','kind':'group','name':'Sam’s party'}]):self.save(to_name='Sam')
+  action=self.row()['next_action']
+  self.assertEqual((action['kind'],action['chat_id'],action['to_name'],action['account_id']),('whatsapp',CHAT,'Sam Lee',WA['id']))
+  self.assertEqual(n.preview(action),'WhatsApp message to Sam Lee\n\nHi Sam! We’d like ceiling speakers put in. Could you help?')
+  self.assertEqual(self.row()['status'],'prepared')
+  self.assertTrue(all(c[:2] in (['chats','show'],['chats','list']) for c in self.reads))
+  with self.store.connect() as db:self.assertIsNone(db.execute('SELECT 1 FROM action_jobs').fetchone())  # nothing sent: it waits for Send
+  # The owner's Send sends it once, into that chat (a fake transport)
+  self.app().action('confirm_action',{'suggestion_id':self.sid,'revision':action['revision'],'approval_id':'owner-approval'},owner_dashboard=True)
+  sent=[];T=type('T',(),{'preflight':lambda s,x:None,'send':lambda s,x,j:(sent.append(x),{'message_id':'whatsapp:3EB0AA'})[1],'reconcile':lambda s,x,j:{}})
+  self.app().action_step(T());self.app().action_step(T())
+  self.assertEqual([(x['chat_id'],x['body']) for x in sent],[(CHAT,'Hi Sam! We’d like ceiling speakers put in. Could you help?')])
+ def test_switches_by_chat_id_from_the_account_or_its_messages(self):
+  self.decide('accept')
+  with self.wacli([{'jid':CHAT,'kind':'dm','name':'Sam Lee'}]):self.save(chat_id=CHAT)
+  self.assertEqual(self.row()['next_action']['to_name'],'Sam Lee')
+  # A chat the account already synced needs no lookup
+  raw=message();raw.update(ChatJID='32472222222@s.whatsapp.net',ChatName='Robin',SenderJID='32472222222@s.whatsapp.net')
+  self.store.commit_page(WA['id'],{},[a.whatsapp_event(WA,raw)]);self.reads.clear()
+  with self.wacli([]):self.save(chat_id='32472222222@s.whatsapp.net')
+  self.assertEqual((self.row()['next_action']['to_name'],self.reads),('Robin',[]))
+ def test_never_a_new_number_an_excluded_chat_or_a_guess(self):
+  self.decide('accept')
+  chats=[{'jid':CHAT,'kind':'dm','name':'Sam Lee'},{'jid':'32473333333@s.whatsapp.net','kind':'dm','name':'Sam Peters'},
+         {'jid':'32471111111@s.whatsapp.net','kind':'dm','name':'Quinn'}]
+  with self.wacli(chats):
+   for bad,why in (({'chat_id':'32479999999@s.whatsapp.net'},'existing WhatsApp chat'),({'chat_id':'32471111111@s.whatsapp.net'},'existing WhatsApp chat'),
+                   ({'to_name':'Quinn'},'No WhatsApp chat with Quinn'),({'to_name':'Alex'},'No WhatsApp chat with Alex'),
+                   ({'to_name':'Sam'},'More than one WhatsApp chat matches'),({'chat_id':'+32470000000'},'existing WhatsApp chat'),
+                   ({'account_id':'work','chat_id':CHAT},'WhatsApp accounts'),({},'existing WhatsApp chat')):
+    with self.assertRaisesRegex(ValueError,why,msg=bad):self.save(**bad)
+  self.assertNotEqual(self.row()['status'],'prepared')
+ def test_send_now_still_never_sends_a_switched_chat(self):
+  self.decide('accept')
+  with self.wacli([{'jid':CHAT,'kind':'dm','name':'Sam Lee'}]),self.assertRaises(ValueError):
+   self.app().action('prepare',{'suggestion_id':self.sid,'body':'Sent.','send_now':True,
+                                'next_action':{'kind':'whatsapp','account_id':WA['id'],'to_name':'Sam','body':'Hi'}})
+  with self.store.connect() as db:self.assertIsNone(db.execute('SELECT 1 FROM action_jobs').fetchone())
+ def test_without_a_readable_whatsapp_it_says_what_to_do(self):
+  self.decide('accept')
+  def down(source,command):raise a.SourceError('whatsapp_source_unavailable')
+  with patch.object(a.WhatsApp,'read',down),self.assertRaisesRegex(ValueError,'send it on WhatsApp themselves'):self.save(to_name='Sam')

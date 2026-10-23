@@ -106,7 +106,7 @@ Reply to a post from this task's x.mention evidence with `{kind:x,label:Reply on
 
 ### WhatsApp message
 
-Reply in a chat from the task's whatsapp.message evidence: `{kind:whatsapp,label:Send reply,account_id:<task WhatsApp account>,chat_id:<its metadata.chat_id>,body:<message>}`. Plain text, no media, max 4000 characters, short, the owner's WhatsApp voice (job message, else USER.md), no signature. Only existing chats, never a new number. It goes out only after their Send now on the card; never send_now. Intercom alike: `{kind:intercom,account_id,conversation_id:<metadata.conversation_id>,body}`; if refused, use the body.
+`{kind:whatsapp,label:Send reply,account_id:<WhatsApp account>,chat_id:<task's metadata.chat_id>,body}`. If the owner talks to them on WhatsApp, switch from any channel: to_name:<name> instead of chat_id finds their chat. Short plain text in their WhatsApp voice. Existing chats only; never send_now. A Machine limit is never a question: with no chat, body:<the text>, needs:<what they can do>. Intercom alike: `{kind:intercom,account_id,conversation_id:<metadata.conversation_id>,body}`; if refused, use the body.
 
 ### Slack message, and handing a task to someone
 

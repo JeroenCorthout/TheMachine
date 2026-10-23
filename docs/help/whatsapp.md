@@ -14,6 +14,8 @@ Your WhatsApp chats, as a linked device of your phone's WhatsApp, like WhatsApp 
 
 A text into a chat that already exists, only after you approve it on the card.
 
+If a card came in by email but you talk to that person on WhatsApp, say so in the card's chat. The Machine finds your existing chat with them and switches the draft to WhatsApp, for you to review and send. It never starts a new chat.
+
 ## Connect it
 
 On a hosted Machine:

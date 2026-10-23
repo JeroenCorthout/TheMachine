@@ -441,8 +441,9 @@ class SourceError(Exception):
 
 # Owner decisions/feedback. Only the bridge's verified Telegram handlers and the
 # authenticated dashboard may record them; never the local CLI the agent can run.
-CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
+                   'connect_signin', 'connect_signin_state')
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'graph_same', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -966,6 +967,47 @@ def gog_read(config, account, api, version, method, params, scope):
         raise SourceError('invalid_response')
     return data
 
+# Contact photos from the owner's Google contacts and Workspace directory, with the scopes the gog sign-in already has
+# (a hosted sign-in through the broker has no Contacts scope, so it is never asked). Read only, once a day per account.
+GOOGLE_PHOTO_LISTS = (
+    ('people.connections.list', {'resourceName': 'people/me', 'pageSize': 1000, 'personFields': 'emailAddresses,phoneNumbers,photos'},
+     'https://www.googleapis.com/auth/contacts', 'connections'),
+    ('people.listDirectoryPeople', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos', 'sources': 'DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE'},
+     'https://www.googleapis.com/auth/directory.readonly', 'people'),
+    ('otherContacts.list', {'pageSize': 1000, 'readMask': 'emailAddresses,phoneNumbers,photos'},
+     'https://www.googleapis.com/auth/contacts.other.readonly', 'otherContacts'))
+GOOGLE_PHOTO_PAGES = 20
+
+
+def google_photo_offers(config, account, read=None):
+    """(identifiers, link, chosen) for each of the account's contacts with a real photo. A list the sign-in can't read
+    is skipped."""
+    read = read or gog_read
+    offers = []
+    for method, params, scope, key in GOOGLE_PHOTO_LISTS:
+        token = None
+        for _ in range(GOOGLE_PHOTO_PAGES):
+            try:
+                page = read(config, account, 'people', 'v1', method, {**params, **({'pageToken': token} if token else {})}, scope)
+            except SourceError:
+                break
+            offers += [o for o in (enrichment.google_photo(p) for p in page.get(key) or [] if isinstance(p, dict)) if o]
+            token = page.get('nextPageToken')
+            if not token:
+                break
+    return offers
+
+
+def google_photo_accounts(config):
+    """The owner's own Google sign-ins through gog, once per address (never one shared from a Fleet)."""
+    seen = {}
+    for account in config.get('accounts', []):
+        if account.get('service', 'gmail') in ('gmail', 'calendar') and account.get('transport') == 'gog' and account.get('email') \
+                and not account.get('shared'):
+            seen.setdefault(account['email'].lower(), account)
+    return list(seen.values())
+
+
 # Outlook mail and calendar: they flow through the same sync, cards and sends as Gmail and Google Calendar, and their
 # messages are stored with the same 'gmail.message' kind (it means "an email" everywhere in the app).
 MICROSOFT_SERVICES = ('outlook', 'outlook_calendar')
@@ -1364,7 +1406,7 @@ class WhatsApp:
         self.config, self.account = config, account
 
     def read(self, command):
-        if command[:2] not in (['auth', 'status'], ['messages', 'list']):
+        if command[:2] not in (['auth', 'status'], ['messages', 'list'], ['chats', 'show'], ['chats', 'list']):
             raise SourceError('unsupported_whatsapp_method')
         env = os.environ.copy()
         env['WACLI_READONLY'] = '1'
@@ -1374,13 +1416,15 @@ class WhatsApp:
             result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=20)
         except subprocess.TimeoutExpired:
             raise SourceError('whatsapp_read_timeout') from None
+        except OSError:
+            raise SourceError('whatsapp_source_unavailable') from None
         if result.returncode:
             raise SourceError('whatsapp_source_unavailable')
         try:
             data = json.loads(result.stdout)
         except ValueError:
             raise SourceError('whatsapp_invalid_json') from None
-        if data.get('success') is not True or data.get('error') is not None or not isinstance(data.get('data'), dict):
+        if data.get('success') is not True or data.get('error') is not None or not isinstance(data.get('data'), list if command[:2] == ['chats', 'list'] else dict):
             raise SourceError('whatsapp_invalid_response')
         return data['data']
 
@@ -1391,6 +1435,62 @@ class WhatsApp:
                 or hashlib.sha256(linked.encode()).hexdigest() != self.account['identity_sha256']):
             raise SourceError('account_identity_mismatch')
         return data
+
+
+WHATSAPP_JID = r'(?:[0-9]+(?::[0-9]+)?@(?:s\.whatsapp\.net|lid)|[0-9]+(?:-[0-9]+)?@g\.us)'
+
+
+def owner_whatsapp_chats(config, db, raw, task_chats, source=None):
+    """The chats a prepare's WhatsApp messages go to that are not from the task's own messages: the person's
+    existing chat in the owner's own WhatsApp account, for a card that switches to WhatsApp because that is
+    where the owner talks to them. A chat_id is checked against the account's synced messages, else its chat
+    list (read-only); a to_name alone is looked up there and must match one chat. Never a new number, never a
+    chat the owner excluded. Returns {chat_id: {account_id, name, switched}} and fills in the chat_id it found."""
+    found = {}
+    for item in raw if isinstance(raw, list) else [raw]:
+        if not isinstance(item, dict) or item.get('kind') != 'whatsapp' or str(item.get('chat_id') or '') in task_chats:
+            continue
+        account = next((a for a in config['accounts'] if a['id'] == item.get('account_id') and a.get('service') == 'whatsapp'), None)
+        if not account:
+            continue
+        excluded = {c for r in account.get('exclude') or [] if set(r) == {'chats'} for c in r['chats']}
+        reader = source(config, account) if source else WhatsApp(config, account)
+        chat_id, name = str(item.get('chat_id') or ''), None
+        if chat_id:
+            if not re.fullmatch(WHATSAPP_JID, chat_id) or chat_id in excluded:
+                continue
+            row = db.execute("SELECT metadata FROM events WHERE kind='whatsapp.message' AND account_id=? AND json_extract(metadata,'$.chat_id')=? "
+                             'ORDER BY occurred_at DESC LIMIT 1', (account['id'], chat_id)).fetchone()
+            if row:
+                name = json.loads(row['metadata']).get('chat_name')
+            else:
+                try:
+                    chat = reader.read(['chats', 'show', '--jid', chat_id])
+                except SourceError:
+                    continue
+                if chat.get('jid') != chat_id:
+                    continue
+                name = chat.get('name')
+        elif isinstance(item.get('to_name'), str) and 2 <= len(item['to_name'].strip()) <= 100:
+            try:
+                chats = reader.read(['chats', 'list', '--query', item['to_name'].strip(), '--limit', '10'])
+            except SourceError:
+                raise ValueError('WhatsApp can’t be read right now, so I can’t find the chat. Put the message in the body and say '
+                                 'in one line that they can send it on WhatsApp themselves.') from None
+            chats = [c for c in chats if isinstance(c, dict) and isinstance(c.get('jid'), str) and re.fullmatch(WHATSAPP_JID, c['jid'])
+                     and c['jid'] not in excluded] if isinstance(chats, list) else []
+            people = [c for c in chats if c.get('kind') == 'dm'] or chats
+            if len(people) != 1:
+                raise ValueError(('More than one WhatsApp chat matches: ' + '; '.join(f"{c.get('name') or 'chat'} (chat_id {c['jid']})" for c in people[:5])
+                                  + '. Give the right chat_id.') if people else
+                                 'No WhatsApp chat with ' + item['to_name'].strip() + ' in this account. Never start a new one: put the message '
+                                 'in the body and say in one line that they can send it on WhatsApp themselves.')
+            chat_id, name = people[0]['jid'], people[0].get('name')
+            item['chat_id'] = chat_id
+        else:
+            continue
+        found[chat_id] = {'account_id': account['id'], 'name': name or 'WhatsApp chat', 'switched': True}
+    return found
 
 
 def whatsapp_event(account, raw):
@@ -3339,6 +3439,31 @@ class Store:
                 lines.append(f"- {r['size']} signals" + (f" with {', '.join(people)}" if people else '') + ': ' + ' / '.join(f'"{t}"' for t in titles)
                              + f" (event_ids {', '.join(map(str, ids[:12]))}{', …' if len(ids) > 12 else ''})")
                 db.execute('INSERT OR REPLACE INTO graph_offers(key,size,run_id,offered_at) VALUES(?,?,?,?)', (r['key'], r['size'], run_id, now()))
+        return '\n'.join(lines)
+
+    def boards_text(self, run_id, every_hours=24, limit=60):
+        """Open projects on no board, for one review a day to look over for a board suggestion: only when no
+        suggestion is open and three or more are on no board. A review that didn't finish gets them again."""
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM board_suggestions WHERE state='open'").fetchone():
+                return ''
+            last = db.execute('SELECT run_id,offered_at FROM board_offers WHERE id=1').fetchone()
+            since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=every_hours)).isoformat()
+            if last and last['run_id'] != run_id and last['offered_at'] > since and not db.execute(
+                    "SELECT 1 FROM review_runs WHERE run_id=? AND finished_at IS NOT NULL AND status<>'ok'", (last['run_id'],)).fetchone():
+                return ''
+            rows = db.execute('SELECT id,name FROM projects WHERE board_id IS NULL AND closed_at IS NULL ORDER BY created_at DESC LIMIT ?', (limit,)).fetchall()
+            if len(rows) < 3:
+                return ''
+            lines = []
+            for r in rows:
+                people = [p['name'] for p in db.execute("SELECT n.name FROM graph_links l JOIN graph_nodes n ON n.id=l.a WHERE l.b=? AND l.kind='project' "
+                                                        "ORDER BY l.strength DESC LIMIT 2", ('project:' + str(r['id']),))]
+                lines.append(f"- {r['name']} (project:{r['id']})" + (f" with {', '.join(people)}" if people else ''))
+            said = [r['name'] for r in db.execute('SELECT name FROM board_suggestions ORDER BY id DESC LIMIT 30')]
+            if said:
+                lines.append('Suggested before (don\'t suggest these again): ' + ', '.join(said))
+            db.execute('INSERT OR REPLACE INTO board_offers(id,run_id,offered_at) VALUES(1,?,?)', (run_id, now()))
         return '\n'.join(lines)
 
     def role_text(self, run_id, limit=5):
@@ -5812,8 +5937,9 @@ class Store:
                 raise ValueError('Preparation cancelled or replaced')
             if note_kind:
                 self.tag_note(suggestion_id, note_kind, db)
+            # An empty list says the run asks nothing (ask_blocked); NULL is a blocker from before runs named questions.
             db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,questions=?,updated_at=? WHERE suggestion_id=?",
-                       (reason,(details or '').strip() or None,encoded(questions) if questions else None,now(),suggestion_id))
+                       (reason,(details or '').strip() or None,encoded(questions),now(),suggestion_id))
             db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(suggestion_id,))
         return {'status':'blocked','reason':reason}
 
@@ -6072,7 +6198,8 @@ class Store:
                 job=jobs.get(suggestion['id'])
                 if job: suggestion.update(preparation_status=job['status'],preparation_reason=job['reason'],preparation_error=job['error'],
                                           preparation_details=job['details'],preparation_started_at=job['started_at'],preparation_retried=job['auto_retries']>0,
-                                          preparation_questions=blocker_questions(job.get('questions')),preparation_cause=job.get('cause'))
+                                          preparation_questions=blocker_questions(job.get('questions')),preparation_no_questions=job.get('questions')=='[]',
+                                          preparation_cause=job.get('cause'))
                 suggestion.update(self.suggestion_result(suggestion, db))
             counts = db.execute('SELECT count(*) total,sum(analyzed_version<version) pending,sum(analyzed_version=0) first_review,coalesce(sum(analyzed_version<version AND deferrals>=?),0) set_aside FROM events', (SET_ASIDE_AFTER,)).fetchone()
             result['review_health'] = {**dict(counts), 'last_completed': db.execute("SELECT max(finished_at) FROM analyses WHERE status='complete'").fetchone()[0]}
@@ -6652,6 +6779,10 @@ def remember_slack_names(store, source, events, channels=(), per_page=3):
         profile = user.get('profile') or {}
         name = None if user.get('is_bot') else (profile.get('real_name') or profile.get('display_name') or user.get('real_name'))
         store.remember_name(identifier, name and str(name)[:200], None if user.get('is_bot') else str(profile.get('email') or '').lower()[:320] or None)
+        offer = enrichment.slack_photo({**user, 'id': user.get('id') or identifier.split(':', 1)[1]})
+        if offer:
+            with store.connect() as db:
+                enrichment.offer_photos(db, [offer], 'slack', now(), known_only=False)
 
 
 GATEWAY_SIGNALS = (
@@ -6844,21 +6975,31 @@ def code_version(root=APP_ROOT):
 
 
 SOURCE_REPO = 'https://github.com/Salesflare/TheMachine'
+RELEASE_TAG = re.compile(r'release-\d{8}-\d{4}')
 _SOURCE_URL = {}
 
 
 def source_url(root=APP_ROOT):
-    """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else its commit, else the repo."""
+    """Where this Machine's code can be read (AGPL-3.0 section 13): the release tag it runs, else the latest release its
+    code contains, else the release its last port names ("(OSS #12, release-…)"), else the repo. Never a local commit,
+    which GitHub doesn't have."""
     if 'url' in _SOURCE_URL and _SOURCE_URL['at'] > time.monotonic() - 600:
         return _SOURCE_URL['url']
+    git = lambda *args: subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=10)
     ref = None
     try:
-        tag = subprocess.run(['git', '-C', str(root), 'describe', '--tags', '--exact-match', 'HEAD'], capture_output=True, text=True, timeout=10)
-        ref = tag.stdout.strip() if tag.returncode == 0 else None
+        for args in (('describe', '--tags', '--exact-match', '--match', 'release-*', 'HEAD'), ('describe', '--tags', '--abbrev=0', '--match', 'release-*', 'HEAD')):
+            found = git(*args)
+            if found.returncode == 0 and RELEASE_TAG.fullmatch(found.stdout.strip()):
+                ref = found.stdout.strip()
+                break
+        if not ref:
+            log = git('log', '-200', '--format=%s')
+            ported = RELEASE_TAG.search(log.stdout) if log.returncode == 0 else None
+            ref = ported and ported.group(0)
     except (OSError, subprocess.TimeoutExpired):
         pass
-    ref = ref or code_version(root)
-    url = f'{SOURCE_REPO}/tree/{urllib.parse.quote(ref, safe="")}' if ref else SOURCE_REPO
+    url = f'{SOURCE_REPO}/tree/{ref}' if ref else SOURCE_REPO
     _SOURCE_URL.update(at=time.monotonic(), url=url)
     return url
 
@@ -7888,7 +8029,7 @@ def chat_prompt(job, config=None):
     return f'''The owner wrote to you in the chat of suggestion {sid}. Their message is the latest Change note (latest_feedback, source dashboard), and it is their authorization as before. This is a preparation task: answer it, or do what it asks, under the preparation rules and the instructions earlier in this session (if they are no longer in context, read tools/personal-assistant/PREPARATION.md). A question about the thread, the people or the context is answered from the evidence (events, preparation_history, memory), and the card's current draft and next_actions stay as they are unless the message asks to change them. When you change a draft, the body says concretely what changed. Use send_now only when this message approves sending a draft they already saw on the card, unchanged; a draft you write or change now is saved without it, for them to read and Send. Preparation job ID: {j}.
 - Browser lease owner: assistant-{j[:8]} (python3 {browser_lease_script(config)} claim --owner assistant-{j[:8]} --minutes 30 --wait 10).
 - Attachments folder: {WORKSPACE}/data/assistant-attachments/{j}/
-- Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<your reply or result, short>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it.'''
+- Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<your reply or result, short>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it. When they say they talk to this person on another channel (WhatsApp), switch the draft to it as PREPARATION.md says; a limit of The Machine is never a question for them. When they say the person doesn't know about it yet, the message first says what it is about.'''
 
 
 # What a review's own tool calls say it is doing, in the owner's words. Only names and card titles (what a card already
@@ -8349,13 +8490,17 @@ def blocker_questions(value, strict=False):
 
 
 def ask_blocked(row):
-    """A run that stopped to ask the owner: a blocker it wrote itself (no error of the service's own), not a sign-in.
-    One that names its questions counts even after a browser step; otherwise not while it waits in the browser. Same
-    rule as askBlocked() in dashboard.html."""
+    """A run that stopped to ask the owner: a blocker it wrote itself (no error of the service's own), not a sign-in,
+    with the questions it asks. Those count even after a browser step. A run that named no questions (saved as an
+    empty list) asks nothing: it says what stopped it (a limit, a failure), and the card says it is stuck and offers
+    Try again, never Answer. A blocker from before runs named their questions (none saved at all) asks with its reason,
+    unless it waits in the browser. Same rule as askBlocked() in dashboard.html."""
     reason = str(row.get('preparation_reason') or '').strip()
     if row.get('preparation_status') != 'blocked' or not reason or row.get('preparation_error') or retry_label(reason) == 'Continue':
         return False
-    return bool(blocker_questions(row.get('preparation_questions'))) or not row.get('preparation_browser')
+    if blocker_questions(row.get('preparation_questions')):
+        return True
+    return not (row.get('preparation_questions') == '[]' or row.get('preparation_no_questions') or row.get('preparation_browser'))
 
 
 def ask_text(row):
@@ -8925,7 +9070,7 @@ def telegram(config, row, action, message_id=None):
         ready=row['status']=='prepared'
         root='https://'+config['dashboard_host']+config.get('dashboard_path','/')
         signin=not ready and (row.get('preparation_browser') or {}).get('signin_url')
-        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ')+'**'+title+'**'
+        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if ask_blocked(row) or row.get('preparation_browser') else 'Stuck: ')+'**'+title+'**'
         message+='\n\n[View '+('result' if ready else 'task')+']('+root+'#result='+row['id']+')'
         # A sign-in blocker opens the dashboard's sign-in for this task; once in, the task carries on by itself.
         blocks=[{'type':'buttons','buttons':[{'label':'Sign in','action':{'type':'url','url':signin}}]}] if signin else []
@@ -9258,6 +9403,7 @@ For this job:
 - When the card's title no longer says where things stand after this result (the situation changed, not just the wording), add title=<a new short title for now, under 90 characters>; otherwise leave title out.
 - When latest_feedback is a Change note, also give note_kind: style (how it was written), fact (something you didn't know), continue (keep going or finish the job) or new_ask (something else to do). A style note that holds beyond this card (how they write on a channel or with this kind of person: length, tone, greeting, sign-off, language, capitals, punctuation, links, formatting; "always…", "next time…", or what they asked on an earlier card) updates that channel's voice: assistant_signals remember_fact args kind=voice, channel=<the channel it is about: Email, Slack, WhatsApp, LinkedIn, X DM, another channel's name, or All when it holds everywhere>, text=<that channel's whole voice block (up to {VOICE_LINES} short lines, at most {VOICE_CHARS} characters): the current block with the note worked in, everything else kept, only what it contradicts dropped>, decision_id=<that note's decision>. How a kind of task is done (what to include, where things go) is a draft rule instead: remember_fact kind=draft, text=<the rule, general>. A fact note that holds beyond this card goes in remember_fact as a fact.
 - When the owner's note means they want this task itself back later (remind me about it next week, later, on Tuesday), that is this card's snooze, not a reminder: save with outcome:'snoozed' and snooze_until:<their local date and time, e.g. 2026-10-27T09:00, or a date alone for their morning>, and a one-line body. The card leaves their list and comes back then. Do not also add an automation, cron job or reminder for it. A separate reminder about something else, or a recurring one, stays an automation. Their time zone is {getattr(local_tz(),'key','UTC')}; it is now {dt.datetime.fromisoformat(now()).astimezone(local_tz()).strftime('%a %Y-%m-%d %H:%M')} there.
+- A first message to someone who doesn't know about it yet says what it is about before it asks.
 - Or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason=<one plain sentence>, details=<technical specifics>. Block only on what you truly can't know (their first-hand notes, a fact only they have, a call with no sensible default); a minor judgment call with an obvious sensible default you make yourself and name in one line of the result. When only the owner can unblock it, also give questions=[{{question:<one short plain question>, options:[<2-4 short choices, only when it is a clear choice>]}}] (at most 3). Each question must make sense on its own to someone who hasn't seen your work: plain words, what it is about and why it matters, no jargon or internal terms, e.g. {{question:'What did you notice when you tried OnePageCRM? A few lines on what you tried and what stood out are enough.'}}. The card shows them with quick picks and an Answer box. No paths, IDs or tool names in reason or questions.''' + owner_details(config) + (f'''
 
 Facts the owner told you earlier that bear on this card (true unless they say otherwise now):
@@ -9825,13 +9971,13 @@ Goal: record where people work when one of their sources says it, so the Graph t
 Do not set roles, send messages, change files or do anything else. End with exactly NO_REPLY.'''
 
 
-def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits=''):
+def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards=''):
     return f'''This is a signal review started by the personal-assistant service (review run {run_id}). It is not a chat with the owner and not a preparation task.
 The assistant instructions (tools/personal-assistant/AGENTS.md) and the owner's profile (USER.md) are included in this turn's context; follow the "Reviewing signals" section. Don't re-read those files.
 With the assistant_signals tool: call status, then ONE begin_analysis with account_ids {json.dumps(accounts)} and limit 120. The reply is paged: read every page with analysis_page before finishing, including next_row_offset continuations on the same page. Where body_clipped matters, read the rest with events (the account, event_ids and body_offset). Events replies contain events and remaining_event_ids; read the remaining IDs with the same accounts. Follow body_next_offset to the end of long bodies.
 Save only genuinely useful, distinct suggestions with suggest; the service delivers them. A card's agent_work in status is what Claude Code or Codex did (or is doing) on it, the latest truth of what was done: when you update a card, start from there and never offer work it reports done as the next step. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
-Boards: projects of one kind (partner listings, hires, onboardings), one project per counterpart, stand in stages on boards the owner saved; begin_analysis boards lists them with each project's stage and the board's about (which projects belong). When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new project that fits a board's about goes on it the same way. A board's to_sort are projects the owner put on it: place each with graph project, board, stage, event_id (its message that shows where it stands) and reason. Only the owner makes boards: when off_boards projects has three or more open projects of the same kind of work, each with its own counterpart, and none of off_boards suggested fits, suggest one board once with graph suggest_board {{"name", "stages", "about", "projects", "reason"}}: stages that fit how that kind of work goes, in order (partner listings: Contacted, Agreed, In review, Live; hiring: Sourced, Screening, Interviews, Offer, Hired), about one sentence on which projects belong. Judge the kind from what the projects are, not from words in their names. The owner's own move stands until a newer message changes things.
+Boards: projects of one kind (partner listings, hires, onboardings), one project per counterpart, stand in stages on boards the owner saved; begin_analysis boards lists them with each project's stage and the board's about (which projects belong). When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new project that fits a board's about goes on it the same way. A board's to_sort are projects the owner put on it: place each with graph project, board, stage, event_id (its message that shows where it stands) and reason. Only the owner makes boards; a review suggests one, once, from "Boards to suggest" below with graph suggest_board {{"name", "stages", "about", "projects", "reason"}}: stages that fit how that kind of work goes, in order (partner listings: Contacted, Agreed, In review, Live; hiring: Sourced, Screening, Interviews, Offer, Hired), about one sentence on which projects belong. Judge the kind from what the projects are, not from words in their names. The owner's own move stands until a newer message changes things.
 Team: when begin_analysis lists team (Work messages, shared with the owner's Work Fleet by default), add finish_analysis team ([{{"event_id", "share", "line"}}]) for each of those threads, judged by what the conversation is, never by words in it: client (someone outside the company, about work with them: the whole thread goes to the teammates), sensitive (about a client but private to the people on it: a personal matter, health, a dispute about one person, something confidential to one person; teammates see only that it exists), internal (only colleagues) or personal (the owner's own life, not work; never shared). line is one short line of what happened, in your own words ("Lee asked for the renewal quote"), never quoted text. When unsure between client and sensitive, choose sensitive. The owner's own Team or Only you always wins.
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
@@ -9856,6 +10002,9 @@ Follow-up splits waiting for the owner to send, with the notes of their meeting.
 
 Possibly one piece of work nobody named: threads that read alike and share people. If one is a deal, hire, launch, case or other ongoing work, name it with graph (project and its event_ids); if not, skip it without comment.
 {unnamed}''' if unnamed else '') + (f'''
+
+Boards to suggest, once a day: the open projects on no board, with the people they're with. Look them over before finish_analysis. When three or more are the same kind of work, each with its own counterpart (partner listings, hires, customer onboardings, evaluations), suggest one board for them with graph suggest_board, as in Boards above. Judge the kind from what the projects are, not the words in their names. If no group fits, skip it without comment.
+{boards}''' if boards else '') + (f'''
 
 Who they are to the owner: people with no role yet (those on open cards matter now). For each, open graph with its node_id and read enough of their messages (events, search) to see what they are to the owner, in a few words from the owner's side ("cofounder", "accountant", "investor", "customer at Globex", "sister"; "automated sender" only for a tool or newsletter with no person behind it, not for someone whose software sends their mail). Be as specific as the messages allow: their job or title, not just "colleague", and leave out the owner's own company name. Set it with graph node_id, role, event_id (the message that shows it) and quote (a short line copied from it) when the messages show it: a title or signature, an introduction, how they talk about each other, what they do together. Hints say where someone appears, not what they are: use them only together with what the messages show. When the messages don't make it clear, leave it; a wrong role is worse than none. Organisations get a role the same way (node_id org:…); when an organisation's mail is only an email warm-up tool's traffic (templated exchanges with no real conversation behind them), set graph node_id org:… with warmup true and an event_id instead. When messages show how two people are related, add it with graph node_id, related_to and relation ("assistant of", "introduced by"). {ORG_STEP}
 {roles}''' if roles else '') + (f'''
@@ -10032,6 +10181,7 @@ class App:
             # Shared connectors (shared_connectors.py): kept in config.json, checked with the connector's own profile read
             self.fleet.save_config = self.fleet_save_config
             self.fleet.connector_profile = self.shared_connector_profile
+            self.fleet.connect_delivered = self.fleet_connect_delivered  # Sign in with Intercom for this Machine (fleet.py)
         # Skills (skills.py): the owner's how-tos, written to the OpenClaw workspace; shared ones come in through the Fleet.
         self.skills = skills.Skills(self.store.connect, config.get('openclaw_workspace') or WORKSPACE, self.fleet, config=config)
         self.skills.finder = self.skills_find_start
@@ -10548,7 +10698,6 @@ class App:
                 with self.store.connect() as db:
                     result['projects'] = graph.active_projects(db)  # reuse these names in finish_analysis and suggest
                     result['boards'] = graph.boards_brief(db)  # projects of one kind in stages, moved with finish_analysis stages
-                    result['off_boards'] = graph.off_boards(db)  # projects on no board, for a board suggestion (graph suggest_board)
                 team = self.team_accounts()
                 if team:  # Work messages the Shared Graph needs a call on (finish_analysis team)
                     with self.store.connect() as db:
@@ -10638,6 +10787,8 @@ class App:
                 intercom_conversations={m['conversation_id']:{'account_id':r[0],'name':m.get('from_name') or m.get('from') or 'Intercom conversation'} for r in db.execute(
                     "SELECT e.account_id,e.metadata FROM events e JOIN json_each(?) ids ON ids.value=e.id WHERE e.kind='intercom.conversation' ORDER BY e.occurred_at",(row['event_ids'],))
                     for m in (json.loads(r[1]),) if m.get('conversation_id')}
+                # The owner talks to this person on WhatsApp although the task came in another way: their existing chat.
+                whatsapp_chats.update(owner_whatsapp_chats(self.config,db,args.get('next_actions',args.get('next_action')),whatsapp_chats))
             action=next_actions.validate(args.get('next_actions',args.get('next_action')),self.config,json.loads(row['account_ids']),options,threads,x_threads,whatsapp_chats,intercom_conversations)
             for item in next_actions.actions(action):
                 if item['kind']=='handoff' and not (getattr(self,'fleet',None) and self.fleet.teammate(item)):
@@ -10894,6 +11045,11 @@ class App:
             if not owner_dashboard:
                 raise ValueError('Only the owner undoes a warm-up domain here, on the dashboard; reviews use graph with warmup')
             return self.graph_action({'node_id': args.get('domain') or args.get('node_id'), 'warmup': args.get('warmup') is True}, source='owner')
+        if name == 'graph_same':  # Same person? Merge, or Not the same (which also undoes a merge)
+            if not owner_dashboard:
+                raise ValueError('Only the owner merges people here, on the dashboard; reviews use graph with merge or different')
+            pair = [str(args.get('a') or ''), str(args.get('b') or '')]
+            return self.graph_action({('merge' if args.get('same') is True else 'different'): pair}, source='owner')
         if name == 'graph_person_delete':
             if not owner_dashboard:
                 raise ValueError('Only the owner deletes someone permanently, on their page in the dashboard')
@@ -12218,12 +12374,33 @@ class App:
         with lock:
             for key in [k for k, v in sessions.items() if v['state'] != 'running' and time.monotonic() - v['at'] > 1800]:
                 sessions.pop(key)
-        if name == 'connect_sources':
-            manage = str(self.config.get('manage_url') or '')
-            return {'sources': onboarding.catalog(self.config), 'manage_url': manage if manage.startswith('https://') else None,
-                    'saveable': bool(getattr(self, 'config_path', None))}
         manage = str(self.config.get('manage_url') or '')
         hosted = manage.startswith('https://')
+        if name == 'connect_sources':
+            found = {'sources': onboarding.catalog(self.config), 'manage_url': manage if hosted else None,
+                     'saveable': bool(getattr(self, 'config_path', None))}
+            if not hosted:
+                # Sign in with <provider> through The Machine's own app (fleet.py connect_start), once this Machine is
+                # paired with an account; pasting a token stays as the fallback
+                for source in found['sources']:
+                    if source['service'] in fleet.SIGNIN_SOURCES:
+                        source['signin'] = True
+                found['paired'], found['pair_url'] = getattr(self, 'fleet', None) is not None, fleet.PAIR_PAGE
+            return found
+        if name in ('connect_signin', 'connect_signin_state'):
+            source = args.get('name') if isinstance(args.get('name'), str) else ''
+            if hosted:
+                raise ValueError('Your account page signs this one in')
+            if source not in fleet.SIGNIN_SOURCES:
+                raise ValueError('That source signs in another way')
+            if getattr(self, 'fleet', None) is None:
+                raise ValueError('Pair this Machine first')
+            if name == 'connect_signin_state':
+                return self.fleet.signin_state(source)
+            if not getattr(self, 'config_path', None):
+                raise ValueError('This service cannot save its settings')
+            # one already connected is signed in again (onboarding.connect_delivered), as Reconnect does
+            return {'url': self.fleet.connect_start(source), 'state': 'started'}
         if name in ('connect_start', 'connect_remove') and args.get('account') is not None:
             account = next((a for a in self.config['accounts'] if a['id'] == args.get('account')), None)
             if not account:
@@ -12911,7 +13088,7 @@ class App:
             request['message'] = review_prompt(run['run_id'], [a['id'] for a in self.config['accounts']], self.store.preference_summary(), self.store.facts_text(),
                                                self.store.slipped(run['run_id']), self.store.promises_text(),
                                                self.store.unnamed_text(run['run_id']), self.store.role_text(run['run_id']), self.store.notes_to_learn(),
-                                               self.waiting_handoffs_text(), self.split_notes_text())
+                                               self.waiting_handoffs_text(), self.split_notes_text(), self.store.boards_text(run['run_id']))
             try:  # drafts the owner rewrote, or answered themselves instead: lasting habits go into that channel's voice
                 lines = self.store.edits_to_learn()
                 if lines:
@@ -13659,6 +13836,15 @@ class App:
                     self.graph_dirty.set()  # show the new profiles
                 found = enrichment.people_step(self.store.connect, self.config, now(), paired=bool(getattr(self, 'fleet', None)), stop=self.stop.is_set)
                 photos = enrichment.photos_step(self.store.connect, now())  # straight after the lookups (hosted ones too, through the agent)
+                for account in google_photo_accounts(self.config):
+                    with self.store.connect() as db:
+                        due = enrichment.contact_run_due(db, 'google:' + account['email'].lower(), now())
+                    if due and not self.stop.is_set():
+                        offers = google_photo_offers(self.config, account)
+                        with self.store.connect() as db:
+                            enrichment.offer_photos(db, offers, 'google', now())
+                            enrichment.contact_run_done(db, 'google:' + account['email'].lower(), now())
+                photos += enrichment.contact_photos_step(self.store.connect, now())
                 if found or photos:
                     LOG.info('enrichment people found=%s photos=%s', found, photos)
                     self.graph_dirty.set()
@@ -13702,6 +13888,26 @@ class App:
         LOG.info('work removal accounts=%s events=%s cards=%s', len(result['accounts']), result['events'], result['cards'])
         if result['accounts']:
             result['restarting'] = restart_self(5)
+        return result
+
+    def fleet_connect_delivered(self, body):
+        """A sign-in sealed for this paired Machine (fleet.py connects_round): connected the way the dashboard's
+        Connections, Add does (onboarding.connect_delivered), then a restart reads it. Only the `connect` command."""
+        import onboarding
+        if not isinstance(body, dict) or body.get('command') != 'connect' or not isinstance(body.get('args'), dict):
+            return {'ok': False, 'error': 'Not something this Machine connects this way.'}
+        if not getattr(self, 'config_path', None):
+            return {'ok': False, 'error': 'This Machine cannot save its settings.'}
+        lock = self.__dict__.setdefault('connect_lock', threading.Lock())
+        with lock:
+            if any(v['state'] == 'running' for v in self.__dict__.setdefault('connect_sessions', {}).values()):
+                return {'ok': False, 'error': 'Another source is being added on this Machine. Sign in again once that is done.'}
+            try:
+                result = onboarding.connect_delivered(self.config_path, body['args'])
+            except onboarding.SetupError as error:  # its words name the step, never what it carried
+                return {'ok': False, 'error': error.message}
+        LOG.info('connect delivered source=%s replies=%s', body['args'].get('source'), result.get('replies'))
+        result['restarting'] = restart_self(3)
         return result
 
     def graph_build(self):
@@ -13766,7 +13972,7 @@ class App:
                 pair = args.get('merge') or args.get('different')
                 if not isinstance(pair, list) or len(pair) != 2:
                     raise ValueError('merge and different take two person ids, like ["email:ann@example.com", "wa:32470000000"]')
-                graph.merge(db, pair[0], pair[1], bool(args.get('merge')), now())
+                graph.merge(db, pair[0], pair[1], bool(args.get('merge')), now(), 'owner' if source == 'owner' else 'agent')
                 changed = True
             if args.get('project') and args.get('event_ids'):
                 if db.execute('SELECT count(*) FROM events WHERE deleted=0 AND id IN (' + ','.join('?' for _ in args['event_ids']) + ')',
@@ -14321,7 +14527,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','graph_same','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

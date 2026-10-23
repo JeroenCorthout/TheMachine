@@ -14,7 +14,13 @@ Everyone you're in touch with, closest first. A person's page shows how often yo
 
 - **Edit**: say what they are to you, like "accountant".
 - **Rename**: give them the name you use. An empty name brings back the one from their messages.
-- Same-name people on different channels are joined by themselves. To join or split two people, ask in a card's chat.
+- Someone's addresses and chats are joined by themselves when it's clear they're one person, like a work email with their own address in CC.
+
+## Same person?
+
+When two people might be one, their page asks if they are the same person, and People lists them under **Same person?**. **Merge** joins them, with all their messages, notes, roles and projects. **Not the same** keeps them apart for good.
+
+A joined person's page lists why under **Joined from**. **Undo** splits them again.
 
 ## Job title and photo
 

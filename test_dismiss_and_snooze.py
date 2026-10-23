@@ -255,3 +255,27 @@ class AskConcretely(unittest.TestCase):
         job=a.preparation_prompt({'suggestion_id':self.sid,'job_id':'j'})
         self.assertIn("questions=[{question:<one short plain question>",job);self.assertIn('sensible default you make yourself',job)
 
+
+
+class StuckIsNotAQuestion(unittest.TestCase):
+    """A run that stops without naming questions asks nothing (2026-10-23: "the card is linked to email and can't send on
+    WhatsApp yet" showed as Needs your help with an Answer button). It says it's stuck and offers Try again. A blocker
+    from before runs named questions still asks with its reason."""
+    setUp=ux.UX.setUp
+    labels=AskConcretely.labels;block=AskConcretely.block
+    def test_a_blocker_without_questions_is_stuck_not_a_question(self):
+        ux.UX.decide(self,'accept');self.block()
+        row=ux.UX.row(self)
+        self.assertTrue(row['preparation_no_questions']);self.assertEqual(row['preparation_questions'],[])
+        self.assertFalse(a.ask_blocked(row));self.assertEqual(a.ask_question(row,[]),'')
+        self.assertEqual(self.labels(row)[0],'Try again');self.assertNotIn('Answer',self.labels(row))
+        self.assertIn('I’m stuck: Finishing this needs your notes and one choice.',a.card(row))
+        self.assertNotIn('Help me answer this',a.card_task(row))
+        # The Telegram rows read the stored column itself: the same answer
+        with self.store.connect() as db:stored=db.execute('SELECT questions FROM preparations WHERE suggestion_id=?',(self.sid,)).fetchone()[0]
+        self.assertEqual(stored,'[]')
+        self.assertFalse(a.ask_blocked({**row,'preparation_no_questions':None,'preparation_questions':stored}))
+        # One saved before runs named questions (no list at all) keeps asking with its reason
+        legacy={**row,'preparation_no_questions':False,'preparation_questions':None}
+        self.assertTrue(a.ask_blocked(legacy));self.assertEqual(self.labels(legacy)[0],'Answer')
+        self.assertTrue(a.ask_blocked({**row,'preparation_questions':[{'question':'Which date?'}]}))

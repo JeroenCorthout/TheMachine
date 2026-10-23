@@ -492,6 +492,67 @@ class Enrichment(unittest.TestCase):
         enrichment.photos_step(self.store.connect, later, fetch=fetch)
         self.assertEqual(asked[-1], enrichment.gravatar(bo))
 
+    def test_photos_from_the_owners_own_contacts_fill_in_people_without_one_and_stay_local(self):
+        PNG = b'\x89PNG\r\n\x1a\n' + b'3' * 40
+        now, asked = tg.NOW.isoformat(), []
+        self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Kim Day <kim@family.example>', 'sam@acme.com'),
+                 tg.mail(1, 'Bo Ng <bo@hooli.example>', 'sam@acme.com'))
+        self.build()
+        profile = lambda kind: {'source': {'type': kind}}
+        contacts = {'connections': [
+            # Kim, a personal contact: the photo Kim chose wins over the one the owner set on the contact.
+            {'emailAddresses': [{'value': 'Kim@Family.example'}], 'phoneNumbers': [{'value': '0470', 'canonicalForm': '+32470000001'}],
+             'photos': [{'url': 'https://lh3.googleusercontent.com/cm/kim-set=s100', 'metadata': profile('CONTACT')},
+                        {'url': 'https://lh3.googleusercontent.com/a/kim-own=s100', 'metadata': profile('PROFILE')}]},
+            # Bo: only Google's generated letter, which is no photo.
+            {'emailAddresses': [{'value': 'bo@hooli.example'}], 'photos': [{'url': 'https://lh3.googleusercontent.com/cm/letter', 'default': True}]},
+            # Someone the Machine doesn't know: not kept.
+            {'emailAddresses': [{'value': 'stranger@else.example'}], 'photos': [{'url': 'https://lh3.googleusercontent.com/a/x=s100'}]},
+            # Not a Google photo host: not kept.
+            {'emailAddresses': [{'value': 'lee@globex.com'}], 'photos': [{'url': 'https://evil.example/lee.png'}]}],
+            'nextPageToken': 'p2'}
+        pages = []
+        def read(config, account, api, version, method, params, scope):
+            pages.append((method, params.get('pageToken'), scope))
+            if method == 'people.connections.list':
+                return contacts if not params.get('pageToken') else {'connections': []}
+            raise a.SourceError('people', 403)  # a list this sign-in can't read is skipped
+        offers = a.google_photo_offers({}, {'email': 'sam@acme.com'}, read=read)
+        self.assertEqual(pages[:2], [('people.connections.list', None, 'https://www.googleapis.com/auth/contacts'), ('people.connections.list', 'p2', 'https://www.googleapis.com/auth/contacts')])
+        self.assertTrue(all('write' not in s and 'gmail' not in s for _, _, s in pages))  # only the contact scopes the sign-in has
+        self.assertIn((['email:kim@family.example', 'wa:32470000001'], 'https://lh3.googleusercontent.com/a/kim-own=s160-c', True), offers)
+        self.assertEqual(len(offers), 2)  # Kim and the stranger; Bo's letter and the off-host link are skipped
+        self.assertEqual(a.google_photo_accounts({'accounts': [
+            {'id': 'g', 'service': 'gmail', 'transport': 'gog', 'email': 'Sam@acme.com'}, {'id': 'c', 'service': 'calendar', 'transport': 'gog', 'email': 'sam@acme.com'},
+            {'id': 'h', 'service': 'gmail', 'transport': 'broker', 'email': 'h@acme.com'}, {'id': 's', 'service': 'gmail', 'transport': 'gog', 'email': 'x@y.example', 'shared': True}]}),
+            [{'id': 'g', 'service': 'gmail', 'transport': 'gog', 'email': 'Sam@acme.com'}])  # once per address, own gog sign-ins only
+        with self.store.connect() as db:
+            self.assertTrue(enrichment.contact_run_due(db, 'google:sam@acme.com', now))
+            self.assertEqual(enrichment.offer_photos(db, offers, 'google', now), 1)  # Kim's address; the stranger isn't kept
+            enrichment.contact_run_done(db, 'google:sam@acme.com', now)
+            self.assertFalse(enrichment.contact_run_due(db, 'google:sam@acme.com', now))  # once a day
+            # Slack: a picture of their own, not Slack's generated one, nor a bot's.
+            slack = [enrichment.slack_photo({'id': 'U1', 'profile': {'is_custom_image': True, 'image_192': 'https://avatars.slack-edge.com/u1_192.png'}}),
+                     enrichment.slack_photo({'id': 'U2', 'profile': {'is_custom_image': False, 'image_192': 'https://secure.gravatar.com/avatar/x.png'}}),
+                     enrichment.slack_photo({'id': 'U3', 'is_bot': True, 'profile': {'is_custom_image': True, 'image_192': 'https://avatars.slack-edge.com/b.png'}})]
+            self.assertEqual(slack, [(['slack:U1'], 'https://avatars.slack-edge.com/u1_192.png', True), None, None])
+            # Lee already has a photo: a contact photo doesn't replace it.
+            db.execute("INSERT INTO person_photos(identifier,key,type,data,saved_at) VALUES('email:lee@globex.com',?,?,?,?)",
+                       (enrichment.photo_key('email:lee@globex.com'), 'image/png', PNG, now))
+            enrichment.offer_photos(db, [(['email:lee@globex.com'], 'https://lh3.googleusercontent.com/a/lee=s160-c', True)], 'google', now)
+        fetch = lambda url: asked.append(url) or ((PNG, 'image/png') if 'kim-own' in url else None)
+        self.assertEqual(enrichment.contact_photos_step(self.store.connect, now, fetch=fetch), 1)
+        self.assertEqual(asked, ['https://lh3.googleusercontent.com/a/kim-own=s160-c'])
+        self.assertEqual(enrichment.contact_photos_step(self.store.connect, now, fetch=fetch), 0)
+        self.assertEqual(len(asked), 1)  # saved once, never asked again
+        self.build()
+        key = enrichment.photo_key('email:kim@family.example')
+        self.assertEqual(self.node('email:kim@family.example')['profile']['photo'], 'api/person-photo?p=' + key)
+        with self.store.connect() as db:
+            graph.delete_person(db, 'email:kim@family.example', tg.CONFIG, now)
+            self.assertEqual(db.execute("SELECT count(*) FROM contact_photo_links WHERE identifier LIKE '%kim%'").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT count(*) FROM person_photos WHERE identifier LIKE '%kim%'").fetchone()[0], 0)
+
     def test_people_are_asked_by_their_company_domain_and_a_miss_says_why(self):
         self.assertEqual([enrichment.registrable(d) for d in ('eu.umbrella.example', 'team.globex.com', 'globex.co.uk', 'mail.globex.co.uk', 'globex.com')],
                          ['umbrella.example', 'globex.com', 'globex.co.uk', 'globex.co.uk', 'globex.com'])
