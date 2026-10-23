@@ -4,6 +4,7 @@ on exactly what they saw; an error log only when ticked; sealed for the team's k
 only, never the Machine's Network identity. The Network is a stand-in here: nothing is sent anywhere."""
 import importlib.util
 import json
+import re
 from pathlib import Path
 import tempfile
 import types
@@ -12,6 +13,8 @@ from unittest.mock import patch
 
 import network_crypto as nc
 import team_learnings as tl
+
+PINNED = tl.TEAM_KEY_FINGERPRINT  # as shipped: empty until the team key is made, then its fingerprint
 
 spec = importlib.util.spec_from_file_location('learnings_assistant', Path(__file__).with_name('assistant.py'))
 a = importlib.util.module_from_spec(spec)
@@ -53,6 +56,9 @@ class TeamLearnings(unittest.TestCase):
         self.app.store = self.store
         self.app.config = {'accounts': self.store.accounts, 'database': str(database), 'review_worker': {'enabled': True}}
         self.network = Network()
+        pin = patch.object(tl, 'TEAM_KEY_FINGERPRINT', nc.check_keys(nc.public_keys(self.network.team))['fingerprint'])
+        pin.start()
+        self.addCleanup(pin.stop)
         self.app.fleet = types.SimpleNamespace(relay=types.SimpleNamespace(call=self.network.call))
         with self.store.connect() as db:
             for node, kind, name in (('email:sam@globex.example', 'person', 'Sam Lee'), ('org:globex.example', 'org', 'Globex'),
@@ -163,17 +169,24 @@ class TeamLearnings(unittest.TestCase):
         self.assertNotIn('log', self.network.opened()['items'][0])
         self.assertTrue(self.network.sent[0]['named'])
 
-    def test_a_changed_team_key_sends_nothing(self):
+    def test_another_team_key_than_the_pinned_one_sends_nothing(self):
         ask = self.distil([{'text': 'Cards about invoices should show the due date first.'}])
         self.app.action('learnings_share', {'id': ask['id'], 'items': [{'n': 1}]}, owner_dashboard=True)
         with self.store.connect() as db:
             db.execute("UPDATE profile_runs SET started_at='2000-01-01' WHERE kind='learnings'")
             db.execute("INSERT INTO facts(text,decision_id,created_at) VALUES('a','d0',?),('b','d1',?),('c','d2',?)", (a.now(),) * 3)
-        self.network.team = nc.new_keys()
+        self.network.team = nc.new_keys()  # the Network hands out another key than the one pinned in the code
         ask = self.distil([{'text': 'Cards about invoices should show the amount first.'}])
-        with self.assertRaisesRegex(ValueError, 'key changed'):
+        with self.assertRaisesRegex(ValueError, 'isn’t the team’s key'):
             self.app.action('learnings_share', {'id': ask['id'], 'items': [{'n': 1}]}, owner_dashboard=True)
         self.assertEqual(len(self.network.sent), 1)
+
+    def test_until_the_team_key_is_pinned_no_one_is_asked(self):
+        with patch.object(tl, 'TEAM_KEY_FINGERPRINT', ''):
+            self.assertIsNone(self.store.learnings_due())
+            self.assertFalse(self.app.learnings_view()['network'])  # no card, no Settings switch
+        self.assertRegex(tl.TEAM_KEY_FINGERPRINT, r'^([0-9a-f]{4} ){5}[0-9a-f]{4}$')  # the test's pin, in the form keygen prints
+        self.assertTrue(PINNED == '' or re.fullmatch(r'([0-9a-f]{4} ){5}[0-9a-f]{4}', PINNED), PINNED)
 
     def test_not_now_never_ask_and_the_settings_switch(self):
         ask = self.distil([{'text': 'Drafts for new contacts should introduce the context first.'}])

@@ -35,7 +35,7 @@ how messages stay reliable, and where it's going.
   `assistant import` puts it back, so your teammates and friends see the same Machine. An export without keys leaves
   them out: the import makes a new Network identity, and your teammates and friends see a key-change notice once.
 - **Learnings for The Machine team** (docs/intelligence.md#sharing-learnings): only after the owner's Send on exactly
-  what they saw. `POST /api/fleet/learnings` gets the team's public keys (pinned the first time, refused if they change)
+  what they saw. `POST /api/fleet/learnings` gets the team's public keys (checked against the fingerprint pinned in the code; any other key sends nothing)
   and then the learnings sealed for them, signed by a key for learnings only, so the control plane sees a made-up name
   unless the owner adds their email.
 - **Sealed only.** The Network carries nothing else: a question or answer that isn't sealed is refused there and

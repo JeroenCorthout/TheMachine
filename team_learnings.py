@@ -47,6 +47,10 @@ AREAS = ('drafts', 'cards', 'timing', 'chat', 'sources', 'people', 'skills', 'se
 CONTEXT = {'p': 'learnings', 'k': 'learnings'}
 KEY_FILE = 'learnings-keys.json'
 OPEN = ('ready',)
+# The Machine team's key, pinned here: learnings are sealed only for the key with this fingerprint (network_crypto.
+# fingerprint, as `python -m cloud.learnings keygen` prints it on the control plane). Any other key sends nothing.
+# Until it is filled in, no Machine is asked at all.
+TEAM_KEY_FINGERPRINT = ''  # placeholder: the team key's fingerprint goes here once it is made
 
 
 def ensure(db):
@@ -203,7 +207,7 @@ def due(db, current=None):
     and there is enough new to learn from."""
     current = current or dt.datetime.now(dt.timezone.utc)
     ensure(db)
-    if not offer_on(db):
+    if not TEAM_KEY_FINGERPRINT or not offer_on(db):
         return False
     if db.execute("SELECT 1 FROM team_learnings WHERE status IN ('ready','sending')").fetchone():
         return False
@@ -344,7 +348,7 @@ def view(db, network=True):
     ensure(db)
     row = db.execute("SELECT id,items,created_at,error FROM team_learnings WHERE status IN ('ready','sending') ORDER BY created_at DESC LIMIT 1").fetchone()
     last = db.execute("SELECT decided_at,sent FROM team_learnings WHERE status='sent' ORDER BY decided_at DESC LIMIT 1").fetchone()
-    out = {'offer': offer_on(db), 'network': bool(network), 'ask': None,
+    out = {'offer': offer_on(db), 'network': bool(network and TEAM_KEY_FINGERPRINT), 'ask': None,  # off until the key is pinned
            'last_shared': {'at': last[0], 'count': len(json.loads(last[1] or '{}').get('items') or [])} if last else None}
     if row and network and out['offer']:
         out['ask'] = {'id': row[0], 'created_at': row[2], 'error': row[3], 'items': json.loads(row[1])}
@@ -429,13 +433,12 @@ def share(db_connect, config, batch_id, chosen, named, call, version=None):
         if not row or row[1] not in ('ready', 'sending'):
             raise ValueError('These learnings are no longer waiting')
         items = final_items(json.loads(row[0]), chosen, known_names(db, config))
-        pinned = pref(db, 'team_key')
     team = call('POST', '/learnings', {'action': 'key'}) or {}
     checked = nc.check_keys(team.get('keys'))
     if not checked:
         raise ValueError('The Machine team can’t take learnings yet. Nothing was sent.')
-    if pinned and pinned != checked['fingerprint']:
-        raise ValueError('The team’s key changed since last time, so nothing was sent. Update The Machine and try again.')
+    if not TEAM_KEY_FINGERPRINT or checked['fingerprint'] != TEAM_KEY_FINGERPRINT:
+        raise ValueError('That isn’t the team’s key, so nothing was sent. Update The Machine and try again.')
     mine = nc.load_or_make(keys_path(config))
     public = nc.public_keys(mine)
     me = nc.check_keys(public)['fingerprint']
@@ -443,7 +446,6 @@ def share(db_connect, config, batch_id, chosen, named, call, version=None):
     sealed = nc.seal(body, mine, team['keys'], {**CONTEXT, 'f': me, 't': checked['fingerprint'], 'r': batch_id})
     with db_connect() as db:
         db.execute("UPDATE team_learnings SET status='sending',error=NULL WHERE id=?", (batch_id,))
-        set_pref(db, 'team_key', checked['fingerprint'])
     try:
         call('POST', '/learnings', {'action': 'send', 'id': batch_id, 'from': public, 'sealed': sealed, 'named': bool(named)})
     except Exception as error:
