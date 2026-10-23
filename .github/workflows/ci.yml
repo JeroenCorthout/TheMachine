@@ -77,9 +77,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runners are scarce (a few at once for the whole organisation), so a macOS job per pull request queued
-        # for hours and kept every run "in progress". macOS runs on main, release tags, the weekly run and on demand.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["windows-latest"]' || '["macos-latest", "windows-latest"]') }}
+        # macOS runners are scarce (a few at once for the whole organisation): a macOS job per pull request or main push
+        # queued for hours. macOS runs on release tags (what Machines install), the weekly run and on demand.
+        os: ${{ fromJSON((startsWith(github.ref, 'refs/tags/release-') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["macos-latest", "windows-latest"]' || '["windows-latest"]') }}
     defaults:
       run:
         shell: bash
