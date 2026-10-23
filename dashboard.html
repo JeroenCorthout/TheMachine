@@ -1730,8 +1730,6 @@ a.cal-item:hover{background:var(--c-hover)}a.cal-item:hover+.cal-item,a.cal-item
 /* Command palette (Ctrl/⌘K, /) and the shortcut sheet (?): one calm field over the page, results in groups. */
 #palette,#palette[open]{width:min(620px,calc(100vw - 24px));max-height:min(560px,calc(100dvh - 48px));margin:12vh auto auto;padding:0;overflow:hidden;display:flex;flex-direction:column}
 #palette:not([open]){display:none}
-#palette::backdrop,#keys-sheet::backdrop{background:#15171b80;backdrop-filter:none}
-[data-theme="light"] #palette::backdrop,[data-theme="light"] #keys-sheet::backdrop{background:#3d375226}
 .pal-field{display:flex;align-items:center;gap:10px;flex:none;padding:0 16px;border-bottom:1px solid var(--c-line)}
 .pal-field svg{flex:none;width:18px;height:18px;fill:none;stroke:var(--c-text-3);stroke-width:1.6;stroke-linecap:round}
 .pal-field input,.pal-field input:focus{flex:1;min-width:0;height:52px;min-height:0;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none;outline:none;color:var(--c-text);font:400 var(--fs-md)/1 var(--sans)}
@@ -1752,8 +1750,8 @@ kbd.kb,.pal-keys kbd,.keys-sheet kbd,.pal-foot kbd,.side-search kbd{display:inli
 .more-menu [data-kb-label]::after{content:attr(data-kb-label);margin-left:auto;min-width:18px;padding:1px 5px;border:1px solid var(--c-line);border-radius:5px;color:var(--c-text-3);font:500 11px/1.4 var(--sans);text-align:center}
 @media(hover:none){.more-menu [data-kb-label]::after{display:none}}
 #keys-sheet{width:min(640px,calc(100vw - 24px))}
-.keys-sheet{columns:2 240px;column-gap:28px}.keys-sheet>div{break-inside:avoid}
-.keys-sheet h3{margin:14px 0 6px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans)}
+.keys-sheet{columns:2 240px;column-gap:28px;margin-top:14px}.keys-sheet>div{break-inside:avoid;padding-bottom:14px}  /* no top margin: a column's first heading lines up */
+.keys-sheet h3{margin:0 0 6px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans)}
 .keys-sheet div>p{display:flex;align-items:center;gap:10px;margin:0;padding:5px 0;color:var(--c-text-2);font:400 var(--fs-sm)/1.3 var(--sans)}
 .keys-sheet div>p>span:first-child{flex:1;min-width:0}.keys-sheet .keys{display:flex;align-items:center;gap:4px}.keys-sheet .then{color:var(--c-text-3);font-size:var(--fs-xs)}
 article.kb-on,article.kb-on:focus{outline:2px solid color-mix(in srgb,var(--c-accent) 70%,transparent);outline-offset:3px}
