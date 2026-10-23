@@ -1,4 +1,4 @@
-"""Google and Microsoft sign-ins of broker accounts, kept on this Machine only (docs/configuration.md, "Broker accounts").
+"""Google, Microsoft and Zoom sign-ins of broker accounts, kept on this Machine only (docs/configuration.md, "Broker accounts").
 
 A hosting control plane keeps the OAuth client and its secret, never the sign-ins themselves. A broker account's refresh
 token lives here, in `mail-grants.json` next to the database (mode 600), sealed with the message key (message_seal.py).
@@ -23,7 +23,7 @@ import message_seal
 import portable
 
 FILE = 'mail-grants.json'
-PROVIDERS = ('google', 'microsoft')
+PROVIDERS = ('google', 'microsoft', 'zoom')  # Zoom: connectors/zoom.py, forgotten here (the owner can remove the app at Zoom)
 GOOGLE_REVOKE = 'https://oauth2.googleapis.com/revoke'
 GOOGLE_REMOVE = 'myaccount.google.com/permissions'
 MICROSOFT_REMOVE = 'myapps.microsoft.com (work) or account.live.com/consent/Manage (personal)'

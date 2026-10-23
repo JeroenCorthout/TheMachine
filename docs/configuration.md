@@ -30,6 +30,8 @@
 | `gog`, `wacli` | `gog`, `wacli` | Binaries for Google and WhatsApp |
 | `google_broker` | — | `url` of a Google token broker, for accounts with `"transport": "broker"` (below). Their refresh tokens stay on this machine, in `mail-grants.json` next to the database, sealed with the message key (docs/sources.md) |
 | `microsoft_broker` | — | `url` of a Microsoft token broker, for Outlook accounts with `"transport": "broker"` |
+| `zoom_broker` | — | `url` of a Zoom token broker, for Zoom accounts (meeting notes, [sources](sources.md)) |
+| `zoom_transcripts` | `true` | Also store Zoom transcripts, next to the summaries |
 | `microsoft_graph` | — | `client_id` and `tenant` (`common`) of your own Entra app, for Outlook accounts with `"transport": "graph"` |
 | `salesflare_server` | — | `api_base` and `app_base` a new Salesflare account starts on instead of Salesflare's own (a hosted machine's control plane sets it for a team on staging). Only https addresses on salesflare.com subdomains count. An address typed when a key is rejected must be https too |
 | `heartbeat_job_id` | `""` | Optional OpenClaw cron job ID of your main heartbeat, for its health line |

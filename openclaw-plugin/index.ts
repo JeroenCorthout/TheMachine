@@ -32,7 +32,7 @@ async function showResult(ctx:any,message:any,reason?:string){
 async function notReached(ctx:any){
   await ctx.respond.reply({text:'Your Machine did not answer just now, so nothing was done. Tap the button again in a minute.'}).catch(()=>{});
 }
-const TOOL_ACTIONS = ['status', 'events', 'begin_analysis', 'analysis_page', 'finish_analysis', 'suggest', 'prepare', 'preparation_blocked', 'preparation_history', 'remember_fact', 'looks_handled', 'handoff_on_it', 'promise', 'related', 'graph', 'profile_evidence', 'save_profile', 'skills_found'];
+const TOOL_ACTIONS = ['status', 'events', 'begin_analysis', 'analysis_page', 'finish_analysis', 'suggest', 'prepare', 'preparation_blocked', 'preparation_history', 'remember_fact', 'looks_handled', 'handoff_on_it', 'split_from_notes', 'promise', 'related', 'graph', 'profile_evidence', 'save_profile', 'skills_found'];
 // dismiss_handled stays for older cards; the service records that reason as done.
 const DISMISS_REASONS: Record<string,string> = {dismiss_irrelevant:'Not relevant', dismiss_handled:'Already handled', dismiss_wrong:'Wrong facts'};
 
