@@ -13177,6 +13177,18 @@ class App:
             result = graph.with_fleet(db, graph.overview(db, limit), marks)
             return {**result, 'changed': changed} if changed else result
 
+    def account_view(self):
+        """Settings, Account on a self-hosted Machine paired with the Network: its owner's account in short, from the
+        control plane (fleet.Fleet.account). A hosted Machine's dashboard asks the control plane itself, with the owner's
+        sign-in on that host (/_machine/account), so this Machine never holds what opens the account's pages."""
+        if not getattr(self, 'fleet', None):
+            return {'on': False}
+        try:
+            return {'on': True, **self.fleet.account()}
+        except (fleet.Off, ValueError, OSError) as error:
+            LOG.info('account summary unavailable error=%s', type(error).__name__)
+            return {'on': True, 'error': 'Can’t reach your account right now.'}
+
     def fleet_view(self):
         """The Fleet tab, with each member who is in the graph linked to their person there."""
         view = self.fleet.view()
@@ -13375,6 +13387,8 @@ class App:
                         self.output(200, app.action('events', {'account_ids': args.get('account', []), 'query': query, 'semantic': bool(query.strip()), 'full': True}))
                     except (ValueError, sqlite3.OperationalError):
                         self.output(400, {'error': 'Select accounts and use a valid search'})
+                elif path.path == '/api/account':
+                    self.output(200, app.account_view())
                 elif path.path == '/api/calendar':  # the Calendar tab: meetings in a window, read-only
                     args = urllib.parse.parse_qs(path.query)
                     try:
