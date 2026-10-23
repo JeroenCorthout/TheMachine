@@ -107,6 +107,35 @@ class Preparation(unittest.TestCase):
         self.assertIn(submit['instructions'],message);self.assertIn(submit['preview'],message)
         self.assertIn('do not go ahead: record a blocker',message);self.assertNotIn('NOT tapped',message)
 
+    def test_final_step_uploads_exactly_the_files_shown_and_never_an_unlisted_one(self):
+        sid=self.ahead()['id'];calls=[];self.app.preparation_step(lambda r:calls.append(r) or {'status':'admitted'})
+        job=self.q('SELECT job_id FROM preparations WHERE suggestion_id=?',sid)['job_id']
+        root=Path(self.temp.name);src=root/'assistant-attachments'/job;src.mkdir(parents=True);(src/'receipt.pdf').write_bytes(b'%PDF-1 paid')
+        self.app.config.update(attachment_sources=[str(root/'assistant-attachments')],attachment_dir=str(root/'store'),browser_upload_dir=str(root/'uploads'))
+        reply={'kind':'finish','label':'Confirm receipt reply','url':'https://inbox.example.com/conversation/7','to_name':'Sam Example',
+               'instructions':'Open the conversation, type the message, upload the receipt, press Send.',
+               'preview':'Reply to Sam in the support inbox with the payment receipt.','message':'Hi Sam,\n\nHere is the receipt.'}
+        save=lambda step,**k:self.app.action('prepare',{'suggestion_id':sid,'job_id':job,'body':'Ready.','next_actions':[step],'outcome':'needs_you','needs':'confirm the reply',**k})
+        # A step that points at a saved file but lists none is sent back: the owner would not see the file.
+        with self.assertRaisesRegex(ValueError,'lists none'):
+            save({**reply,'instructions':reply['instructions']+' Upload data/assistant-attachments/'+job+'/receipt.pdf.'})
+        save({**reply,'attachments':[str(src/'receipt.pdf')]})
+        action=a.next_actions.actions(self.q('SELECT next_action FROM suggestions WHERE id=?',sid)['next_action'])[0]
+        self.assertEqual([(f['name'],f['size']) for f in action['attachments']],[('receipt.pdf',11)])
+        self.assertIn('Attachments: receipt.pdf (11 B)',a.next_actions.preview(action))
+        self.assertEqual(a.App.draft_attachment(self.app,sid,action['attachments'][0]['sha256'])[1:],('application/pdf','receipt.pdf'))  # opens from the card
+        (src/'receipt.pdf').write_bytes(b'%PDF-1 changed')  # the reviewed bytes go out, not the live file
+        with self.store.connect() as db:db.execute("UPDATE preparation_runs SET status='ok',finished_at=?",(a.now(),))
+        self.app.action('confirm_action',{'suggestion_id':sid,'revision':action['revision'],'approval_id':'owner-tap'},owner_dashboard=True)
+        calls.clear();self.app.preparation_step(lambda r:calls.append(r) or {'status':'admitted'})
+        message=next(c['message'] for c in calls if c.get('message'))
+        staged=next((root/'uploads').glob('*/receipt.pdf'))
+        self.assertEqual(staged.read_bytes(),b'%PDF-1 paid');self.assertEqual(staged.stat().st_mode&0o777,0o600)
+        self.assertIn(str(staged)+' (receipt.pdf, 11 B)',message);self.assertIn('upload exactly these',message)
+        # Without attachments, Confirm uploads nothing and says so.
+        self.assertIn('attach or upload none',a.finish_files({**reply}))
+        self.assertIn('Do not submit',a.finish_files({**action,'files_error':'An attachment changed after you reviewed it.'}))
+
     def test_stuck_prepared_ahead_card_arrives_as_a_normal_suggestion_and_daily_cap(self):
         sid=self.ahead()['id']
         with self.store.connect() as db:db.execute("UPDATE preparations SET status='blocked' WHERE suggestion_id=?",(sid,))

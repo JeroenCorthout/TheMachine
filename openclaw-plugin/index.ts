@@ -94,6 +94,8 @@ function packRows(buttons:any[]){
   return rows;
 }
 
+const fileList=(files:any[])=>files.map((a:any)=>`${a.name} (${a.size<1024?a.size+' B':a.size<1048576?Math.round(a.size/1024)+' KB':(a.size/1048576).toFixed(1)+' MB'})`).join(', ');
+
 function sendReview(item:any,draft:any,dashboardBase=''){
  // Edit opens the same draft in the dashboard editor; Send then sends exactly the edited text.
  const edit=dashboardBase?[{text:'Edit',url:`${dashboardBase}#send=${item.id}&revision=${draft.revision}&edit=1`}]:[];
@@ -107,8 +109,8 @@ function sendReview(item:any,draft:any,dashboardBase=''){
    buttons:[[button(item.id,'Merge now','confirm_'+draft.revision),...(dashboardBase?[{text:'See the diff',url:`${dashboardBase}#send=${item.id}&revision=${draft.revision}`}]:[]),button(item.id,'Cancel','back')]]};
  // The last step of a prepared task: what goes out, and Confirm runs only that step.
  // It posts a message: its exact text, which Edit changes in the dashboard; Confirm types exactly that.
- if(draft.kind==='finish')return {text:[`${draft.label}?`,...(draft.message?[...(draft.to_name?[`To: ${draft.to_name}`]:[]),draft.preview,'',draft.message]:['',draft.preview]),...(draft.url?['',draft.url]:[]),
-     '',draft.message?'Confirm types exactly this text on the page, submits it, checks that it went through and reports back.':'Confirm does only this last step, checks that it went through and reports back.'].join('\n'),
+ if(draft.kind==='finish')return {text:[`${draft.label}?`,...(draft.message?[...(draft.to_name?[`To: ${draft.to_name}`]:[]),draft.preview,'',draft.message]:['',draft.preview]),...(draft.attachments?.length?['',`Attachments: ${fileList(draft.attachments)}`]:draft.message?['','Files: none']:[]),...(draft.url?['',draft.url]:[]),
+     '',draft.message?`Confirm types exactly this text on the page, ${draft.attachments?.length?'attaches the files above':'attaches no file'}, submits it, checks that it went through and reports back.`:'Confirm does only this last step, checks that it went through and reports back.'].join('\n'),
    buttons:edit.length?[[button(item.id,'Confirm','confirm_'+draft.revision),...edit,button(item.id,'Cancel','back')],...(draft.url?[[{text:'Open page',url:draft.url}]]:[])]
      :[[button(item.id,'Confirm','confirm_'+draft.revision),...(draft.url?[{text:'Open page',url:draft.url}]:[]),button(item.id,'Cancel','back')]]};
  if(draft.kind==='linkedin')return {text:['Send this LinkedIn message?',`To: ${draft.to_name}${draft.profile?` (linkedin.com/in/${draft.profile})`:''}`,'',draft.body].join('\n'),
@@ -127,7 +129,7 @@ function sendReview(item:any,draft:any,dashboardBase=''){
  for(const key of ['cc','bcc'])if(draft[key]?.length)lines.push(`${key.toUpperCase()}: ${draft[key].join(', ')}`);
  lines.push(`Subject: ${draft.subject}`,'',draft.body);
  if(draft.signature)lines.push('','+ your signature');
- if(draft.attachments?.length)lines.push('',`Attachments: ${draft.attachments.map((a:any)=>`${a.name} (${a.size<1024?a.size+' B':a.size<1048576?Math.round(a.size/1024)+' KB':(a.size/1048576).toFixed(1)+' MB'})`).join(', ')}`);
+ if(draft.attachments?.length)lines.push('',`Attachments: ${fileList(draft.attachments)}`);
  if(draft.snooze_days)lines.push(`After sending, the thread leaves your inbox for ${draft.snooze_days} day${draft.snooze_days>1?'s':''} (a weekday morning; a reply brings it back sooner).`);
  lines.push(...waits);
  if(options.length)return {text:lines.join('\n'),buttons:[...options.slice(0,4).map((address,i)=>[button(item.id,`Send to ${address}`.slice(0,60),`confirm_${draft.revision}_${i}`)]),
