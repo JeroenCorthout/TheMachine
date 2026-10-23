@@ -2,7 +2,7 @@
 title: Plans and billing
 area: account
 summary: Free on your own computer. Hosted from {price.standard} a month, excl. VAT, with {trial_days} days free.
-covers: 
+covers: settings:account
 code: docs/fleet.md
 site: Manage subscription
 order: 1

@@ -8,6 +8,7 @@ order: 1
 ---
 Open **Settings** with the gear at the top. Its tabs:
 
+- **Account**: your plan in short, buttons to your account pages, and **Sign out**. See [Plans and billing](plans-and-billing.md).
 - **General**: this device, coding agents, your Machine's browser, your Fleet and your account.
 - **Work hours**: when your Machine may message you. See [Work hours](work-hours.md).
 - **Writing**: signatures and how you write. See [Writing](writing.md).
