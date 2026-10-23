@@ -123,12 +123,20 @@ class FocusTest(unittest.TestCase):
             novnc, web = Path(tmp, 'novnc'), Path(tmp, 'web')
             (novnc / 'app').mkdir(parents=True)
             (novnc / 'vnc.html').write_text('<html><head></head></html>')
+            (novnc / 'index.html').write_text('a packaged index')  # ours wins
             browser_viewer.build_web(web, novnc)
             browser_viewer.build_web(web, novnc)  # again is fine
             self.assertIn('src="machine-clipboard.js"', (web / 'vnc.html').read_text())
             self.assertIn("import UI from './app/ui.js'", (web / 'machine-clipboard.js').read_text())
             self.assertTrue((web / 'app').is_symlink())
             self.assertIn('src="machine-view.js"', (web / 'vnc.html').read_text())
+            index = (web / 'index.html').read_text()  # the short /browser/ address on a hosted Machine
+            self.assertFalse((web / 'index.html').is_symlink())
+            self.assertTrue(index.startswith('<html><head><script>try{if(!location.search&&!location.hash)'))
+            self.assertIn("'?autoconnect=1&reconnect=1&resize='+(phone?'remote':'scale')+'&path=browser/websockify'", index)  # the long link's query
+            self.assertIn("history.replaceState(history.state,'',bare)", index)  # and the short address again once noVNC started
+            self.assertIn('src="machine-view.js"', index)
+            self.assertEqual(index.replace(browser_viewer.SHORT_SETTINGS, ''), (web / 'vnc.html').read_text())
             self.assertIn("params.get('frame') === 'window'", (web / 'machine-view.js').read_text())
             self.assertIn("Your Machine's own browser", (web / 'machine-view.js').read_text())  # a blank page never stands on its own
 
