@@ -1,11 +1,11 @@
 {
   "repository": "Salesflare/wacli",
-  "tag": "v0.25.0-picture.1",
+  "tag": "v0.25.0-picture.2",
   "sha256": {
-    "darwin_amd64": "379d5ce604d7f9867723bb11ba50c1202e1b53be3d3acd038542fe3293034c56",
-    "darwin_arm64": "a0ee72b9c99ff6d5d81eeece5fc2b84d49c5d6f6cefa93fb3239dbb2fad8c07f",
-    "linux_amd64": "c54d35ea5c6f9b6edb8954b50bf7ea5ad120b056a78b16f0154e7b1577d50912",
-    "linux_arm64": "7e3d0a7d8280965d82ab32a53103b8d7f509f429daadd8866d87c5966987b225",
-    "windows_amd64": "fbf0d49a23ee2dda48895b6bcafc4857a073466c3bc89d74e02500383f58e196"
+    "darwin_amd64": "c94920c9e81e7b0df92049ca9ed5fc2ff3e62ab2501887e187d6820f72cc9c11",
+    "darwin_arm64": "2dea6c7e3e13637a5c6c79cfb613d52445f47bb93b9c756ad784f990a3530f48",
+    "linux_amd64": "08ff60ee0a69b4c3c96045a8060f15bc7178f77b5a8bae2cc3315d485354fc5b",
+    "linux_arm64": "bafe7cdbf28a6cbcd0190f79dde80fd345ca3a68a6123da9e7524a3c4d28d2f3",
+    "windows_amd64": "99f89646ed9a16ff7e889b52d8e22d9d67d2137b76146ba82d3298af833da372"
   }
 }
