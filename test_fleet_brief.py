@@ -340,6 +340,21 @@ class Items(unittest.TestCase):
         self.assertNotIn('@', waiting)
 
 
+class OtherCompanyAccount(unittest.TestCase):
+    """One Work Fleet, and the owner also has an account at another company of theirs: that one never goes to it."""
+    def test_an_account_at_a_domain_outside_the_fleet_is_never_shared(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        side = {'id': 'side', 'email': 'owner@sideco.example', 'service': 'gmail', 'boundary': 'work:Sideco'}
+        loose = {'id': 'crm', 'email': '', 'service': 'salesflare', 'boundary': 'work:Acme'}
+        config = {**CONFIG, 'accounts': CONFIG['accounts'] + [side, loose]}
+        relay = FakeRelay()
+        relay.directory = {'fleets': [{'id': 'fl_' + 'a' * 16, 'kind': 'work', 'name': 'Acme', 'secret': SECRET, 'members': [
+            {'member_id': 'me1', 'name': 'Owner', 'me': True, 'emails': ['owner@acme.example']}, {'member_id': 'pat1', 'name': 'Pat', 'emails': [TEAM]}]}]}
+        machine = fleet.Fleet(a.Store(Path(temp.name) / 'events.sqlite').connect, config, lambda: 'token', relay=relay)
+        machine.directory(refresh=True)
+        self.assertEqual(machine.fleet_accounts('fl_' + 'a' * 16), ['work', 'crm'])
+
+
 class SeveralFleets(unittest.TestCase):
     """Someone in two Work Fleets: each Fleet's brief only hears of that company's accounts."""
     def test_each_fleet_hears_only_its_own_accounts(self):
