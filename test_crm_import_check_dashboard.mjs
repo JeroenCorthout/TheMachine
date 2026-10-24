@@ -52,10 +52,12 @@ try{
   page.on('pageerror',e=>errors.push(tag+': '+e.message));await page.goto(base);await page.waitForFunction(()=>typeof crmImportOpen==='function');
   const click=sel=>mobile?page.locator(sel).first().tap():page.locator(sel).first().click();
   await page.evaluate(()=>crmImportOpen('projects'));await page.locator('#crm-dialog[open]').waitFor();
+  assert.equal(await page.locator('#crm-form .crm-file').textContent(),'Choose file');
   await page.locator('#crm-form [name=file]').setInputFiles({name:'deals.csv',mimeType:'text/csv',buffer:Buffer.from('Klant,Bedrag,Fase,Datum\nTEAL ROBOTICS,€12k,voorstel,25/12/2026\number bv,ongeveer vijf,Lead,03/01/2027\nTeal Robotics,,,\n')});
   // the rules' guess first, with no name column yet, while the model checks
   await page.locator('#crm-form .crm-ai.run').waitFor();assert.equal(await page.locator('#crm-form .crm-ai').textContent(),'Your model is checking the columns…');
-  assert.equal(await page.locator('#crm-form .crm-problem').textContent(),'Pick the column with the name.');assert.ok(await page.locator('#crm-form button.primary').isDisabled());
+  assert.equal(await page.locator('#crm-form .crm-problem').count(),0);assert.ok(await page.locator('#crm-form button.primary').isDisabled());  // no error while the model checks
+  assert.equal(await page.locator('#crm-form .crm-file').textContent(),'deals.csv· Change');assert.ok(!(await page.locator('#crm-form .ed-note').allTextContents()).some(t=>t.includes('deals.csv')));
   assert.deepEqual(calls.find(c=>c.action==='graph_import_ai').args,{kind:'project',text:'Klant,Bedrag,Fase,Datum\nTEAL ROBOTICS,€12k,voorstel,25/12/2026\number bv,ongeveer vijf,Lead,03/01/2027\nTeal Robotics,,,\n'});
   assert.deepEqual(previews()[0].args.fixes,{types:'all',off:[]});
   await fits(page,'checking '+tag);await shot(page,`import-check-${tag}`);
