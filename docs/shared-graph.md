@@ -37,6 +37,17 @@ Records are shared by default when they are Work:
 threads. It needs nobody's OK. Colleagues (people at the Fleet's own domains) are never shared as records. A person whose reviewed threads
 are all sensitive is held back too.
 
+**Only-you boards.** A board set to Only you (`boards.visibility`), and every project on it, is held back like Keep
+private: no board, no record, no timeline, none of its threads, and a teammate's Team view never shows it. A project
+can differ from its board (`projects.visibility`; empty follows the board). Switching a board or project from Team to
+Only you takes back what was shared at the next publish, as Keep private does. Code that shares anything asks
+`graph.visible_to_team(db, node_id)` (False for an Only-you project) or `graph.hidden_project_ids(db)` (the set of
+Only-you project ids).
+
+**A project on a Team board** shares its record (name, board, stage, why, next step, organisation, people) even before
+a review has judged one of its threads, so the team pipeline shows every project on it. Its threads still go only as
+they are judged.
+
 The weekly recap says, in one line: "Shared with Acme: 214 threads, 31 people, 6 projects. 4 held back." with a
 link to review the held-back ones.
 
@@ -214,7 +225,7 @@ it. **Ask <name>** on a tile, person or organisation starts a handoff to that te
 | Records and timelines of Work | Yes | Yes | No (sealed) |
 | Client threads | Yes | Yes | No (sealed) |
 | Sensitive client threads | That they exist | That they exist | No |
-| Internal, Personal, Keep private | No | No | No |
+| Internal, Personal, Keep private, Only-you boards | No | No | No |
 | Who publishes, when, how much | Yes | Yes | Yes (metadata) |
 | A leaver's shared work | Yes, stays | Yes, stays | No |
 | A leaver's other work mail | No | No | No |

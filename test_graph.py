@@ -887,15 +887,18 @@ class Boards(unittest.TestCase):
             args['projects'].append('Hire: backend')
             with self.assertRaises(ValueError):  # a review can't make a board by moving a project onto it
                 graph.set_stage(db, 'Hire: designer', 'Sourced', 'review', NOW.isoformat(), board='Hiring', stages=args['stages'], reason='x', event_id=1)
+        with self.assertRaises(ValueError):  # says who sees it
+            self.app.action('graph', {'suggest_board': args})
+        args['visibility'] = 'team'
         said = self.app.action('graph', {'suggest_board': args})
-        self.assertEqual(said['projects'], 3)
+        self.assertEqual((said['projects'], said['visibility']), (3, 'team'))
         with self.assertRaises(ValueError):  # once per name
             self.app.action('graph', {'suggest_board': args})
         with self.store.connect() as db:
             self.assertEqual([b['name'] for b in graph.boards(db, NOW.isoformat())], ['Listings'])
             sug, = graph.board_suggestions(db)
             self.assertEqual(([s['name'] for s in sug['stages']], len(sug['projects'])), (['Sourced', 'Interviews', 'Hired'], 3))
-        self.assertEqual(self.store.boards_text('run1'), '')  # no new offer while a suggestion is open
+        self.assertEqual(self.store.boards_text('run1'), '')  # its projects are in the open suggestion: fewer than three left
         with self.assertRaises(ValueError):
             self.app.action('board_save', {'name': 'Hiring', 'stages': ['Sourced'], 'about': ''})  # owner only
         self.app.graph_build = lambda *a, **k: None
@@ -985,6 +988,76 @@ class Boards(unittest.TestCase):
             self.assertEqual(done, [])
             self.app.action('finish_analysis', {'analysis_id': 'x', '_review_run': 'r1', 'sorted': [{'project': node, 'why': 'just an intro'}]})
             self.assertEqual(len(done), 1)
+
+    def test_several_boards_are_suggested_at_once_each_with_who_sees_it_and_an_only_you_one_stays_so(self):
+        self.mails()
+        with self.store.connect() as db:
+            for name in ('Buyer: Northwind', 'Buyer: Contoso', 'Buyer: Fabrikam', 'Listing: Paperkite', 'Listing: Bramblebox', 'Listing: Quillfeather',
+                         'Hire: one', 'Hire: two', 'Hire: three', 'Trial: one', 'Trial: two', 'Trial: three'):
+                graph.project_id(db, name, NOW.isoformat())
+        text = self.store.boards_text('run1')
+        self.assertIn('Buyer: Northwind (project:', text)
+        stages = ['Contacted', 'Talks', 'Signed']
+        m_a = self.app.action('graph', {'suggest_board': {'name': 'M&A', 'stages': stages, 'about': 'Possible buyers', 'visibility': 'only_you',
+                                                          'projects': ['Buyer: Northwind', 'Buyer: Contoso', 'Buyer: Fabrikam']}})
+        self.app.action('graph', {'suggest_board': {'name': 'CRM listings', 'stages': stages, 'about': 'Sites that list us', 'visibility': 'team',
+                                                    'projects': ['Listing: Paperkite', 'Listing: Bramblebox', 'Listing: Quillfeather']}})
+        with self.assertRaises(ValueError):  # a project in an open suggestion isn't suggested again
+            self.app.action('graph', {'suggest_board': {'name': 'Deals', 'stages': stages, 'about': 'x', 'visibility': 'team',
+                                                        'projects': ['Buyer: Northwind', 'Hire: one', 'Hire: two']}})
+        with self.assertRaises(ValueError):
+            self.app.action('graph', {'suggest_board': {'name': 'Hiring', 'stages': stages, 'about': 'x', 'visibility': 'everyone',
+                                                        'projects': ['Hire: one', 'Hire: two', 'Hire: three']}})
+        self.app.action('graph', {'suggest_board': {'name': 'Hiring', 'stages': stages, 'about': 'x', 'visibility': 'only_you',
+                                                    'projects': ['Hire: one', 'Hire: two', 'Hire: three']}})
+        with self.assertRaises(ValueError):  # three open at once at most: calm
+            self.app.action('graph', {'suggest_board': {'name': 'Trials', 'stages': stages, 'about': 'x', 'visibility': 'team',
+                                                        'projects': ['Trial: one', 'Trial: two', 'Trial: three']}})
+        with self.store.connect() as db:
+            got = {x['name']: x['visibility'] for x in graph.board_suggestions(db)}
+            self.assertEqual(got, {'M&A': 'only_you', 'CRM listings': 'team', 'Hiring': 'only_you'})
+        self.app.graph_build = lambda *a, **k: None
+        self.assertEqual(self.store.boards_text('run2'), '')  # three open: no new check
+        self.app.action('board_dismiss', {'suggestion_id': 3}, owner_dashboard=True)
+        self.app.action('board_save', {'suggestion_id': m_a['suggestion_id'], 'name': 'M&A', 'stages': stages, 'about': 'Possible buyers',
+                                       'projects': ['Buyer: Northwind', 'Buyer: Contoso', 'Buyer: Fabrikam']}, owner_dashboard=True)
+        with self.store.connect() as db:
+            board = next(b for b in graph.boards(db, NOW.isoformat()) if b['name'] == 'M&A')
+            self.assertEqual(board['visibility'], 'only_you')  # as suggested
+            self.assertEqual(len(graph.hidden_project_ids(db)), 3)
+            self.assertFalse(graph.visible_to_team(db, board['projects'][0]['id']))
+            graph.save_board(db, {'board_id': board['id'], 'name': 'M&A', 'stages': stages, 'about': 'Possible buyers'}, NOW.isoformat())
+            self.assertEqual(len(graph.hidden_project_ids(db)), 3)  # an edit without it keeps it
+        moved = self.app.action('project_visibility', {'node_id': board['projects'][0]['id'], 'visibility': 'team'}, owner_dashboard=True)
+        self.assertEqual(moved['visibility'], 'team')
+        with self.assertRaises(ValueError):
+            self.app.action('project_visibility', {'node_id': board['projects'][0]['id'], 'visibility': 'only_you'})  # owner only
+        with self.store.connect() as db:
+            self.assertEqual(graph.project_moves(db, board['projects'][0]['id'])['visibility'], 'team')
+            self.assertEqual(len(graph.hidden_project_ids(db)), 2)
+
+    def test_the_board_check_lists_every_open_project_and_the_organisations_inside_one(self):
+        self.mails()
+        with self.store.connect() as db:
+            for i in range(70):
+                graph.project_id(db, f'Errand {i}', NOW.isoformat())
+            oldest = graph.project_id(db, 'Company sale', (NOW - dt.timedelta(days=30)).isoformat())
+            db.execute('UPDATE projects SET created_at=? WHERE id=?', ((NOW - dt.timedelta(days=30)).isoformat(), oldest))
+            events = [r[0] for r in db.execute('SELECT id FROM events ORDER BY id')]
+            graph.label(db, events, 'Company sale', 'review', NOW.isoformat())
+            for n, (event, org) in enumerate(zip(events, ('org:northwind.example', 'org:contoso.example', 'org:fabrikam.example'))):
+                db.execute("INSERT OR REPLACE INTO graph_nodes(id,kind,name,strength,last_at,signals,info) VALUES(?,?,?,?,?,?,?)",
+                           (f'email:p{n}@x.example', 'person', f'P{n}', 1, NOW.isoformat(), 1, json.dumps({'org': org})))
+                db.execute("INSERT OR REPLACE INTO graph_nodes(id,kind,name,strength,last_at,signals,info) VALUES(?,?,?,?,?,?,?)",
+                           (org, 'org', org[4:].split('.')[0].title(), 1, NOW.isoformat(), 1, '{}'))
+                db.execute('INSERT OR REPLACE INTO graph_events(node_id,event_id,at,probable) VALUES(?,?,?,0)', (f'email:p{n}@x.example', event, NOW.isoformat()))
+        text = self.store.boards_text('run1')
+        self.assertIn(f'Company sale (project:{oldest})', text)  # older than the newest 60 too
+        self.assertIn('its messages are with 3 organisations: ', text)
+        self.assertIn(f'Northwind (messages {events[0]})', text)
+        prompt = a.review_prompt('run1', ['work'], boards=text)
+        self.assertIn('one project per counterpart', prompt)
+        self.assertIn('"only_you" for sensitive work', prompt)
 
     def test_editing_stages_renames_moves_to_the_nearest_earlier_stage_and_deleting_keeps_projects(self):
         asked, agreed, later = self.mails()

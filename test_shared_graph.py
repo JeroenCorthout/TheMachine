@@ -273,6 +273,56 @@ class SharedGraph(unittest.TestCase):
         self.assertEqual(self.team(self.mem), [])
         self.assertEqual(self.team(self.mem, 'team_mail'), [])
 
+    def board(self, box, name, visibility, projects, stage='Talks'):
+        with box.store.connect() as db:
+            for project, sources in projects.items():
+                graph.label(db, [self.event_id(box, x) for x in sources], project, 'review', a.now())
+            graph.save_board(db, {'name': name, 'stages': [stage, 'Signed'], 'about': name, 'visibility': visibility,
+                                  'projects': list(projects)}, a.now())
+            board = db.execute('SELECT id FROM boards WHERE name=?', (name,)).fetchone()[0]
+        with box.store.connect() as db:
+            db.isolation_level = None
+            graph.build(db, box.config, a.now())
+        return board
+
+    def projects_of(self, box):
+        return {json.loads(r['body'])['name']: json.loads(r['body']) for r in self.team(box) if r['kind'] == 'project'}
+
+    def test_an_only_you_board_its_projects_and_their_threads_never_reach_the_team_and_switching_retracts_them(self):
+        self.olive_mail()
+        board = self.board(self.own, 'Renewals', 'team', {'Renewal: Lee': ['work-1', 'work-2']})
+        self.rounds()
+        self.assertEqual(self.projects_of(self.mem)['Renewal: Lee']['board'], 'Renewals')
+        self.assertIn('Renewal quote', [json.loads(r['body']).get('subject') for r in self.team(self.mem, 'team_mail')])
+        with self.own.store.connect() as db:
+            self.assertTrue(graph.visible_to_team(db, 'project:1'))
+            graph.save_board(db, {'board_id': board, 'name': 'Renewals', 'stages': ['Talks', 'Signed'], 'about': 'Renewals', 'visibility': 'only_you'}, a.now())
+            self.assertFalse(graph.visible_to_team(db, 'project:1'))
+            self.assertEqual(graph.hidden_project_ids(db), {1})
+        self.rounds()
+        self.assertEqual(self.projects_of(self.mem), {})
+        self.assertNotIn('Renewal quote', [json.loads(r['body']).get('subject') for r in self.team(self.mem, 'team_mail')])
+        self.assertNotIn('Lee Park', [json.loads(r['body'])['name'] for r in self.team(self.mem) if r['kind'] == 'person'])
+        # The project's own setting wins over its board's, both ways
+        with self.own.store.connect() as db:
+            graph.set_project_visibility(db, 'project:1', 'team')
+            self.assertEqual(graph.hidden_project_ids(db), set())
+            graph.set_project_visibility(db, 'project:1', None)
+            self.assertEqual(graph.hidden_project_ids(db), {1})
+            with self.assertRaises(ValueError):
+                graph.set_project_visibility(db, 'project:1', 'everyone')
+        with self.own.store.connect() as db:
+            view = self.own.team_overview(db, {})
+            self.assertEqual([b['name'] for b in view['boards']], [])
+
+    def test_a_project_on_a_team_board_goes_with_its_board_record_before_any_thread_of_it_is_shared(self):
+        self.olive_mail()
+        self.board(self.own, 'Hiring', 'team', {'Hire: Ada': ['work-4']}, stage='Screening')  # only colleagues on it
+        self.rounds()
+        project = self.projects_of(self.mem)['Hire: Ada']
+        self.assertEqual((project['board'], project['stage'], project['timeline'], project['threads']), ('Hiring', 'Screening', [], []))
+        self.assertNotIn('Standup', [json.loads(r['body']).get('subject') for r in self.team(self.mem, 'team_mail')])
+
     def test_sharing_starts_as_soon_as_the_machine_is_confirmed(self):
         self.olive_mail()
         self.rounds(1)

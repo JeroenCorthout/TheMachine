@@ -7,7 +7,7 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 // Graph › Projects as a board: Board is the default view, List one click away and remembered on this device. Chips switch
 // boards, a long column shows "Show N more", a tile opens its project page, a drag or the ⋯ menu moves it (graph_stage)
 // and nothing else is posted. On a phone one stage at a time with stage tabs. Nothing is wider than the screen.
-// BOARDS_SHOT=<dir> also writes screenshots.
+// An Only-you board says so in its header; a project page sets who sees that project. BOARDS_SHOT=<dir> also writes screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const stages=[{name:'Contacted',hint:'Asked, no yes yet'},{name:'Agreed',hint:'They said yes'},{name:'In review'},{name:'Partly live'},{name:'Live'},{name:'Stalled or declined',side:true}];
 const day=n=>new Date(Date.now()-n*864e5).toISOString();
@@ -18,10 +18,10 @@ const boards=[
   proj(20,'Larkfield Labs','Agreed'),proj(23,'Mossgate','Contacted',{by:null,sorting:true,reason:null,at:null}),
   proj(24,'Nettlebay','Contacted',{by:null,sorting:false,reason:null,at:null,sort_note:'only an intro call so far',last_at:day(3),last_event_id:124}),
   proj(25,'Oakhollow','Contacted',{by:null,sorting:false,reason:null,at:null,sort_failed:'Sorting failed, trying again',last_at:day(1)}),proj(21,'Willowtick','Live',{by:'owner',event_id:null}),proj(22,'Lanternfish','Stalled or declined',{reason:'they said no'})]},
- {name:'Customer onboarding',stages:stages.slice(0,2).concat(stages.slice(-1)),stuck:0,projects:[proj(30,'Saffron Sync','Agreed')]}];
+ {name:'Customer onboarding',visibility:'only_you',stages:stages.slice(0,2).concat(stages.slice(-1)),stuck:0,projects:[proj(30,'Saffron Sync','Agreed')]}];
 const list=[{id:'project:1',kind:'project',name:'Paperkite',strength:1,last_at:day(2),signals:3}];
 const detail={id:'project:1',kind:'project',name:'Paperkite',strength:1,last_at:day(2),signals:3,ids:[],links:[],recent:[],around:[],open:{},
- board:{board:'Partner listings',stage:'Contacted',next:'Wait for their reply',moves:[{stage:'Contacted',reason:'they asked for a listing',source:'review',at:day(2),event_id:101}]}};
+ board:{board:'Partner listings',stage:'Contacted',next:'Wait for their reply',visibility:null,board_visibility:'team',moves:[{stage:'Contacted',reason:'they asked for a listing',source:'review',at:day(2),event_id:101}]}};
 let calls=[],nodeAsks=[];
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
@@ -68,7 +68,7 @@ try{
   await fits(page,'1440');await shot(page,'board-1440');
   // Chips switch boards, and the board shown is remembered
   await page.locator('[data-board="Customer onboarding"]').click();await page.locator('.board-title',{hasText:'Customer onboarding'}).waitFor();
-  assert.equal(await page.evaluate(()=>sideStore.get('board-shown')),'Customer onboarding');
+  assert.equal(await page.evaluate(()=>sideStore.get('board-shown')),'Customer onboarding');assert.match(await page.locator('.board-sub').textContent(),/^Only you · 1 project/);
   await page.locator('[data-board="Partner listings"]').click();await page.locator('.board-title',{hasText:'Partner listings'}).waitFor();
   // The ⋯ menu moves a tile: one graph_stage post, nothing else
   calls=[];const menu=page.locator('.tile[data-node="project:20"] .tile-menu');await menu.locator('summary').click();
@@ -83,6 +83,10 @@ try{
   calls=[];await page.locator('.tile[data-node="project:1"] .tile-next').click();await page.locator('.graph-stage').waitFor();
   assert.ok(nodeAsks.includes('project:1'));assert.match(await page.locator('.graph-stage').textContent(),/Contacted on Partner listings/);
   assert.equal(calls.length,0,'opening posts nothing');
+  // Who sees this project: like its board, or Only you / Team for this one
+  const seen=page.locator('[data-project-seen="project:1"]');assert.equal(await seen.inputValue(),'');assert.match(await seen.locator('option').first().textContent(),/Like its board \(team\)/);
+  await shot(page,'project-1440');await seen.selectOption('only_you');await page.locator('#toast',{hasText:'Only you see this project now.'}).waitFor();
+  assert.deepEqual(calls.filter(c=>c.action==='project_visibility').map(c=>c.args),[{node_id:'project:1',visibility:'only_you'}]);calls=[];
   // List is remembered on this device
   await page.evaluate(()=>history.back());await page.locator('#page-head .view-mode').waitFor();
   await page.locator('#page-head [data-proj-view="list"]').click();

@@ -287,6 +287,9 @@ class Scope:
     def __init__(self, db, accounts, internal, mine):
         self.accounts, self.internal, self.mine = set(accounts), set(internal), {m.lower() for m in mine}
         self.private = {r[0] for r in db.execute('SELECT node_id FROM share_private')}
+        # Only-you projects (their own visibility or their board's): never shared, and neither are their threads
+        self.private |= {'project:' + str(i) for i in graph.hidden_project_ids(db)}
+        self.hidden_events = graph.hidden_event_ids(db)
         self.calls = {r[0]: (r[1], r[2]) for r in db.execute('SELECT thread,verdict,hand FROM share_threads')}  # the review's and the owner's
         self.private_ids = set()
         self.org_of = {}
@@ -319,6 +322,8 @@ def visibility(db, scope, event):
     (the review found it is the owner's own life: nothing of it goes, not even that it exists)."""
     if event['account_id'] not in scope.accounts:
         return None
+    if event['id'] in getattr(scope, 'hidden_events', ()):
+        return 'private'  # a message of an Only-you project or board
     metadata = event['metadata'] if isinstance(event['metadata'], dict) else json.loads(event['metadata'] or '{}')
     people = addresses(metadata)
     if any(scope.private_address(a) for a in people):
@@ -471,13 +476,18 @@ def collect(db, scope, key, secret, today=None):
                       'role_hand': info.get('role_by') == 'owner', 'd': every('domain:' + domain), 'score': round(row['strength'], 3),
                       'last': (row['last_at'] or '')[:10]}
     tiles = {t['id']: t for b in graph.boards(db, today.isoformat()) for t in b['projects']}
-    for row in db.execute("SELECT n.*,p.id pid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages,b.side side "
+    team_boards = graph.team_board_ids(db)
+    for row in db.execute("SELECT n.*,p.id pid,b.id bid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages,b.side side "
                           "FROM graph_nodes n JOIN projects p ON 'project:'||p.id=n.id LEFT JOIN boards b ON b.id=p.board_id "
                           "WHERE n.kind='project' AND p.closed_at IS NULL"):
         if row['id'] in scope.private:
             continue
         ok, last = work(row['id'])
-        if not ok:
+        # A project on a board the team sees goes with its board record (stage, why, next, organisation) even before a
+        # thread of it is shared; its threads and timeline still only when shared. Never one of the owner's own life.
+        on_team_board = bool(row['board']) and row['bid'] in team_boards and not any(
+            views.get(r[0]) == 'personal' for r in db.execute('SELECT event_id FROM graph_events WHERE node_id=? AND probable=0', (row['id'],)))
+        if not ok and not on_team_board:
             continue
         linked = [l['a'] if l['b'] == row['id'] else l['b'] for l in db.execute('SELECT a,b FROM graph_links WHERE (a=? OR b=?) AND kind=?',
                                                                                   (row['id'], row['id'], 'project'))]
@@ -1282,7 +1292,8 @@ class SharedGraph:
         hashed address, hashed domain, or board and name."""
         index = self.hash_index(db)
         names = {(f, m): (s.get('name') or '', bool(s.get('left_at'))) for (f, m), s in self.team_sources().items()}
-        local_projects = {row['name'].casefold(): row['id'] for row in db.execute("SELECT id,name FROM graph_nodes WHERE kind='project'")}
+        hidden = {'project:' + str(i) for i in graph.hidden_project_ids(db)}  # a teammate's project never lands on an Only-you one
+        local_projects = {row['name'].casefold(): row['id'] for row in db.execute("SELECT id,name FROM graph_nodes WHERE kind='project'") if row['id'] not in hidden}
         groups, by_hash = {}, {}
         for kind in kinds:
             for fleet, member, r in self.team_items(db, kind):
@@ -1366,7 +1377,7 @@ class SharedGraph:
         """The Team view: the owner's shared records and teammates' ones, merged, with 'via <name>'. mine: graph.overview."""
         ensure(db)
         entries = self.team_graph(db)
-        shared = self._mine_shared(db)
+        shared = self._mine_shared(db) - {'project:' + str(i) for i in graph.hidden_project_ids(db)}
         local = {}
         for r in db.execute('SELECT * FROM graph_nodes WHERE id IN (SELECT value FROM json_each(?))',
                             (json.dumps(sorted(shared | {e['local'] for e in entries if e['local']})),)):
@@ -1400,10 +1411,11 @@ class SharedGraph:
     def team_boards(self, db, entries, shared):
         """Shared Boards: the team's pipelines. A tile per project, with its owner (the closest), its stage (the newest
         move by hand, else the newest a message showed) and who moved it."""
-        mine = {b['name'].casefold(): b for b in graph.boards(db, now())}
+        team_ids, hidden = graph.team_board_ids(db), {'project:' + str(i) for i in graph.hidden_project_ids(db)}
+        mine = {b['name'].casefold(): b for b in graph.boards(db, now()) if b['id'] in team_ids}  # an Only-you board never shows here
         boards = {}
         for name, b in mine.items():
-            projects = [dict(p, mine=True) for p in b['projects'] if p['id'] in shared]
+            projects = [dict(p, mine=True) for p in b['projects'] if p['id'] in shared and p['id'] not in hidden]
             boards[name] = {'name': b['name'], 'stages': b['stages'], 'projects': projects, 'stuck': 0, 'team': True}
         names = {(f, m): (s.get('name') or '') for (f, m), s in self.team_sources().items()}
         for e in entries:
