@@ -6,8 +6,11 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 
 // A new board looks through the history once: its header says "Looking through your history…" while it runs, then how
 // many it added and how many wait for review. An organisation from the history with no project yet waits under "could
-// belong here" like a project, and Add or Leave out posts one board_fit with its key. Desktop and a 390 px phone, light
-// and dark, no sideways scroll. BACKFILL_SHOT=<dir> also writes screenshots.
+// belong here" like a project, and Add or Leave out posts one board_fit with its key. A project that bundles several
+// counterparts says "Add as N". Ticking rows (or Select all) turns the top buttons into "Add N" / "Leave out N", which
+// post one board_fit with node_ids, and the toast offers Undo. The list stays open and in place after each one, also
+// through a refresh, and Add and Leave out sit side by side on a phone. Desktop and a 390 px phone, light and dark, no
+// sideways scroll. BACKFILL_SHOT=<dir> also writes screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const stages=[{name:'Discovery'},{name:'Demo'},{name:'Trial'},{name:'Decision'},{name:'Won'},{name:'Stalled or declined',side:true}];
 const day=n=>new Date(Date.now()-n*864e5).toISOString();
@@ -16,7 +19,8 @@ const fresh=()=>[{id:1,name:'Demos and trials',stages,default:true,stuck:0,backf
   projects:[proj(1,'Paperkite','Demo','demo held, they asked for pricing'),proj(2,'Bramblebox','Trial','started a 14-day trial'),proj(3,'Quillfeather','Won','signed the yearly plan'),
    proj(4,'Inkwell','Discovery','asked how the inbox sync works')],
   maybes:[{id:'org:tinkerlane.example',name:'Tinker Lane',why:'asked about pricing once'},{id:'org:puffin.example',name:'Puffin Metrics',why:'an intro call, no demo yet'},
-   {id:'project:10',name:'Saffron Sync',why:'a partner, maybe a trial'}]},
+   {id:'project:10',name:'Saffron Sync',why:'a partner, maybe a trial'},{id:'project:11',name:'Acme acquisition talks',why:'several buyers in one',split:7},
+   ...['Larkspur','Moonbeam Labs','Nettle & Co','Orchard Analytics','Pebblestone'].map((name,i)=>({id:'org:m'+i+'.example',name,why:'asked about a trial once'}))]},
  {id:2,name:'Customer support cases',stages:stages.slice(0,3).concat(stages.slice(-1)),stuck:0,backfill:{state:'running'},projects:[proj(30,'Fernwave','Demo','reported a sync gap')],maybes:[]}];
 let boards=fresh(),calls=[];
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
@@ -25,7 +29,9 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
  if(url.pathname==='/api/graph'){res.end(JSON.stringify({projects:[],people:[],quiet:[],new:[],orgs:[],boards,person_names:[],project_names:[]}));return}
  if(req.method!=='GET'&&!url.pathname.startsWith('/brand/'))calls.push(JSON.parse(body||'{}'));
  if(url.pathname==='/api/action'){const c=JSON.parse(body||'{}'),a=c.args||{};
-  if(c.action==='board_fit'){boards[0].maybes=boards[0].maybes.filter(m=>m.id!==a.node_id);boards[0].backfill={...boards[0].backfill,added:boards[0].backfill.added+(a.add?1:0),review:boards[0].maybes.length}}
+  if(c.action==='board_fit'&&a.undo){boards[0].maybes=fresh()[0].maybes;res.end(JSON.stringify({undone:2}));return}
+  if(c.action==='board_fit'){const ids=a.node_ids||[a.node_id];boards[0].maybes=boards[0].maybes.filter(m=>!ids.includes(m.id));boards[0].backfill={...boards[0].backfill,added:boards[0].backfill.added+(a.add?ids.length:0),review:boards[0].maybes.length};
+   res.end(JSON.stringify({added:!!a.add,decided:ids.length,projects:a.add?ids.length:0,skipped:0,undo:'tok'+ids.length}));return}
   res.end('{}');return}
  res.statusCode=url.pathname.startsWith('/brand/')?404:200;res.end('{}')});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -48,12 +54,43 @@ try{
   // Done: what it found, in a few words, instead of the usual line
   assert.match(await sub(page),/4 projects · 12 added from your history · 3 to review$/);
   assert.match(await page.locator('.tile[data-node="project:2"] .tile-why').textContent(),/^Added: started a 14-day trial/);
-  const box=page.locator('.board-fits');assert.match(await box.locator('summary').textContent(),/3 projects could belong here/);
-  await box.locator('summary').click();await fits(page,tag+' done');await shot(page,`backfill-done-${tag}`);
-  calls=[];await box.locator('[data-fit-add="org:tinkerlane.example"]').click();await page.locator('.board-fits summary',{hasText:'2 projects could belong here'}).waitFor();
+  const box=page.locator('.board-fits');assert.match(await box.locator('summary').textContent(),/9 projects could belong here/);
+  await box.locator('summary').click();await fits(page,tag+' done');
+  // a bundle says what Add does
+  assert.equal((await box.locator('[data-fit-add="project:11"]').textContent()).trim(),'Add as 7');
+  assert.match(await box.locator('li',{hasText:'Acme acquisition talks'}).textContent(),/Splits into 7 projects, one per counterpart/);
+  // Add and Leave out side by side, on the phone too
+  const row=box.locator('li',{hasText:'Tinker Lane'}),[ab,lb]=[await row.locator('[data-fit-add]').boundingBox(),await row.locator('[data-fit-skip]').boundingBox()];
+  assert.ok(Math.abs(ab.y-lb.y)<2&&lb.x>ab.x,`${tag}: Add and Leave out on one line ${JSON.stringify([ab,lb])}`);
+  await box.locator('li',{hasText:'Saffron Sync'}).scrollIntoViewIfNeeded();await shot(page,`backfill-done-${tag}`);
+  // a refresh while it runs (the count changes) keeps the list open
+  boards[0].maybes=boards[0].maybes.concat([{id:'org:late.example',name:'Late One',why:'found later'}]);await page.evaluate(()=>people('',true));
+  await page.locator('.board-fits summary',{hasText:'10 projects could belong here'}).waitFor();assert.equal(await page.locator('.board-fits[open]').count(),1);
+  boards[0].maybes=boards[0].maybes.filter(m=>m.id!=='org:late.example');
+  await page.evaluate(()=>scrollTo({top:document.querySelector('[data-fit-add="org:puffin.example"]').getBoundingClientRect().top+scrollY-200}));const y0=await page.evaluate(()=>scrollY);
+  calls=[];await box.locator('[data-fit-add="org:tinkerlane.example"]').click();await page.locator('.board-fits summary',{hasText:'8 projects could belong here'}).waitFor();
   assert.deepEqual(calls.map(c=>[c.action,c.args]),[['board_fit',{board_id:1,node_id:'org:tinkerlane.example',add:true}]]);
-  calls=[];await page.locator('[data-fit-skip="org:puffin.example"]').click();await page.locator('.board-fits summary',{hasText:'1 project could belong here'}).waitFor();
+  assert.equal(await page.locator('.board-fits[open]').count(),1,'stays open after Add');
+  assert.ok(Math.abs(await page.evaluate(()=>scrollY)-y0)<60,'keeps its place');
+  calls=[];await page.locator('[data-fit-skip="org:puffin.example"]').click();await page.locator('.board-fits summary',{hasText:'7 projects could belong here'}).waitFor();
   assert.deepEqual(calls.map(c=>[c.action,c.args]),[['board_fit',{board_id:1,node_id:'org:puffin.example',add:false}]]);
+  assert.equal(await page.locator('.board-fits[open]').count(),1,'stays open after Leave out');
+  // tick some: the top buttons say how many
+  assert.equal(await page.locator('[data-fit-bulk="add"]').textContent(),'Add all');
+  await page.locator('[data-fit-pick="org:m0.example"]').check();await page.locator('[data-fit-pick="org:m1.example"]').check();
+  assert.deepEqual(await page.locator('[data-fit-bulk]').allTextContents(),['Add 2','Leave out 2']);
+  assert.equal(await page.locator('[data-fit-all]').evaluate(e=>e.indeterminate),true);
+  await page.evaluate(()=>scrollTo({top:document.querySelector('.fits-bulk').getBoundingClientRect().top+scrollY-120}));await shot(page,`backfill-picked-${tag}`);
+  calls=[];await page.locator('[data-fit-bulk="skip"]').click();await page.locator('.board-fits summary',{hasText:'5 projects could belong here'}).waitFor();
+  assert.deepEqual(calls.map(c=>[c.action,c.args]),[['board_fit',{board_id:1,node_ids:['org:m0.example','org:m1.example'],add:false}]]);
+  assert.match(await page.locator('#toast').textContent(),/Left out 2\./);await shot(page,`backfill-undo-${tag}`);
+  calls=[];await page.locator('#toast [data-fit-undo]').click();await page.locator('.board-fits summary',{hasText:'9 projects could belong here'}).waitFor();
+  assert.deepEqual(calls.map(c=>[c.action,c.args]),[['board_fit',{board_id:1,undo:'tok2'}]]);
+  // Select all, then Add all of them in one go
+  await page.locator('[data-fit-all]').check();assert.deepEqual(await page.locator('[data-fit-bulk]').allTextContents(),['Add 9','Leave out 9']);
+  await page.locator('[data-fit-all]').uncheck();assert.deepEqual(await page.locator('[data-fit-bulk]').allTextContents(),['Add all','Leave out all']);
+  calls=[];await page.locator('[data-fit-bulk="add"]').click();await page.locator('.board-fits').waitFor({state:'detached'});
+  assert.equal(calls[0].args.node_ids.length,9);assert.equal(calls[0].args.add,true);assert.match(await page.locator('#toast').textContent(),/Added 9 projects\./);
   // Running: a short line that says it is looking
   await page.locator(width<600?'.board-pick':'.board-chips [data-board="Customer support cases"]').first().evaluate(el=>el.tagName==='SELECT'?(el.value='Customer support cases',el.dispatchEvent(new Event('change',{bubbles:true}))):el.click());
   await page.locator('.board-title',{hasText:'Customer support cases'}).waitFor({state:'attached'});

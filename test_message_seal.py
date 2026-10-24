@@ -561,6 +561,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
             'board_suggestions.state': 'open, saved or dismissed',
             'board_fits.state': 'open, added or left out',
             'board_backfills.state': 'running or done', 'board_backfill_asks.state': 'open, added or left out',
+            'board_fit_undo.token': 'a random undo token', 'board_fit_undo.steps': 'project and message ids to put back',
             'team_learnings.items': 'general learnings for The Machine team, anything personal taken out (team_learnings.strip)',
         }
         sealed = {f'{t}.{c}' for t, cs in message_seal.DERIVED.items() for c in cs} | {f'{t}.{c}' for t, c, _ in message_seal.DERIVED_JSON}

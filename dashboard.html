@@ -555,9 +555,12 @@ span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:col
 .board-fits{margin:0 0 12px;padding:8px 12px;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--surface)}
 .board-fits>summary{cursor:pointer;color:var(--c-text-2);font-size:var(--fs-sm)}.board-fits>summary b{color:var(--text);font-weight:var(--fw-medium)}
 .board-fits ul{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
-.board-fits li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:6px 0;border-top:1px solid var(--c-line)}
-.board-fits li>span{flex:1 1 220px;min-width:0;font-size:var(--fs-sm)}.board-fits li small{display:block;color:var(--c-text-3)}
-.board-fits li button{margin:0;min-height:30px;padding:0 10px;font-size:var(--fs-sm)}
+.board-fits li,.fits-bulk{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--c-line)}
+.fits-bulk{margin-top:8px;font-size:var(--fs-sm);color:var(--c-text-2)}.fits-bulk .fit-pick{flex:1 1 auto;gap:8px}
+.board-fits .fit-text{flex:1 1 auto;min-width:0;font-size:var(--fs-sm);overflow-wrap:anywhere}.board-fits li small{display:block;color:var(--c-text-3)}
+.board-fits .fit-pick{display:flex;align-items:center;flex:none;cursor:pointer}.board-fits .fit-pick input{margin:0;width:18px;height:18px}
+.board-fits .fit-acts{display:flex;gap:4px;flex:none;margin-left:auto}
+.board-fits .fit-acts button{margin:0;min-height:30px;padding:0 8px;font-size:var(--fs-sm);white-space:nowrap}
 .proj-new{display:none;margin:0 0 10px}
 .proj-facts{margin:8px 0 0}.proj-facts p{margin:2px 0}.proj-notes{white-space:pre-wrap;color:var(--c-text-2)}
 .lane-more{display:block;width:100%;min-height:32px;margin:8px 0 0;padding:0;border:0;border-radius:var(--r-sm);background:none;box-shadow:none;color:var(--c-text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer}
@@ -5044,7 +5047,7 @@ const graphSection=(title,note,items)=>items?.length?`<div class="section-head">
 // Projects as a board: projects of one kind in stages (graph.boards), a view of Graph › Projects next to the list. Board by
 // default when there is a board; the choice is remembered on this device. Moves come from what the messages mean; the owner
 // drags a tile (or picks a stage from its menu) and that stands until a newer message moves it. Nothing here sends anything.
-let graphBoards=[],boardShown=sideStore.get('board-shown')||'',boardStage={},boardOpen=new Set(),boardFitsOpen=false;
+let graphBoards=[],boardShown=sideStore.get('board-shown')||'',boardStage={},boardOpen=new Set(),fitsOpen=new Set(),fitsPicked=new Map();
 const projView=()=>graphBoards.length?(sideStore.get('projects-view')==='list'?'list':'board'):'list';
 const shortDay=v=>{if(!v)return '';const d=new Date(String(v).length<=10?v+'T12:00':v),p=k=>d.toLocaleDateString('en-US',{[k]:k==='day'?'numeric':'short'});return `${p('weekday')} ${p('day')} ${p('month')}`};  /* Fri 23 Oct */
 const boardNow=()=>graphBoards.find(b=>b.name===boardShown)||graphBoards[0];
@@ -5070,13 +5073,35 @@ const lane=(b,s,items,on)=>{const key=b.name+'|'+s.name,all=boardOpen.has(key)||
  return `<section class="lane${s.side?' side':''}${on?' on':''}" data-lane="${esc(s.name)}" aria-label="${esc(s.name)}"><div class="lane-h"><h4>${esc(s.name)}</h4><span>${items.length}</span>${items.some(p=>p.value!=null)?`<span class="lane-total" title="Total value">${esc(money(items.reduce((t,p)=>t+(p.value||0),0)))}</span>`:''}</div>${s.hint?`<p class="lane-hint">${esc(s.hint)}</p>`:''}${stuck?`<p class="lane-sum">${stuck} with no reply in 10+ days</p>`:''}`
   +`<div class="tiles">${items.length?shown.map(p=>tile(p,b)).join(''):'<p class="lane-empty">Nothing here yet</p>'}</div>${items.length>shown.length?`<button type="button" class="lane-more" data-lane-more="${esc(key)}">Show ${items.length-shown.length} more</button>`:''}${b.team||s.side?'':`<button type="button" class="lane-add" data-proj-new data-proj-stage="${esc(s.name)}" aria-label="Add a project to ${esc(s.name)}">+ Add</button>`}</section>`};
 // A new board looks through the history once: "Looking through your history…", then what it found (graph.backfill_view)
+// "N projects could belong here": Add or Leave out one, or tick some (or Select all) and do them at once. A project that bundles several
+// counterparts says so and becomes one project per counterpart. The fold stays open (and in place) until nothing is left.
+const fitsBulkText=(b,picked)=>{const n=picked.size;return n?[`Add ${n}`,`Leave out ${n}`]:['Add all','Leave out all']};
+function fitsReview(b){const ids=new Set(b.maybes.map(m=>m.id)),picked=new Set([...(fitsPicked.get(b.id)||[])].filter(i=>ids.has(i)));fitsPicked.set(b.id,picked);
+ const [add,skip]=fitsBulkText(b,picked),all=picked.size===b.maybes.length,n=b.maybes.length;
+ return `<details class="board-fits" data-fits-board="${b.id}"${fitsOpen.has(b.id)?' open':''}><summary><b>${n} project${n===1?'':'s'} could belong here</b> · Review</summary>`
+ +(n>1?`<div class="fits-bulk"><label class="fit-pick"><input type="checkbox" data-fit-all="${b.id}"${all?' checked':''} aria-label="Select all"><span>Select all</span></label><span class="fit-acts"><button type="button" class="ghost" data-fit-bulk="add" data-fit-board="${b.id}">${add}</button><button type="button" class="ghost" data-fit-bulk="skip" data-fit-board="${b.id}">${skip}</button></span></div>`:'')
+ +`<ul>${b.maybes.map(m=>`<li>${n>1?`<label class="fit-pick"><input type="checkbox" data-fit-pick="${esc(m.id)}" data-fit-board="${b.id}"${picked.has(m.id)?' checked':''} aria-label="Select ${esc(m.name)}"></label>`:''}<span class="fit-text">${esc(m.name)}${m.split?`<small>Splits into ${m.split} projects, one per counterpart</small>`:''}${m.why?`<small>${esc(m.why)}</small>`:''}</span><span class="fit-acts"><button type="button" class="ghost" data-fit-add="${esc(m.id)}" data-fit-board="${b.id}"${m.split?` aria-label="Add as ${m.split} projects"`:''}>${m.split?`Add as ${m.split}`:'Add'}</button><button type="button" class="ghost" data-fit-skip="${esc(m.id)}" data-fit-board="${b.id}">Leave out</button></span></li>`).join('')}</ul></details>`}
+function fitsBulkSync(box){const b=+box.dataset.fitsBoard,picked=fitsPicked.get(b)||new Set(),boxes=[...box.querySelectorAll('[data-fit-pick]')],all=box.querySelector('[data-fit-all]');
+ if(all){all.checked=boxes.length>0&&picked.size===boxes.length;all.indeterminate=picked.size>0&&picked.size<boxes.length}
+ const [add,skip]=fitsBulkText(null,picked),bs=box.querySelectorAll('[data-fit-bulk]');if(bs.length){bs[0].textContent=add;bs[1].textContent=skip}}
+document.addEventListener('toggle',e=>{const d=e.target;if(d?.classList?.contains('board-fits')){const b=+d.dataset.fitsBoard;d.open?fitsOpen.add(b):fitsOpen.delete(b)}},true);
+document.addEventListener('change',e=>{const c=e.target.closest?.('[data-fit-pick],[data-fit-all]'),box=c?.closest('.board-fits');if(!box)return;const b=+box.dataset.fitsBoard,picked=fitsPicked.get(b)||new Set();fitsPicked.set(b,picked);
+ if(c.dataset.fitAll){for(const x of box.querySelectorAll('[data-fit-pick]')){x.checked=c.checked;c.checked?picked.add(x.dataset.fitPick):picked.delete(x.dataset.fitPick)}}else c.checked?picked.add(c.dataset.fitPick):picked.delete(c.dataset.fitPick);
+ fitsBulkSync(box)});
+async function fitsDecide(t,board,ids,add){const box=t.closest('.board-fits');fitsOpen.add(board);for(const b of box?.querySelectorAll('button')||[])b.disabled=true;const y=scrollY;
+ const r=await graphPost('board_fit',ids.length===1&&!t.dataset.fitBulk?{board_id:board,node_id:ids[0],add}:{board_id:board,node_ids:ids,add});
+ const picked=fitsPicked.get(board);if(picked)for(const i of ids)picked.delete(i);
+ const n=r.projects||0,done=r.decided??1;
+ toastFitUndo((add?(n>1?`Added ${n} projects.`:n===1?'Added to the board.':'Nothing new to add.'):done>1?`Left out ${done}.`:'Left out.')+(r.skipped?` ${r.skipped} could not be decided.`:''),r.undo,board);
+ graphMineBoards=null;await people('',true);scrollTo({top:y})}
+function toastFitUndo(text,token,board){toast(text);if(token){$('#toast').insertAdjacentHTML('beforeend',` <button type="button" data-fit-undo="${esc(token)}" data-fit-board="${board}">Undo</button>`);clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),10000)}}
 const backfillNote=f=>f.state==='running'?'<span class="backfill-run">Looking through your history…</span>':f.added?`${f.added} added from your history${f.review?` · ${f.review} to review`:''}`:f.review?`${f.review} from your history to review`:'Nothing more in your history';
 function boardView(){const b=boardNow();if(!b)return '<div class="empty all-clear"><div><strong>No boards yet.</strong>Projects of one kind show here in stages, as your messages move them.</div></div>';
  const by=s=>b.projects.filter(p=>p.stage===s.name),main=b.stages.filter(s=>!s.side),firstFull=b.stages.find(s=>by(s).length)?.name||b.stages[0].name;
  const on=b.stages.some(s=>s.name===boardStage[b.name])?boardStage[b.name]:firstFull;
  return `<div class="board-head"><div><div class="board-name-row">${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title" title="${esc(b.name)}">${esc(b.name)}</h3>${b.team?'':`<details class="board-menu"><summary aria-label="Board options" title="Board options">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-board-edit="${b.id}">Edit board</button>${b.default||graphBoards.length<2?'':`<button type="button" role="menuitem" data-board-default="${b.id}">Open on this board</button>`}<button type="button" role="menuitem" data-board-new>New board</button></div></details>`}</div><p class="board-sub">${b.visibility==='only_you'?seenBy(b.visibility)+' · ':''}${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''}${b.sorting?` · sorting ${b.sorting}`:''} · ${!b.team&&b.backfill?backfillNote(b.backfill):`a review moves them as ${b.team?'the team\'s':'your'} messages come in`}</p></div>`
   +(graphBoards.length>1?`<div class="board-chips" role="group" aria-label="Boards">${graphBoards.map(x=>`<button type="button" data-board="${esc(x.name)}" aria-pressed="${x.name===b.name}">${esc(x.name)}</button>`).join('')}</div>`:'')+(b.team?'':'<button type="button" class="board-new" data-proj-new>+ New project</button>')+'</div>'
-  +(!b.team&&b.maybes?.length?`<details class="board-fits"${boardFitsOpen?' open':''}><summary><b>${b.maybes.length} project${b.maybes.length===1?'':'s'} could belong here</b> · Review</summary><ul>${b.maybes.map(m=>`<li><span>${esc(m.name)}${m.why?`<small>${esc(m.why)}</small>`:''}</span><button type="button" class="ghost" data-fit-add="${esc(m.id)}" data-fit-board="${b.id}">Add</button><button type="button" class="ghost" data-fit-skip="${esc(m.id)}" data-fit-board="${b.id}">Leave out</button></li>`).join('')}</ul></details>`:'')
+  +(!b.team&&b.maybes?.length?fitsReview(b):'')
   +`<div class="sub-tabs stage-tabs" role="tablist" aria-label="Stages">${b.stages.map(s=>`<button type="button" role="tab" data-stage-tab="${esc(s.name)}" aria-selected="${s.name===on}"><span class="ell">${esc(s.side?'Stalled':s.name)}</span> <span class="badge">${by(s).length}</span></button>`).join('')}</div>`
   +`<div class="pboard-wrap"><div class="pboard" style="--lanes:${main.length}">${b.stages.map(s=>lane(b,s,by(s),s.name===on)).join('')}</div></div>`}
 const projectsPane=g=>{graphBoards=g.boards||[];graphSuggest=g.board_suggestions||[];graphProjNames=g.project_names||[];if(!g.team){graphMineBoards=graphBoards;graphPeopleNames=g.person_names||graphPeopleNames}const v=projView();
@@ -5275,8 +5300,8 @@ document.addEventListener('click',async e=>{const n=e.target.closest('[data-grap
  if(!confirm(`Delete ${name}? Its notes and details go too.`))return;t.disabled=true;
  try{await graphPost('graph_org_delete',{node_id:graphNode});toast(`Deleted ${name}.`);graphBack('orgs')}catch(err){t.disabled=false;toast(err.message,true)}});
 // Everywhere a project can be made or changed: the board, a lane's + Add, a tile's ⋯, the list, a project's page, a person or organisation
-document.addEventListener('click',async e=>{const t=e.target.closest('[data-proj-new],[data-proj-new-here],[data-proj-edit],[data-proj-outcome],[data-proj-archive],[data-proj-reopen],[data-proj-delete],[data-board-default],[data-fit-add],[data-fit-skip]');
- if(!t||!t.closest('#people-view,#page-head'))return;e.stopPropagation();e.preventDefault();t.closest('details')?.removeAttribute('open');
+document.addEventListener('click',async e=>{const t=e.target.closest('[data-proj-new],[data-proj-new-here],[data-proj-edit],[data-proj-outcome],[data-proj-archive],[data-proj-reopen],[data-proj-delete],[data-board-default],[data-fit-add],[data-fit-skip],[data-fit-bulk]');
+ if(!t||!t.closest('#people-view,#page-head'))return;e.stopPropagation();e.preventDefault();t.closest('details:not(.board-fits)')?.removeAttribute('open');  // a menu closes; the review list stays open
  try{if(t.hasAttribute('data-proj-new'))return pjOpen({stage:t.dataset.projStage||'',from:t.closest('.proj-board')?'board':''});
   if(t.hasAttribute('data-proj-new-here')){const n=graphNode||'',name=$('#people-view .person-head h3')?.textContent||'';return pjOpen(n.startsWith('org:')?{org:n.startsWith('org:named:')?name:n.slice(4)}:{person:{id:n,name}})}
   if(t.dataset.projEdit)return pjOpen({node:t.dataset.projEdit});
@@ -5285,7 +5310,8 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-proj
   if(t.dataset.projReopen){await pjEnd(t.dataset.projReopen,null,'');toast('Reopened.');return people(graphNode,true)}
   if(t.dataset.projArchive)return pjArchive(t.dataset.projArchive,!t.hasAttribute('data-restore'));
   if(t.dataset.boardDefault){await graphPost('board_default',{board_id:+t.dataset.boardDefault});toast('Projects opens on this board now.');return people('',true)}
-  if(t.dataset.fitAdd||t.dataset.fitSkip){const add=!!t.dataset.fitAdd;boardFitsOpen=true;t.disabled=true;await graphPost('board_fit',{board_id:+t.dataset.fitBoard,node_id:t.dataset.fitAdd||t.dataset.fitSkip,add});toast(add?'Added to the board.':'Left out.');graphMineBoards=null;return people('',true)}}
+  if(t.dataset.fitAdd||t.dataset.fitSkip)return fitsDecide(t,+t.dataset.fitBoard,[t.dataset.fitAdd||t.dataset.fitSkip],!!t.dataset.fitAdd);
+  if(t.dataset.fitBulk){const box=t.closest('.board-fits'),b=+t.dataset.fitBoard,picked=fitsPicked.get(b),ids=picked?.size?[...picked]:[...box.querySelectorAll('[data-fit-add]')].map(x=>x.dataset.fitAdd);if(ids.length)return fitsDecide(t,b,ids,t.dataset.fitBulk==='add')}}
  catch(err){t.disabled=false;toast(err.message,true)}},true);
 // A tile from the keyboard: Enter opens it, E edits it
 $('#people-view').addEventListener('keydown',e=>{const t=e.target.closest?.('.proj-board .tile:not(.team)');if(t&&e.target===t&&(e.key==='e'||e.key==='E')&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();pjOpen({node:t.dataset.node})}});
@@ -5717,7 +5743,7 @@ document.querySelectorAll('.refresh-tap').forEach(e=>{e.addEventListener('click'
  const all=()=>{for(const [el,s] of seen)if(!s.shut||s.ready){if(off()){clearTimeout(s.t);if(el.isConnected)shut(el,false)}else plan(el,true)}};
  document.addEventListener('visibilitychange',all);still.addEventListener('change',all);
  const scan=()=>document.querySelectorAll('[data-blink]').forEach(add);
- let queued=false;scan();new MutationObserver(()=>{if(!queued){queued=true;queueMicrotask(()=>{queued=false;scan()})}}).observe(document.body,{childList:true,subtree:true})})();$('#toast').onclick=async e=>{const u=e.target.closest('[data-unmerge]');if(u){u.disabled=true;try{await graphPost('graph_same_all',{undo:u.dataset.unmerge});toast('Split again.');if(!$('#people').hidden)await people(graphNode,true)}catch(err){toast(err.message,true)}return}const b=e.target.closest('[data-undo]');if(!b)return;b.disabled=true;try{await saveDecision(b.dataset.undo,'undo')}catch(e){toast(e.message,true)}};
+ let queued=false;scan();new MutationObserver(()=>{if(!queued){queued=true;queueMicrotask(()=>{queued=false;scan()})}}).observe(document.body,{childList:true,subtree:true})})();$('#toast').onclick=async e=>{const f=e.target.closest('[data-fit-undo]');if(f){f.disabled=true;try{const y=scrollY;await graphPost('board_fit',{board_id:+f.dataset.fitBoard,undo:f.dataset.fitUndo});toast('Undone.');fitsOpen.add(+f.dataset.fitBoard);graphMineBoards=null;if(!$('#people').hidden){await people('',true);scrollTo({top:y})}}catch(err){toast(err.message,true)}return}const u=e.target.closest('[data-unmerge]');if(u){u.disabled=true;try{await graphPost('graph_same_all',{undo:u.dataset.unmerge});toast('Split again.');if(!$('#people').hidden)await people(graphNode,true)}catch(err){toast(err.message,true)}return}const b=e.target.closest('[data-undo]');if(!b)return;b.disabled=true;try{await saveDecision(b.dataset.undo,'undo')}catch(e){toast(e.message,true)}};
 document.addEventListener('toggle',e=>{const id=e.target.dataset?.tech;if(id)e.target.open?openTech.add(id):openTech.delete(id)},true);
 setInterval(()=>document.querySelectorAll('.elapsed[data-since]').forEach(x=>x.textContent=elapsed(x.dataset.since)),1000);
 setInterval(async()=>{if(document.hidden)return;for(const list of [...document.querySelectorAll('[data-steps]')].slice(0,3)){const id=list.dataset.steps;try{const p=await request('api/progress?id='+encodeURIComponent(id));if(!['starting','running'].includes(p.status)){peeks.delete(id);paintPeek(id);refresh();return}steps.set(id,p.steps);if(p.peek)peeks.set(id,{image:null,...peeks.get(id),on:true});else if(peeks.has(id)){peeks.get(id).on=false;paintPeek(id)}list.innerHTML=p.steps.map(x=>`<li>${esc(x.title)}</li>`).join('');const slot=document.querySelector(`[data-browser="${CSS.escape(id)}"]`),html=browserLink(id,p.browser);if(slot&&slot.innerHTML!==html)slot.innerHTML=html}catch{}}},4000);
