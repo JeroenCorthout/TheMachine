@@ -9410,7 +9410,30 @@ def push_notify(store, config, row, sender=None):
         payload = {'title': ('Reminder: ' if row.get('reminder') else '') + row['title'],
                    'body': plain(row['body']), 'url': root + '#card=' + row['id']}
     payload['tag'] = row['id']  # a newer notification for the same card replaces the older one
+    if row.get('_silent'):
+        payload['silent'] = True  # later cards of a batch still reach the phone, without a second buzz
     return push_send(store, config, subscriptions, payload, 'suggestion=' + row['id'], sender)
+
+
+def reminder_channels(store, config):
+    """Where a reminder (a snooze ending, a result) reaches the owner, as deliver_one sends it: Telegram when it is on,
+    and a notification on every subscribed device (push_notify needs dashboard_host). `push` is the device count."""
+    push = 0
+    if config.get('dashboard_host'):
+        with store.connect() as db:
+            push = db.execute('SELECT count(*) FROM push_subscriptions').fetchone()[0]
+    return {'telegram': telegram_on(config), 'push': push}
+
+
+def reminder_line(channels):
+    """The honest promise for a snooze, from reminder_channels. The dashboard says the same (remindLine)."""
+    if channels['telegram'] and channels['push']:
+        return 'I’ll remind you on Telegram and as a notification.'
+    if channels['telegram']:
+        return 'I’ll remind you on Telegram.'
+    if channels['push']:
+        return 'I’ll send you a notification.'
+    return 'It’ll be back on the dashboard then.'
 
 
 def push_send(store, config, subscriptions, payload, label, sender=None):
@@ -9701,8 +9724,9 @@ def deliver_one(store, config, edit_cards=True):
                     # The result/new request arrived during its receipt send. Keep
                     # its distinct notification intent instead of losing it here.
                     db.execute("UPDATE deliveries SET status='queued',reminder=1,error=NULL WHERE suggestion_id=?",(row['id'],))
-    # Optional phone delivery must never delay committing a known Telegram receipt.
-    if status == 'sent' and not row.get('_silent'):
+    # Optional phone delivery must never delay committing a known Telegram receipt. A batch buzzes once (_silent),
+    # but every card of it reaches the phone, as it reaches Telegram.
+    if status == 'sent':
         try:push_notify(store, config, row)
         except Exception as failure:LOG.warning('push error=%s', type(failure).__name__)
     if row['_result_notice']:
@@ -11128,6 +11152,7 @@ class App:
             result['reviews_on'] = bool((self.config.get('review_worker') or {}).get('enabled'))  # off until activated
             result['started_at'] = self.started_at()
             result['hours'] = self.hours()
+            result['reminders'] = reminder_channels(self.store, self.config)  # how a snooze comes back (Telegram, notifications)
             result['agents_settings'] = self.agents_view()
             result['signatures'] = self.signature_view()
             result['lookups'] = self.lookups_view()
@@ -11371,6 +11396,8 @@ class App:
                                      "with outcome:'needs_you' and needs:'check the draft and send it', and a body that says it is ready for them "
                                      '(not that it went out). Do not send it any other way.')
             saved=self.store.prepare(args['suggestion_id'], args['body'],args.get('job_id'),action,outcome,args.get('note_kind'),require_note=True,finish_state=args.get('finish_state'),title=args.get('title'))
+            if saved.get('status')=='snoozed' and not saved.get('replayed'):
+                saved['note']+=' Tell them how it comes back, in these words: '+reminder_line(reminder_channels(self.store,self.config))
 
             if args.get('send_now') is True and not saved.get('replayed'):
                 with self.store.connect() as db:

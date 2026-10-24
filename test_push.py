@@ -152,9 +152,34 @@ class PhoneNotifications(unittest.TestCase):
                 patch.object(a, 'push_notify', side_effect=RuntimeError('phone push broke')) as push:
             self.assertTrue(a.deliver_one(self.store, {}, edit_cards=False))  # a push failure never fails the delivery
             self.assertTrue(a.deliver_one(self.store, {}, edit_cards=False))  # second card of the batch arrives silently
-        self.assertEqual([c.args[2]['id'] for c in push.call_args_list], [first])
+        # Both reach the phone, as both reach Telegram; only the first buzzes.
+        self.assertEqual([(c.args[2]['id'], c.args[2]['_silent']) for c in push.call_args_list], [(first, False), (second, True)])
         with self.store.connect() as db:
             self.assertEqual({r[0] for r in db.execute('SELECT status FROM deliveries WHERE suggestion_id IN (?,?)', (first, second))}, {'sent'})
+
+    def test_a_later_card_of_a_batch_is_a_silent_notification(self):
+        self.app.action('push_subscribe', SUB, owner_dashboard=True)
+        sent = []
+        a.push_notify(self.store, self.config, {'id': 'x' * 16, 'title': 'T', 'body': 'B', 'status': 'pending', 'reminder': 1, '_silent': True},
+                      lambda request: sent.append(request) or {'results': []})
+        self.assertEqual((sent[0]['payload']['title'], sent[0]['payload']['silent']), ('Reminder: T', True))
+        sw = (Path(a.__file__).with_name('sw.js')).read_text()
+        self.assertIn('renotify: !!data.tag && !data.silent, silent: !!data.silent', sw)
+
+    def test_the_snooze_promise_names_the_channels_delivery_uses(self):
+        say = lambda config: a.reminder_line(a.reminder_channels(self.store, config))
+        self.assertEqual(say(dict(self.config, telegram_owner='')), 'It’ll be back on the dashboard then.')
+        self.assertEqual(say(dict(self.config, telegram_owner='42')), 'I’ll remind you on Telegram.')
+        self.app.action('push_subscribe', SUB, owner_dashboard=True)
+        self.assertEqual(a.reminder_channels(self.store, dict(self.config, telegram_owner='')), {'telegram': False, 'push': 1})
+        self.assertEqual(say(dict(self.config, telegram_owner='')), 'I’ll send you a notification.')
+        self.assertEqual(say(dict(self.config, telegram_owner='42')), 'I’ll remind you on Telegram and as a notification.')
+        # Without a dashboard address push_notify sends nothing, so a subscription promises nothing either.
+        self.assertEqual(say({'accounts': [], 'telegram_owner': ''}), 'It’ll be back on the dashboard then.')
+        # The dashboard's own line says the same in each case.
+        html = (Path(a.__file__).with_name('dashboard.html')).read_text()
+        for line in ('I’ll remind you on Telegram and as a notification.', 'I’ll remind you on Telegram.', 'I’ll send you a notification.'):
+            self.assertIn(line, html)
 
     def test_without_telegram_cards_reach_the_app_and_nothing_goes_to_telegram(self):
         self.store.commit_page('work', {}, [{'account_id': 'work', 'source_id': 'one', 'kind': 'gmail.message', 'occurred_at': a.now(),

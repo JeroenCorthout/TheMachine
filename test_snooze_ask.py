@@ -54,6 +54,8 @@ class SnoozeFromChange(unittest.TestCase):
         # 09:00 in the owner's zone after the clock change (CET), not the UTC offset of today.
         self.assertEqual(saved['status'], 'snoozed')
         self.assertEqual(saved['snoozed_until'], '2026-10-27T08:00:00+00:00')
+        # The run tells them how it comes back, as delivery does it: no Telegram and no phone here, so the dashboard.
+        self.assertTrue(saved['note'].endswith('in these words: It’ll be back on the dashboard then.'))
         row = self.row()
         self.assertEqual((row['status'], row['snoozed_until']), ('snoozed', '2026-10-27T08:00:00+00:00'))
         self.assertTrue(a.card(row).endswith('Snoozed until Tue 27 Oct, 09:00.'))

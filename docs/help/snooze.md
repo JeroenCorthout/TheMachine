@@ -14,6 +14,10 @@ Snoozes of a day or more land at your "Snoozes land at" time, and work cards wai
 
 A **Change** like "remind me about this next Tuesday" snoozes it too.
 
+## When it comes back
+
+It comes back on Telegram when that is on, and as a notification on each device where notifications are on. After a snooze, the message says which. With neither, it's back on the dashboard, and **Turn on notifications** is right there. On iPhone and iPad, add The Machine to your Home Screen first.
+
 ## While it's snoozed
 
 The card sits under **Coming back later**, and on its day in the [Calendar](calendar.md). **Unsnooze** brings it back now, **Change time** picks another time.

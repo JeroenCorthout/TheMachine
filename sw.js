@@ -6,7 +6,7 @@ self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = {title: event.data?.text() || ''}; }
   event.waitUntil(self.registration.showNotification(data.title || 'The Machine', {
-    body: data.body || '', tag: data.tag || undefined, renotify: !!data.tag,
+    body: data.body || '', tag: data.tag || undefined, renotify: !!data.tag && !data.silent, silent: !!data.silent,
     icon: 'brand/app-icon-192.png', badge: 'brand/app-icon-badge-96.png',
     data: {url: new URL(data.url || '.', self.registration.scope).href},
     // Fleet questions: Answer once and Decline open the dashboard at the question, which asks to confirm.
