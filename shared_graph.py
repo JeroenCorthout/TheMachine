@@ -64,6 +64,17 @@ MAX_BODY = 20000            # characters of one message
 TIMELINE = 12               # lines per record
 MAIL_KINDS = ('gmail.message', 'ms_graph.message', 'outlook.message', 'salesflare.email', 'intercom.conversation')
 HEX = re.compile(r'[a-f0-9]{32}')
+# One fixed statement per table that holds a Fleet's shared Graph: what goes when a Fleet's sharing is purged or left.
+FLEET_DELETE = {
+    'team_records': 'DELETE FROM team_records WHERE fleet=?',
+    'team_mail': 'DELETE FROM team_mail WHERE fleet=?',
+    'team_files': 'DELETE FROM team_files WHERE fleet=?',
+    'team_asks': 'DELETE FROM team_asks WHERE fleet=?',
+    'team_sources': 'DELETE FROM team_sources WHERE fleet=?',
+    'team_blobs': 'DELETE FROM team_blobs WHERE fleet=?',
+    'team_wants': 'DELETE FROM team_wants WHERE fleet=?',
+    'share_out': 'DELETE FROM share_out WHERE fleet=?',
+}
 MEMBER_ID = re.compile(r'[A-Za-z0-9_.:@-]{1,80}')  # a Fleet member's id, as crm.MEMBER
 ADDRESS = re.compile(r'[^@\s<>",;]+@[^@\s<>",;]+\.[^@\s<>",;]+')
 SCHEMA = '''
@@ -441,8 +452,8 @@ class Scope:
         if self._automated is None:
             found, spoken = set(), set()
             if self.accounts:
-                for e in self._db.execute(f"SELECT id,kind,metadata FROM events WHERE deleted=0 AND kind IN ({','.join('?' * len(MAIL_KINDS))}) "
-                                          f"AND account_id IN ({','.join('?' * len(self.accounts))})", (*MAIL_KINDS, *sorted(self.accounts))):
+                for e in self._db.execute('SELECT id,kind,metadata FROM events WHERE deleted=0 AND kind IN (SELECT value FROM json_each(?)) '
+                                          'AND account_id IN (SELECT value FROM json_each(?))', (json.dumps(sorted(MAIL_KINDS)), json.dumps(sorted(self.accounts)))):
                     metadata = json.loads(e['metadata'] or '{}')
                     thread = thread_of(e['kind'], metadata, e['id'])
                     if thread in spoken:
@@ -574,8 +585,8 @@ def _who(metadata, scope):
 def _events(db, accounts, since):
     if not accounts:
         return []
-    return db.execute(f"SELECT id,account_id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 AND occurred_at>=? "
-                      f"AND account_id IN ({','.join('?' * len(accounts))}) ORDER BY occurred_at", (since, *accounts)).fetchall()
+    return db.execute("SELECT id,account_id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 AND occurred_at>=? "
+                      "AND account_id IN (SELECT value FROM json_each(?)) ORDER BY occurred_at", (since, json.dumps(list(accounts)))).fetchall()
 
 
 def collect(db, scope, key, secret, today=None, held=None, kept=()):
@@ -739,8 +750,8 @@ def unjudged(db, scope, limit, skip=(), first=None):
     found = []
     if not scope.accounts:
         return found
-    rows = [dict(e) for e in db.execute(f"SELECT id,account_id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 "
-                                        f"AND account_id IN ({','.join('?' * len(scope.accounts))}) ORDER BY occurred_at DESC", sorted(scope.accounts))
+    rows = [dict(e) for e in db.execute('SELECT id,account_id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 '
+                                        'AND account_id IN (SELECT value FROM json_each(?)) ORDER BY occurred_at DESC', (json.dumps(sorted(scope.accounts)),))
             if e['kind'] in MAIL_KINDS]
     for e in rows:
         e['metadata'] = json.loads(e['metadata'] or '{}')
@@ -1315,7 +1326,7 @@ class SharedGraph:
         with self.connect() as db:
             ensure(db)
             for table in ('team_records', 'team_mail', 'team_files', 'team_blobs', 'team_sources', 'team_wants', 'share_out'):
-                db.execute(f'DELETE FROM {table} WHERE fleet=?', (fleet,))
+                db.execute(FLEET_DELETE[table], (fleet,))
             db.execute('DELETE FROM fleet_meta WHERE key LIKE ?', ('graph_served:' + fleet + ':%',))
         for key in ('graph_out:', 'graph_chains:', 'graph_want:', 'graph_start:', 'graph_week:'):
             self.set_meta(key + fleet, None)
@@ -2024,7 +2035,7 @@ class SharedGraph:
             for (fleet,) in db.execute('SELECT DISTINCT fleet FROM team_sources').fetchall():
                 if fleet not in ids:
                     for table in ('team_records', 'team_mail', 'team_files', 'team_asks', 'team_sources', 'team_blobs', 'team_wants', 'share_out'):
-                        db.execute(f'DELETE FROM {table} WHERE fleet=?', (fleet,))
+                        db.execute(FLEET_DELETE[table], (fleet,))
                     for key in ('graph_keys:', 'graph_out:', 'graph_chains:', 'graph_members:', 'graph_off:', 'graph_off_ok:', 'graph_ask_sent:', 'graph_week:',
                                 'graph_want:', 'graph_confirmed:'):
                         db.execute('DELETE FROM fleet_meta WHERE key=?', (key + fleet,))

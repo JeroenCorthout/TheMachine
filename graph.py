@@ -2623,10 +2623,9 @@ def project_event_ids(db, ids):
     ids = sorted(ids)
     if not ids:
         return set()
-    marks = ','.join('?' * len(ids))
-    return {r[0] for r in db.execute(f'SELECT event_id FROM event_projects WHERE project_id IN ({marks}) UNION '
-                                     f'SELECT event_id FROM graph_events WHERE probable=0 AND node_id IN ({marks})',
-                                     (*ids, *('project:' + str(i) for i in ids)))}
+    return {r[0] for r in db.execute('SELECT event_id FROM event_projects WHERE project_id IN (SELECT value FROM json_each(?)) UNION '
+                                     'SELECT event_id FROM graph_events WHERE probable=0 AND node_id IN (SELECT value FROM json_each(?))',
+                                     (json.dumps(ids), json.dumps(['project:' + str(i) for i in ids])))}
 
 
 def visible_to_team(db, node_id):

@@ -1414,7 +1414,7 @@ class SharedGraph(unittest.TestCase):
         self.away(self.mem, 40)
         with self.mem.store.connect() as db:
             for table in ('team_mail', 'team_records', 'team_blobs', 'team_sources'):
-                db.execute(f'DELETE FROM {table}')
+                db.execute(sg.FLEET_DELETE[table], (FLEET,))
         self.mem.set_meta('graph_confirmed:' + FLEET, None)
         self.rounds(4)
         self.assertIn(DEAL, self.received(self.mem))
@@ -1447,6 +1447,27 @@ class SharedGraph(unittest.TestCase):
                 graph.clean_visibility('people')
             with self.assertRaises(ValueError):
                 graph.save_board(db, {'board_id': board, 'name': 'Acquisition conversations', 'stages': ['Talks'], 'about': 'M&A', 'visibility': 'people'}, a.now())
+
+
+class StaticSql(unittest.TestCase):
+    def test_the_shared_graph_builds_no_sql_from_strings(self):
+        """Every query is a fixed string: lists go in as one JSON parameter (json_each), tables by a fixed statement each."""
+        import ast
+        for name in ('shared_graph.py',):
+            tree = ast.parse(Path(__file__).with_name(name).read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and getattr(node.func, 'attr', '') in ('execute', 'executemany') and node.args:
+                    self.assertNotIsInstance(node.args[0], ast.JoinedStr, f'{name}:{node.lineno} builds SQL with an f-string')
+
+    def test_a_list_parameter_matches_like_the_placeholders_did(self):
+        import sqlite3
+        db = sqlite3.connect(':memory:')
+        db.execute('CREATE TABLE event_projects(event_id, project_id)'); db.execute('CREATE TABLE graph_events(event_id, node_id, probable)')
+        db.executemany('INSERT INTO event_projects VALUES (?,?)', [(1, 7), (2, 8), (3, 9)])
+        db.executemany('INSERT INTO graph_events VALUES (?,?,?)', [(4, 'project:7', 0), (5, 'project:8', 1), (6, "project:7') OR 1=1 --", 0)])
+        self.assertEqual(graph.project_event_ids(db, {7, 8}), {1, 2, 4})
+        self.assertEqual(graph.project_event_ids(db, set()), set())
+        self.assertEqual(set(sg.FLEET_DELETE), {'team_records', 'team_mail', 'team_files', 'team_asks', 'team_sources', 'team_blobs', 'team_wants', 'share_out'})
 
 if __name__ == '__main__':
     unittest.main()

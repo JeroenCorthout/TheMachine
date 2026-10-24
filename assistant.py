@@ -15004,7 +15004,7 @@ class App:
                 ids = [int(i) for i in (args.get('event_ids') or []) if str(i).isdigit()][:500]
                 if not choice or not ids:
                     raise ValueError('Choose threads, and team or only_you')
-                rows = [dict(r) for r in db.execute(f"SELECT id,account_id,kind,metadata FROM events WHERE id IN ({','.join('?' * len(ids))})", ids)]
+                rows = [dict(r) for r in db.execute('SELECT id,account_id,kind,metadata FROM events WHERE id IN (SELECT value FROM json_each(?))', (json.dumps(ids),))]
                 labels = self.fleet.thread_labels(db, rows)
                 done = 0
                 for r in rows:
