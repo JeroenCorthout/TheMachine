@@ -25,7 +25,7 @@ const server=createServer(async(req,res)=>{res.setHeader('Content-Type','applica
  if(brand[req.url]){res.setHeader('Content-Type',req.url.endsWith('.png')?'image/png':'font/woff2');res.end(await readFile(new URL('./'+brand[req.url],import.meta.url)));return}
  if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(req.url.startsWith('/api/status'))return res.end(JSON.stringify({suggestions:[],connectors,suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}}));
- if(req.url==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
+ if(req.url==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);if(call.action==='fleet_share_replace')await new Promise(r=>setTimeout(r,350));calls.push(call);
   if(call.action==='fleet_share'){view.shared.shares=[{fleet:FL,fleet_name:'Acme',service:'intercom',label:'Intercom',workspace:'Acme Support',by:'Sam Doe',held_by:[],mine:true,have:true,admin:true}];view.shared.accounts=[];return res.end(JSON.stringify({ok:true,shared_with:2}))}
   return res.end(JSON.stringify({ok:true,done:true}))}
  if(req.url.startsWith('/api/fleet'))return res.end(JSON.stringify(view));
@@ -69,11 +69,12 @@ try{
   assert.match(await page.locator('.fleet-box').filter({hasText:'Shared connectors'}).innerText(),/Not confirmed yet: Ada Park/);
   await page.locator('#toast.show').waitFor({state:'detached'}).catch(()=>{});await page.waitForFunction(()=>!document.querySelector('#toast.show'));
   if(shots)await page.screenshot({path:`${shots}/oss-share-prompts-${width}.png`,fullPage:true});
-  await page.locator('#share-p1 [data-choice="yes"]').click();
-  await page.waitForFunction(()=>true);
+  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/action')&&r.request().postDataJSON()?.action==='fleet_share_ok'),
+    page.locator('#share-p1 [data-choice="yes"]').click()]);
   await page.locator('#share-p3 input[name=token]').fill('replacement-token-for-tests');
-  await page.locator('#share-p3 button.primary').click();
-  await page.waitForTimeout(200);
+  // Wait for the actual accepted request, not a 200 ms guess under concurrent CI load.
+  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/action')&&r.request().postDataJSON()?.action==='fleet_share_replace'),
+    page.locator('#share-p3 button.primary').click()]);
   assert.ok(calls.some(c=>c.action==='fleet_share_ok'&&c.args.id==='p1'&&c.args.choice==='yes'));
   assert.ok(calls.some(c=>c.action==='fleet_share_replace'&&c.args.token==='replacement-token-for-tests'));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
