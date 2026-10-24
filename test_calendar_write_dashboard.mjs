@@ -78,6 +78,12 @@ try{
   // The Calendar: New event with a picker of the calendars that can be changed
   await showCal(page);calls=[];
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.querySelector('[data-cal-new]').getBoundingClientRect().right<=innerWidth),'the Calendar fits at '+width);
+  // The header "+" menu has New event too, first on the Calendar, and it opens the same form
+  if(await page.locator('#new-card-top').isVisible()){await page.locator('#new-card-top').click();await page.locator('#new-menu:not([hidden])').waitFor();
+   assert.equal(await page.locator('#new-menu button').first().textContent(),'New event');
+   if(shots)await page.screenshot({path:`${shots}/calendar-plus-menu-${width}-${scheme}.png`});
+   await page.locator('#new-menu [data-new-what="event"]').click();await page.locator('#cal-dialog').waitFor({state:'visible'});
+   assert.equal(await page.locator('#cal-dlg-title').textContent(),'New event');await page.locator('#cal-dialog [data-cal-close]').first().click()}
   await page.locator('[data-cal-new]').click();await page.locator('#cal-dialog').waitFor({state:'visible'});
   assert.equal(await page.locator('#cal-dlg-title').textContent(),'New event');
   assert.deepEqual(await page.locator('#cal-f-cal option').allTextContents(),['owner@example.com','Kid’s calendar']);
@@ -183,6 +189,11 @@ try{
    for(const mode of ['week','month']){await page.evaluate(m=>calSetMode(m),mode);await page.waitForTimeout(400);await page.screenshot({path:`${shots}/calendar-${mode}-${width}-${scheme}.png`})}
    await page.evaluate(()=>{calSetMode('agenda');scrollTo(0,0)})}
   await context.close()}
+ // From another page, before the Calendar was opened: the "+" menu's New event (last there) asks for the calendars first
+ {const {context,page}=await open(390,844);await page.locator('#new-card-top').click();await page.locator('#new-menu:not([hidden])').waitFor();
+  assert.equal(await page.locator('#new-menu button').last().textContent(),'New event');
+  await page.locator('#new-menu [data-new-what="event"]').click();await page.locator('#cal-dialog').waitFor({state:'visible'});
+  assert.deepEqual(await page.locator('#cal-f-cal option').allTextContents(),['owner@example.com','Kid’s calendar']);await context.close()}
  // Nothing to change: no New event and no editor
  {writable=false;const {context,page}=await open(1440,900);await showCal(page);assert.equal(await page.locator('[data-cal-new]').count(),0);assert.equal(await page.locator('[data-cal-edit]').count(),0);await context.close();writable=true}
  assert.deepEqual(errors,[]);assert.deepEqual(outside,[],'the page talks only to its Machine');

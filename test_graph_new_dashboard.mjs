@@ -59,10 +59,10 @@ try{
   await click('#people-view .person-menu summary');await click('#people-view [data-same-as]');await page.locator('#record-dialog[open]').waitFor();
   await page.locator('#record-form [name="name"]').fill('Bo Kent');await click('#record-form button.primary');await page.locator('#record-dialog[open]').waitFor({state:'detached'});
   assert.deepEqual(calls.find(c=>c.action==='graph_same').args,{a:'email:rae@umber.example',b:'person:b',same:true});
-  // The "+" in the top bar: New card, person, organisation, project; New organisation opens its form
+  // The "+" in the top bar: New card, person, organisation, project and event; New organisation opens its form
   // (a desktop has New card in the sidebar and these in the page heads and the command palette)
   if(mobile){await click('#new-card-top');await page.locator('#new-menu:not([hidden])').waitFor();
-   assert.deepEqual(await page.locator('#new-menu button').allTextContents(),['New card','New person','New organisation','New project']);
+   assert.deepEqual(await page.locator('#new-menu button').allTextContents(),['New card','New person','New organisation','New project','New event']);
    {const r=await page.locator('#new-menu').boundingBox();assert.ok(r.x>=0&&r.x+r.width<=width,'the + menu fits')}await shot(page,`plus-menu-${tag}`);
    await click('#new-menu [data-new-what="org"]')}
   else{await page.evaluate(()=>graphBack('orgs'));await click('#page-head [data-graph-new="org"]')}await page.locator('#record-dialog[open]').waitFor();assert.equal(await page.locator('#record-dialog-title').textContent(),'New organisation');

@@ -4273,6 +4273,9 @@ const calPad=n=>String(n).padStart(2,'0'),calHM=d=>calPad(d.getHours())+':'+calP
 // The browser's own clock as an offset, so 16:00 stays 16:00 here
 const calIso=(day,hm)=>{const d=new Date(day+'T'+hm+':00');if(isNaN(d))return '';const o=-d.getTimezoneOffset(),a=Math.abs(o);return day+'T'+hm+':00'+(o<0?'-':'+')+calPad(Math.floor(a/60))+':'+calPad(a%60)};
 function calAllDay(on){$('#cal-f-allday').checked=on;for(const el of document.querySelectorAll('#cal-dialog .cal-f-time'))el.hidden=on;document.querySelector('#cal-dialog .cal-f-until').hidden=!on}
+// New event from anywhere (the "+" menu, the palette): the calendars it can add to come with the Calendar's answer
+async function calNew(){if(!calCals.length){const a=new Date();try{const r=await request('api/calendar?from='+encodeURIComponent(a.toISOString())+'&to='+encodeURIComponent(new Date(a.getTime()+864e5).toISOString()));if(Array.isArray(r?.calendars))calCals=r.calendars}catch{}}
+ if(!calCals.length){toast('No calendar you can change yet. See Connections.',true);return}calEditor()}
 function calEditor(id){const m=id?(calMeetings||[]).find(x=>x.id===id):null;if(id&&!m?.edit)return;
  const sel=$('#cal-f-cal'),mine=m?calCals.filter(c=>c.id===m.account_id):calCals;if(!mine.length){toast('That calendar can’t be changed here.',true);return}
  sel.innerHTML=mine.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');sel.disabled=!!m||mine.length<2;
@@ -5961,12 +5964,14 @@ async function ncCreate(){const text=$('#nc-text').value.trim();if(!text||nc.bus
  const top=$('#topbar');if(top){plus.className='topbar-menu new-card-top';plus.innerHTML=NC_PLUS;top.append(plus);document.documentElement.classList.add('nc-drawer')}
  else{plus.innerHTML=`${NC_PLUS}<span class="lbl">New</span>`;$('#open-settings').before(plus)}}
 document.addEventListener('click',e=>{if(e.target.closest('[data-new-card]')){e.preventDefault();if(typeof drawerClose==='function')drawerClose();ncOpen();nc.byPointer=e.detail>0}});
-// "+" in the top bar: what to make. A card, a person, an organisation or a project.
+// "+" in the top bar: what to make. A card, a person, an organisation, a project or an event (first on the Calendar).
 const NEW_WHAT=[['card','New card'],['person','New person'],['org','New organisation'],['project','New project']];
+const newWhatList=()=>$('#calendar')?.hidden===false?[['event','New event'],...NEW_WHAT]:[...NEW_WHAT,['event','New event']];
 function newMenu(open){const b=$('#new-card-top');let m=$('#new-menu');if(!open){if(m&&!m.hidden){m.hidden=true;b?.setAttribute('aria-expanded','false')}return}
- if(!m){m=document.createElement('div');m.id='new-menu';m.className='fact-menu-list new-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','New');m.innerHTML=NEW_WHAT.map(([k,t])=>`<button type="button" role="menuitem" data-new-what="${k}">${t}</button>`).join('');document.body.append(m)}
+ if(!m){m=document.createElement('div');m.id='new-menu';m.className='fact-menu-list new-menu';m.setAttribute('role','menu');m.setAttribute('aria-label','New');document.body.append(m)}
+ m.innerHTML=newWhatList().map(([k,t])=>`<button type="button" role="menuitem" data-new-what="${k}">${t}</button>`).join('');
  const r=b.getBoundingClientRect();m.style.top=Math.round(r.bottom+6)+'px';m.style.right=Math.max(8,Math.round(innerWidth-r.right))+'px';m.hidden=false;b.setAttribute('aria-expanded','true');m.querySelector('button').focus({preventScroll:true})}
-const newWhat=(k,byPointer)=>{if(k==='card'){ncOpen();nc.byPointer=byPointer}else if(k==='project')pjOpen({});else recOpen(k)};
+const newWhat=(k,byPointer)=>{if(k==='card'){ncOpen();nc.byPointer=byPointer}else if(k==='event')calNew();else if(k==='project')pjOpen({});else recOpen(k)};
 document.addEventListener('click',e=>{const plus=e.target.closest('[data-new-menu]');if(plus){e.preventDefault();newMenu($('#new-menu')?.hidden!==false);return}
  const w=e.target.closest('[data-new-what]');if(w){newMenu(false);if(typeof drawerClose==='function')drawerClose();newWhat(w.dataset.newWhat,e.detail>0);return}
  if(!e.target.closest('#new-menu'))newMenu(false)});
@@ -6103,6 +6108,7 @@ actionAdd(
  // Projects as a board or a list, once there is a board; a new board from its editor (the page shows it only to the owner)
  {id:'go-projects-view',group:'Go to',each:()=>graphBoards.length?[['board','Board'],['list','List']].map(([v,t])=>({id:'go-projects-'+v,label:'Projects: '+t+' view',keywords:'projects board list kanban stages',run:()=>{const go=()=>projectsViewSet(v);if(!$('#people').hidden&&graphShown==='projects'&&!graphNode)go();else{sideStore.set('projects-view',v);kbNav('.side-sub a[data-graph-sub="projects"]')()}}})):[]},
  {id:'board-new',group:'Actions',label:'New board',keywords:'projects board stages kanban',when:()=>!$('#people').hidden&&graphShown==='projects'&&!!document.querySelector('#people-view [data-board-new]'),run:()=>edOpen()},
+ {id:'event-new',group:'Actions',label:'New event',keywords:'event meeting calendar appointment add create invite',run:()=>calNew()},
  {id:'project-new',group:'Actions',label:'New project',keywords:'project deal opportunity add create crm',run:()=>pjOpen()},
  {id:'person-new',group:'Actions',label:'New person',keywords:'person contact add create crm people',run:()=>recOpen('person')},
  {id:'org-new',group:'Actions',label:'New organisation',keywords:'organisation organization company account add create crm',run:()=>recOpen('org')},
