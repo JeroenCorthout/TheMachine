@@ -185,6 +185,24 @@ class Protected(unittest.TestCase):
             pass
         self.assertEqual(sqlite3.connect(self.path).execute("SELECT count(*) FROM network_replies WHERE typeof(body)='blob'").fetchone()[0], 2)
 
+    def test_project_sort_note_is_sealed_and_legacy_notes_are_migrated(self):
+        store = assistant.Store(self.path, protect=True)
+        import graph
+        with store.connect() as db:
+            graph.ensure(db)
+            db.execute("INSERT INTO projects(name,created_at,sort_note) VALUES('Sample project','2026-10-24',?)", (CANARY,))
+            self.assertEqual(db.execute('SELECT sort_note FROM projects').fetchone()[0], CANARY)
+        with sqlite3.connect(self.path) as raw:
+            self.assertEqual(raw.execute('SELECT typeof(sort_note) FROM projects').fetchone()[0], 'blob')
+            raw.execute('DROP TRIGGER mc_projects_sort_note_update')
+            raw.execute('UPDATE projects SET sort_note=?', (CANARY + ' before sealing',))
+        with store.connect():
+            pass
+        with sqlite3.connect(self.path) as raw:
+            self.assertEqual(raw.execute('SELECT typeof(sort_note) FROM projects').fetchone()[0], 'blob')
+        with store.connect() as db:
+            self.assertEqual(db.execute('SELECT sort_note FROM projects').fetchone()[0], CANARY + ' before sealing')
+
     def test_a_reviews_board_check_answer_is_sealed_also_when_written_before(self):
         store = assistant.Store(self.path, protect=True)
         import graph
