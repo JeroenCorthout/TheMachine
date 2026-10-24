@@ -360,6 +360,26 @@ class Requests(unittest.TestCase):
         self.assertNotIn('Taken back from Pat', [t for t, _, _ in self.chat_events(card)])
         self.assertEqual(self.handed_to(card), {'name': 'Kim Doe', 'stage': 'asked', 'asked': 'Can you send Sam the pricing?', 'also': ['Pat']})
 
+    def test_a_withdrawal_retries_failed_card_cleanup_before_it_can_be_acknowledged(self):
+        self.ask('handoff', {'title': 'Send pricing', 'summary': 'Sam wants pricing.'}, 'q-retry')
+        card = self.fleet.decide('q-retry', 'once')['card_id']
+        attempts = []
+        def drop(card_id, why, key):
+            attempts.append(card_id)
+            if len(attempts) == 1:
+                raise RuntimeError('temporary database contention')
+            return self.store.decide(card_id, 'reject', why, key, 'fleet')
+        self.fleet.drop_card = drop
+        item = {'id': 'q-retry', 'from': 'pat1', 'kind': 'handoff'}
+        with self.assertRaises(ValueError):
+            self.fleet.take_withdrawn(item)
+        self.assertEqual(self.card_row(card)['status'], 'pending')
+        self.assertEqual(self.fleet.take_withdrawn(item), 'Taken back by Pat')
+        self.assertEqual(self.card_row(card)['status'], 'rejected')
+        self.assertIsNone(self.fleet.take_withdrawn(item))
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(self.chat_events(card).count(('Taken back by Pat', False, None)), 1)
+
     # -- handled elsewhere: a teammate already closed their card on the same email
     def stripe_alert(self, status, key, next_action=None, decided=None):
         """A card on a vendor alert that reached the team's shared address, as each teammate's copy of it has."""

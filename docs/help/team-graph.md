@@ -16,7 +16,7 @@ An admin turns on **Share the Graph in this Fleet** on **What's shared**, and co
 
 **Your connections** on **What's shared** lists each one with a switch. Work ones at your Fleet's own domain start on. One at another company's domain starts off, even when it's a Work account: it says "Other company, not shared". You can turn it on. Personal ones never go. Turning one off takes back what it shared.
 
-Inside a connection that's on, each thread is still sorted: personal, sensitive and automated mail never goes, whichever connection it comes from. Sensitive threads go only when you share a board or a thread with chosen people yourself.
+Inside a connection that's on, each thread is still sorted. Personal and colleague-only threads stay out. Sensitive and automated mail stays out of automatic sharing; your explicit sharing choices can override those classifications.
 
 ## Required by the Fleet
 
@@ -27,22 +27,22 @@ An admin can require everyone's **Work email** and **Work calendar** at the Flee
 - Client threads: email with people outside your company about work, with their attachments.
 - Work people, organizations and projects, with a short timeline.
 
-## What never goes
+## Kept out of automatic sharing
 
 - Sensitive threads: buying or selling a company, investments, valuations, deal talks, HR, hiring and recruiters, legal, health, money, security. Not even that they exist.
 - Automated mail: receipts, invoices, alerts, newsletters, and your company's own bills with its suppliers.
 - Threads with only colleagues, personal mail and anything from a personal account. Personal never goes, not even when you tap Team.
 - Anything you marked **Keep private**, and boards and projects set to Only you.
 
-Each thread is judged on its own, by what it is about. Once a thread is sensitive, it stays sensitive.
+Each thread is judged on its own, by what it is about. Classification can be wrong; review what would go and use Keep private to correct it. Your explicit Team choice or a share with named teammates can override a sensitive classification; check the recipients before sharing.
 
 ## Share a board with chosen people
 
-On a board's **⋯** menu, tap **Share board…** and pick teammates. Only they get its projects and their threads, sensitive ones too, such as deals. Personal threads, other companies' accounts and automated mail never go, also on a shared board.
+On a board's **⋯** menu, tap **Share board…** and pick teammates. Only they get its projects and their threads, sensitive ones too, such as deals. Personal and colleague-only threads stay out, as does automated mail when only its board is shared. Connections you have not selected stay out too.
 
 - A project added to the board later goes too. One moved off the board is taken back.
 - Take someone off, or pick nobody, and it is taken back from their Machine.
-- One thread can go to chosen people too: tap its label, then **Share with…**. Personal threads never can.
+- One thread can go to chosen people too: tap its label, then **Share with…**. This explicit choice can include sensitive or automated work mail. Personal and colleague-only threads cannot be shared.
 
 ## Not sure? It waits
 

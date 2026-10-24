@@ -3,7 +3,7 @@ sealed Machine to Machine (docs/shared-graph.md). Mixed into fleet.Fleet, next t
 
 What goes, per thread, judged by the review by meaning (share_threads), with the owner's hand choice winning:
 - client (someone outside the company, at an organization on the Graph or with a work domain): the whole email;
-- sensitive client: only a neutral line that it exists ("Private thread with Lee, 12 Oct");
+- sensitive client: nothing, not even a line saying it exists; an explicit thread or board share to chosen teammates may include it;
 - internal (colleagues only): nothing, also not by hand;
 - personal: nothing, not even that it exists. Personal accounts are never read for this.
 Records (people, organizations, projects with their board) go when they are Work, unless Keep private (share_private).
@@ -430,8 +430,8 @@ class Scope:
 
     def granted(self, projects, threads):
         """This scope for a teammate the owner shared boards or threads with by name (grants): those projects and their
-        threads go to them, sensitive ones (deals, M&A) too. Personal threads, people kept private, other companies'
-        accounts and automated mail never do, also on a shared board."""
+        threads go to them, sensitive ones (deals, M&A) too. Personal threads, people kept private and unselected
+        accounts stay out. Board sharing alone excludes automated mail; an explicit thread share can override it."""
         out = copy.copy(self)
         shown = {'project:' + str(i) for i in projects} - self.kept
         out.only_you = self.only_you - shown

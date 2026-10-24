@@ -13,7 +13,8 @@ before the preview shows it.
 
 Import makes the new ones as if added by hand and fills in what the file says for the ones that match (an empty cell
 leaves a field as it is). The last import can be undone: what it made goes again and what it changed goes back to how
-it was (graph_imports keeps that, sealed like the projects' notes it can hold)."""
+it was, only while those records are unchanged since the import. Later edits are never rolled back.
+The import keeps those snapshots and checks sealed in graph_imports, like the projects' notes it can hold."""
 from __future__ import annotations
 
 import csv
@@ -549,6 +550,46 @@ def _tags(db, node_id, labels, made, now):
             db.execute('INSERT OR IGNORE INTO crm_tags(node_id,tag,at) VALUES(?,?,?)', (node_id, same[0] if same else label, now))
 
 
+def _undo_state(db, plan):
+    """The owner-editable records Undo would restore or remove, not derived graph rows or unrelated activity.
+    Kept with the import in the existing sealed undo column; checked under the same write transaction."""
+    state = []
+    ids = set(plan['made'])
+    for item in plan['changed']:
+        ids.add(item['id'])
+        if item['kind'] == 'person':
+            for table, key in (('person_edits', 'edits'), ('person_orgs', 'orgs'), ('graph_names', 'name')):
+                for ident in sorted(item[key]):
+                    ids.add(ident)
+                    state.append([table, ident, _snapshot(db, table, ident)])
+        elif item['kind'] == 'org':
+            state.append(['org_edits', item['key'], _snapshot(db, 'org_edits', item['key'])])
+        else:
+            pid = int(item['id'].split(':', 1)[1])
+            row = _snapshot(db, 'projects', pid)
+            state.append(['projects', pid, {k: row.get(k) for k in PROJECT_COLUMNS} if row else None])
+    for ident in sorted(plan['made']):
+        if ident.startswith('project:'):
+            row = db.execute('SELECT * FROM projects WHERE id=?', (int(ident.split(':', 1)[1]),)).fetchone()
+            state.append(['new_project', ident, dict(row) if row else None])
+        else:
+            row = db.execute('SELECT * FROM manual_nodes WHERE identifier=?', (ident,)).fetchone()
+            state.append(['manual', ident, dict(row) if row else None])
+            for table in ('person_edits', 'person_orgs', 'graph_names'):
+                state.append([table, ident, _snapshot(db, table, ident)])
+            if ident.startswith('org:'):
+                key = ident if ident.startswith('org:named:') else ident[4:]
+                state.append(['org_edits', key, _snapshot(db, 'org_edits', key)])
+    params = (json.dumps(sorted(ids)),)
+    for table, query in (
+        ('owners', 'SELECT * FROM record_owners WHERE node_id IN (SELECT value FROM json_each(?)) ORDER BY node_id'),
+        ('tags', 'SELECT * FROM crm_tags WHERE node_id IN (SELECT value FROM json_each(?)) ORDER BY node_id,tag'),
+        ('fields', 'SELECT * FROM crm_values WHERE node_id IN (SELECT value FROM json_each(?)) ORDER BY node_id,field_id'),
+        ('changes', 'SELECT * FROM record_changes WHERE node_id IN (SELECT value FROM json_each(?)) ORDER BY id')):
+        state.append([table, [dict(r) for r in db.execute(query, params)]])
+    return hashlib.sha256(json.dumps(state, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
 def run(db, kind, text, mapping, now, name=None, fixes=None, ai=None, region=None, currency=None):
     """Import the file: new rows made, matching ones updated, with the fixes the owner kept. One transaction; the
     caller rebuilds the graph."""
@@ -573,6 +614,7 @@ def run(db, kind, text, mapping, now, name=None, fixes=None, ai=None, region=Non
             _tags(db, node_id, p['record']['tags'], made, now)
         counts['new' if made else 'updated'] += 1
     undo['tags'] = sorted({tuple(r) for r in db.execute('SELECT node_id,tag FROM crm_tags')} - tags_before)
+    undo['after'] = _undo_state(db, undo)
     found = db.execute('INSERT INTO graph_imports(kind,name,counts,undo,at) VALUES(?,?,?,?,?)',
                        (kind, str(name or '')[:120] or None, json.dumps(counts), json.dumps(undo), now)).lastrowid
     db.execute('UPDATE graph_imports SET undo=NULL WHERE id<?', (found,))  # only the last import can be undone
@@ -595,6 +637,10 @@ def undo(db, import_id, now):
     if not row:
         raise ValueError('Only the last import can be undone')
     plan_ = json.loads(row['undo'])
+    if not plan_.get('after'):
+        raise ValueError('That older import has no change history for Undo. Edit its records directly instead.')
+    if _undo_state(db, plan_) != plan_['after']:
+        raise ValueError('These records changed since the import. Undo would overwrite those changes; edit them directly instead.')
     for node_id, label in plan_.get('tags') or ():
         db.execute('DELETE FROM crm_tags WHERE node_id=? AND tag=?', (node_id, label))
     for item in reversed(plan_['changed']):

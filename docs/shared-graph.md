@@ -23,7 +23,7 @@ unshare. An admin can require every member's **Work email** and **Work calendar*
 confirmed admin wins, so a CP can't make one up). Only connections on the Fleet's own domains can be required, and
 the admin confirms first that the company has told its people. A required connection is on whatever the owner chose before, and
 shows "Required by <Fleet>". Inside any connection that is on, each thread is still sorted: personal, sensitive,
-automated and colleague-only threads never go, and **Keep private** on a thread or record still wins. A member who wants to stop
+automated and colleague-only threads stay out of automatic sharing, and **Keep private** on a thread or record still wins until the owner changes the sharing choice. A member who wants to stop
 turns their connections off; the old ask to an admin (`optout`) is still honored but no longer offered.
 
 Boards and projects set to Only you (`only_you_projects`, the boards' own visibility) share nothing: not the project,
@@ -33,13 +33,14 @@ is sealed (`Scope.shareable`); switching a board from Team to Only you takes bac
 ## What is shared
 
 Each thread is judged on its own by the review, by what it is about anywhere in it (quoted earlier mail too), never by
-word lists and never a whole company at once. Every verdict counts the same, whatever model made it. A choice made by
-hand always wins. When unsure, nothing goes.
+word lists and never a whole company at once. Every verdict counts the same, whatever model made it. An eligible choice made by
+hand wins; personal accounts and internal-only conversations cannot be shared this way. Classification is best effort:
+review the preview and correct mistakes with Keep private. When unsure, nothing goes.
 
 | Thread | Who reads it | What the team sees |
 |---|---|---|
 | **Client**: at least one person outside the company, at an organization on the Graph or with a work domain | The Fleet | The full email: body, from, to, date, and its attachments (up to 2.5 MB each; bigger ones show as "too large to share") |
-| **Sensitive**: buying or selling a company, a merger, an investment or fundraising, a valuation, a term sheet or LOI, a deal NDA, HR, hiring or recruiting about one person (the owner too), legal, health, own money, security (access, keys, tokens, vulnerabilities, incidents) | Only the people on it | Nothing, not even that it exists. Sticky: a later review never makes it shareable again |
+| **Sensitive**: buying or selling a company, a merger, an investment or fundraising, a valuation, a term sheet or LOI, a deal NDA, HR, hiring or recruiting about one person (the owner too), legal, health, own money, security (access, keys, tokens, vulnerabilities, incidents) | Only the people on it | Nothing in automatic sharing, not even that it exists. Sticky across reviews; explicit named thread/board sharing may include it |
 | **Unsure**: probably client work, but not clear; a peer or competitor with no clear customer relationship | The owner first | Nothing until the owner picks Share in **Share these?** |
 | **Internal**: colleagues only | Only the people on it | Nothing. Never re-shared, also not by hand |
 | **Other**: notifications, receipts, invoices, the company's own bills and support tickets with its suppliers, newsletters, cold pitches | The owner | Nothing |
@@ -92,8 +93,9 @@ Only-you project ids).
 `graph_board_share`; `boards.visibility` 'people', the people in `share_people`), or one thread
 (**Share with…** on its label, `graph_thread_share`). For those teammates only (`grants`, `Scope.granted`) the board's
 open projects and every thread linked to them go, sensitive ones (deals, M&A) too; a thread shared by hand goes whatever
-the review said. Never personal threads, people kept private or marked Personal, threads with only colleagues, other
-companies' accounts (they aren't in `graph_accounts`) or automated mail. Teammates with the same grants get their own
+the review said. Never personal threads, people kept private or marked Personal, threads with only colleagues, or accounts
+the owner has not selected in `graph_accounts`. Automated mail stays out when only its board is shared; an explicit
+thread share or Team choice can override that classification. Teammates with the same grants get their own
 chain of records (a snapshot and deltas whose header says `only` and carries the chain as `tag`), and a thread only
 some get is sealed to them alone, also marked `only`. A Machine passes an `only` blob on to nobody outside its `to`
 (`_graph_serve`), and refuses one passed on to it when it isn't in `to` (`graph_take`). A snapshot for the whole team
@@ -139,7 +141,9 @@ publishes, when, how big, to whom, and how many threads each Machine shares. It 
   closeness, and a field set by hand stays the hand value;
 - move a teammate's tile on that teammate's Machine: a stage move by hand from a teammate shows as theirs on the Team
   board and never changes the receiver's own Mine board;
-- get Personal data, Keep private records, sensitive or internal threads: those are never put in a blob;
+- get unselected Personal data, Keep private records or internal-only threads: those are not put in a blob. Sensitive
+  threads stay out of automatic sharing, but explicit named shares may include them. Classification can be wrong;
+  this filter is not a cryptographic guarantee about the meaning of a message;
 - ask for more than the Fleet gets: there is no query; every Machine pushes what it shares.
 
 A malicious admin can confirm a fake member. That is the trust root: admins are trusted, as in shared connectors.

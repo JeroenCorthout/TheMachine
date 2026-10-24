@@ -382,8 +382,25 @@ class CalendarTransport:
             return {'message_id': 'calendar:' + google_id} if not event or event.get('status') == 'cancelled' else {}
         if not event or event.get('status') == 'cancelled':
             return {}
-        if action['op'] == 'update' and 'title' in action.get('changed', ()) and event.get('summary') != action['title']:
-            return {}
+        # Existence (or just the title) does not prove a lost PATCH landed. Check exactly the fields this
+        # approval wrote; unrelated edits need not match. Google may return the same instant in another offset.
+        expected = body(action, job['id'])
+        for field in ('summary', 'location', 'description'):
+            if field in expected and (event.get(field) or '') != expected[field]:
+                return {}
+        for field in ('start', 'end'):
+            if field not in expected:
+                continue
+            wanted, actual = expected[field], event.get(field) or {}
+            if 'date' in wanted and wanted['date'] is not None:
+                if actual.get('date') != wanted['date'] or actual.get('dateTime'):
+                    return {}
+            else:
+                try:
+                    if actual.get('date') or _moment(actual.get('dateTime')) != _moment(wanted['dateTime']):
+                        return {}
+                except (ValueError, TypeError):
+                    return {}
         if action.get('guests') and not {g.lower() for g in action['guests']} <= {str(a.get('email') or '').lower() for a in event.get('attendees') or []}:
             return {}
         return {'message_id': 'calendar:' + google_id}

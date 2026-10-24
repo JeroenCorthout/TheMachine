@@ -157,6 +157,38 @@ class Validate(unittest.TestCase):
 
 
 class Transport(unittest.TestCase):
+    def test_reconciliation_checks_every_changed_field_without_repeating_the_write(self):
+        events = {7: {'account_id': 'kid-cal', 'source_id': 'g7', 'title': 'Swimming',
+                      'start': '2026-10-28T10:00:00+01:00', 'end': '2026-10-28T11:00:00+01:00',
+                      'all_day': False, 'guests': 0}}
+        action = cw.validate({'kind': 'calendar', 'op': 'update', 'event': 7,
+                              'start': '2026-10-28T11:00:00+01:00', 'end': '2026-10-28T12:00:00+01:00',
+                              'location': 'Pool', 'notes': ''}, CONFIG, events)
+        expected = cw.body(action)
+        saved = {**expected, 'summary': 'Swimming', 'status': 'confirmed'}
+        google = FakeGoogle(events={'g7': saved})
+        t = google.transport()
+        for field, wrong in [('start', {'dateTime': events[7]['start']}),
+                             ('end', {'dateTime': events[7]['end']}), ('location', 'Old pool'),
+                             ('description', 'Old note')]:
+            with self.subTest(field=field):
+                google.events['g7'] = {**saved, field: wrong}
+                self.assertEqual(t.reconcile(action, {'id': 'j'}), {})
+        google.events['g7'] = {**saved, 'start': {'dateTime': '2026-10-28T10:00:00Z'},
+                               'end': {'dateTime': '2026-10-28T11:00:00Z'}}
+        self.assertEqual(t.reconcile(action, {'id': 'j'}), {'message_id': 'calendar:g7'})
+        self.assertEqual(google.writes, [])
+
+    def test_reconciliation_checks_all_day_exclusive_end_and_create_contents(self):
+        action = cw.validate({**NEW, 'all_day': True, 'start': '2026-10-27', 'end': '2026-10-28'}, CONFIG)
+        expected = cw.body(action, 'j')
+        google = FakeGoogle(events={cw.event_id('j'): {**expected, 'end': {'date': '2026-10-28'}}})
+        self.assertEqual(google.transport().reconcile(action, {'id': 'j'}), {})
+        google.events[cw.event_id('j')] = {**expected, 'summary': 'Different event'}
+        self.assertEqual(google.transport().reconcile(action, {'id': 'j'}), {})
+        google.events[cw.event_id('j')] = expected
+        self.assertEqual(google.transport().reconcile(action, {'id': 'j'}), {'message_id': 'calendar:' + cw.event_id('j')})
+
     def test_checks_permission_and_the_share_before_writing(self):
         action = cw.validate(NEW, CONFIG)
         read_only = FakeGoogle(scopes=('https://www.googleapis.com/auth/calendar.readonly',))
@@ -190,7 +222,7 @@ class Transport(unittest.TestCase):
         google.answer = types.SimpleNamespace(returncode=1, stdout='', stderr='timeout')
         self.assertEqual(google.transport().send(action, {'id': 'j'}), {})
         self.assertEqual(google.transport().reconcile(action, {'id': 'j'}), {})  # not there: still unknown, never written again
-        google.events[cw.event_id('j')] = {'status': 'confirmed'}
+        google.events[cw.event_id('j')] = {**cw.body(action, 'j'), 'status': 'confirmed'}
         self.assertEqual(google.transport().reconcile(action, {'id': 'j'}), {'message_id': 'calendar:' + cw.event_id('j')})
 
     def test_a_delete_of_an_event_that_is_already_gone_is_done(self):

@@ -24,6 +24,7 @@ const meetings=[
  {id:202,account_id:'kid',title:'Daycare closed',start:iso(at(2,0)),end:iso(at(3,0)),all_day:true,location:'',guests:0,people:[],shared:'Kid',url:null,edit:{start:day(2),end:day(2),all_day:true}},
  {id:203,account_id:'cal',title:'Quarterly planning',start:iso(at(1,14)),end:iso(at(1,15)),all_day:false,location:'',guests:8,url:'https://calendar.google.com/calendar/event?eid=plan'},
  {id:205,account_id:'cal',title:'Lunch',start:iso(at(2,12)),end:iso(at(2,13)),all_day:false,location:'',guests:0,people:[],url:null,edit:{start:local(at(2,12)),end:local(at(2,13)),all_day:false}},
+ {id:206,account_id:'kid',title:'Overnight visit',start:iso(at(1,23)),end:iso(at(2,1)),all_day:false,location:'',guests:0,people:[],url:null,edit:{start:local(at(1,23)),end:local(at(2,1)),all_day:false}},
  {id:204,account_id:'partner',title:'Away',start:iso(at(1,8)),end:iso(at(1,9)),all_day:false,location:'',guests:0,people:[],shared:'Robin',url:'https://calendar.google.com/calendar/event?eid=away'}];
 const sid='abcdef0123456789',revision='a1b2c3d4e5f6';
 const change={kind:'calendar',op:'create',revision,label:'Add to calendar',account_id:'kid',calendar_name:'Kid’s calendar',title:'Doctor check-up',when:'Thu 30 Oct 2026, 09:30 to 10:00',location:'Health center',start:'2026-10-30T09:30:00+01:00',end:'2026-10-30T10:00:00+01:00'};
@@ -50,6 +51,7 @@ const writes=()=>calls.filter(c=>c.action==='calendar_write');
 const open=async(width,height,scheme='dark')=>{const mobile=width<600;
  const context=await browser.newContext({viewport:{width,height},isMobile:mobile,hasTouch:mobile,locale:'en-GB',timezoneId:'Europe/Brussels',colorScheme:scheme});
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():(outside.push(route.request().url()),route.abort()));
+ await context.addInitScript(stamp=>{const NativeDate=Date;globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[stamp]))}static now(){return stamp}}},at(0,22,30).getTime());
  const page=await context.newPage();page.on('pageerror',e=>errors.push(width+': '+e.message));
  await page.goto(base);await page.locator('#task-'+sid).waitFor();return {context,page}};
 const showCal=async page=>{await page.evaluate(()=>showTab('calendar'));await page.locator('#calendar-view .cal-item').first().waitFor();await page.waitForFunction(()=>!document.querySelector('#calendar-view').textContent.includes('Loading'))};
@@ -121,11 +123,18 @@ try{
   // An all-day event keeps its last day
   await page.locator('#calendar-view [data-cal-edit="202"]').first().click();assert.ok(await page.locator('#cal-f-allday').isChecked());
   assert.deepEqual([await page.locator('#cal-f-date').inputValue(),await page.locator('#cal-f-until').inputValue()],[day(2),day(2)]);await page.locator('#cal-dialog [data-cal-close]').first().click();
+  // An overnight event keeps both dates; a title-only edit must not turn it into an invalid same-day event.
+  calls=[];await page.locator('#calendar-view [data-cal-edit="206"]').first().click();
+  assert.deepEqual([await page.locator('#cal-f-date').inputValue(),await page.locator('#cal-f-until').inputValue()],[day(1),day(2)]);
+  await page.locator('#cal-f-title').fill('Overnight visit confirmed');
+  await page.locator('#cal-dialog [type="submit"]').click();await page.locator('#cal-dialog').waitFor({state:'hidden'});
+  assert.deepEqual({...writes()[0].args,request_id:0},{request_id:0,op:'update',event:206,title:'Overnight visit confirmed'});
   // Where: suggestions a moment after typing (one lookup for the whole word), picking one fills the address
   calls=[];lookups=[];await page.locator('[data-cal-new]').click();await page.locator('#cal-dialog').waitFor({state:'visible'});
   await page.locator('#cal-f-cal').selectOption('kid');assert.ok(await page.locator('#cal-f-invite-wrap').isHidden(),'no invites from a shared calendar');
   await page.locator('#cal-f-cal').selectOption('cal');assert.ok(await page.locator('#cal-f-invite-wrap').isVisible());
   assert.equal(await page.locator('#cal-f-fine').textContent(),'Nobody is invited.');assert.equal(await page.locator('#cal-f-save').textContent(),'Add');
+  assert.equal(await page.locator('#cal-f-start').inputValue(),'09:00','a late-night new event starts tomorrow morning');
   await page.locator('#cal-f-title').fill('Coffee with Sam');
   await page.locator('#cal-f-where').pressSequentially('labath',{delay:40});await page.locator('#cal-f-where-sug button').first().waitFor();
   assert.ok(lookups.length<=2&&lookups.at(-1)[1]==='labath','debounced: not a lookup per key, '+JSON.stringify(lookups));

@@ -714,24 +714,35 @@ class Requests:
         ask_id = str(item.get('id') or '')
         with self.connect() as db:
             row = db.execute('SELECT * FROM fleet_in WHERE id=?', (ask_id,)).fetchone()
-            if not row or row['kind'] != 'handoff' or row['member_id'] != item.get('from') or row['status'] == 'withdrawn':
+            if not row or row['kind'] != 'handoff' or row['member_id'] != item.get('from'):
+                return None
+            done_key = 'withdrawn_done:' + ask_id
+            if db.execute('SELECT 1 FROM fleet_meta WHERE key=?', (done_key,)).fetchone():
                 return None
             request = db.execute('SELECT card_id FROM fleet_requests WHERE id=?', (ask_id,)).fetchone()
             silent = db.execute('SELECT value FROM fleet_meta WHERE key=?', ('handoff_silent:' + ask_id,)).fetchone()
             card_id = (request['card_id'] if request else None) or (json.loads(silent['value']).get('card_id') if silent else None)
             card = card_id and db.execute('SELECT status FROM suggestions WHERE id=? AND dedupe_key=?', (card_id, 'fleet:' + ask_id)).fetchone()
             line = taken_line(row['name'])
-            db.execute("UPDATE fleet_in SET status='withdrawn',decided_at=?,choice='withdrawn' WHERE id=?", (fleet.now(), ask_id))
-            db.execute("UPDATE fleet_requests SET stage='withdrawn',updated_at=? WHERE id=?", (fleet.now(), ask_id))
-            self.log(db, 'in', row['fleet'], row['member_id'], row['name'], 'handoff', fleet.question_text('handoff', json.loads(row['question'])),
-                     line[0].lower() + line[1:])
-        if card and card['status'] in OPEN and self.drop_card:
-            try:
+            if row['status'] != 'withdrawn':
+                db.execute("UPDATE fleet_in SET status='withdrawn',decided_at=?,choice='withdrawn' WHERE id=?", (fleet.now(), ask_id))
+                db.execute("UPDATE fleet_requests SET stage='withdrawn',updated_at=? WHERE id=?", (fleet.now(), ask_id))
+                self.log(db, 'in', row['fleet'], row['member_id'], row['name'], 'handoff', fleet.question_text('handoff', json.loads(row['question'])),
+                         line[0].lower() + line[1:])
+        # The relay must keep this withdrawal until cleanup is committed too. A restart or transient failure here
+        # retries only cleanup, with the same decision key; it never makes a second owner choice or audit entry.
+        try:
+            if card and card['status'] in OPEN:
+                if not self.drop_card:
+                    raise ValueError('Card cleanup is not ready')
                 self.drop_card(card_id, line, 'fleet-withdrawn-' + ask_id)
-            except Exception as error:
-                LOG.warning('fleet withdrawn drop error=%s', type(error).__name__)
-        if row['telegram_message_id'] and self.retell:
-            self.retell(row['telegram_message_id'])
+            if row['telegram_message_id'] and self.retell:
+                self.retell(row['telegram_message_id'])
+        except Exception as error:
+            LOG.warning('fleet withdrawn cleanup error=%s', type(error).__name__)
+            raise ValueError('Withdrawal cleanup will be retried') from error
+        with self.connect() as db:
+            db.execute('INSERT OR REPLACE INTO fleet_meta(key,value) VALUES(?,?)', (done_key, json.dumps(fleet.now())))
         return line
 
     def message_keys(self, card_id, fleet_ref):
