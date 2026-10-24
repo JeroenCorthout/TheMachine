@@ -179,6 +179,62 @@ class Requests(unittest.TestCase):
             self.fleet.annotate(db, suggestions)
         self.assertEqual(suggestions[0]['fleet_handoff'], {'name': 'Pat', 'stage': 'accepted'})
 
+    def chat_events(self, card):
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, card)
+        return [(i['text'], bool(i.get('mine')), i.get('retry_handoff')) for i in owner if i['kind'] == 'event']
+
+    def test_the_card_chat_says_it_was_handed_off_and_what_came_back(self):
+        card = self.handed_card()
+        self.fleet.wait_card = lambda card_id, why, key, expected: self.store.wait_handoff(card_id, why, key, expected)
+        self.fleet.wake_card = lambda card_id, key, at: self.store.handoff_back(card_id, key, key.removeprefix('fleet-handoff-back-'), at)
+        self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Sam wants pricing.')
+        self.assertEqual(self.chat_events(card), [('Handed off to Pat’s Machine', True, None)])  # no "You", no snooze line
+        with self.store.connect() as db:
+            ask_id = db.execute("SELECT id FROM fleet_out WHERE kind='handoff'").fetchone()[0]
+        self.fleet.take_answer({'id': ask_id, 'status': 'waiting'})
+        self.assertEqual(self.chat_events(card), [('Handed off to Pat’s Machine', True, None)])  # their Machine has it: nothing new yet
+        self.fleet.take_answer({'id': ask_id, 'status': 'answered', 'answer': {'stage': 'declined', 'note': 'Not my area'}})
+        self.assertEqual(self.chat_events(card), [('Handed off to Pat’s Machine', True, None),
+                                                  ('Pat declined it. Their note: “Not my area”', False, None)])
+        self.assertEqual(self.card_row(card)['status'], 'pending')  # back with the owner
+
+    def test_an_accepted_handoff_shows_in_the_card_chat(self):
+        card = self.handed_card()
+        self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Sam wants pricing.')
+        with self.store.connect() as db:
+            ask_id = db.execute("SELECT id FROM fleet_out WHERE kind='handoff'").fetchone()[0]
+        self.fleet.take_answer({'id': ask_id, 'status': 'answered', 'answer': {'stage': 'accepted', 'note': 'On it this week'}})
+        self.assertEqual(self.chat_events(card)[-1], ('Pat accepted it. Their note: “On it this week”', False, None))
+        self.fleet.take_answer({'id': ask_id, 'status': 'answered', 'answer': {'stage': 'done'}})
+        self.assertEqual(self.chat_events(card)[-1], ('Pat marked it done', False, None))
+
+    def test_a_handoff_that_did_not_go_out_says_so_on_the_card_with_try_again(self):
+        card = self.handed_card()
+        real = self.relay.call
+
+        def away(method, path, body=None, timeout=40):
+            if path == '/ask':
+                raise RuntimeError('relay unavailable')
+            return real(method, path, body, timeout)
+        with patch.object(self.relay, 'call', side_effect=away):
+            with self.assertRaises(RuntimeError):
+                self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Sam wants pricing.')
+        self.assertEqual(self.chat_events(card), [('Handoff didn’t go out to Pat’s Machine', False, card)])
+        with self.store.connect() as db:
+            suggestions = [{'id': card}]
+            self.fleet.annotate(db, suggestions)
+            stored = db.execute("SELECT value FROM fleet_meta WHERE key=?", ('handoff_failed:' + card,)).fetchone()[0]
+        self.assertEqual(suggestions[0]['fleet_handoff_failed']['name'], 'Pat')
+        self.assertNotIn('pricing', stored.lower())  # who and when only, never what was asked
+        self.assertEqual(self.card_row(card)['status'], 'pending')  # not waiting on anyone
+        self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Sam wants pricing.')  # Try again
+        self.assertEqual(self.chat_events(card), [('Handed off to Pat’s Machine', True, None)])
+        with self.store.connect() as db:
+            suggestions = [{'id': card}]
+            self.fleet.annotate(db, suggestions)
+        self.assertNotIn('fleet_handoff_failed', suggestions[0])
+
     # -- a handoff the preparation wrote, and the card while it is with them
     HANDOFF_TEXT = 'Confirmed P1: the export leaks rows. Can you get someone on this today? [Report](https://tracker.example/1)'
 

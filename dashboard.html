@@ -1421,6 +1421,8 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 /* The time on hover sits outside the line (left of a right-aligned one), so it never shifts or indents it */
 .chat-event{position:relative}.chat-event .chat-time{position:absolute;top:0;font-size:inherit;line-height:inherit;left:100%;margin-left:8px;white-space:nowrap;pointer-events:none}
 .chat-log>.chat-event.cont{margin-top:4px}
+.chat-event.failed{color:var(--orange)}.chat-event.failed button.link{padding:0;min-height:0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.chat-handoff-options{align-self:stretch}.card .note.handoff-failed{color:var(--orange)}.card .note.handoff-failed button.link{padding:0;min-height:0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .chat-event a.learn-link{color:inherit;text-decoration:underline;text-underline-offset:3px}.chat-event a.learn-link:hover{color:var(--text)}
 .voice-form.voice-flash{animation:voice-flash 1.6s ease-out}@keyframes voice-flash{from{box-shadow:0 0 0 3px var(--lavender)}to{box-shadow:0 0 0 3px transparent}}
 @media(prefers-reduced-motion:reduce){.voice-form.voice-flash{animation:none}}
@@ -3739,7 +3741,7 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  for(const d of drafts)if(liveOf(d)?.st.status==='sent')sent.add(d.body.trim());
  // The decision buttons go on the Machine's latest message when the card is waiting on one (a Send goes on its draft)
  const open=s&&!closed(s)&&s.status!=='snoozed'&&!chat.active&&!['queued','starting','running'].includes(s.preparation_status);
- const lastMachine=rows.findLastIndex(i=>i.kind==='reply'||i.kind==='card');
+ const lastMachine=rows.findLastIndex(i=>i.kind==='reply'||i.kind==='card'||i.kind==='event'&&i.handoff);
  const tabAt=s&&!closed(s)?rows.findLastIndex(i=>i.kind==='reply'&&CHAT_TAB.test(i.text||'')):-1;
  // While a message goes out no other choice shows; they come back once it went or failed
  const options=(n,onDraft)=>open&&!p.going&&n===lastMachine&&p.options&&!(p.send&&onDraft)?`<div class="chat-options">${p.options}</div>`:'';
@@ -3777,7 +3779,10 @@ const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||s.status==
    push(i,`<div class="chat-msg machine chat-agent-msg"><div class="chat-agent-name">${esc(i.name)}</div><div class="bubble">${text}</div>${files||nothing?`<div class="chat-files">${files}${nothing}</div>`:''}${allFiles}${tm(i.at)}</div>`)}
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
   else if(i.kind==='event'){const c=i.times.length,t=chatEventText(i),line=(c>1?`${esc(t)} ${c} times<span class="chev" aria-hidden="true">›</span>`:esc(t))+(i.voice&&c===1?` · <a class="learn-link" href="#settings/writing" data-voice-edit="${esc(i.voice)}">Edit</a>`:'');
-   push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+tm(i.at)}</div>`)}
+   // A handoff that didn't go out: Try again opens the handoff form again, as it was sent
+   const retry=i.retry_handoff&&s&&!closed(s)&&!s.fleet_handoff?` · <button type="button" class="link" data-fleet-handoff="${esc(s.id)}">Try again</button>`:'';
+   push(i,`<div class="chat-event${i.mine?' mine':''}${i.retry_handoff?' failed':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+(i.handoff?`<span class="chat-when"> · ${chatHM(i.at)}</span>`:tm(i.at))+retry}</div>`);
+   if(i.handoff&&n===lastMachine&&options(n,false))push({kind:'event',mine:false},`<div class="chat-msg machine chat-handoff-options">${options(n,false)}</div>`)}
   else if(i.kind==='learned')push(i,chatLearned(i));  // no time of its own: it sits under its reply, and beside a wide centered line it would stick out sideways
   else if(i.kind==='you'){const to=i.to||'',show=to&&to!==lastTo;lastTo=to;
    push(i,`<div class="chat-msg you">${show?`<div class="chat-to">to ${esc(to)}</div>`:''}<div class="bubble">${chatMarkdown(i.text)}</div>${tm(i.at)}</div>`)}
@@ -3823,7 +3828,7 @@ const DOTS='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r
 const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}):d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
 // One small line over the message box: where the card stands, with its one way back (Unsnooze, Reopen) as a text button
 function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…':s.status==='snoozed'?(s.snoozed_until?(s.handoff_wait?checkinLabel(s):'Snoozed until '+chatUntil(s.snoozed_until)):'Snoozed')
-  :closed(s)?(s.status==='completed'?'Done':'Not needed'):s.preparation_status==='blocked'?p.status||cardState(s):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':'';
+  :closed(s)?(s.status==='completed'?'Done':'Not needed'):s.status==='pending'&&['asked','waiting for them'].includes(s.fleet_handoff?.stage)?'No answer from '+String(s.fleet_handoff.name||'your teammate').split(' ')[0]+' yet':s.preparation_status==='blocked'?p.status||cardState(s):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
  const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.map(([items,title,key])=>{const cut=sideList(items,key);return cut.count?`<h3>${title}<span>${cut.count}</span></h3>${cut.list.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}${cut.more?sideMoreRow(key):''}`:''}).join('')}</aside>`;
@@ -4826,7 +4831,11 @@ function fleetHandoffs(f,work,inFleet){const cards=new Set((state?.suggestions||
  return`<div class="fleet-box fleet-handoffs"><h3>Handoffs</h3><ul class="fleet-ho-list">${open.map(row).join('')}${quiet.map(row).join('')}</ul>${quiet.length>shown?`<button type="button" class="quiet fleet-brief-show" data-ho-more>Show ${quiet.length-shown} more</button>`:''}</div>`}
 function fleetIntroOffers(f,work,inFleet){const offers=(f.intro_offers||[]).filter(o=>inFleet(o,work));
  return offers.length?`<div class="list">${offers.map(o=>`<article><p><strong>${esc(o.name)}</strong> knows someone at ${esc(o.about)}.</p><form class="fleet-ask fleet-intro-form" data-fleet="${esc(o.fleet)}" data-member="${esc(o.member_id)}" data-about="${esc(o.about)}"><input name="note" maxlength="300" placeholder="Why, in a line (optional; they see it)" aria-label="Why"><button class="primary">Ask ${esc(o.name)} for an intro</button></form></article>`).join('')}</div>`:''}
+// A handoff that didn't go out to "Pat’s Machine" (Pat Lee): said with a first name, like the chat's lines
+const handoffMachine=n=>n&&n!=='A teammate'?String(n).split(' ')[0]+'’s Machine':'a teammate’s Machine';
+const handoffFailed=s=>s.fleet_handoff_failed&&!s.fleet_handoff&&!closed(s)?`<p class="note fleet handoff-failed" role="alert">Handoff didn’t go out to ${esc(handoffMachine(s.fleet_handoff_failed.name))} · <button type="button" class="link" data-fleet-handoff="${esc(s.id)}">Try again</button></p>`:'';
 function fleetHandoff(s){const contact=s.handoff_contact?`<p class="note handoff-contact">Contact: ${esc(s.handoff_contact)}</p>`:'';
+ if(handoffFailed(s))return contact+handoffFailed(s);
  if(s.handoff_silent&&!s.fleet_handoff&&!closed(s))return contact+`<p class="note fleet silent-note">${esc(s.handoff_silent.line)} · <button type="button" class="link" data-handoff-not-mine="${esc(s.id)}">Not mine</button></p>`;  // theirs by what they did; one tap undoes it
  if(contact&&!s.fleet_handoff)return contact;
  if(s.fleet_handoff)return`<p class="note${s.fleet_handoff.back?'':' handled'} fleet">${handoffLine(s.fleet_handoff)}</p>${s.handoff_wait&&s.snoozed_until?`<p class="checkin-line" title="${esc(date(s.snoozed_until))}">${esc(checkinLabel(s))}</p>`:''}`;  // also once it is done

@@ -107,6 +107,19 @@ class CardChat(unittest.TestCase):
         self.assertEqual(result['text'], 'Drafted it. See notes.')
         self.assertEqual([(d['to'], d['body'], d['reply']) for d in result['drafts']], [(['Alex'], 'Hi Alex, done.', True)])
 
+    def test_a_step_without_a_draft_says_how_it_went(self):
+        with self.store.connect() as db:
+            for n, (label, status) in enumerate((('Add to calendar', 'sent'), ('Merge fix', 'failed'), ('Merge fix', 'cancelled'), ('Finish', 'finish_uncertain'))):
+                db.execute('INSERT INTO action_jobs(id,suggestion_id,revision,payload,status,created_at,updated_at,approval_id,source,rfc_message_id) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                           (f's{n}', self.sid, f'r{n}', json.dumps({'kind': 'merge', 'label': label}), status, a.now(), a.now(), 'ap', 'dashboard', ''))
+            owner, _ = self.app.card_chat_service(db, self.sid)
+        self.assertEqual([(i['text'], i['mine']) for i in owner if i['kind'] == 'event'],
+                         [('Add to calendar', True), ('Merge fix: didn’t work', False), ('Merge fix: canceled', True), ('Finish: not sure it finished', False)])
+
+    def test_no_fleet_no_handoff_lines(self):
+        with self.store.connect() as db:
+            self.assertEqual(a.card_chat_handoffs(db, self.sid), [])
+
     def test_a_chat_answer_is_the_reply_and_the_card_keeps_its_status(self):
         """Card chat: "I hope it went well". The answer ("Yes, it went through") shows in the chat; the card's own text
         stays its status, never the last chat message, also while the next note is being prepared."""

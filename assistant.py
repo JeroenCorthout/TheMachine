@@ -8169,6 +8169,56 @@ def chat_result_files(body):
     return '\n'.join(lines), files[:6]
 
 
+# How a step without a draft went, after its label ("Merge fix: didn’t work"); done or sent says nothing more
+CHAT_STEP_HOW = {'queued': '…', 'sending': '…', 'blocked': ': didn’t work', 'failed': ': didn’t work', 'cancelled': ': canceled',
+                 'uncertain': ': not sure it went through', 'finish_uncertain': ': not sure it finished', 'undoing': ': undoing…', 'undone': ': undone'}
+CHAT_STEP_FAILED = {'blocked', 'failed', 'uncertain', 'finish_uncertain'}
+
+
+def handoff_machine(name):
+    """"Pat’s Machine" for a teammate named Pat Lee; "a teammate’s Machine" without a name."""
+    first = (str(name or '').split() or [''])[0]
+    return f'{first}’s Machine' if first and name != 'A teammate' else 'a teammate’s Machine'
+
+
+def card_chat_handoffs(db, suggestion_id):
+    """A card's handoffs to a teammate's Machine, for its chat: when it went, and what came back (accepted, declined,
+    done) once it did. A handoff that didn't go out says so, with Try again. A teammate's note is their words, as data.
+    A silent acceptance ("Pat is on it") has its own line from the card's decisions."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fleet_out'").fetchone():
+        return []  # no Fleet on this Machine yet
+    out = []
+    for r in db.execute("SELECT name,status,answer,at,answered_at FROM fleet_out WHERE kind='handoff' AND context=? ORDER BY at",
+                        ('handoff:' + str(suggestion_id),)):
+        first = (str(r['name'] or '').split() or ['Your teammate'])[0]
+        out.append({'kind': 'event', 'text': 'Handed off to ' + handoff_machine(r['name']), 'mine': True, 'handoff': True, 'at': chat_ms(r['at'])})
+        try:
+            answer = json.loads(r['answer'] or 'null') or {}
+        except ValueError:
+            answer = {}
+        answer = answer if isinstance(answer, dict) else {}
+        stage = answer.get('stage') or r['status']
+        if answer.get('silent') or stage in ('asked', 'waiting'):
+            continue
+        note = clamp(' '.join(str(answer.get('note') or '').split()), 300)
+        said = {'accepted': f'{first} accepted it', 'adjusted': f'{first} accepted it with a change',
+                'done': f'{first} marked it done', 'declined': f'{first} declined it', 'expired': f'{first} didn’t answer in time'}.get(stage)
+        if not said:
+            continue
+        said += f'. Their note: “{note}”' if note else ''
+        out.append({'kind': 'event', 'text': said, 'handoff': True, 'at': chat_ms(r['answered_at'] or r['at'])})
+    failed = db.execute("SELECT value FROM fleet_meta WHERE key=?", ('handoff_failed:' + str(suggestion_id),)).fetchone() if db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fleet_meta'").fetchone() else None
+    try:
+        failed = json.loads(failed[0]) if failed else None
+    except ValueError:
+        failed = None
+    if isinstance(failed, dict):
+        out.append({'kind': 'event', 'text': 'Handoff didn’t go out to ' + handoff_machine(failed.get('name')), 'handoff': True,
+                    'retry_handoff': str(suggestion_id), 'at': chat_ms(failed.get('at'))})
+    return out
+
+
 def chat_draft(action):
     """A draft in a saved result, for the chat: what goes out and to whom (no account or thread handles)."""
     if not isinstance(action, dict) or action.get('kind') not in CHAT_SENT or not isinstance(action.get('body'), str):
@@ -13556,6 +13606,7 @@ class App:
                 said = 'Unsnoozed' if choice == 'unsnooze' else 'Plan it' if choice == 'accept' and planned else CHAT_OWNER_WORDS[choice]
                 owner.append({'kind': 'event', 'text': said + via + why,
                               'choice': choice, 'mine': True, 'at': at})
+        owner.extend(card_chat_handoffs(db, suggestion_id))
         owner.extend(self.card_chat_learned(db, suggestion_id))
         for r in db.execute('SELECT payload,status,source,created_at FROM action_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)):
             try:
@@ -13575,7 +13626,9 @@ class App:
                 owner.append({'kind': 'event', 'text': text, 'sent': draft['body'] if r['status'] == 'sent' else None,
                               'mine': r['source'] != 'auto' and r['status'] != 'failed', 'at': chat_ms(r['created_at'])})
             elif isinstance(payload.get('label'), str) and payload['label'].strip():
-                owner.append({'kind': 'event', 'text': clamp(payload['label'], 120), 'mine': True, 'at': chat_ms(r['created_at'])})
+                # A step without a draft (a calendar change, a merge, a finish): its label, and how it went unless it went
+                label, how = clamp(payload['label'], 120), CHAT_STEP_HOW.get(r['status'], '')
+                owner.append({'kind': 'event', 'text': label + how, 'mine': r['status'] not in CHAT_STEP_FAILED, 'at': chat_ms(r['created_at'])})
         # How you write, learned from a note or an edit on this card: one line per channel it changed, with Edit to fix it
         for r in db.execute("SELECT at,text FROM rule_changes WHERE kind='voice' AND ref IN ("
                             "SELECT 'decision:'||id FROM decisions WHERE suggestion_id=? UNION SELECT 'edit:'||id FROM draft_edits WHERE suggestion_id=?) "

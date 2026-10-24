@@ -14,6 +14,10 @@ order: 3
 
 While you wait, the card sits under **Coming back later** with a check-in date. **Check in now** asks how it's going; **Change time** moves the check-in.
 
+The card chat shows when it went ("Handed off to Pat's Machine · 14:02") and what came back: accepted, declined (with their note) or done. Back for a check-in with no answer yet, its status line says "No answer from Pat yet".
+
+If the handoff didn't go out, the card and its chat say so, with **Try again**.
+
 ## When they decline
 
 They can say why: not theirs, already done, or no time this week. Then pick **Do it myself**, **Hand to someone else** or **Mark done**.

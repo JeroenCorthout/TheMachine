@@ -599,7 +599,15 @@ class Requests:
         carried = parse_sources(found)
         if carried:
             question['sources'] = carried
-        sent = self.ask('handoff', question, context='handoff:' + str(card_id), fleet=fleet_ref, to=[member_id])
+        try:
+            sent = self.ask('handoff', question, context='handoff:' + str(card_id), fleet=fleet_ref, to=[member_id])
+        except Exception:
+            # Didn't go out (the relay was away, or it refused): the card says so, with Try again, until one does.
+            # Who and when only; what was asked stays on the owner's form.
+            self.set_meta('handoff_failed:' + str(card_id), {'name': fleet.label(self.member(fleet_ref, member_id)), 'at': fleet.now()})
+            raise
+        with self.connect() as db:
+            db.execute('DELETE FROM fleet_meta WHERE key=?', ('handoff_failed:' + str(card_id),))
         if self.wait_card:  # it's with them now: the card leaves Ready and waits under Later until their Machine answers
             try:
                 self.wait_card(str(card_id), f"Handed off to {fleet.label(self.member(fleet_ref, member_id))}",
@@ -1113,6 +1121,14 @@ class Requests:
             v = json.loads(r['value'])
             if not db.execute("SELECT 1 FROM fleet_out WHERE context=? AND at>=?", ('handoff:' + str(v.get('card_id')), v.get('at') or '')).fetchone():
                 silent[v.get('card_id')] = self.marked_line(v['how'])  # handed on since: that handoff leads instead
+        failed = {}  # a handoff that didn't go out: said on the card, with Try again
+        for r in db.execute("SELECT key,value FROM fleet_meta WHERE key LIKE 'handoff_failed:%'"):
+            try:
+                v = json.loads(r['value'])
+            except ValueError:
+                continue
+            if isinstance(v, dict):
+                failed[r['key'][15:]] = {'name': fleet.clean(v.get('name'), 120) or 'A teammate', 'at': v.get('at')}
         contacts = {}  # a handoff's contact, on its own line under the ask (cards from before carried it in the body)
         for r in db.execute("SELECT q.card_id,i.question FROM fleet_requests q JOIN fleet_in i ON i.id=q.id WHERE q.kind='handoff' AND q.card_id IS NOT NULL"):
             contact = (json.loads(r['question']) or {}).get('contact')
@@ -1125,6 +1141,8 @@ class Requests:
                     s['body'] = s['body'].removesuffix(f' Contact: {contacts[s["id"]]}.')
             if silent.get(s['id']):
                 s['handoff_silent'] = {'line': silent[s['id']]}
+            if failed.get(s['id']):
+                s['fleet_handoff_failed'] = failed[s['id']]
             if handed.get(s['id']):
                 s['fleet_handoff'] = handed[s['id']]
                 if handed[s['id']]['stage'] not in (STAGES['declined'], 'expired') and s.get('next_actions'):
