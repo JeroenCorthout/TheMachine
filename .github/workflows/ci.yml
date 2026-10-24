@@ -6,6 +6,8 @@ on:
     branches: [main]
     tags: ['release-*']
   pull_request:
+  # The merge queue on main tests each pull request on top of the latest main (and the entries ahead of it) before it lands
+  merge_group:
   workflow_dispatch:
   schedule:
     - cron: '17 5 * * 1'  # weekly, so a new OpenClaw release that breaks something shows up here
@@ -14,7 +16,7 @@ permissions:
   contents: read
 
 # A new push to a pull request cancels its run still going: only the newest commit can be merged anyway.
-# main, tags and the weekly run are never cancelled.
+# main, tags, merge queue runs and the weekly run are never cancelled.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -77,8 +79,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runners are scarce (a few at once for the whole organisation): a macOS job per pull request or main push
-        # queued for hours. macOS runs on release tags (what Machines install), the weekly run and on demand.
+        # macOS runners are scarce (a few at once for the whole organisation): a macOS job per pull request, merge queue
+        # entry or main push queued for hours. macOS runs on release tags (what Machines install), the weekly run and on demand.
         os: ${{ fromJSON((startsWith(github.ref, 'refs/tags/release-') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["macos-latest", "windows-latest"]' || '["windows-latest"]') }}
     defaults:
       run:
