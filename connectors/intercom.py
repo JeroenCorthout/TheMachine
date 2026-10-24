@@ -248,6 +248,9 @@ def event(account, raw, helpers):
                 'from': str((source.get('author') or {}).get('email') or ''),
                 'from_name': ' '.join(str((source.get('author') or {}).get('name') or '').split())[:100],
                 'contact_email': str(customer.get('email') or '').lower(),
+                # The Intercom contacts on it, so a person's page finds their conversations from any address they used
+                'contact_ids': [str(c['id'])[:64] for c in ((raw.get('contacts') or {}).get('contacts') or [] if isinstance(raw.get('contacts'), dict) else [])
+                                if isinstance(c, dict) and c.get('id')][:10],
                 'contact_name': ' '.join(str(customer.get('name') or '').split())[:100],
                 'last_author_type': str(last.get('type') or '') if isinstance(last, dict) else '', 'parts_returned': len(parts),
                 'parts_reported': reported, 'truncated': truncated, 'source_redacted': bool(source.get('redacted')),

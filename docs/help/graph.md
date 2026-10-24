@@ -14,11 +14,17 @@ Everyone you're in touch with, closest first. A person's page starts with their 
 
 - **Contact**: their phones and emails. Tap one to call or write, or **Copy** it.
 - **About you**: what they are to you, Work or Personal contact, and your Family or Fleet, with **See in Fleet**.
-- **People** and **Projects** they're part of, **Open between you** (promises both ways, with **Done** and **Drop**), and their recent messages.
+- **People** and **Projects** they're part of, **Open between you** (promises both ways, with **Done** and **Drop**), and their **Timeline**.
 
 Someone's addresses and chats are joined by themselves when it's clear they're one person, like a work email with their own address in CC.
 
 The **Work** and **Personal** tabs list only those contacts. **Download CSV**, under the order menu, saves the tab you're on as a spreadsheet, also for Organisations and Projects.
+
+### Timeline
+
+Every person and organisation page has one, newest first: email, meetings and their Zoom summaries, Intercom conversations (open or closed, with **Open in Intercom**), WhatsApp, Slack, LinkedIn and X chats, cards, promises and project moves. The chips on top show one source at a time. **Show more** loads older ones.
+
+An organisation's timeline has its people's messages and the Intercom conversations from its domain. Your timelines are yours: the team's Graph shows only what your sharing rules allow.
 
 ## Add someone or an organisation
 
@@ -66,7 +72,7 @@ Roles your Machine read in your messages, waiting for your word. **✓ Right** c
 
 Companies, from the addresses and names in your messages. See [Organisation details](organisation-data.md).
 
-An organisation's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you), the people and projects there and the recent messages with its people. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
+An organisation's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you), the people and projects there and its **Timeline**. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
 
 Mail from email warm-up tools is kept out, under "Hidden as warm-up", with **Undo** per domain.
 

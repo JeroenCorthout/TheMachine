@@ -1577,6 +1577,148 @@ def detail(db, node_id, events=12):
     return view
 
 
+
+# The timeline on a person's, organisation's or project's page: one list, newest first, from every source the Machine
+# keeps. Their signals (mail, meetings, chats, Intercom), plus what the graph's links miss: Intercom conversations on
+# their address, their Intercom contact or their organisation's domain, a Zoom summary of a meeting they were in, the
+# cards and promises that came from their signals, and their projects' moves. The owner's own view only: the team's
+# Graph (shared_graph.py) never reads it.
+TIMELINE_SOURCES = (('email', ('gmail.message', 'salesflare.email')),
+                    ('meetings', ('calendar.event', 'salesflare.meeting', 'zoom.summary')),
+                    ('intercom', ('intercom.conversation',)),
+                    ('chats', ('whatsapp.message', 'slack.message', 'linkedin.message', 'x.dm', 'x.mention', 'telegram.message')))
+TIMELINE_GROUPS = ('email', 'meetings', 'intercom', 'chats', 'cards', 'projects', 'other')
+TIMELINE_CARDS = (*OPEN_CARD, 'completed')  # a dismissed card is not part of the story
+ZOOM_NEAR = dt.timedelta(minutes=30)       # a Zoom summary within this of one of their meetings is that meeting's
+_INTERCOM = {}
+
+
+def timeline_source(kind):
+    return next((name for name, kinds in TIMELINE_SOURCES if kind in kinds), 'other')
+
+
+def intercom_index(db):
+    """[(event_id, at, emails, contact_ids)] for every Intercom conversation, read once per change of the table."""
+    key = (db.execute('PRAGMA database_list').fetchone()[2],
+           *db.execute("SELECT COUNT(*),MAX(id),SUM(version) FROM events WHERE kind='intercom.conversation' AND deleted=0").fetchone())
+    if key[0] and _INTERCOM.get('key') == key:
+        return _INTERCOM['rows']
+    rows = []
+    for r in db.execute("SELECT id,occurred_at,metadata FROM events WHERE kind='intercom.conversation' AND deleted=0 ORDER BY occurred_at DESC LIMIT 20000"):
+        try:
+            m = json.loads(r['metadata'] or '{}')
+        except ValueError:
+            continue
+        m = relayed('intercom.conversation', m) if isinstance(m, dict) else {}
+        emails = {a for _, a in addresses(m.get('from'))[:1] if not relay(a)}
+        if '@' in str(m.get('contact_email') or ''):
+            emails.add(str(m['contact_email']).strip().lower())
+        ids = {str(i) for i in (m.get('contact_ids') or ()) if str(i).strip()}
+        rows.append((r['id'], r['occurred_at'], frozenset(emails), frozenset(ids)))
+    _INTERCOM.clear()
+    _INTERCOM.update(key=key, rows=rows)
+    return rows
+
+
+def _timeline_people(db, row):
+    """The person nodes whose signals make up this page's timeline: the person, or an organisation's people."""
+    if row['kind'] == 'org':
+        return [r[0] for r in db.execute("SELECT a FROM graph_links WHERE b=? AND kind='member'", (row['id'],))]
+    return [row['id']]
+
+
+def timeline(db, node_id, source='', cursor=0, limit=40):
+    """One page of a person's, organisation's or project's timeline: {'items', 'next', 'sources'}. An item is a signal
+    ({'type': 'event', 'id': event id}), a card, a promise or a project's move, each with 'at' and its 'source' group
+    (email, meetings, intercom, chats, cards, projects, other). source narrows it to one group; sources counts them all."""
+    row = resolve(db, node_id)
+    if not row:
+        return None
+    node, kind = row['id'], row['kind']
+    info = json.loads(row['info'] or '{}')
+    people = _timeline_people(db, row)
+    signals = {}  # event id -> [at, kind, probable]
+
+    def add(event_id, at, kind_, probable=0):
+        have = signals.get(event_id)
+        if have:
+            have[2] = min(have[2], probable)
+        else:
+            signals[event_id] = [at, kind_, probable]
+    on = people if kind != 'project' else [node]
+    for start in range(0, len(on), 400):
+        chunk = on[start:start + 400]
+        for r in db.execute(f"SELECT g.event_id,MAX(g.at) at,MIN(g.probable) probable,e.kind FROM graph_events g JOIN events e ON e.id=g.event_id "
+                            f"WHERE g.node_id IN ({','.join('?' * len(chunk))}) AND e.deleted=0 GROUP BY g.event_id", chunk):
+            add(r['event_id'], r['at'], r['kind'], r['probable'])
+    if kind in ('person', 'org'):
+        # Intercom: on their address, on the Intercom contact that wrote from it, or (an organisation) on its domain.
+        emails = set()
+        for p in people:
+            got = db.execute('SELECT info FROM graph_nodes WHERE id=?', (p,)).fetchone()
+            ids = (json.loads(got['info'] or '{}').get('identifiers') or []) if got else []
+            emails |= {i[6:].lower() for i in [p, *ids] if str(i).startswith('email:')}
+        domain = str(info.get('domain') or '').lower() if kind == 'org' else ''
+        rows = intercom_index(db) if emails or domain else []
+        contacts = {c for _, _, found, ids in rows if found & emails for c in ids}
+        for event_id, at, found, ids in rows:
+            if found & emails or ids & contacts or (domain and any(e.rsplit('@', 1)[1] == domain for e in found)):
+                add(event_id, at, 'intercom.conversation')
+        # Zoom: the summary of a meeting on their calendar, matched on when it started.
+        meetings = sorted(parse_time(at) for at, k, _ in signals.values() if k in ('calendar.event', 'salesflare.meeting'))
+        if meetings:
+            for r in db.execute("SELECT id,occurred_at FROM events WHERE kind='zoom.summary' AND deleted=0 AND occurred_at>=? AND occurred_at<=?",
+                                ((meetings[0] - ZOOM_NEAR).isoformat(), (meetings[-1] + ZOOM_NEAR).isoformat())):
+                at = parse_time(r['occurred_at'])
+                if any(abs(at - m) <= ZOOM_NEAR for m in meetings):
+                    add(r['id'], r['occurred_at'], 'zoom.summary')
+    items = [{'type': 'event', 'id': e, 'at': at, 'source': timeline_source(k), 'kind': k, 'probable': bool(p)} for e, (at, k, p) in signals.items()]
+    ids = list(signals)
+    try:
+        cards, promised = {}, []
+        for start in range(0, len(ids), 400):
+            chunk = ids[start:start + 400]
+            marks = ','.join('?' * len(chunk))
+            for r in db.execute(f"SELECT DISTINCT s.id,s.title,s.status,s.created_at,s.due FROM suggestions s, json_each(s.event_ids) j WHERE j.value IN ({marks}) "
+                                f"AND s.status IN ({','.join('?' * len(TIMELINE_CARDS))})", (*chunk, *TIMELINE_CARDS)):
+                cards[r['id']] = r
+            promised += db.execute(f"SELECT id,direction,who,what,due,status,created_at FROM promises WHERE event_id IN ({marks})", chunk).fetchall()
+        if kind == 'org':  # a card the owner made about this organisation (New card, Who)
+            for r in db.execute("SELECT metadata FROM events WHERE kind='owner.card' AND deleted=0"):
+                m = json.loads(r['metadata'] or '{}')
+                if any(isinstance(a, dict) and a.get('id') == node for a in m.get('about') or ()) and m.get('card_id'):
+                    got = db.execute(f"SELECT id,title,status,created_at,due FROM suggestions WHERE id=? AND status IN ({','.join('?' * len(TIMELINE_CARDS))})",
+                                     (m['card_id'], *TIMELINE_CARDS)).fetchone()
+                    if got:
+                        cards[got['id']] = got
+        items += [{'type': 'card', 'id': r['id'], 'at': r['created_at'], 'source': 'cards', 'title': r['title'], 'done': r['status'] == 'completed',
+                   'due': r['due']} for r in cards.values()]
+        items += [{'type': 'promise', 'id': r['id'], 'at': r['created_at'], 'source': 'cards', 'what': r['what'], 'who': r['who'],
+                   'mine': r['direction'] == 'mine', 'status': r['status'], 'due': r['due']} for r in promised]
+        # Projects: the moves of the projects they are on (an organisation's: the projects for its domain).
+        if kind == 'person':
+            pids = {r[0] for r in db.execute("SELECT b FROM graph_links WHERE a=? AND kind='project'", (node,))}
+            pids |= {'project:' + str(r[0]) for r in db.execute('SELECT project_id FROM project_people WHERE node_id=?', (node,))}
+        elif kind == 'org':
+            pids = {'project:' + str(r[0]) for r in db.execute('SELECT id FROM projects WHERE org=? COLLATE NOCASE', (str(info.get('domain') or node),))}
+        else:
+            pids = {node}
+        nums = [int(p.split(':', 1)[1]) for p in pids if p.split(':', 1)[1].isdigit()]
+        if nums:
+            items += [{'type': 'move', 'id': 'move:' + str(r['id']), 'at': r['at'], 'source': 'projects', 'project': r['name'],
+                       'project_id': 'project:' + str(r['project_id']), 'stage': r['stage'], 'by': r['source']}
+                      for r in db.execute(f"SELECT m.id,m.project_id,m.stage,m.source,m.at,p.name FROM project_moves m JOIN projects p ON p.id=m.project_id "
+                                          f"WHERE m.project_id IN ({','.join('?' * len(nums))})", nums)]
+    except sqlite3.OperationalError:
+        pass  # an older database without these tables yet
+    counts = collections.Counter(i['source'] for i in items)
+    if source and source != 'all':
+        items = [i for i in items if i['source'] == source]
+    items.sort(key=lambda i: (str(i['at'] or ''), str(i['id'])), reverse=True)
+    offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit or 40), 100))
+    return {'items': items[offset:offset + limit], 'next': str(offset + limit) if len(items) > offset + limit else None,
+            'sources': {g: counts[g] for g in TIMELINE_GROUPS if counts[g]}, 'total': sum(counts.values())}
+
 # The owner's Fleets, Family and Friends on the graph. Only what the Network's directory already shows every member of
 # that group (the name they chose to share there, their verified addresses, whether they have a Machine), matched on
 # those addresses; nothing is asked of their Machine and nothing leaves this one. Read at view time from the

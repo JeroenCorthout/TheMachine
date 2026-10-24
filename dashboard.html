@@ -668,6 +668,9 @@ span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:col
 .ge-lines{margin:2px 0 0;padding:0;list-style:none;font-size:var(--fs-sm);line-height:1.45;color:var(--muted)}
 .ge-lines li{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ge-lines b{font-weight:var(--fw-medium)}
 .ge-more{display:block;margin:var(--sp-3) auto 0}
+.ge-head .ge-state{flex:none;padding:0 7px;font-size:var(--fs-xs);line-height:1.5}.ge-head h4 a{color:inherit;text-decoration:none}.ge-head h4 a:hover{text-decoration:underline}
+.ge-link{color:var(--muted);text-decoration:underline;text-underline-offset:2px}.ge-empty{margin-top:0}
+.graph-timeline>.sub-tabs{margin:0 0 var(--sp-3)}
 .convo{display:flex;flex-direction:column;padding:2px 0 var(--sp-2)}
 .convo-day{align-self:center;margin:0;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--faint)}
 .convo-turn{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:var(--sp-4)}.convo-turn.me{align-items:flex-end}
@@ -4477,7 +4480,7 @@ function fleetShared(f,work){const v=f.shared||{},mine=(v.prompts||[]).filter(p=
  return graphBox+`<div class="fleet-box"><h3>Shared connectors</h3>${conn.length?`<div class="list">${conn.map(card).join('')}</div>`:''}${shares.length?`<div class="list">${shares.map(row).join('')}</div>`:''}${form}</div>`}
 const svcName=s=>({intercom:'Intercom'})[s]||s||'it';
 function fleetBrief(f,work){const b=(f.briefs||{})[work.id];if(!b)return'';const items=b.items||[],n=b.shown||5;
- const line=(i,k)=>`<li class="fleet-brief-item${k>=n?' fleet-brief-more':''}"${k>=n?' hidden':''}><span class="fleet-brief-line"><strong title="${esc(i.title)}">${esc(i.title)}</strong><small class="muted">${esc(i.why)}</small></span><span class="fleet-brief-do">${i.open?`<a class="fleet-brief-open" href="${esc(safeURL(i.open))}" target="_blank" rel="noopener">Open</a>`:''}${i.ask?`<button type="button" class="ghost" data-brief-ask="${esc(i.ask)}" data-fleet="${esc(work.id)}">Ask</button>`:''}<button type="button" class="quiet" data-brief-hide="${esc(i.key)}" data-fleet="${esc(work.id)}">Not needed</button></span></li>`;
+ const line=(i,k)=>`<li class="fleet-brief-item${k>=n?' fleet-brief-more':''}"${k>=n?' hidden':''}><span class="fleet-brief-line"><strong title="${esc(i.title)}">${esc(i.title)}</strong><small class="muted">${esc(i.why)}</small></span><span class="fleet-brief-do">${i.open?`<a class="fleet-brief-open" href="${esc(safeURL(i.open))}" target="_blank" rel="noopener">Open in Intercom</a>`:''}${i.ask?`<button type="button" class="ghost" data-brief-ask="${esc(i.ask)}" data-fleet="${esc(work.id)}">Ask</button>`:''}<button type="button" class="quiet" data-brief-hide="${esc(i.key)}" data-fleet="${esc(work.id)}">Not needed</button></span></li>`;
  return `<article class="fleet-brief" id="fleet-brief-${esc(work.id)}"><p><strong>What the Fleet saw</strong> <small class="muted">${fleetDay(b.built_at)}</small></p>${items.length?`<ul class="fleet-brief-list">${items.map(line).join('')}</ul>${items.length>n?`<button type="button" class="quiet fleet-brief-show" data-brief-more>Show ${items.length-n} more</button>`:''}`:'<p class="muted">Nothing that needs the team.</p>'}</article>`}
 function fleetFree(f,work,several){const asked=(f.free||[]).filter(q=>q.fleet===work.id);
  return `<form class="fleet-ask fleet-free-form" data-fleet="${esc(work.id)}"><input name="text" maxlength="300" placeholder="Ask ${several?esc(work.name):'your Fleet'} anything: has anyone dealt with…" aria-label="Ask the Fleet anything"><button>Ask</button></form><p class="muted">Each teammate gets a draft answer from their own work accounts. Nothing comes back until they send it. <a class="learn" href="${HELP}fleet#ask-your-fleet" target="_blank" rel="noopener">Learn more</a></p>`+
@@ -5419,21 +5422,40 @@ const openBetween=n=>{const o=n.open||{},row=(label,p)=>`<div class="promise"><s
 // with a menu: Not about them takes only this link away, Forget deletes the fact everywhere.
 const shortName=n=>n.kind==='person'?String(n.name||'').split(/\s+/)[0]||n.name:n.name;
 const knownAbout=n=>{const k=n.open?.known||[],who=esc(shortName(n));return k.length?`<div class="section-head graph-known-head"><h2>Known about ${who}</h2></div><ul class="graph-known">${k.map(f=>`<li><span>${esc(f.text)}</span><details class="fact-menu"><summary aria-label="Options for this fact" title="Options">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-fact-unlink="${f.id}">Not about ${who}<small>Only takes it off this page</small></button><button type="button" role="menuitem" class="danger" data-fact-forget="${f.id}" data-who="${who}">Forget<small>Deletes it everywhere</small></button></div></details></li>`).join('')}</ul>`:''};
-// Events on a person, project or organisation: by day, each row who wrote it, when, and the start of the text.
-const GRAPH_SOURCE={intercom:'<path d="M5 5h14v10H9l-4 4z"/>'};
+// The timeline on a person, project or organisation: every source in one list by day, each row its source, who wrote it,
+// when, and the start of the text; cards, promises and project moves among them. Filter by source; Show more loads more.
+const GRAPH_SOURCE={intercom:'<path d="M5 5h14v10H9l-4 4z"/>',zoom:'<rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/>',
+ telegram:'<path d="m3 11 18-7-3 16-6-5-3 4v-6z"/>',card:'<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h5"/>',
+ promise:'<path d="m5 12 4 4 10-10"/>',move:'<path d="M4 12h14M13 6l6 6-6 6"/>'};
 const graphSource=k=>k==='salesflare.email'?'gmail':k==='salesflare.meeting'?'calendar':kindService(k);
-const sourceIcon=k=>{const s=graphSource(k);return GRAPH_SOURCE[s]?`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24">${GRAPH_SOURCE[s]}</svg></span>`:icon(s)};
-const SOURCE_NAME={gmail:'Email',salesflare:'Email',calendar:'Calendar',whatsapp:'WhatsApp',slack:'Slack',intercom:'Intercom',linkedin:'LinkedIn',android:'Phone',x:'X',github:'GitHub',stripe:'Stripe'};
+const sourceIcon=(k,type)=>{const s=type&&type!=='event'?type:graphSource(k);return GRAPH_SOURCE[s]?`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24">${GRAPH_SOURCE[s]}</svg></span>`:icon(s)};
+const SOURCE_NAME={gmail:'Email',salesflare:'Email',calendar:'Calendar',whatsapp:'WhatsApp',slack:'Slack',intercom:'Intercom',linkedin:'LinkedIn',android:'Phone',x:'X',github:'GitHub',stripe:'Stripe',zoom:'Zoom',telegram:'Telegram'};
+const TL_SOURCES={email:'Email',meetings:'Meetings',intercom:'Intercom',chats:'Chats',cards:'Cards',projects:'Projects',other:'Other'};
 const dayLabel=d=>{const t=new Date(),y=new Date(t),m=new Date(t);y.setDate(t.getDate()-1);m.setDate(t.getDate()+1);const same=(a,b)=>a.toDateString()===b.toDateString();return same(d,t)?'Today':same(d,y)?'Yesterday':same(d,m)?'Tomorrow':d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})})};
 // A run of chat messages in one conversation (same thread, same day, under half an hour apart) is one row.
 const GRAPH_GAP=30*6e4,GRAPH_ROWS=15;
 const graphRuns=rows=>{const out=[];for(const e of rows){const run=out[out.length-1],prev=run?.at(-1);
   if(e.thread&&prev?.thread===e.thread&&new Date(prev.occurred_at).toDateString()===new Date(e.occurred_at).toDateString()&&Math.abs(Date.parse(prev.occurred_at)-Date.parse(e.occurred_at))<GRAPH_GAP)run.push(e);else out.push([e])}return out};
 const graphTime=d=>d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
-const graphEvents=n=>{const all=n.recent||[],soon=Date.now();if(!all.length)return'';let last='',h='';
+// The page's timeline as loaded so far: its source filter, the rows shown and the cursor of the next page.
+let graphTl={node:'',source:'',shown:GRAPH_ROWS,next:null,sources:null,items:null,loading:false};
+const PROMISE_STATE={open:'Open',carded:'Open',kept:'Done',dropped:'Dropped',answered:'Done'};
+const tlRow=(n,e,later)=>{const d=new Date(e.occurred_at),t=`<time datetime="${esc(e.occurred_at)}">${esc(graphTime(d))}</time>`,mark=(label,c)=>`<span class="chip ge-state" style="--c:var(${c})">${esc(label)}</span>`;
+ if(e.type==='card')return `<article class="graph-event ge-item" data-tl="card" tabindex="0" aria-label="Card: ${esc(e.title)}"${later}>${sourceIcon('',e.type)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}"><a href="#card=${esc(e.id)}">${esc(e.title)}</a></h4>${mark(e.done?'Done':'Open',e.done?'--faint':'--mint')}${t}</div><p class="ge-preview">Card</p></div></article>`;
+ if(e.type==='promise'){const who=e.mine?'You promised':n.kind==='person'?'They promised':`${shortName({kind:'person',name:e.who})||'They'} promised`;
+  return `<article class="graph-event ge-item" data-tl="promise" tabindex="0" aria-label="${esc(who)}: ${esc(e.what)}"${later}>${sourceIcon('',e.type)}<div class="ge-main"><div class="ge-head"><h4>${esc(who)}</h4>${mark(PROMISE_STATE[e.status]||'Open',PROMISE_STATE[e.status]==='Open'||!PROMISE_STATE[e.status]?'--mint':'--faint')}${t}</div><p class="ge-preview"><a class="promise-link" href="${promiseHref(e)}">${esc(e.what)}</a></p></div></article>`}
+ if(e.type==='move')return `<article class="graph-event ge-item" data-tl="move" tabindex="0" aria-label="${esc(e.project)}: ${esc(e.stage)}"${later}>${sourceIcon('',e.type)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.project)}"><a href="${graphHash(e.project_id)}">${esc(e.project)}</a></h4>${t}</div><p class="ge-preview">Moved to ${esc(e.stage)}</p></div></article>`;
+ return ''};
+const tlLink=e=>e.kind==='intercom.conversation'&&e.source_url?`<a class="ge-link" href="${esc(e.source_url)}" target="_blank" rel="noopener">Open in Intercom</a>`:e.kind==='zoom.summary'&&e.source_url?`<a class="ge-link" href="${esc(e.source_url)}" target="_blank" rel="noopener">Summary</a>`:'';
+const graphEvents=(n,title='Timeline')=>{const tl=n.timeline,all=(n.recent||[]).map(e=>e.occurred_at?e:{...e,occurred_at:e.at}),soon=Date.now();
+ const chips=tl?.sources&&Object.keys(tl.sources).length>1?subTabs('Show','data-tl-source',[{id:'',label:'All'},...Object.keys(TL_SOURCES).filter(k=>tl.sources[k]).map(k=>({id:k,label:TL_SOURCES[k]}))],tl.source||''):'';
+ const head=count=>`<div class="section-head"><h2>${esc(title)}</h2>${count?`<span class="count">${count}</span>`:''}</div>`;
+ if(!all.length)return tl?`<section class="graph-timeline">${head(0)}${chips}<p class="graph-sub muted ge-empty">Nothing here yet.</p></section>`:'';
+ let last='',h='';const shown=tl?Math.max(GRAPH_ROWS,tl.shown||0):GRAPH_ROWS;
  const runs=graphRuns([...all.filter(e=>Date.parse(e.occurred_at)>soon).sort((a,b)=>a.occurred_at.localeCompare(b.occurred_at)),...all.filter(e=>!(Date.parse(e.occurred_at)>soon))]);  /* coming up first, soonest on top, then the latest */
- runs.forEach((run,i)=>{const e=run[0],d=new Date(e.occurred_at),label=dayLabel(d),later=i>=GRAPH_ROWS?' hidden':'';
+ runs.forEach((run,i)=>{const e=run[0],d=new Date(e.occurred_at),label=dayLabel(d),later=i>=shown?' hidden':'';
   if(label!==last){h+=(last?'</div>':'')+`<h3 class="ge-day"${later}>${esc(label)}</h3><div class="ge-group">`;last=label}
+  if(e.type&&e.type!=='event'){h+=tlRow(n,e,later);return}
   const chat=e.dm||e.title===n.name&&e.from,src=SOURCE_NAME[graphSource(e.kind)]||'';
   if(e.thread&&(run.length>1||chat||e.title!==n.name)){  /* a conversation, newest first: e is the last message, run.at(-1) the first */
    const first=new Date(run.at(-1).occurred_at),many=run.length>1,span=graphTime(first)===graphTime(d)?graphTime(d):graphTime(first)+' to '+graphTime(d);
@@ -5443,9 +5465,18 @@ const graphEvents=n=>{const all=n.recent||[],soon=Date.now();if(!all.length)retu
    const meta=`<span class="ge-meta"><time datetime="${esc(first.toISOString())}">${many?`${run.length} messages · `:''}${esc(span)}</time></span>`;
    h+=`<article class="graph-event" data-event="${e.id}"${many?` data-events="${run.map(m=>m.id).reverse().join(',')}" data-title="${esc(head)}" data-src="${esc(src)}"${own?'':' data-group'}`:''} tabindex="0" aria-label="${esc(own?with_:(src?src+': ':'')+head)}${many?`, ${run.length} messages`:''}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head">${own?'':`<h4 title="${esc(e.title)}">${esc(head)}</h4>`}${meta}${shareChip(e)}</div>${many?`<ul class="ge-lines">${lines}</ul>`:e.preview?`<p class="ge-preview">${said(e)}</p>`:''}${run.some(m=>m.probable)?'<p class="ge-note">Probably part of it</p>':''}</div></article>`;return}
   const head=e.place||(chat?(e.from_me?'You':e.from||(n.kind==='person'?n.name:e.title)):e.title);
-  const by=!chat&&e.from&&e.kind!=='calendar.event'?(e.from_me?'You':e.from)+': ':'';
-  h+=`<article class="graph-event" data-event="${e.id}" tabindex="0" aria-label="${esc(src?src+': ':'')}${esc(head)}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}">${esc(head)}</h4><time datetime="${esc(e.occurred_at)}">${esc(graphTime(d))}</time>${shareChip(e)}</div>${e.preview?`<p class="ge-preview">${by?`<b>${esc(by)}</b>`:''}${esc(e.preview)}</p>`:''}${e.probable?'<p class="ge-note">Probably part of it</p>':''}</div></article>`});
- return `<div class="section-head"><h2>Events</h2><span class="count">${runs.length}</span></div><div class="graph-events">${h}</div></div>${runs.length>GRAPH_ROWS?'<button type="button" class="ghost ge-more" data-ge-more>Show more</button>':''}`};
+  const by=!chat&&e.from&&!['calendar.event','zoom.summary'].includes(e.kind)?(e.from_me?'You':e.from)+': ':'';
+  const state=e.state?`<span class="chip ge-state" style="--c:var(${e.state==='open'?'--mint':'--faint'})">${e.state==='open'?'Open':'Closed'}</span>`:'';
+  h+=`<article class="graph-event" data-event="${e.id}" tabindex="0" aria-label="${esc(src?src+': ':'')}${esc(head)}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}">${esc(head)}</h4>${state}<time datetime="${esc(e.occurred_at)}">${esc(graphTime(d))}</time>${shareChip(e)}</div>${e.preview?`<p class="ge-preview">${by?`<b>${esc(by)}</b>`:''}${esc(e.preview)}</p>`:''}${tlLink(e)?`<p class="ge-note">${tlLink(e)}</p>`:''}${e.probable?'<p class="ge-note">Probably part of it</p>':''}</div></article>`});
+ const more=runs.length>shown||tl?.next;
+ return `<section class="graph-timeline">${head(tl?(tl.source?tl.sources?.[tl.source]:tl.total)||runs.length:runs.length)}${chips}<div class="graph-events">${h}</div></div>${more?'<button type="button" class="ghost ge-more" data-ge-more>Show more</button>':''}</section>`};
+// Show more: the rows already here first, then the next page; a source chip reloads the list for that source.
+async function graphTlLoad(source,more){const n=graphTl.page;if(!n||graphTl.loading)return;graphTl.loading=true;
+ try{const tl=n.timeline||{};const cursor=more?tl.next:'';const got=await request('api/graph/timeline?node='+encodeURIComponent(n.id)+'&source='+encodeURIComponent(source)+(cursor?'&cursor='+encodeURIComponent(cursor):''));
+  if(graphTl.page!==n)return;n.recent=more?[...n.recent,...got.items]:got.items;n.timeline={...tl,next:got.next,sources:got.sources,total:got.total,source,shown:more?(tl.shown||GRAPH_ROWS)+30:GRAPH_ROWS};graphTlDraw()}
+ catch(err){toast(err.message,true)}finally{graphTl.loading=false}}
+function graphTlDraw(){const box=$('#people-view .graph-timeline'),n=graphTl.page;if(!box||!n)return;const tmp=document.createElement('div');tmp.innerHTML=graphEvents(n);box.replaceWith(tmp.firstElementChild);
+ for(const p of $('#people-view').querySelectorAll('.graph-timeline .ge-preview'))p.classList.toggle('fade',p.scrollHeight>p.clientHeight+1)}
 // The Shared Graph (shared_graph.py): Mine or Team, "via <name>", a thread's Team or Only you, Keep private and Ask <name>.
 // Teammates' records and threads are theirs, shown as text, never acted on. Nothing here goes outside the Fleet.
 let graphTeam=sideStore.get('graph-team')==='team',graphSharing=[];
@@ -5491,7 +5522,7 @@ async function promisePage(id){const p=await request('api/promise?id='+encodeURI
  const who=p.together?'With '+p.who:p.direction==='mine'?'Promised to '+p.who:p.who+' promised',when=p.due?'due '+day(p.due):'no date';
  const actions=p.state==='open'?`<div class="promise-actions"><button class="ghost" data-promise="${p.id}" data-close="kept">Done</button><button class="ghost" data-promise-due>Change date</button><button class="ghost" data-promise="${p.id}" data-close="dropped">Not needed</button></div><form class="promise-due-form" data-promise-id="${p.id}" hidden><input type="date" name="due" value="${esc(p.due||'')}" aria-label="New date" required><button>Save</button></form>`:'';
  const note=p.state!=='open'&&p.note&&!/\(you\)$/.test(p.note)?`<p class="graph-sub muted">${esc(p.note)}</p>`:'';
- const src=p.source?.[0],from=src?graphEvents({recent:p.source,name:p.who,kind:'promise'}).replace(/<h2>Events<\/h2><span class="count">\d+<\/span>/,'<h2>Came from</h2>'):'';
+ const src=p.source?.[0],from=src?graphEvents({recent:p.source,name:p.who,kind:'promise'},'Came from').replace(/<span class="count">\d+<\/span>/,''):'';
  const open=src&&/^https:\/\//.test(src.source_url||'')?`<p class="graph-sub"><a href="${esc(src.source_url)}" target="_blank" rel="noreferrer">Open in ${esc(SOURCE_NAME[graphSource(src.kind)]||'its app')} ↗</a></p>`:'';
  const kinds=[['person','People'],['org','Organisation'],['project','Project']].map(([k,t])=>[t,p.links.filter(l=>l.kind===k)]).filter(([,l])=>l.length);
  const about=kinds.length?`<div class="section-head"><h2>About</h2></div><div class="promise-about">${kinds.map(([t,l])=>`<p class="graph-sub"><span class="muted">${t}</span> ${l.map(nodeButton).join('')}</p>`).join('')}</div>`:'';
@@ -5532,7 +5563,7 @@ function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);gr
  for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'));tabsShow(view.querySelector(`[data-graph-panel="${CSS.escape(id)}"] .sub-tabs`))}
 async function people(node=graphNode,quiet=false){const was=graphNode;graphNode=node;if(was!==node&&!$('#people').hidden)pageHead();  /* the head names the page's section; + New … is for the lists, not a page */const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=(html,mode='list')=>{if(version!==graphRequest||quiet&&([...view.querySelectorAll('form:not([hidden])')].some(f=>f.checkVisibility())||view.querySelector('.team-thread[open],.tile-menu[open],.board-menu[open]')))return;  /* a refresh never closes what the owner is typing or reading */const back=quiet&&foldsKeep(view);view.innerHTML=html;view.dataset.mode=mode;pagerMount(view);if(back)back()};  /* the rows a list already loaded come with it, so the page keeps its height and the reader keeps their place (placeKeep) */try{
  if(node&&/^promise:\d+$/.test(node)){const html=await promisePage(node.slice(8));draw(html,'node');if(version!==graphRequest)return;graphKept=null;$('#people').classList.add('graph-on-node');pageHead();if(!quiet)scrollTo({top:0});return}
- if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
+ if(node){const n=await request('api/graph?node='+encodeURIComponent(node));if(n.timeline){const was=graphTl.page;if(quiet&&was?.id===n.id&&was.timeline?.source){n.recent=was.recent;n.timeline={...n.timeline,...was.timeline}}else n.timeline.shown=GRAPH_ROWS;graphTl.page=n}const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
   if(n.team_only){draw(teamDetail(n));if(version!==graphRequest)return;$('#people').classList.add('graph-on-node');if(!quiet)scrollTo({top:0});return}
   const sub=n.kind==='person'?personSub({...n,role:null,profile:null})+(n.quiet?' · gone quiet':''):n.kind==='project'?(n.state+' · last signal '+day(n.last_at)+(n.probable_signals?' · '+n.probable_signals+' probably part of it':'')):(n.signals+' people · last contact '+day(n.last_at));
   const [paneId,paneName]=GRAPH_KIND_PANE[n.kind]||GRAPH_KIND_PANE.person;
@@ -5573,7 +5604,10 @@ async function people(node=graphNode,quiet=false){const was=graphNode;graphNode=
   ||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing mapped yet.</strong>People appear as messages and meetings come in.</div></div>');
  if(version===graphRequest){pagerMount(view);if(back!=null&&version===graphRequest){graphScroll=null;scrollTo(0,back)}}if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
 const graphPost=(action,args)=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args})});
-$('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){for(const x of $('#people-view').querySelectorAll('.graph-events [hidden]'))x.hidden=false;e.target.closest('[data-ge-more]').remove();return}if(openEventFrom(e))return;
+$('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){const n=graphTl.page,box=e.target.closest('.graph-timeline'),hidden=box?box.querySelectorAll('.graph-event[hidden]').length:0;
+  if(n?.timeline&&box){if(n.timeline.next&&hidden<30)graphTlLoad(n.timeline.source||'',true);else{n.timeline.shown=(n.timeline.shown||GRAPH_ROWS)+30;graphTlDraw()}}
+  else{for(const x of $('#people-view').querySelectorAll('.graph-events [hidden]'))x.hidden=false;e.target.closest('[data-ge-more]').remove()}return}
+ const tlChip=e.target.closest('[data-tl-source]');if(tlChip){graphTlLoad(tlChip.dataset.tlSource,false);return}if(openEventFrom(e))return;
  const q=e.target.closest('[data-quote-event]');if(q){openEvent(q.dataset.quoteEvent,'');return}
  const all=e.target.closest('[data-role-all]');if(all){const each=[...document.querySelectorAll('.whos [data-role-confirm]')];if(!each.length||!confirm(`Mark all ${each.length} roles as right?`))return;all.disabled=true;let done=0;try{for(const b of each){await graphPost('graph_role',{node_id:b.dataset.roleConfirm,role:b.dataset.role});done++}toast(`Confirmed ${done} roles.`)}catch(err){toast((done?`Confirmed ${done}, then: `:'')+err.message,true)}await people(graphNode,true);return}
  const undo=e.target.closest('[data-warmup-undo]');if(undo){undo.disabled=true;try{await graphPost('graph_warmup',{domain:undo.dataset.warmupUndo,warmup:false});toast('Back in your graph: '+undo.dataset.warmupUndo+'.');await people(graphNode,true)}catch(err){undo.disabled=false;toast(err.message,true)}return}

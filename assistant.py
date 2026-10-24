@@ -9221,7 +9221,7 @@ def dashboard_page(token, owner, base):
 # listed here (file downloads, the browser view, streams). Brotli when the module is there, else zstd (Python 3.14),
 # else gzip; the client's Accept-Encoding decides, q=0 refuses one.
 COMPRESSIBLE = frozenset({'/', '/sw.js', '/manifest.webmanifest', '/api/status', '/api/events', '/api/calendar', '/api/graph',
-                          '/api/graph/list', '/api/cards/done', '/api/promise'})
+                          '/api/graph/list', '/api/graph/timeline', '/api/cards/done', '/api/promise'})
 COMPRESS_MIN = 1024  # smaller answers fit a packet or two anyway
 try:
     import brotli as _brotli
@@ -15038,6 +15038,48 @@ class App:
         with self.store.connect() as db:
             return graph.with_fleet(db, graph.page(db, name, sort, cursor, limit), self.graph_fleet_marks(db))
 
+    def graph_timeline(self, node, source='', cursor=0, limit=40):
+        """A page of a person's, organisation's or project's timeline for the owner's dashboard (graph.timeline), each
+        signal as a row: who wrote it, the start of its text, its link, an Intercom conversation's state and a thread's
+        Team or Only you. Never part of what the team's Graph sends."""
+        accounts = self.config['accounts']
+        with self.store.connect() as db:
+            found = graph.timeline(db, node, source, cursor, limit)
+        if found is None:
+            raise ValueError('Not in the graph')
+        ids = [i['id'] for i in found['items'] if i['type'] == 'event']
+        rows = {r['id']: r for r in self.store.events([a['id'] for a in accounts], event_ids=ids)} if ids else {}
+        items = []
+        for item in found['items']:
+            if item['type'] != 'event':
+                items.append(item)
+                continue
+            r = rows.get(item['id'])
+            if not r:
+                continue
+            m = r['metadata']
+            row = {'id': r['id'], 'type': 'event', 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
+                   'source': item['source'], 'source_url': m.get('source_url'), 'probable': item['probable'], **event_glance(r, accounts)}
+            if r['kind'] == 'intercom.conversation':
+                row['state'] = 'open' if m.get('open') is True or m.get('state') in ('open', 'snoozed') else 'closed'
+                row['thread'] = None  # one conversation is one row
+                opening = next((line for line in str(r.get('body') or '').splitlines() if line.strip()), '')  # the first line, not the log of parts
+                row['preview'] = ' '.join(opening.split())[:240]
+                if '@' in str(row.get('from') or ''):  # who opened it by name, not by address
+                    row['from'] = (str(m.get('from_name') or '') or str(m.get('contact_name') or '') or row['from'])[:80]
+            items.append(row)
+        if getattr(self, 'fleet', None) and rows:  # the Shared Graph: each Work thread's Team or Only you
+            try:
+                with self.store.connect() as db:
+                    labels = self.fleet.thread_labels(db, list(rows.values()))
+                for row in items:
+                    if row.get('type') == 'event' and row['id'] in labels:
+                        row['share'] = labels[row['id']]
+            except (sqlite3.Error, ValueError, KeyError, TypeError) as error:
+                LOG.info('shared graph timeline error=%s', type(error).__name__)
+        found['items'] = items
+        return found
+
     def account_view(self):
         """Settings, Account on a self-hosted Machine paired with the Network: its owner's account in short, from the
         control plane (fleet.Fleet.account). A hosted Machine's dashboard asks the control plane itself, with the owner's
@@ -15368,6 +15410,14 @@ class App:
                             self.output(200, app.graph_list(args.get('list', ''), args.get('sort', ''), args.get('cursor') or 0, args.get('limit') or 30))
                     except (ValueError, sqlite3.OperationalError):
                         self.output(400, {'error': 'Not a list'})
+                elif path.path == '/api/graph/timeline':  # a person's or organisation's timeline, a page and a source at a time
+                    args = {k: v[0] for k, v in urllib.parse.parse_qs(path.query).items()}
+                    try:
+                        if str(args.get('node', '')).startswith('team:'):
+                            raise ValueError('not on the team Graph')
+                        self.output(200, app.graph_timeline(args.get('node', ''), args.get('source', ''), args.get('cursor') or 0, args.get('limit') or 40))
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(404, {'error': 'Not in the graph'})
                 elif path.path == '/api/graph':
                     node = urllib.parse.parse_qs(path.query).get('node', [''])[0]
                     query = urllib.parse.parse_qs(path.query).get('q', [''])[0]
@@ -15395,18 +15445,14 @@ class App:
                         elif node:
                             found = app.graph_action({'node_id': node, 'limit': 10, 'events': 120})  # a run of chat messages is one row
                             rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[int(line.split(' ', 1)[0]) for line in found['recent']])
-                            found['recent'] = [{'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
-                                                'source_url': r['metadata'].get('source_url'), 'probable': r['id'] in found['probable_ids'],
-                                                **event_glance(r, app.config['accounts'])}
-                                               for r in sorted(rows, key=lambda r: r['occurred_at'], reverse=True)]
-                            if app.fleet:  # the Shared Graph: each Work thread's Team or Only you, Keep private, what teammates know
+                            # The timeline: every source, newest first, a page at a time (/api/graph/timeline for the next)
+                            found['timeline'] = app.graph_timeline(found['id'])
+                            found['recent'] = found['timeline'].pop('items')
+                            if app.fleet:  # the Shared Graph: Keep private, what teammates know
                                 try:
                                     with app.store.connect() as db:
                                         labels = app.fleet.thread_labels(db, rows)
-                                        for r in found['recent']:
-                                            if r['id'] in labels:
-                                                r['share'] = labels[r['id']]
-                                        if labels or app.fleet.is_private(db, node):
+                                        if labels or any(r.get('share') for r in found['recent']) or app.fleet.is_private(db, node):
                                             found['keep_private'] = app.fleet.is_private(db, node)
                                         found['team'] = app.fleet.team_for(db, node)[1]
                                 except (sqlite3.Error, ValueError, KeyError, TypeError) as error:
