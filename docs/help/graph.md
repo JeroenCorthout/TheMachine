@@ -36,7 +36,9 @@ A joined person's page lists why under **Joined from**. **Undo** splits them aga
 
 People with a company address get a job title, photo, LinkedIn and city, looked up like [organisation details](organisation-data.md). Only their name and company domain are sent on a hosted Machine. Turn it off in **Settings**, under Graph: **Look up work contacts**.
 
-Your connections fill in more as they run, with what they already read and nothing extra asked: a title, phone and time zone from Slack, a bio, place and website from X, a headline and photo from LinkedIn, job titles from Google contacts and Salesflare, and WhatsApp pictures, up to 50 a day, when your WhatsApp mirror allows it. What someone says about themselves comes first. Hover over the line under their name to see where it came from. It all stays on your Machine.
+Your connections fill in more as they run, with what they already read and nothing extra asked: a title, phone and time zone from Slack, a bio, place and website from X, a headline and photo from LinkedIn, and job titles from Google contacts and Salesflare. What someone says about themselves comes first. Hover over the line under their name to see where it came from. It all stays on your Machine.
+
+WhatsApp pictures come through your always-on WhatsApp sync, when it allows them: up to 50 a day, only for people already in your Graph. Nothing is sent to them.
 
 ## Delete someone permanently
 
