@@ -215,6 +215,44 @@ class SharedGraph(unittest.TestCase):
         self.assertNotIn('graduation', json.dumps(self.team(self.mem, 'team_mail')))
         self.assertEqual(self.team(self.mem, 'team_mail'), [])
 
+    def test_a_thread_later_sorted_personal_is_taken_back_and_stays_personal(self):
+        self.add(self.own, mail('work', 7, 'Lee Park <lee@client.example>', 'own1@acme.example', 'New phone', 'Your new phone ships Friday.', 1, 't-phone'))
+        self.judge(self.own, ('work-7', 'client', 'Lee wrote about a phone'))
+        self.rounds()
+        self.assertIn('New phone', json.dumps(self.team(self.mem, 'team_mail')))
+        self.judge(self.own, ('work-7', 'personal', 'Lee wrote'))
+        self.rounds()
+        self.assertNotIn('New phone', json.dumps(self.team(self.mem, 'team_mail')))  # the owner's Machine took it back
+        for later in ('sensitive', 'client', 'internal'):  # a later review never turns it back, not even into a line
+            self.judge(self.own, ('work-7', later, 'Lee wrote'))
+            self.rounds()
+            self.assertEqual(self.team(self.mem, 'team_mail'), [])
+        with self.own.store.connect() as db:
+            self.assertEqual(db.execute('SELECT verdict FROM share_threads').fetchone()[0], 'personal')
+
+    def test_family_friends_and_people_marked_personal_never_go(self):
+        family = {'id': 'fl_' + '4' * 16, 'kind': 'family', 'name': 'Home', 'members': [
+            {'member_id': 'fm_partner', 'name': 'Hana Lane', 'emails': ['hana@studio.example']}]}
+        fleets = self.own.fleets
+        self.own.fleets = lambda: {**fleets(), family['id']: family}
+        self.add(self.own,
+                 mail('work', 8, 'Hana Lane <hana@studio.example>', 'own1@acme.example', 'Weekend plans', 'The kids want the beach.', 1, 't-hana'),
+                 mail('work', 9, 'Kim Moss <kim@pal.example>', 'own1@acme.example', 'Climbing trip', 'Trip is booked.', 1, 't-kim'),
+                 mail('work', 10, 'Lee Park <lee@client.example>', 'own1@acme.example', 'Renewal quote', BODY, 1, 't-renewal', cc='hana@studio.example'))
+        with self.own.store.connect() as db:
+            graph.person_edit(db, 'email:kim@pal.example', {'side': 'personal'}, a.now())
+            db.commit()
+            db.isolation_level = None
+            graph.build(db, self.own.config, a.now())
+        self.judge(self.own, ('work-8', 'client', 'Hana wrote'), ('work-9', 'client', 'Kim wrote'), ('work-10', 'client', 'Lee asked for a quote'))
+        self.rounds()
+        received = json.dumps(self.team(self.mem) + self.team(self.mem, 'team_mail'))
+        for text in ('Hana', 'studio.example', 'beach', 'Kim', 'pal.example', 'Climbing', 'Renewal quote'):
+            self.assertNotIn(text, received)  # a thread with a family member on it stays with the owner too
+        with self.own.store.connect() as db:
+            labels = self.own.thread_labels(db, [dict(r) for r in db.execute('SELECT * FROM events')])
+        self.assertEqual({labels[self.event_id(self.own, s)]['share'] for s in ('work-8', 'work-9', 'work-10')}, {'only_you'})
+
     def test_internal_thread_is_never_shared_even_by_hand(self):
         self.olive_mail()
         with self.own.store.connect() as db:

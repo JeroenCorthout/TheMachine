@@ -23,6 +23,10 @@ Each thread is judged by the review, by what it is about, never by word lists. A
 - **Only you by hand** shares nothing about that thread, not even the neutral line.
 - Hard limits come before the review's call and before a hand choice: only accounts with a Work boundary for this
   Fleet; a thread with nobody outside the company is internal; a personal account is never read for this.
+- Personal stays personal: once the review sorts a thread personal, a later review can't make it client or
+  sensitive (not even the neutral line). Only the owner can, by hand. A thread already shared is taken back.
+- People of the owner's own life never go: someone only in their Family or Friends, or someone they marked Personal.
+  No record of them, and a thread with them on it stays Only you, like Keep private.
 
 Records are shared by default when they are Work:
 

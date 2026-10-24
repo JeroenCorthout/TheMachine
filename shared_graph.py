@@ -232,9 +232,13 @@ def judge(db, team, at=None):
         if verdict not in VERDICTS:
             raise ValueError('share: ' + ', '.join(VERDICTS))
         thread = thread_of(row['kind'], json.loads(row['metadata'] or '{}'), row['id'])
+        # Personal stays personal: a later review never turns it into a client or sensitive call (not even a "Private
+        # thread" line); only the owner's hand can. Sensitive never becomes client.
         db.execute('INSERT INTO share_threads(thread,verdict,event_id,at) VALUES(?,?,?,?) ON CONFLICT(thread) DO UPDATE SET '
-                   'verdict=CASE WHEN share_threads.verdict IN (\'sensitive\',\'personal\') AND excluded.verdict=\'client\' THEN share_threads.verdict '
+                   'verdict=CASE WHEN share_threads.verdict=\'personal\' THEN \'personal\' '
+                   'WHEN share_threads.verdict=\'sensitive\' AND excluded.verdict=\'client\' THEN share_threads.verdict '
                    'ELSE excluded.verdict END,event_id=excluded.event_id,at=excluded.at', (thread, verdict, row['id'], stamp))
+        verdict = db.execute('SELECT verdict FROM share_threads WHERE thread=?', (thread,)).fetchone()[0]
         line = graph.one_line(item.get('line'), 160)
         if line and verdict == 'client':
             db.execute('INSERT OR REPLACE INTO share_lines(event_id,thread,line,at) VALUES(?,?,?,?)', (row['id'], thread, line, stamp))
@@ -284,9 +288,13 @@ def outside(address, internal):
 class Scope:
     """What this Machine may share with one Work Fleet: its accounts, its own domains, who is private."""
 
-    def __init__(self, db, accounts, internal, mine):
+    def __init__(self, db, accounts, internal, mine, personal=()):
+        """personal: graph people of the owner's own life (only in their Family or Friends): never a record, and
+        threads with them stay out, like Keep private. So does anyone the owner marked Personal; one they marked
+        Work is not."""
         self.accounts, self.internal, self.mine = set(accounts), set(internal), {m.lower() for m in mine}
         self.private = {r[0] for r in db.execute('SELECT node_id FROM share_private')}
+        personal = set(personal)
         # Only-you projects (their own visibility or their board's): never shared, and neither are their threads
         self.private |= {'project:' + str(i) for i in graph.hidden_project_ids(db)}
         self.hidden_events = graph.hidden_event_ids(db)
@@ -297,6 +305,8 @@ class Scope:
             info = json.loads(row['info'] or '{}')
             ids = {row['id'], *info.get('identifiers', [])}
             if row['kind'] == 'person':
+                if info.get('side_by') == 'owner' and info.get('side') == 'personal' or row['id'] in personal and info.get('side_by') != 'owner':
+                    self.private.add(row['id'])  # the owner's word (Work or Personal) wins over Family or Friends
                 for i in ids:
                     if str(i).startswith('email:') and info.get('org'):
                         self.org_of[i[6:].lower()] = info['org']
@@ -812,7 +822,7 @@ class SharedGraph:
             return
         with self.connect() as db:
             ensure(db)
-            scope = Scope(db, self.fleet_accounts(fleet), self.internal(fleet), self.my_emails())
+            scope = Scope(db, self.fleet_accounts(fleet), self.internal(fleet), self.my_emails(), self._personal_people(db))
             others = [k['key'] for kv_, k in sorted(self.graph_keys(fleet).items(), key=lambda x: x[1]['at'], reverse=True) if kv_ != kv][:3]
             records, threads, stats, files = collect(db, scope, [key, *others], self.graph_secret())
             before = {(r['kind'], r['key']): r['hash'] for r in db.execute('SELECT kind,key,hash FROM share_out WHERE fleet=?', (fleet,))}
@@ -1324,8 +1334,18 @@ class SharedGraph:
         found = {}
         for group in self._kept_groups():
             if group.get('kind') == 'work' and group.get('id') and self._me_in(group):
-                found[group['id']] = Scope(db, self.fleet_accounts(group['id']), self.internal(group['id']), self.my_emails())
+                found[group['id']] = Scope(db, self.fleet_accounts(group['id']), self.internal(group['id']), self.my_emails(),
+                                           self._personal_people(db))
         return found
+
+    def _personal_people(self, db):
+        """Graph people who are only in the owner's Family or Friends (graph.fleet_marks, from the directory this
+        Machine keeps): the owner's own life, whatever address they write from. Never shared with a Work Fleet."""
+        try:
+            marks = graph.fleet_marks(db, self.fleets())
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return set()
+        return {node for node, mark in marks.items() if mark['in'] and all(x['kind'] in ('family', 'friends') for x in mark['in'])}
 
     def thread_labels(self, db, rows):
         """{event id: {'share': 'team' | 'only_you', 'fixed': bool, 'why'}} for messages in a Work Fleet's accounts;
