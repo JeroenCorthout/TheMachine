@@ -110,8 +110,13 @@ async function graphPage(page,label){
  assert.ok(!calls.slice(before).some(c=>c.startsWith('/api/graph/list')),'no page asked again on back '+label);
  // search: debounced typing; empty box is the list again at once, with no network call; a late answer never shows
  const q=page.locator('#people-query');await q.fill('Person 00');const yq=await page.evaluate(()=>scrollY);await until(async()=>await page.locator('#people-view .graph-found').count()===1,'found '+label);
- const n0=calls.length,took=await page.evaluate(()=>{const i=document.querySelector('#people-query'),t=performance.now();i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));
-  return document.querySelector('[data-graph-panel="people"]:not([hidden]) .graph-list article')?performance.now()-t:1e9});assert.ok(took<100,'the list is back at once '+label+': '+took+'ms');assert.equal(calls.length,n0,'no network call to clear '+label);
+ const n0=calls.length;
+ // An unrelated health refresh may finish while a search is cleared. It must not count as a search request.
+ await page.evaluate(()=>fetch('/api/health'));
+ const took=await page.evaluate(()=>{const i=document.querySelector('#people-query'),t=performance.now();i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));
+  return document.querySelector('[data-graph-panel="people"]:not([hidden]) .graph-list article')?performance.now()-t:1e9});assert.ok(took<100,'the list is back at once '+label+': '+took+'ms');
+ await page.waitForTimeout(350);  // also catch an incorrectly debounced empty search, not just immediate calls
+ assert.deepEqual(calls.slice(n0).filter(c=>c.startsWith('/api/graph?q=')),[],'no search request to clear '+label);
  assert.equal(await page.locator('[data-graph-panel="people"] .graph-list article').count(),had,'pages kept after a search '+label);
  await until(async()=>Math.abs(await page.evaluate(()=>scrollY)-yq)<4,'scroll kept after a search '+label);  // set in the next frame, before it paints
  let release;searchHold=new Promise(r=>release=r);
