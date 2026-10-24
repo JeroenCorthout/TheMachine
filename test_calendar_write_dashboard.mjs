@@ -51,7 +51,10 @@ try{
   // The card: exactly what changes, on which calendar; Add opens the review and only its Add confirms this revision
   const task=page.locator('#task-'+sid);
   assert.equal(await task.locator('.draft.cal-change .dm').textContent(),'Add to Kid’s calendar');
-  assert.equal(await task.locator('.draft.cal-change .db').textContent(),'Doctor check-up\nThu 30 Oct 2026, 09:30 to 10:00\nWhere: Health centre');
+  // Label and value rows in the card's own type, like the review; the card shows all of it, so no Read result
+  assert.deepEqual(await task.locator('.draft.cal-change .cal-rows > div').evaluateAll(r=>r.map(x=>x.querySelector('dt').textContent+': '+x.querySelector('dd').textContent)),['What: Doctor check-up','When: Thu 30 Oct 2026, 09:30 to 10:00','Where: Health centre']);
+  assert.equal(await task.locator('.cal-rows').evaluate(e=>getComputedStyle(e).fontFamily),await task.locator('.body,p').first().evaluate(e=>getComputedStyle(e).fontFamily));
+  assert.equal(await task.locator('[data-result="read"]').count(),0);
   if(shots)await task.screenshot({path:`${shots}/calwrite-card-${width}-${scheme}.png`});
   await task.locator(`[data-smart="${revision}"]`).click();await page.locator('#send-dialog').waitFor({state:'visible'});
   assert.equal(await page.locator('#send-title').textContent(),'Add to Kid’s calendar?');assert.equal(await page.locator('#send-confirm').textContent(),'Add');

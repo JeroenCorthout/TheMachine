@@ -771,6 +771,7 @@ button.stat[aria-expanded="true"]::after{content:"";position:absolute;left:28%;r
 .card .draft{max-width:680px;margin:12px 0 0;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--sunken);font-size:.92rem;line-height:1.5;color:var(--text)}
 .card .draft .dm{margin:0 0 6px;font-size:.8rem;color:var(--faint);overflow-wrap:anywhere}
 .card .draft .db{white-space:pre-wrap;overflow-wrap:anywhere}
+.draft.cal-change .cal-rows{margin:4px 0 0;font:400 var(--fs-md,.95rem)/1.5 var(--sans);color:var(--text)}.draft.cal-change .cal-rows div{display:flex;gap:12px;padding:2px 0}.draft.cal-change .cal-rows dt{flex:0 0 56px;color:var(--faint)}.draft.cal-change .cal-rows dd{margin:0;min-width:0;overflow-wrap:anywhere;white-space:pre-wrap}
 .card .draft.sent{opacity:.75}
 .card .draft.clamp .db{max-height:calc(14*1.5em);overflow:hidden;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent)}
 .card .draft .attachments{margin:10px 0 0;gap:6px}.card .draft .attachment{padding:4px 11px;font-size:.82rem;background:var(--surface)}
@@ -2068,6 +2069,8 @@ const DRAFT_KINDS=['email','email_demo','linkedin','slack','x','whatsapp','inter
 const CAL_DO={create:'Add to ',update:'Change on ',delete:'Delete from '},CAL_DID={create:'Added to ',update:'Changed on ',delete:'Deleted from '};
 const CAL_LABEL={create:'Add to calendar',update:'Save event',delete:'Delete event'};
 const calDoneText=a=>(CAL_DID[a.op]||'')+a.calendar_name;
+// What a calendar change does, as label and value rows: on the card and in its review.
+const calRows=a=>[['What',a.title],['When',a.when],...(a.op==='update'&&a.was&&(a.was.title!==a.title||a.was.when!==a.when)?[['Was',a.was.title+', '+a.was.when]]:[]),...(a.location?[['Where',a.location]]:[]),...(a.notes?[['Notes',a.notes]]:[])];
 const calChangeText=a=>[a.title,a.when,a.op==='update'&&a.was&&(a.was.title!==a.title||a.was.when!==a.when)?'Was: '+a.was.title+', '+a.was.when:'',a.location?'Where: '+a.location:'',a.notes?'Notes: '+a.notes:''].filter(Boolean).join('\n');
 // The text a draft sends, or a final step posts (its message; else what goes out). Edit changes exactly this.
 const draftText=a=>a.kind==='finish'?(a.message||a.preview):a.kind==='calendar'?calChangeText(a):a.body;
@@ -2077,7 +2080,7 @@ const MD_LINK=/\[([^\[\]\n]{1,200})\]\((https:\/\/[^\s()<>]{1,2000})\)/g;
 const draftBody=(a,text)=>['email','email_demo','slack'].includes(a.kind)?esc(text).replace(MD_LINK,(m,t,u)=>`<a href="${u}" target="_blank" rel="noreferrer">${t}</a>`):esc(a.kind==='handoff'?String(text).replace(MD_LINK,'$1 ($2)'):text);
 // The draft as written: To · Subject in small type, the text with its line breaks; long drafts fold behind Show more.
 function draftBox(s,a,label){if(a.kind==='calendar'){const done=(a.state||s.action_status)?.status==='sent';
- return `<div class="draft cal-change${done?' sent':''}" role="group" aria-label="Calendar change"><div class="dm">${esc((done?CAL_DID:CAL_DO)[a.op]+a.calendar_name)}</div><div class="db">${esc(calChangeText(a))}</div></div>`}
+ return `<div class="draft cal-change${done?' sent':''}" role="group" aria-label="Calendar change"><div class="dm">${esc((done?CAL_DID:CAL_DO)[a.op]+a.calendar_name)}</div><dl class="cal-rows">${calRows(a).map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></div>`}
 const fin=a.kind==='finish',sent=(a.state||s.action_status)?.status===(fin?'done':'sent'),mail=['email','email_demo'].includes(a.kind),text=draftText(a);
 const to=a.kind==='x'&&!a.to_name&&a.to_screen_name?'@'+a.to_screen_name:a.to_name||(a.to||[]).join(', ');
 // A final step (Submit, Pay…): its label, and who gets the message when it posts one.
@@ -2166,7 +2169,8 @@ const statusLine=(()=>{const line=(text,cls='')=>`<p class="note status-line${cl
 // Like the site's demo card: a ready draft shows in an inset box, the source line sits under the content, and the prepared action leads the button grid.
 const drafts=s.status==='prepared'&&!tpSent?smart.filter(a=>DRAFT_KINDS.includes(a.kind)&&draftText(a)):[];
 // One faint line, like the site: the source itself opens the original; Read result and Copy draft (when there is a draft or file) sit at its end.
-    const results=s.status==='prepared'||s.result_files?.length?`<span class="foot-links"><button type="button" class="link" data-id="${s.id}" data-result="read">Read result</button>${(messageDrafts(s).length||s.result_files?.length)&&!copyLead(s,smart)?`<button type="button" class="link" data-id="${s.id}" data-result="copy">Copy draft</button>`:''}</span>`:'';
+    const calOnly=smart.length&&smart.every(a=>a.kind==='calendar')&&!s.result_files?.length;
+    const results=(s.status==='prepared'&&!calOnly)||s.result_files?.length?`<span class="foot-links"><button type="button" class="link" data-id="${s.id}" data-result="read">Read result</button>${(messageDrafts(s).length||s.result_files?.length)&&!copyLead(s,smart)?`<button type="button" class="link" data-id="${s.id}" data-result="copy">Copy draft</button>`:''}</span>`:'';
     const readLabel=isEmail(s)?'Read email':'Read message',src=s.source_line?sourceHtml(s.source_line):'';
     const foot=hasOriginal(s)||s.source_line||s.snoozed_until||results?`<div class="card-foot">${hasOriginal(s)?`<button type="button" class="link read-original via-${cardViaIcon(s)}" data-id="${s.id}" data-original="read" aria-label="${readLabel}" title="${readLabel}">${src||readLabel}<span aria-hidden="true"> ↗</span></button>`:src?`<p class="source">${src}</p>`:''}${s.snoozed_until&&!s.handoff_wait?`<span class="back-on" title="${esc(date(s.snoozed_until))}">${esc(backLabel(s.snoozed_until))}</span>`:''}${results}</div>`:'';
 // A page the task's own run worked on opens in the Machine's browser (its viewer, with that tab in front), never in yours.
