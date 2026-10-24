@@ -196,6 +196,30 @@ class Crm(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'a date'):
                 graph.page(db, 'projects', filters={'close_to': 'soon'})
 
+    def test_filter_values_are_bound_for_rows_and_total_counts(self):
+        self.mails()
+        self.act('board_save', name='Sales', stages=['Lead', 'Won'])
+        self.act('project_save', name='Pilot', org='globex.example', board_id=1, stage='Lead')
+        payload = "' OR 1=1 --"
+        with self.store.connect() as db:
+            before = {table: db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0]
+                      for table in ('graph_nodes', 'projects')}
+            for name in ('projects', 'people', 'orgs'):
+                for key in ('tag', 'stage', 'org'):
+                    with self.subTest(name=name, filter=key):
+                        found = graph.page(db, name, filters={key: payload})
+                        self.assertEqual(found['items'], [])
+                        self.assertEqual(found['total'], 0)
+            for key in ('owner', 'board', 'value_min', 'close_from'):
+                with self.subTest(filter=key), self.assertRaises(ValueError):
+                    graph.page(db, 'projects', filters={key: payload})
+            with self.assertRaises(ValueError):
+                graph.page(db, 'projects; DROP TABLE projects;--')
+            found = graph.page(db, 'projects', 'name; DROP TABLE graph_nodes;--')
+            self.assertEqual([r['name'] for r in found['items']], ['Pilot'])
+            self.assertEqual({table: db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0]
+                              for table in before}, before)
+
     # ---------------------------------------------------------------- import
 
     def test_import_guesses_a_company_column_as_the_organization(self):
