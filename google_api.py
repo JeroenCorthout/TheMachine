@@ -47,6 +47,9 @@ WRITE = {
     'calendar.events.patch': ('PATCH', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}'),
     'calendar.events.delete': ('DELETE', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}'),
 }
+# Where requests may go: Google's API hosts, over HTTPS. A URL built from a method template and its parameters is
+# checked once more before it's opened, and the broker's address must be HTTPS too (it gets this machine's token).
+GOOGLE_HOSTS = frozenset({'gmail.googleapis.com', 'www.googleapis.com'})
 _tokens: dict = {}
 _lock = threading.Lock()
 
@@ -59,10 +62,27 @@ class BrokerError(Exception):
         self.category, self.status = category, status
 
 
-def _broker(config, credential, payload, timeout=20):
-    url = (config.get('google_broker') or {}).get('url')
+def broker_url(config):
+    """The broker's address from config: only an HTTPS URL with a host, never a file, plain HTTP or other scheme."""
+    url = str((config.get('google_broker') or {}).get('url') or '').strip()
     if not url:
         raise BrokerError('google_broker_not_configured')
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != 'https' or not parts.hostname or parts.username or parts.password:
+        raise BrokerError('google_broker_not_https')
+    return parts.geturl()
+
+
+def google_url(url):
+    """A Google API URL, checked: HTTPS to one of Google's API hosts, nothing else."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != 'https' or parts.hostname not in GOOGLE_HOSTS or parts.port or parts.username or parts.password:
+        raise BrokerError('unsupported_google_url')
+    return parts.geturl()
+
+
+def _broker(config, credential, payload, timeout=20):
+    url = broker_url(config)
     request = urllib.request.Request(url, data=json.dumps(payload).encode(), method='POST',
                                      headers={'Authorization': 'Bearer ' + credential(config, 'google-broker'),
                                               'Content-Type': 'application/json', 'Accept': 'application/json'})
@@ -112,7 +132,7 @@ def url_for(method, params, write=False):
             raise BrokerError('missing_google_parameter')
         template = template.replace('{' + name + '}', urllib.parse.quote(str(rest.pop(name)), safe=''))
     query = urllib.parse.urlencode({k: (str(v).lower() if isinstance(v, bool) else v) for k, v in rest.items()}, doseq=True)
-    return verb, template + ('?' + query if query else '')
+    return verb, google_url(template + ('?' + query if query else ''))
 
 
 def call(config, credential, account, method, params, scope, body=None, write=False, timeout=60):

@@ -95,6 +95,25 @@ class Broker(unittest.TestCase):
         with self.assertRaises(google_api.BrokerError):  # and writes only through the write list
             google_api.url_for('gmail.users.messages.send', {'userId': 'me'})
 
+    def test_requests_only_go_over_https_to_google_and_the_broker(self):
+        verb, url = google_api.url_for('gmail.users.settings.sendAs.list', {'userId': 'me'})
+        self.assertEqual((verb, url), ('GET', 'https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs'))
+        _, url = google_api.url_for('gmail.users.messages.get', {'userId': 'me', 'id': '../../evil.example/x?y=1#z'})
+        self.assertTrue(url.startswith('https://gmail.googleapis.com/gmail/v1/users/me/messages/..%2F..%2Fevil.example'), url)
+        for bad in ('http://gmail.googleapis.com/x', 'https://evil.example/x', 'https://gmail.googleapis.com.evil.example/x',
+                    'https://user@gmail.googleapis.com/x', 'https://gmail.googleapis.com:8443/x', 'file:///etc/passwd'):
+            with self.assertRaises(google_api.BrokerError, msg=bad):
+                google_api.google_url(bad)
+        calls = len(self.fake.calls)
+        for bad in ('http://cloud.example/api/google/token', 'file:///etc/passwd', 'https://', 'https://u:p@cloud.example/t'):
+            with self.assertRaises(google_api.BrokerError, msg=bad) as caught:
+                google_api.scopes({**self.config, 'google_broker': {'url': bad}}, a.credential, self.account)
+            self.assertEqual(caught.exception.category, 'google_broker_not_https')
+        self.assertEqual(len(self.fake.calls), calls)  # refused before anything was sent
+        with self.assertRaises(google_api.BrokerError) as caught:
+            google_api.scopes({**self.config, 'google_broker': {}}, a.credential, self.account)
+        self.assertEqual(caught.exception.category, 'google_broker_not_configured')
+
     def test_sending_needs_a_granted_send_scope_and_never_retries_an_unclear_send(self):
         email = n.EmailTransport(self.config, a.credential, a.gog_read)
         action = {'kind': 'email', 'account_id': 'work-gmail', 'from': 'alex@acme.test'}
