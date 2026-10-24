@@ -560,6 +560,7 @@ class NothingOutsideTheSealedFields(unittest.TestCase):
             'skill_clusters.description': 'a skill suggested from learned notes', 'skill_clusters.body': 'a skill suggested from learned notes',
             'board_suggestions.state': 'open, saved or dismissed',
             'board_fits.state': 'open, added or left out',
+            'board_backfills.state': 'running or done', 'board_backfill_asks.state': 'open, added or left out',
             'team_learnings.items': 'general learnings for The Machine team, anything personal taken out (team_learnings.strip)',
         }
         sealed = {f'{t}.{c}' for t, cs in message_seal.DERIVED.items() for c in cs} | {f'{t}.{c}' for t, c, _ in message_seal.DERIVED_JSON}

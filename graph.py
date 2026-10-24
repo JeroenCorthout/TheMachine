@@ -96,6 +96,11 @@ CREATE INDEX IF NOT EXISTS project_moves_project ON project_moves(project_id,at)
 CREATE TABLE IF NOT EXISTS board_offers(id INTEGER PRIMARY KEY CHECK(id=1),run_id TEXT,offered_at TEXT NOT NULL,answer TEXT);
 CREATE TABLE IF NOT EXISTS board_suggestions(id INTEGER PRIMARY KEY,name TEXT NOT NULL,stages TEXT NOT NULL,about TEXT,projects TEXT NOT NULL,
   reason TEXT,source TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',board_id INTEGER,created_at TEXT NOT NULL,decided_at TEXT);
+CREATE TABLE IF NOT EXISTS board_backfills(board_id INTEGER PRIMARY KEY,state TEXT NOT NULL DEFAULT 'running',started_at TEXT NOT NULL,
+  finished_at TEXT,ranked TEXT);
+CREATE TABLE IF NOT EXISTS board_backfill_asks(board_id INTEGER NOT NULL,key TEXT NOT NULL,name TEXT NOT NULL,event_ids TEXT NOT NULL,
+  fit TEXT NOT NULL,why TEXT,run_id TEXT,state TEXT NOT NULL DEFAULT 'open',project_id INTEGER,created_at TEXT NOT NULL,decided_at TEXT,
+  PRIMARY KEY(board_id,key));
 '''
 RECHECK_DAYS = 90       # a review's role is read again after this, when there was contact since
 HALF_LIFE = {'person': 60, 'pair': 45, 'project_person': 45, 'project': 21}
@@ -144,6 +149,16 @@ BOARD_EXTRA_COLUMNS = ('is_default INTEGER NOT NULL DEFAULT 0',)
 FIT_BATCH = 40          # projects on no board a review checks against the boards at a time
 FIT_FRESH_MINUTES = 30  # a board saved this recently starts a review for its check at once
 MAX_STAGES = 8
+# A new board looks through the whole history once (2026-10-24): every organisation (or person without one) with
+# messages or meetings in no project yet is checked against it, BACKFILL_BATCH at a time in each review, the likeliest
+# first (by meaning, when there are local embeddings), at most BACKFILL_MAX per board.
+BACKFILL_BATCH = 30
+BACKFILL_MAX = 400
+BACKFILL_CHARS = 14000  # the block's size in one review
+BACKFILL_SHOWN_DAYS = 3  # the board says what it found for this long
+BACKFILL_GIVE_UP_DAYS = 7
+BACKFILL_KINDS = ('gmail.message', 'salesflare.email', 'linkedin.message', 'slack.message', 'whatsapp.message', 'intercom.conversation', 'x.dm',
+                  'ms_graph.message', 'outlook.message', 'calendar.event', 'salesflare.meeting', 'outlook.event', 'ms_graph.event')
 STUCK_DAYS = 10         # no reply for this long after the owner wrote: the tile says so
 
 
@@ -172,6 +187,14 @@ def ensure(db):
     for column in BOARD_COLUMNS + BOARD_EXTRA_COLUMNS:  # the owner's own boards (2026-10-24): which projects belong, and whether it has a Stalled row
         if column.split()[0] not in have:
             db.execute('ALTER TABLE boards ADD COLUMN ' + column)
+    if not db.execute("SELECT 1 FROM board_backfills LIMIT 1").fetchone() and not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='board_backfills_queued'").fetchone():
+        # Boards made before boards looked through the history get that look once (2026-10-24)
+        db.execute('CREATE TABLE IF NOT EXISTS board_backfills_queued(at TEXT)')
+        stamp = dt.datetime.now(dt.timezone.utc).isoformat()
+        db.execute('INSERT INTO board_backfills_queued VALUES(?)', (stamp,))
+        if 'about' in {r[1] for r in db.execute('PRAGMA table_info(boards)')}:
+            db.execute('INSERT OR IGNORE INTO board_backfills(board_id,started_at) SELECT id,? FROM boards', (stamp,))
     for table in ('projects', 'board_suggestions'):  # who sees it (2026-10-24): a project's own (NULL: its board's), a suggestion's default
         if 'visibility' not in {r[1] for r in db.execute(f'PRAGMA table_info({table})')}:
             db.execute(f'ALTER TABLE {table} ADD COLUMN visibility TEXT')
@@ -2549,6 +2572,7 @@ def save_board(db, args, now):
     else:
         board_id = db.execute('INSERT INTO boards(name,stages,source,created_at,about,side,updated_at,visibility) VALUES(?,?,?,?,?,?,?,?)',
                               (name, json.dumps(plain), 'owner', now, about or None, int(side), now, visibility)).lastrowid
+        db.execute('INSERT OR IGNORE INTO board_backfills(board_id,started_at) VALUES(?,?)', (board_id, now))  # it looks through the history once
     names = [s['name'] for s in plain] + ([STALLED] if side else [])
     if 'projects' in args:
         wanted = open_project_rows(db, args.get('projects'))
@@ -2577,6 +2601,8 @@ def delete_board(db, board_id, now):
     kept = db.execute('UPDATE projects SET board_id=NULL,stage=NULL,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL '
                       'WHERE board_id=?', (row['id'],)).rowcount
     db.execute('DELETE FROM boards WHERE id=?', (row['id'],))
+    db.execute('DELETE FROM board_backfills WHERE board_id=?', (row['id'],))
+    db.execute('DELETE FROM board_backfill_asks WHERE board_id=?', (row['id'],))
     db.execute("UPDATE board_suggestions SET state='dismissed' WHERE board_id=?", (row['id'],))
     return {'deleted': row['name'], 'projects': kept}
 
@@ -2782,17 +2808,43 @@ def fit_due(db, now):
 
 def board_maybes(db, board_id):
     """Projects a review thought could belong on this board, for the owner to add or leave out."""
-    return [{'id': 'project:' + str(r['project_id']), 'name': r['name'], 'why': r['why']} for r in db.execute(
+    found = [{'id': 'project:' + str(r['project_id']), 'name': r['name'], 'why': r['why']} for r in db.execute(
         "SELECT f.project_id,f.why,p.name FROM board_fits f JOIN projects p ON p.id=f.project_id WHERE f.board_id=? AND f.fit='maybe' AND f.state='open' "
         'AND p.board_id IS NULL AND p.closed_at IS NULL ORDER BY f.created_at DESC LIMIT 30', (board_id,))]
+    # and organisations or people from the look through the history with no project yet (Add makes one)
+    return found + [{'id': r['key'], 'name': r['name'], 'why': r['why']} for r in db.execute(
+        "SELECT a.key,a.name,a.why FROM board_backfill_asks a WHERE a.board_id=? AND a.fit='maybe' AND a.state='open' AND (a.project_id IS NULL OR "
+        "EXISTS(SELECT 1 FROM projects p WHERE p.id=a.project_id AND p.board_id IS NULL AND p.closed_at IS NULL)) AND NOT EXISTS(SELECT 1 FROM json_each(a.event_ids) j "
+        "JOIN event_projects ep ON ep.event_id=j.value JOIN projects p ON p.id=ep.project_id WHERE p.board_id IS NOT NULL OR p.id IS NOT a.project_id) "
+        'ORDER BY a.created_at DESC LIMIT 30', (board_id,))]
 
 
 def decide_fit(db, board_id, node_id, add, now):
-    """The owner adds a maybe to the board (sorted from its messages next) or leaves it out for good."""
-    row = project_row(db, node_id)
+    """The owner adds a maybe to the board (sorted from its messages next) or leaves it out for good. A maybe from the
+    look through the history (an organisation or person, no project yet) becomes a project when added."""
     board = db.execute('SELECT * FROM boards WHERE id=?', (int(board_id or 0),)).fetchone()
     if not board:
         raise ValueError('That board is gone')
+    if not str(node_id or '').startswith('project:'):
+        ask = db.execute("SELECT * FROM board_backfill_asks WHERE board_id=? AND key=? AND fit='maybe'", (board['id'], str(node_id or ''))).fetchone()
+        if not ask:
+            raise ValueError('That suggestion is gone')
+        pid = ask['project_id']
+        if add and not pid:
+            same = db.execute('SELECT board_id FROM projects WHERE name=? COLLATE NOCASE AND closed_at IS NULL', (ask['name'],)).fetchone()
+            if same and same['board_id'] and same['board_id'] != board['id']:
+                raise ValueError('A project by that name is on another board already')
+            ids = [r[0] for r in db.execute('SELECT e.id FROM events e JOIN json_each(?) j ON j.value=e.id WHERE e.deleted=0', (ask['event_ids'],))]
+            pid = label(db, ids, ask['name'], 'owner', now)
+            if ask['key'].startswith('org:') and not ask['key'].startswith('org:named:'):
+                db.execute('UPDATE projects SET org=coalesce(org,?) WHERE id=?', (ask['key'][4:], pid))
+        if add:
+            node_id = 'project:' + str(pid)
+        db.execute('UPDATE board_backfill_asks SET state=?,decided_at=?,project_id=? WHERE board_id=? AND key=?',
+                   ('added' if add else 'dismissed', now, pid, board['id'], ask['key']))
+        if not add:
+            return {'node_id': ask['key'], 'added': False}
+    row = project_row(db, node_id)
     if add:
         if row['board_id'] and row['board_id'] != board['id']:
             raise ValueError('It is on another board already')
@@ -2800,6 +2852,184 @@ def decide_fit(db, board_id, node_id, add, now):
                    (board['id'], stage_names(board)[0], row['id']))
     db.execute("UPDATE board_fits SET state=?,decided_at=? WHERE board_id=? AND project_id=?", ('added' if add else 'dismissed', now, board['id'], row['id']))
     return {'node_id': 'project:' + str(row['id']), 'added': bool(add)}
+
+
+def backfill_counterparts(db):
+    """Who a new board's look through the history goes over: each organisation (or person without one) the owner has
+    messages or meetings with that are in no project yet, leaving out colleagues and anyone an open project is with
+    already (no duplicates). {key (its graph node id): {name, people, event_ids newest first, first, last}}."""
+    taken = {'org:' + r[0] for r in db.execute('SELECT org FROM projects WHERE closed_at IS NULL AND org IS NOT NULL')}
+    for r in db.execute("SELECT l.a,json_extract(n.info,'$.org') org FROM graph_links l JOIN graph_nodes n ON n.id=l.a JOIN projects p ON 'project:'||p.id=l.b "
+                        "WHERE l.kind='project' AND p.closed_at IS NULL AND n.kind='person' AND json_extract(n.info,'$.colleague') IS NOT 1"):
+        taken.add(r['a'])
+        if str(r['org'] or '').startswith('org:'):
+            taken.add(r['org'])
+    out, seen = {}, set()
+    for r in db.execute("SELECT n.id person,n.name pname,json_extract(n.info,'$.org') org,e.id event_id,e.occurred_at FROM graph_events g "
+                        "JOIN graph_nodes n ON n.id=g.node_id JOIN events e ON e.id=g.event_id "
+                        f"WHERE n.kind='person' AND g.probable=0 AND e.deleted=0 AND e.kind IN ({','.join('?' * len(BACKFILL_KINDS))}) "
+                        "AND json_extract(n.info,'$.colleague') IS NOT 1 AND NOT EXISTS(SELECT 1 FROM event_projects ep WHERE ep.event_id=e.id) "
+                        'ORDER BY e.occurred_at DESC,e.id DESC', BACKFILL_KINDS):
+        key = r['org'] if str(r['org'] or '').startswith('org:') else r['person']
+        if key in taken or r['person'] in taken:
+            continue
+        c = out.setdefault(key, {'name': None, 'people': [], 'event_ids': [], 'first': r['occurred_at'], 'last': r['occurred_at']})
+        if (key, r['event_id']) not in seen:
+            seen.add((key, r['event_id']))
+            c['event_ids'].append(r['event_id'])
+            c['first'] = r['occurred_at']
+        if r['pname'] not in c['people'] and len(c['people']) < 3:
+            c['people'].append(r['pname'])
+    keys = list(out)
+    for i in range(0, len(keys), 500):
+        part = keys[i:i + 500]
+        for r in db.execute(f"SELECT id,name FROM graph_nodes WHERE id IN ({','.join('?' * len(part))})", part):
+            out[r['id']]['name'] = r['name']
+    for key, c in out.items():
+        c['name'] = (one_line(c['name'], 60) or '') or (key[4:] if key.startswith('org:') else key.split(':', 1)[-1])[:60]
+    return out
+
+
+def backfill_pending(db):
+    """Boards still looking through the history whose candidates aren't ranked yet: [(board row, its text)]."""
+    return [(r, f"{r['name']}: {r['about'] or ''}") for r in db.execute(
+        "SELECT b.* FROM board_backfills f JOIN boards b ON b.id=f.board_id WHERE f.state='running' AND f.ranked IS NULL ORDER BY b.id")]
+
+
+def rank_backfill(db, board_id, scores=None):
+    """The order a board's look goes through the counterparts: by meaning (scores, key -> higher is likelier) when the
+    Machine has local embeddings, else the ones with the most messages first; at most BACKFILL_MAX."""
+    found = backfill_counterparts(db)
+    order = sorted(found, key=lambda k: ((scores or {}).get(k, -9), len(found[k]['event_ids']), found[k]['last']), reverse=True)
+    db.execute("UPDATE board_backfills SET ranked=? WHERE board_id=? AND state='running'", (json.dumps(order[:BACKFILL_MAX]), board_id))
+    return len(order[:BACKFILL_MAX])
+
+
+def backfill_due(db, now=None):
+    """A board is still looking through the history (and has something left to ask): reviews come sooner, while the
+    model has room."""
+    if now:
+        backfill_settle(db, now)
+    return bool(db.execute("SELECT 1 FROM board_backfills WHERE state='running' LIMIT 1").fetchone())
+
+
+def backfill_settle(db, now):
+    """A look is done once every counterpart it ranked has an answer (or got a project meanwhile) and every project on
+    no board was checked against the board; after BACKFILL_GIVE_UP_DAYS it stops anyway."""
+    found = None
+    give_up = (parse_time(now) - dt.timedelta(days=BACKFILL_GIVE_UP_DAYS)).isoformat()
+    for f in db.execute("SELECT f.*,b.about FROM board_backfills f JOIN boards b ON b.id=f.board_id WHERE f.state='running' AND f.ranked IS NOT NULL").fetchall():
+        if f['started_at'] >= give_up:
+            found = backfill_counterparts(db) if found is None else found
+            answered = {r[0] for r in db.execute("SELECT key FROM board_backfill_asks WHERE board_id=? AND fit<>'asked'", (f['board_id'],))}
+            if any(k in found and k not in answered for k in json.loads(f['ranked'])):
+                continue
+            if (f['about'] or '').strip() and db.execute(
+                    "SELECT 1 FROM projects p WHERE p.board_id IS NULL AND p.closed_at IS NULL AND NOT EXISTS(SELECT 1 FROM board_fits x "
+                    "WHERE x.board_id=? AND x.project_id=p.id AND x.fit<>'asked')", (f['board_id'],)).fetchone():
+                continue
+        db.execute("UPDATE board_backfills SET state='done',finished_at=? WHERE board_id=?", (now, f['board_id']))
+
+
+def backfill_brief(db, run_id, now, describe, batch=BACKFILL_BATCH, chars=BACKFILL_CHARS):
+    """The "Looking through the history for new boards" block for review run_id: the next counterparts (the likeliest
+    first) with a few of their messages, checked against each board still looking. Marks them as given to this run.
+    describe(event_ids) gives a line per message."""
+    backfill_settle(db, now)
+    running = db.execute("SELECT f.board_id,f.ranked,b.* FROM board_backfills f JOIN boards b ON b.id=f.board_id "
+                         "WHERE f.state='running' AND f.ranked IS NOT NULL ORDER BY b.id").fetchall()
+    if not running:
+        return ''
+    found = backfill_counterparts(db)
+    answered = {(r[0], r[1]) for r in db.execute("SELECT board_id,key FROM board_backfill_asks WHERE fit<>'asked'")}
+    rank, wants = {}, collections.defaultdict(list)
+    for b in running:
+        for i, key in enumerate(json.loads(b['ranked'])):
+            if key in found and (b['id'], key) not in answered:
+                wants[key].append(b)
+                rank[key] = min(rank.get(key, i), i)
+    lines, size = [], 0
+    for key in sorted(wants, key=rank.get)[:batch]:
+        c = found[key]
+        head = (f"- {c['name']} ({key}): {len(c['event_ids'])} message{'s' if len(c['event_ids']) != 1 else ''} or meeting"
+                f"{'s' if len(c['event_ids']) != 1 else ''}, {c['first'][:10]} to {c['last'][:10]}"
+                + (f", with {', '.join(c['people'])}" if c['people'] else '')
+                + (f"; check against {', '.join(b['name'] for b in wants[key])} only" if len(wants[key]) < len(running) else ''))
+        block = head + ''.join('\n    ' + line for line in describe(c['event_ids'][:4]))
+        if lines and size + len(block) > chars:
+            break
+        lines.append(block)
+        size += len(block)
+        for b in wants[key]:
+            db.execute("INSERT INTO board_backfill_asks(board_id,key,name,event_ids,fit,run_id,created_at) VALUES(?,?,?,?,'asked',?,?) "
+                       "ON CONFLICT(board_id,key) DO UPDATE SET run_id=excluded.run_id,name=excluded.name,event_ids=excluded.event_ids WHERE fit='asked'",
+                       (b['id'], key, c['name'], json.dumps(c['event_ids'][:60]), run_id, now))
+    if not lines:
+        return ''
+    boards_line = 'Boards: ' + '; '.join(f"{b['name']} ({' > '.join(stage_names(b))}{', only you' if b['visibility'] == 'only_you' else ''}): "
+                                         f"{b['about'] or 'no description'}" for b in running)
+    return boards_line + '\n' + '\n'.join(lines)
+
+
+def backfill_answer(db, run_id, answer):
+    """A review that got the look through the history answers for each counterpart before it finishes: made into a
+    project on the board with graph (it fits), or finish_analysis fits [{"project": its key, "board", "fit": "maybe"
+    or "no", "why"}]. A maybe waits on the board for Add or Leave out. Raises while one is left; returns how many."""
+    asked = db.execute("SELECT * FROM board_backfill_asks WHERE run_id=? AND fit='asked'", (run_id,)).fetchall()
+    if not asked:
+        return 0
+    if answer is not None and not (isinstance(answer, list) and all(isinstance(a, dict) for a in answer)):
+        raise ValueError('fits is [{"project": "<its key>", "board", "fit": "maybe" or "no", "why"}]')
+    names = {r['name'].casefold(): r['id'] for r in db.execute('SELECT id,name FROM boards')}
+    said = {}
+    for a in answer or []:
+        fit, why = str(a.get('fit') or '').lower(), one_line(a.get('why'), 160)
+        if fit in ('maybe', 'no') and why:
+            ref = str(a.get('project') or a.get('who') or '').strip().casefold()
+            for b in ([names.get(str(a.get('board') or '').casefold())] if a.get('board') else list(names.values())):
+                if b:
+                    said[(ref, b)] = (fit, why)
+    left = []
+    for r in asked:
+        ids = [int(i) for i in json.loads(r['event_ids'])]
+        placed = db.execute(f"SELECT p.id,p.board_id FROM event_projects ep JOIN projects p ON p.id=ep.project_id WHERE ep.event_id IN ({','.join('?' * len(ids))}) "
+                            'AND p.closed_at IS NULL ORDER BY p.board_id IS ? DESC LIMIT 1', (*ids, r['board_id'])).fetchone() if ids else None
+        got = said.get((r['key'].casefold(), r['board_id'])) or said.get((r['name'].casefold(), r['board_id']))
+        if placed and placed['board_id'] == r['board_id']:
+            fit, why, state = 'yes', None, 'added'
+        elif got:
+            (fit, why), state = got, 'open'
+        elif placed:  # made into a project for another board or none: that project gets its own check
+            fit, why, state = 'other', None, 'open'
+        else:
+            left.append(f"{r['name']} ({r['key']})")
+            continue
+        db.execute('UPDATE board_backfill_asks SET fit=?,why=?,state=?,project_id=? WHERE board_id=? AND key=?',
+                   (fit, why, state, placed['id'] if placed else None, r['board_id'], r['key']))
+    if left:
+        raise ValueError('Looking through the history: make ' + ', '.join(dict.fromkeys(left)) + ' a project on the board with graph (project, event_ids, '
+                         'board, stage, event_id, reason) when it clearly fits, or add it to finish_analysis fits [{"project": its key, "board", '
+                         '"fit": "maybe" or "no", "why"}]')
+    return len(asked)
+
+
+def backfill_view(db, board_id, now, maybes):
+    """What the board header says about its look through the history: looking, or (for BACKFILL_SHOWN_DAYS after) how
+    many it added and how many wait for the owner."""
+    f = db.execute('SELECT * FROM board_backfills WHERE board_id=?', (board_id,)).fetchone()
+    if not f:
+        return None
+    if f['state'] == 'running':
+        return {'state': 'running'}
+    if not f['finished_at'] or parse_time(f['finished_at']) < parse_time(now) - dt.timedelta(days=BACKFILL_SHOWN_DAYS):
+        return None
+    added = db.execute("SELECT count(*) FROM projects p WHERE p.board_id=? AND p.closed_at IS NULL AND EXISTS(SELECT 1 FROM project_moves m "
+                       "WHERE m.project_id=p.id AND m.board_id=p.board_id AND m.source<>'owner' AND m.created_at>=?) AND NOT EXISTS("
+                       "SELECT 1 FROM project_moves m WHERE m.project_id=p.id AND m.board_id=p.board_id AND m.created_at<?)",
+                       (board_id, f['started_at'], f['started_at'])).fetchone()[0]
+    added += db.execute("SELECT count(*) FROM board_backfill_asks a JOIN projects p ON p.id=a.project_id WHERE a.board_id=? AND a.fit='maybe' "
+                        "AND a.state='added' AND p.board_id=? AND p.stage_by IS NULL", (board_id, board_id)).fetchone()[0]
+    return {'state': 'done', 'added': added, 'review': len(maybes)}
 
 
 MESSAGE_KINDS = ('gmail.message', 'salesflare.email', 'linkedin.message', 'slack.message', 'whatsapp.message', 'intercom.conversation', 'x.dm',
@@ -2864,6 +3094,7 @@ def boards(db, now):
                     'stages': json.loads(b['stages']) + ([{'name': STALLED, 'side': True}] if b['side'] else []), 'projects': items,
                     'stuck': sum(1 for i in items if (i['no_reply_days'] or 0) >= STUCK_DAYS and i['stage'] != STALLED),
                     'sorting': sum(1 for i in items if i['sorting']), 'default': bool(b['is_default']), 'maybes': board_maybes(db, b['id'])})
+        out[-1]['backfill'] = backfill_view(db, b['id'], now, out[-1]['maybes'])
     return out
 
 

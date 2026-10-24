@@ -27,6 +27,7 @@ import random
 import re
 import secrets
 import shlex
+import math
 import shutil
 import signal
 import sqlite3
@@ -10564,7 +10565,7 @@ def promise_text(p):
     return title, body
 
 
-def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting='', sources='', fitting=''):
+def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting='', sources='', fitting='', backfill=''):
     return f'''This is a signal review started by the personal-assistant service (review run {run_id}). It is not a chat with the owner and not a preparation task.
 ''' + (f'''Boards to sort, before anything else (separate from the batch: these projects need no new message). The owner put these projects on a board and their tiles say "Sorting" until you place them. For each, read its messages with events (its event_ids below, all accounts) and judge where it stands now from what they mean between these people, never their wording. Place it with graph {{"project": its node_id, "board", "stage", "event_id": the message that shows it, "reason": one short clause that reads after "Moved to <stage>:" (like "Demo held on Thu, they asked for pricing"), "next": the owner's next step in a few words}}. When nothing has moved it past the first stage, place it in the first stage the same way, with the message and why. Only when none of its messages shows where it stands, add it to finish_analysis sorted ([{{"project": its node_id, "why": a few words}}]). finish_analysis refuses until each one is placed or in sorted.
 {sorting}
@@ -10572,7 +10573,10 @@ def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promis
 ''' if sorting else '') + (f'''Projects that may fit a board, before the signal review (separate from the batch). These open projects are on no board yet; the owner's boards and which projects belong on each are on the first line. For each project, judge from what it is (open it with graph and its node_id when unsure), never from words in its name: when it clearly belongs on a board, place it with graph {{"project": its node_id, "board", "stage", "event_id": its message that shows where it stands, "reason", "next"}}; when it might belong, or clearly doesn't, add it to finish_analysis fits ([{{"project": its node_id, "board", "fit": "maybe" or "no", "why": a few words}}]). A maybe shows on the board for the owner to add. finish_analysis refuses until each one is placed or in fits.
 {fitting}
 
-''' if fitting else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a CRM or partner listing, a customer onboarding, a possible buyer or investor, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. A project whose messages are with several organisations in the same kind of work (several possible buyers in one acquisition project, several partners in one listings project) is really one project per counterpart: first name one per organisation, all in one call: graph {{"split": [{{"project": "<the work>: <organisation>", "event_ids": its message ids below}}, …]}} (up to 40). Then suggest a board with graph suggest_board, as in Boards below, for every clear group of three or more of the same kind of work, each with its own counterpart: several boards when there are several clear groups (up to three), never one only because names look alike. Give each its visibility: "only_you" for sensitive work (M&A, buyers, investors, legal, health, hiring a named person: its board, projects and messages never reach the team), "team" for customer, partner and other pipelines the team works on. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
+''' if fitting else '') + (f'''Looking through the history for new boards, before the signal review (separate from the batch). The owner made the boards on the first line and wants everything from before that belongs on them. Below are organisations, and people with no organisation, from the owner's history whose messages or meetings are in no project yet, each with its key and a few of those messages. For each, judge what the work with them is from what the messages mean (read more with events and their event_ids, or graph and the key, when unsure), never from words in a name or subject. When it clearly belongs on a board, make it one project per organisation (or person) and place it in one call: graph {{"project": its name, "event_ids": its message ids about this work, "board", "stage": where it stands now, "event_id": the message that shows it, "reason": one short clause, "next"}}. When it might belong, or doesn't, add it to finish_analysis fits [{{"project": its key, "board", "fit": "maybe" or "no", "why": a few words}}] and make no project; a maybe waits on the board for the owner. finish_analysis refuses until each one is placed or in fits.
+{backfill}
+
+''' if backfill else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a CRM or partner listing, a customer onboarding, a possible buyer or investor, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. A project whose messages are with several organisations in the same kind of work (several possible buyers in one acquisition project, several partners in one listings project) is really one project per counterpart: first name one per organisation, all in one call: graph {{"split": [{{"project": "<the work>: <organisation>", "event_ids": its message ids below}}, …]}} (up to 40). Then suggest a board with graph suggest_board, as in Boards below, for every clear group of three or more of the same kind of work, each with its own counterpart: several boards when there are several clear groups (up to three), never one only because names look alike. Give each its visibility: "only_you" for sensitive work (M&A, buyers, investors, legal, health, hiring a named person: its board, projects and messages never reach the team), "team" for customer, partner and other pipelines the team works on. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
 {boards}
 
 Second, the signal review.
@@ -11381,6 +11385,7 @@ class App:
                     graph.board_check_answer(db, args['_review_run'], args.get('boards'))
                     graph.sort_answer(db, args['_review_run'], args.get('sorted'))
                     graph.fit_answer(db, args['_review_run'], args.get('fits'))
+                    graph.backfill_answer(db, args['_review_run'], args.get('fits'))
             return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
                                              args.get('stages'), args.get('team'))
         if name == 'graph':
@@ -13849,7 +13854,11 @@ class App:
                 retry = min(settings.get('retry_seconds', 60) * 2 ** max(failed - 1, 0), settings.get('max_retry_seconds', 1800))
                 # Projects the owner just put on a board are sorted within minutes, with or without new signals
                 sort_due = bool(graph.unsorted_projects(db, 1)) or graph.fit_due(db, now())
-                gap = retry if recovery or failed else settings.get('sort_gap_seconds', 60) if sort_due else settings.get('gap_seconds', 600)
+                # A new board looks through the history in rounds a few minutes apart, while the model's limits have room
+                backfill_due = not sort_due and self.model_room() and graph.backfill_due(db, now())
+                gap = retry if recovery or failed else settings.get('sort_gap_seconds', 60) if sort_due else \
+                    settings.get('backfill_gap_seconds', 180) if backfill_due else settings.get('gap_seconds', 600)
+                sort_due = sort_due or backfill_due
                 if last and last['status'] == 'ok' and last['window_hours'] and not recovery:
                     gap = min(gap, 60)  # after the quick first review, the rest follows right away
                 if last and (stamp - dt.datetime.fromisoformat(last['finished_at'])).total_seconds() < gap:
@@ -13899,7 +13908,7 @@ class App:
                                                self.store.unnamed_text(run['run_id']), self.store.role_text(run['run_id']), self.store.notes_to_learn(),
                                                self.waiting_handoffs_text(), self.split_notes_text(), self.store.boards_text(run['run_id']),
                                                self.store.sort_text(run['run_id']), source_notes(account_services(self.config)),
-                                               self.store.fit_text(run['run_id']))
+                                               self.store.fit_text(run['run_id']), self.backfill_text(run['run_id']))
             try:  # drafts the owner rewrote, or answered themselves instead: lasting habits go into that channel's voice
                 lines = self.store.edits_to_learn()
                 if lines:
@@ -14775,6 +14784,63 @@ class App:
         with self.store.connect() as db:
             db.isolation_level = None  # graph.build runs its own transaction
             return graph.build(db, self.config, now())
+
+    def model_room(self, most=80):
+        """The model's limits have room for extra work (a board's look through the history): no window the sign-in reports
+        is past `most` percent used. Unknown usage counts as room."""
+        return all(w['used'] < most for p in getattr(self, 'model_usage', None) or [] for w in p.get('windows') or [])
+
+    def backfill_scores(self, board, text):
+        """How likely each counterpart belongs on the board by meaning, from local embeddings: its messages against the
+        board's description and the messages of projects on it. None without embeddings."""
+        settings = embeddings.settings(self.config)
+        if not settings:
+            return None
+        model, dims = settings.get('model', ''), int(settings.get('dims', 256))
+        asked = embeddings.embed(settings, [embeddings.QUERY_PREFIX + text[:embeddings.BODY_CHARS]], 30)[0]
+        with self.store.connect() as db:
+            found = graph.backfill_counterparts(db)
+            vector = lambda ids: [embeddings.unpack(r[0]) for r in db.execute(
+                f"SELECT v.vector FROM event_vectors v JOIN events e ON e.id=v.event_id WHERE e.deleted=0 AND v.version=e.version AND v.model=? AND v.dims=? "
+                f"AND e.id IN ({','.join('?' * len(ids))})", (model, dims, *ids))] if ids else []
+            probes = vector([r[0] for r in db.execute('SELECT ep.event_id FROM event_projects ep JOIN projects p ON p.id=ep.project_id WHERE p.board_id=? '
+                                                      'ORDER BY ep.event_id DESC LIMIT 300', (board['id'],))])
+            centre = [sum(x) / len(probes) for x in zip(*probes)] if probes else None
+            if centre:
+                norm = math.sqrt(sum(x * x for x in centre)) or 1
+                centre = [x / norm for x in centre]
+            floor, query_floor = float(settings.get('floor', embeddings.FLOOR)), float(settings.get('query_floor', embeddings.QUERY_FLOOR))
+            scores = {}
+            for key, c in found.items():
+                best = None
+                for v in vector(c['event_ids'][:8]):
+                    score = max(embeddings.cosine(asked, v) - query_floor, (embeddings.cosine(centre, v) - floor) if centre else -9)
+                    best = score if best is None else max(best, score)
+                if best is not None:
+                    scores[key] = best
+        return scores
+
+    def backfill_text(self, run_id):
+        """The next round of a new board's look through the history for this review (graph.backfill_brief), ranked by
+        meaning first when there are local embeddings. Empty while the model's limits are nearly used."""
+        try:
+            if not self.model_room():
+                return ''
+            with self.store.connect() as db:
+                pending = graph.backfill_pending(db)
+            for board, text in pending:
+                try:
+                    scores = self.backfill_scores(board, text)
+                except (embeddings.EmbeddingError, OSError, ValueError) as error:
+                    LOG.info('backfill ranking without embeddings error=%s', type(error).__name__)
+                    scores = None
+                with self.store.connect() as db:
+                    graph.rank_backfill(db, board['id'], scores)
+            with self.store.connect() as db:
+                return graph.backfill_brief(db, run_id, now(), self.graph_event_lines)
+        except (sqlite3.Error, ValueError, KeyError, TypeError) as error:
+            LOG.error('backfill brief error=%s', type(error).__name__)
+            return ''
 
     def graph_event_lines(self, event_ids):
         rows = self.store.events([a['id'] for a in self.config['accounts']], event_ids=list(event_ids)) if event_ids else []

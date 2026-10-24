@@ -305,6 +305,8 @@ def load_boards(db, fixture, ids, base):
                 graph.set_stage(db, node, p['by_hand']['stage'], 'owner', stamp(p['by_hand']['days_ago'] * 24 * 60, base))
             db.execute("INSERT OR IGNORE INTO org_profiles(domain,status,profile,fetched_at) VALUES(?,'found',?,?)",
                        (p['org'], json.dumps({'name': p['org_name'], 'industry': 'Software'}), base.isoformat()))
+    # Each board has looked through the history already: its header says what that found
+    db.execute("UPDATE board_backfills SET state='done',started_at=?,finished_at=?", ((base - dt.timedelta(hours=1)).isoformat(), base.isoformat()))
 
 
 def load_reviews(db, ids, base, assistant):

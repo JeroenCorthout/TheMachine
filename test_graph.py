@@ -764,7 +764,7 @@ class Boards(unittest.TestCase):
         with self.store.connect() as db:
             graph.save_board(db, {'name': 'Listings', 'stages': self.STAGES, 'about': 'Partners we list with'}, NOW.isoformat())
 
-    add, build, thread_ids = Graph.add, Graph.build, Graph.thread_ids
+    add, build, thread_ids, ids = Graph.add, Graph.build, Graph.thread_ids, Graph.ids
 
     def mails(self):
         self.add(mail(9, 'Sam <sam@acme.com>', 'ann@partner.example', ('SENT',), thread='deal'),
@@ -1170,6 +1170,110 @@ class Boards(unittest.TestCase):
             self.assertTrue(tile['sorting'])  # added: the next review sorts it from its messages
             graph.project_id(db, 'Fernwave listing', NOW.isoformat())  # a new project is checked by the next review
         self.assertIn('Fernwave listing', self.store.fit_text('run3'))
+
+    def test_a_new_board_looks_through_the_whole_history_once_and_makes_one_project_per_organisation(self):
+        deal = [mail(30, 'Sam <sam@acme.com>', 'Ann <ann@partner.example>', ('SENT',), thread='deal', title='Listing Acme on your marketplace'),
+                mail(20, 'Ann <ann@partner.example>', 'sam@acme.com', thread='deal', title='Re: Listing Acme on your marketplace')]
+        maybe = [mail(40, 'Bob <bob@bramble.example>', 'sam@acme.com', thread='bram', title='Partnership idea')]
+        home = [mail(50, 'Kim <kim@gmail.com>', 'sam@acme.com', thread='kim', title='Dinner Saturday?')]
+        fern = [mail(10, 'Fay <fay@fernwave.example>', 'sam@acme.com', thread='fern', title='Fernwave listing')]
+        mate = [mail(5, 'Lee <lee@acme.com>', 'sam@acme.com', thread='mate', title='Lunch')]
+        self.add(*deal, *maybe, *home, *fern, *mate)
+        ids = lambda events: self.ids([e['source_id'] for e in events])
+        self.app.graph_build = lambda *a, **k: None
+        self.app.model_usage = None
+        with self.store.connect() as db:
+            graph.label(db, ids(fern), 'Fernwave', 'review', NOW.isoformat())  # a project already: no second one
+        self.build()
+        with self.store.connect() as db:
+            board_id = db.execute("SELECT id FROM boards WHERE name='Listings'").fetchone()[0]
+            self.assertTrue(graph.backfill_due(db))
+            self.assertEqual(graph.boards(db, NOW.isoformat())[0]['backfill'], {'state': 'running'})
+        text = self.app.backfill_text('run1')
+        self.assertIn('Boards: Listings (Contacted > Agreed > Live > Stalled or declined): Partners we list with', text)
+        for key in ('org:partner.example', 'org:bramble.example', 'email:kim@gmail.com'):
+            self.assertIn(f'({key})', text)
+        self.assertNotIn('fernwave', text)  # it has a project
+        self.assertNotIn('lee@acme.com', text)  # a colleague
+        self.assertIn('Listing Acme on your marketplace', text)
+        self.assertIn('Looking through the history for new boards', a.review_prompt('run1', ['work'], backfill=text))
+        with self.store.connect() as db:
+            with self.assertRaises(ValueError):
+                graph.backfill_answer(db, 'run1', None)
+        placed = self.app.graph_action({'project': 'Partner Example', 'event_ids': ids(deal), 'board': 'Listings', 'stage': 'Agreed',
+                                        'event_id': ids(deal)[1], 'reason': 'Ann agreed to list us'})
+        with self.store.connect() as db:
+            done = graph.backfill_answer(db, 'run1', [{'project': 'org:bramble.example', 'board': 'Listings', 'fit': 'maybe', 'why': 'a partner, no listing yet'},
+                                                      {'project': 'email:kim@gmail.com', 'fit': 'no', 'why': 'a friend'}])
+            self.assertEqual(done, 3)
+            board = graph.boards(db, NOW.isoformat())[0]
+            tile = next(p for p in board['projects'] if p['name'] == 'Partner Example')
+            self.assertEqual((tile['stage'], tile['reason'], tile['first']), ('Agreed', 'Ann agreed to list us', True))  # "Added: Ann agreed to list us"
+            self.assertEqual([(m['id'], m['why']) for m in board['maybes']], [('org:bramble.example', 'a partner, no listing yet')])
+            self.assertEqual(board['backfill'], {'state': 'running'})  # Fernwave, on no board, isn't checked against it yet
+        self.assertEqual(self.app.backfill_text('run2'), '')  # each one is asked once
+        fit = self.store.fit_text('run3')
+        self.assertIn('Fernwave', fit)
+        with self.store.connect() as db:
+            graph.fit_answer(db, 'run3', [{'project': 'Fernwave', 'board': 'Listings', 'fit': 'no', 'why': 'a supplier'}])
+        self.assertEqual(self.app.backfill_text('run4'), '')
+        with self.store.connect() as db:
+            self.assertFalse(graph.backfill_due(db))
+            self.assertEqual(graph.boards(db, NOW.isoformat())[0]['backfill'], {'state': 'done', 'added': 1, 'review': 1})
+        added = self.app.action('board_fit', {'board_id': board_id, 'node_id': 'org:bramble.example'}, owner_dashboard=True)
+        with self.store.connect() as db:
+            board = graph.boards(db, NOW.isoformat())[0]
+            tile = next(p for p in board['projects'] if p['id'] == added['node_id'])
+            self.assertEqual((tile['name'], tile['sorting']), ('Bramble', True))  # named after the organisation; the next review sorts it
+            self.assertEqual(db.execute('SELECT org FROM projects WHERE id=?', (added['node_id'][8:],)).fetchone()[0], 'bramble.example')
+            self.assertEqual(board['maybes'], [])
+            self.assertEqual(board['backfill'], {'state': 'done', 'added': 2, 'review': 0})
+            graph.save_board(db, {'board_id': board_id, 'name': 'Listings', 'stages': self.STAGES, 'about': 'Partners we list with, any kind'}, NOW.isoformat())
+            self.assertFalse(graph.backfill_due(db))  # once per board: an edit doesn't start it again
+            later = (NOW + dt.timedelta(days=graph.BACKFILL_SHOWN_DAYS + 1)).isoformat()
+            self.assertIsNone(graph.boards(db, later)[0]['backfill'])  # the header says it for a few days
+
+    def test_the_look_through_the_history_keeps_only_you_boards_to_the_owner_and_respects_leave_out(self):
+        buyer = [mail(30, 'Ann <ann@buyer.example>', 'sam@acme.com', thread='buy', title='Acquiring Acme')]
+        other = [mail(20, 'Bob <bob@maybe.example>', 'sam@acme.com', thread='may', title='Coffee about Acme?')]
+        self.add(*buyer, *other)
+        self.build()
+        self.app.graph_build = lambda *a, **k: None
+        self.app.model_usage = [{'provider': 'openai', 'name': 'ChatGPT', 'windows': [{'label': '5h', 'used': 95, 'reset': None}]}]
+        with self.store.connect() as db:
+            db.execute('DELETE FROM board_backfills')  # only the new one looks
+            board_id = graph.save_board(db, {'name': 'Buyers', 'stages': ['Contacted', 'Diligence'], 'about': 'Possible buyers of Acme',
+                                             'visibility': 'only_you'}, NOW.isoformat())['board_id']
+        self.assertFalse(self.app.model_room())
+        self.assertEqual(self.app.backfill_text('run1'), '')  # waits while the model's limits are nearly used
+        self.app.model_usage = None
+        text = self.app.backfill_text('run1')
+        self.assertIn('Buyers (Contacted > Diligence > Stalled or declined, only you)', text)
+        ids = self.ids([buyer[0]['source_id']])
+        node = self.app.graph_action({'project': 'Buyer Example', 'event_ids': ids, 'board': 'Buyers', 'stage': 'Contacted', 'event_id': ids[0],
+                                      'reason': 'Ann asked to talk about buying Acme'})
+        with self.store.connect() as db:
+            graph.backfill_answer(db, 'run1', [{'project': 'org:maybe.example', 'board': 'Buyers', 'fit': 'maybe', 'why': 'asked about Acme once'}])
+            pid = db.execute("SELECT id FROM projects WHERE name='Buyer Example'").fetchone()[0]
+            self.assertFalse(graph.visible_to_team(db, f'project:{pid}'))  # an Only-you board's projects stay Only you
+            self.assertIn(ids[0], graph.hidden_event_ids(db))
+            self.assertEqual(db.execute('SELECT count(*) FROM projects').fetchone()[0], 1)  # a maybe makes no project
+        self.app.action('board_fit', {'board_id': board_id, 'node_id': 'org:maybe.example', 'add': False}, owner_dashboard=True)
+        with self.store.connect() as db:
+            self.assertEqual(graph.boards(db, NOW.isoformat())[-1]['maybes'], [])
+            self.assertEqual(db.execute("SELECT state FROM board_backfill_asks WHERE key='org:maybe.example'").fetchone()[0], 'dismissed')
+            db.execute("UPDATE board_backfills SET state='running',ranked=NULL")
+        self.assertEqual(self.app.backfill_text('run2'), '')  # left out stays left out
+
+    def test_boards_made_before_get_their_look_through_the_history_once(self):
+        with self.store.connect() as db:
+            db.execute('DELETE FROM board_backfills')
+            db.execute('DROP TABLE board_backfills_queued')
+            graph.ensure(db)
+            self.assertEqual(db.execute("SELECT count(*) FROM board_backfills WHERE state='running'").fetchone()[0], 1)
+            db.execute("UPDATE board_backfills SET state='done'")
+            graph.ensure(db)
+            self.assertEqual(db.execute("SELECT count(*) FROM board_backfills WHERE state='running'").fetchone()[0], 0)
 
     def test_editing_stages_renames_moves_to_the_nearest_earlier_stage_and_deleting_keeps_projects(self):
         asked, agreed, later = self.mails()
