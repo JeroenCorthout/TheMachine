@@ -50,6 +50,7 @@ import shared_graph
 import agent_jobs
 import mimetypes
 import work_removal
+import retention
 import skills
 import task_invites
 import task_pages
@@ -2682,6 +2683,7 @@ class Store:
                     WHERE analyzed_version<version''')
         with self.connect() as db:
             preparation_state.initialize(db)
+            retention.initialize(db)
         os.chmod(self.path, 0o600)
         self.ensure_monotonic_event_ids()
         with self.connect() as db:
@@ -3170,8 +3172,7 @@ class Store:
         stamp = now()
         db.execute('INSERT INTO sync_activity VALUES(?,?,?,?,?,?,?)',
                    (uuid.uuid4().hex,account,stamp,status,signals,error,retry_at))
-        cutoff = (dt.datetime.fromisoformat(stamp) - dt.timedelta(days=30)).isoformat()
-        db.execute('DELETE FROM sync_activity WHERE at<?', (cutoff,))
+        # Rows older than 30 days go in the nightly retention run (retention.py), after their daily counts are kept.
 
     def record_fault(self, fingerprint, kind, frames, location, version, message=None, origin=None):
         stamp = now()
@@ -11021,7 +11022,7 @@ class App:
             return given
         with self.store.connect() as db:
             row = db.execute("SELECT MIN(t) FROM (SELECT MIN(started_at) t FROM analyses UNION ALL SELECT MIN(created_at) FROM suggestions"
-                             " UNION ALL SELECT MIN(at) FROM sync_activity)").fetchone()
+                             " UNION ALL SELECT MIN(at) FROM sync_activity UNION ALL SELECT MIN(day) FROM sync_daily)").fetchone()
         return row[0] if row and row[0] else None
 
     def action(self, name, args, owner_dashboard=False):
@@ -14343,6 +14344,17 @@ class App:
             try:self.recap_step()
             except Exception as error:LOG.error('recap error=%s',type(error).__name__)
 
+    def retention_worker(self):
+        """Once a day at a quiet hour: old sync history and preparation logs go, the space goes back to the disk and
+        local copies of the database rotate (retention.py). Checks every ten minutes; never stops the service."""
+        while not self.stop.wait(600):
+            try:
+                if retention.due(self.store.connect, dt.datetime.now(dt.timezone.utc), local_tz()):
+                    report = retention.run(self.store.connect, str(self.store.path), local_tz=local_tz())
+                    LOG.info('retention %s', json.dumps(report, sort_keys=True))
+            except Exception as error:  # noqa: BLE001 - tried again in ten minutes
+                LOG.error('retention error=%s', type(error).__name__)
+
     def embedding_worker(self):
         """Small background passes: vectors for new and changed signals, newest first. Never blocks
         ingestion (no transaction spans the embedding call); failures wait and retry."""
@@ -15240,6 +15252,7 @@ class App:
         if getattr(self, 'fleet', None):
             threading.Thread(target=self.fleet.run, args=(self.stop,), daemon=True).start()
         threading.Thread(target=self.model_usage_worker, daemon=True).start()
+        threading.Thread(target=self.retention_worker, daemon=True).start()
         if getattr(self, 'skills', None) and self.skills.catalog:  # what OpenClaw has, for Settings > Skills and skill hints
             threading.Thread(target=self.skills.catalog.worker, args=(self.stop,), daemon=True).start()
         if embeddings.settings(self.config):

@@ -27,6 +27,7 @@ Do it → isolated preparation turn of the same agent → result, draft + Send, 
 | `cli.py` | The `assistant` command line |
 | `next_actions.py` | Approved sends: email (Gmail via `gog`), LinkedIn messages and X replies and DMs (OpenClaw browser), Slack direct messages (Maton) and WhatsApp messages (`wacli`) |
 | `preparation_state.py`, `rollout_health.py` | Preparation bookkeeping and health checks |
+| `retention.py` | Nightly housekeeping: old sync history and preparation logs go, free space goes back to the disk, local database copies rotate |
 | `openclaw-plugin/` | `personal-assistant-bridge`: the `assistant_signals` tool, Telegram buttons and replies, Android feed capture, review/preparation guards |
 | `*.mjs` | Small Node helpers that call the OpenClaw Gateway (`openclaw-root.mjs` finds the installed package) |
 | `integrations/browser-lease.py` | Shares the OpenClaw browser between concurrent Do it runs |
