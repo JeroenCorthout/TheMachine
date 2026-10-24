@@ -3451,6 +3451,11 @@ class Store:
                 db.execute('INSERT OR REPLACE INTO graph_offers(key,size,run_id,offered_at) VALUES(?,?,?,?)', (r['key'], r['size'], run_id, now()))
         return '\n'.join(lines)
 
+    def sort_text(self, run_id):
+        """Projects the owner put on a board and no review placed yet, for this review to sort first (graph.sort_brief)."""
+        with self.connect() as db:
+            return graph.sort_brief(db, run_id)
+
     def boards_text(self, run_id, every_hours=24, limit=60):
         """Open projects on no board, for one review a day to look over for a board suggestion: only when no
         suggestion is open and three or more are on no board. Until a review answers it (finish_analysis boards),
@@ -10109,9 +10114,12 @@ Goal: record where people work when one of their sources says it, so the Graph t
 Do not set roles, send messages, change files or do anything else. End with exactly NO_REPLY.'''
 
 
-def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards=''):
+def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting=''):
     return f'''This is a signal review started by the personal-assistant service (review run {run_id}). It is not a chat with the owner and not a preparation task.
-''' + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a partner listing, a customer onboarding, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. When three or more are the same kind of work, each with its own counterpart, suggest one board for the clearest group with graph suggest_board, as in Boards below. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
+''' + (f'''Boards to sort, before anything else (separate from the batch: these projects need no new message). The owner put these projects on a board and their tiles say "Sorting" until you place them. For each, read its messages with events (its event_ids below, all accounts) and judge where it stands now from what they mean between these people, never their wording. Place it with graph {{"project": its node_id, "board", "stage", "event_id": the message that shows it, "reason": one short clause that reads after "Moved to <stage>:" (like "Demo held on Thu, they asked for pricing"), "next": the owner's next step in a few words}}. When nothing has moved it past the first stage, place it in the first stage the same way, with the message and why. Only when none of its messages shows where it stands, add it to finish_analysis sorted ([{{"project": its node_id, "why": a few words}}]). finish_analysis refuses until each one is placed or in sorted.
+{sorting}
+
+''' if sorting else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a partner listing, a customer onboarding, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. When three or more are the same kind of work, each with its own counterpart, suggest one board for the clearest group with graph suggest_board, as in Boards below. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
 {boards}
 
 Second, the signal review.
@@ -10119,7 +10127,7 @@ Second, the signal review.
 With the assistant_signals tool: call status, then ONE begin_analysis with account_ids {json.dumps(accounts)} and limit 120. The reply is paged: read every page with analysis_page before finishing, including next_row_offset continuations on the same page. Where body_clipped matters, read the rest with events (the account, event_ids and body_offset). Events replies contain events and remaining_event_ids; read the remaining IDs with the same accounts. Follow body_next_offset to the end of long bodies.
 Save only genuinely useful, distinct suggestions with suggest; the service delivers them. A card's agent_work in status is what Claude Code or Codex did (or is doing) on it, the latest truth of what was done: when you update a card, start from there and never offer work it reports done as the next step. One card per matter: when a signal is about the same matter as an existing card (open, snoozed, waiting for a reply or done: the same conversation, people and ask, judged by meaning), pass card_id so that card is updated and comes back instead of a new one; reopen:true only when a done card genuinely needs the owner again. Then finish_analysis with reviewed_ids. Defer only what you expect to judge better later.
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
-Boards: projects of one kind (partner listings, hires, onboardings), one project per counterpart, stand in stages on boards the owner saved; begin_analysis boards lists them with each project's stage and the board's about (which projects belong). When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new project that fits a board's about goes on it the same way. A board's to_sort are projects the owner put on it: place each with graph project, board, stage, event_id (its message that shows where it stands) and reason. Only the owner makes boards; a review suggests one, once, from the boards to suggest at the top with graph suggest_board {{"name", "stages", "about", "projects", "reason"}}: stages that fit how that kind of work goes, in order, ending at the good outcome (partner listings: Contacted, Agreed, In review, Live; hiring: Sourced, Screening, Interviews, Offer, Hired); every board has its own Stalled or declined row, so an ending where it didn't happen (lost, declined, dropped) is never a stage. about one sentence on which projects belong. Judge the kind from what the projects are, not from words in their names. The owner's own move stands until a newer message changes things.
+Boards: projects of one kind (partner listings, hires, onboardings), one project per counterpart, stand in stages on boards the owner saved; begin_analysis boards lists them with each project's stage and the board's about (which projects belong). When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new project that fits a board's about goes on it the same way. Projects the owner put on a board come as "Boards to sort" at the top. Only the owner makes boards; a review suggests one, once, from the boards to suggest at the top with graph suggest_board {{"name", "stages", "about", "projects", "reason"}}: stages that fit how that kind of work goes, in order, ending at the good outcome (partner listings: Contacted, Agreed, In review, Live; hiring: Sourced, Screening, Interviews, Offer, Hired); every board has its own Stalled or declined row, so an ending where it didn't happen (lost, declined, dropped) is never a stage. about one sentence on which projects belong. Judge the kind from what the projects are, not from words in their names. The owner's own move stands until a newer message changes things.
 Team: when begin_analysis lists team (Work messages, shared with the owner's Work Fleet by default), add finish_analysis team ([{{"event_id", "share", "line"}}]) for each of those threads, judged by what the conversation is, never by words in it: client (someone outside the company, about work with them: the whole thread goes to the teammates), sensitive (about a client but private to the people on it: a personal matter, health, a dispute about one person, something confidential to one person; teammates see only that it exists), internal (only colleagues) or personal (the owner's own life, not work; never shared). line is one short line of what happened, in your own words ("Lee asked for the renewal quote"), never quoted text. When unsure between client and sensitive, choose sensitive. The owner's own Team or Only you always wins.
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
@@ -10846,9 +10854,10 @@ class App:
                                                                    f"({','.join('?' * len(team))}) ORDER BY id", (*ids, *team))] if ids else []
             return result
         if name == 'finish_analysis':
-            if args.get('_review_run'):  # a review that got "Boards to suggest" answers it before it finishes
+            if args.get('_review_run'):  # a review that got "Boards to suggest" or "Boards to sort" answers them before it finishes
                 with self.store.connect() as db:
                     graph.board_check_answer(db, args['_review_run'], args.get('boards'))
+                    graph.sort_answer(db, args['_review_run'], args.get('sorted'))
             return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
                                              args.get('stages'), args.get('team'))
         if name == 'graph':
@@ -13219,7 +13228,9 @@ class App:
                         break
                     failed += 1
                 retry = min(settings.get('retry_seconds', 60) * 2 ** max(failed - 1, 0), settings.get('max_retry_seconds', 1800))
-                gap = retry if recovery or failed else settings.get('gap_seconds', 600)
+                # Projects the owner just put on a board are sorted within minutes, with or without new signals
+                sort_due = bool(graph.unsorted_projects(db, 1))
+                gap = retry if recovery or failed else settings.get('sort_gap_seconds', 60) if sort_due else settings.get('gap_seconds', 600)
                 if last and last['status'] == 'ok' and last['window_hours'] and not recovery:
                     gap = min(gap, 60)  # after the quick first review, the rest follows right away
                 if last and (stamp - dt.datetime.fromisoformat(last['finished_at'])).total_seconds() < gap:
@@ -13244,11 +13255,11 @@ class App:
                     # A new mailbox: its first review starts as soon as its first import is in, as one review, not one
                     # halfway through the import and another after it (never past the usual longest wait).
                     mail = self.mail_backfill(db) if not recovery else {'filling': [], 'fresh': []}
-                    if mail['filling'] and young:
+                    if mail['filling'] and young and not sort_due:
                         return None
-                    if not recovery and not mail['fresh'] and (not waiting or (waiting < settings.get('min_signals', 40) and young)):
+                    if not recovery and not mail['fresh'] and not sort_due and (not waiting or (waiting < settings.get('min_signals', 40) and young)):
                         return None
-                    if not waiting and not recovery:
+                    if not waiting and not recovery and not sort_due:
                         return None
                     run = {'run_id': uuid.uuid4().hex, 'status': 'starting', 'started_at': now(), 'attempts': 0}
                     db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at,planned) VALUES(?,?,?,?,?)",
@@ -13267,7 +13278,8 @@ class App:
             request['message'] = review_prompt(run['run_id'], [a['id'] for a in self.config['accounts']], self.store.preference_summary(), self.store.facts_text(),
                                                self.store.slipped(run['run_id']), self.store.promises_text(),
                                                self.store.unnamed_text(run['run_id']), self.store.role_text(run['run_id']), self.store.notes_to_learn(),
-                                               self.waiting_handoffs_text(), self.split_notes_text(), self.store.boards_text(run['run_id']))
+                                               self.waiting_handoffs_text(), self.split_notes_text(), self.store.boards_text(run['run_id']),
+                                               self.store.sort_text(run['run_id']))
             try:  # drafts the owner rewrote, or answered themselves instead: lasting habits go into that channel's voice
                 lines = self.store.edits_to_learn()
                 if lines:

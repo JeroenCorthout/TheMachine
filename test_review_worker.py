@@ -187,4 +187,20 @@ class ReviewWorker(unittest.TestCase):
         self.assertTrue(history['review_saved']);self.assertEqual(history['checked_count'],0)
         self.assertEqual(history['pending_count'],1)
 
+
+    def test_a_board_waiting_to_be_sorted_starts_a_review_within_minutes_without_a_full_batch(self):
+        import graph
+        self.app.config['review_worker'].update(min_signals=40, gap_seconds=600, max_wait_minutes=60)
+        with patch.object(a,'now',return_value=T.isoformat()):
+            self.store.commit_page('work',{},[{'account_id':'work','source_id':'two','kind':'gmail.message','occurred_at':T.isoformat(),'title':'Hi','body':'Text','metadata':{},'deleted':False}])
+        self.assertIsNone(self.step(Runner(),T))  # one young signal: it waits for a batch
+        with self.store.connect() as db:
+            event=db.execute('SELECT id FROM events ORDER BY id DESC LIMIT 1').fetchone()[0]
+            graph.label(db,[event],'Paperkite','review',T.isoformat())
+            graph.save_board(db,{'name':'Partners','stages':['Contacted','Live'],'about':'Partners','projects':['Paperkite']},T.isoformat())
+        runner=Runner('admitted')
+        self.assertEqual(self.step(runner,T+dt.timedelta(minutes=1)),'admitted')
+        self.assertIn('Boards to sort',runner.requests[0]['message'])
+        self.assertIn(f'Paperkite (project:',runner.requests[0]['message'])
+
 if __name__=='__main__':unittest.main()

@@ -123,6 +123,13 @@ STALLED = 'Stalled or declined'
 PROJECT_STAGE_COLUMNS = ('board_id INTEGER', 'stage TEXT', 'stage_reason TEXT', 'stage_event_id INTEGER', 'stage_by TEXT', 'stage_at TEXT',
                          'next_step TEXT', 'org TEXT')
 BOARD_COLUMNS = ('about TEXT', 'side INTEGER NOT NULL DEFAULT 1', 'updated_at TEXT')
+# Sorting a project the owner put on a board (2026-10-24): the review run it was last given to, how many reviews got it,
+# and why a review couldn't place it (shown on its tile)
+SORT_COLUMNS = ('sort_run TEXT', 'sort_tries INTEGER NOT NULL DEFAULT 0', 'sort_note TEXT')
+SORT_TRIES = 3          # reviews that get an unplaced project before its tile says sorting failed
+SORT_BATCH = 12         # projects to sort per review
+SORT_MESSAGES = 6       # each one's latest messages shown to the review
+SORT_RESET = 'sort_run=NULL,sort_tries=0,sort_note=NULL'
 MAX_STAGES = 8
 STUCK_DAYS = 10         # no reply for this long after the owner wrote: the tile says so
 
@@ -145,7 +152,7 @@ def ensure(db):
     if 'people_shown' not in {r[1] for r in db.execute('PRAGMA table_info(graph_role_asks)')}:  # the ask showed an organisation's people with their roles
         db.execute('ALTER TABLE graph_role_asks ADD COLUMN people_shown INTEGER NOT NULL DEFAULT 0')
     have = {r[1] for r in db.execute('PRAGMA table_info(projects)')}
-    for column in PROJECT_STAGE_COLUMNS:  # a project's place on a board (2026-10-23): its stage, why it last moved and from which message
+    for column in PROJECT_STAGE_COLUMNS + SORT_COLUMNS:  # a project's place on a board (2026-10-23): its stage, why it last moved and from which message
         if column.split()[0] not in have:
             db.execute('ALTER TABLE projects ADD COLUMN ' + column)
     have = {r[1] for r in db.execute('PRAGMA table_info(boards)')}
@@ -2211,10 +2218,99 @@ def boards_brief(db, limit=150):
     for b in db.execute('SELECT * FROM boards ORDER BY id'):
         rows = db.execute('SELECT name,stage FROM projects WHERE board_id=? AND closed_at IS NULL ORDER BY coalesce(stage_at,created_at) DESC LIMIT ?',
                           (b['id'], limit)).fetchall()
-        sort = [r['name'] for r in db.execute('SELECT name FROM projects WHERE board_id=? AND closed_at IS NULL AND stage_by IS NULL ORDER BY name LIMIT 40', (b['id'],))]
         out.append({'board': b['name'], 'stages': stage_names(b), 'projects': {r['name']: r['stage'] for r in rows},
-                    **({'about': b['about']} if b['about'] else {}), **({'to_sort': sort} if sort else {})})
+                    **({'about': b['about']} if b['about'] else {})})
     return out
+
+
+def project_events(db, pid, limit, until=None):
+    """A project's latest messages, newest first: the ones labelled into it and the ones the graph links to it."""
+    return db.execute('SELECT id,kind,occurred_at FROM events WHERE deleted=0 AND id IN (SELECT event_id FROM event_projects WHERE project_id=? '
+                      "UNION SELECT event_id FROM graph_events WHERE node_id=? AND probable=0)" + (' AND occurred_at<=?' if until else '') +
+                      ' ORDER BY occurred_at DESC LIMIT ?', (pid, 'project:' + str(pid), *((until,) if until else ()), limit)).fetchall()
+
+
+def unsorted_projects(db, limit=None):
+    """Open projects the owner put on a board that no review or move has placed yet and no review has
+    answered for, while reviews still try (fewer than SORT_TRIES got them): what the next review sorts first."""
+    return db.execute('SELECT p.*,b.name board FROM projects p JOIN boards b ON b.id=p.board_id WHERE p.closed_at IS NULL AND p.stage_by IS NULL '
+                      'AND p.sort_note IS NULL AND p.sort_tries<? ORDER BY p.sort_tries,p.id' + (' LIMIT ?' if limit else ''),
+                      (SORT_TRIES, *((limit,) if limit else ()))).fetchall()
+
+
+def sort_brief(db, run_id, limit=SORT_BATCH, per=SORT_MESSAGES):
+    """The "Boards to sort" block for review run_id: each unplaced project with its board, stages and latest
+    messages (event_ids to read). Marks them as given to this run, so finish_analysis can hold it to an answer
+    (sort_answer) and the tile can tell a failed run. A project with no messages at all gets its note now."""
+    lines = []
+    for p in unsorted_projects(db, limit):
+        node = 'project:' + str(p['id'])
+        events = project_events(db, p['id'], per)
+        if not events:
+            db.execute("UPDATE projects SET sort_note='No messages about it yet',sort_run=? WHERE id=?", (run_id, p['id']))
+            continue
+        board = db.execute('SELECT * FROM boards WHERE id=?', (p['board_id'],)).fetchone()
+        db.execute('UPDATE projects SET sort_run=?,sort_tries=sort_tries+1 WHERE id=?', (run_id, p['id']))
+        said = ', '.join(f"{e['id']} ({e['kind']}, {str(e['occurred_at'])[:10]})" for e in events)
+        lines.append(f"- {p['name']} ({node}) on {p['board']} ({' > '.join(stage_names(board))}); its latest messages, newest first: {said}")
+    return '\n'.join(lines)
+
+
+def sort_answer(db, run_id, answer):
+    """A review that got "Boards to sort" answers for each project before it finishes: placed with graph (stage,
+    event_id, reason), or in finish_analysis sorted [{"project": node_id, "why"}] when no message shows where it
+    stands. Raises while one is left; returns how many it couldn't place."""
+    given = db.execute('SELECT id,name FROM projects WHERE sort_run=? AND stage_by IS NULL AND sort_note IS NULL AND board_id IS NOT NULL '
+                       'AND closed_at IS NULL', (run_id,)).fetchall()
+    if not given:
+        return 0
+    if answer is not None and not (isinstance(answer, list) and all(isinstance(a, dict) for a in answer)):
+        raise ValueError('sorted is [{"project": "project:<id>", "why": "<a few words>"}]')
+    why = {}
+    for a in answer or []:
+        ref, text = str(a.get('project') or ''), one_line(a.get('why'), 120)
+        if not text:
+            raise ValueError('sorted: each one says why no message shows where it stands, in a few words')
+        why[ref.casefold()] = text
+    left, done = [], 0
+    for r in given:
+        text = why.get(('project:' + str(r['id'])).casefold()) or why.get(r['name'].casefold())
+        if text:
+            db.execute('UPDATE projects SET sort_note=? WHERE id=?', (text, r['id']))
+            done += 1
+        else:
+            left.append(f"{r['name']} (project:{r['id']})")
+    if left:
+        raise ValueError('Boards to sort: place ' + ', '.join(left) + ' with graph (project, board, stage, event_id, reason), the first stage when '
+                         'nothing has moved it further; or add it to finish_analysis sorted [{"project", "why"}] when no message shows where it stands')
+    return done
+
+
+def sort_view(db, p):
+    """The tile's sorting fields: sorting (a review is due or at it), sort_note (why a review couldn't place it) or
+    sort_failed (what went wrong); all off once the project is placed."""
+    if p['stage_by']:
+        return {'sorting': False}
+    state, text = sort_state(db, p)
+    return {'sorting': state == 'sorting', **({'sort_note': text} if state == 'note' else {}), **({'sort_failed': text} if state == 'failed' else {})}
+
+
+def sort_state(db, p):
+    """How an unplaced project's tile reads: ('sorting', None) while a review is due or at it, ('note', why) when a
+    review couldn't place it, ('failed', what happened) when the reviews that got it failed or gave up."""
+    if p['sort_note']:
+        return 'note', p['sort_note']
+    run = None
+    if p['sort_run']:
+        try:
+            run = db.execute('SELECT status FROM review_runs WHERE run_id=?', (p['sort_run'],)).fetchone()
+        except sqlite3.OperationalError:
+            run = None
+    if (p['sort_tries'] or 0) >= SORT_TRIES:
+        return 'failed', f"Couldn't sort it in {p['sort_tries']} reviews"
+    if run and run['status'] not in ('starting', 'running', 'recovering', 'ok'):
+        return 'failed', 'Sorting failed, trying again'
+    return 'sorting', None
 
 
 def clean_stages(stages):
@@ -2355,12 +2451,12 @@ def save_board(db, args, now):
         wanted = open_project_rows(db, args.get('projects'))
         ids = {r['id'] for r in wanted}
         keep = f" AND id NOT IN ({','.join('?' * len(ids))})" if ids else ''
-        removed = db.execute('UPDATE projects SET board_id=NULL,stage=NULL,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL '
-                             'WHERE board_id=?' + keep, (board_id, *ids)).rowcount
+        removed = db.execute('UPDATE projects SET board_id=NULL,stage=NULL,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL,' + SORT_RESET +
+                             ' WHERE board_id=?' + keep, (board_id, *ids)).rowcount
         added = 0
         for r in wanted:  # on this board now (a project is on one board); a review places it by its messages
             if r['board_id'] != board_id:
-                db.execute('UPDATE projects SET board_id=?,stage=?,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL WHERE id=?',
+                db.execute('UPDATE projects SET board_id=?,stage=?,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL,' + SORT_RESET + ' WHERE id=?',
                            (board_id, names[0], r['id']))
                 added += 1
     else:
@@ -2428,18 +2524,21 @@ def boards(db, now):
                                 f"AND e.deleted=0 AND e.kind IN ({','.join('?' for _ in MESSAGE_KINDS)}) ORDER BY e.occurred_at", (node, *MESSAGE_KINDS)):
                 mine_since = (mine_since or r['occurred_at']) if r['mine'] else None
             since = parse_time(p['stage_at'] or p['created_at'])
+            last = None if p['stage_by'] else next(iter(project_events(db, p['id'], 1, now)), None)  # an unplaced tile: its latest message
             card = db.execute(f"SELECT s.id,s.title FROM suggestions s WHERE s.status IN ({','.join('?' for _ in OPEN_CARD)}) AND (s.project=? COLLATE NOCASE "
                               "OR EXISTS(SELECT 1 FROM json_each(s.event_ids) j JOIN graph_events g ON g.event_id=j.value WHERE g.node_id=? AND g.probable=0)) "
                               "ORDER BY s.created_at DESC LIMIT 1", (*OPEN_CARD, p['name'], node)).fetchone()
             items.append({'id': node, 'name': p['name'], 'stage': p['stage'] if p['stage'] in names else names[0], 'reason': p['stage_reason'],
-                          'by': p['stage_by'], 'sorting': not p['stage_by'], 'at': p['stage_at'], 'event_id': p['stage_event_id'], 'next': p['next_step'],
+                          'by': p['stage_by'], **sort_view(db, p), 'at': p['stage_at'], 'event_id': p['stage_event_id'], 'next': p['next_step'],
                           'first': not db.execute('SELECT 1 FROM project_moves WHERE project_id=? LIMIT 1 OFFSET 1', (p['id'],)).fetchone(),
                           'days': max(0, (today - since).days), 'closed': bool(p['closed_at']),
                           'no_reply_days': max(0, (today - parse_time(mine_since)).days) if mine_since else None,
-                          'org': org_card(db, domain) if domain else None, 'card': {'id': card['id'], 'title': card['title']} if card else None})
+                          'org': org_card(db, domain) if domain else None, 'card': {'id': card['id'], 'title': card['title']} if card else None,
+                          **({'last_at': last['occurred_at'], 'last_event_id': last['id']} if last else {})})
         out.append({'id': b['id'], 'name': b['name'], 'about': b['about'], 'side': bool(b['side']),
                     'stages': json.loads(b['stages']) + ([{'name': STALLED, 'side': True}] if b['side'] else []), 'projects': items,
-                    'stuck': sum(1 for i in items if (i['no_reply_days'] or 0) >= STUCK_DAYS and i['stage'] != STALLED)})
+                    'stuck': sum(1 for i in items if (i['no_reply_days'] or 0) >= STUCK_DAYS and i['stage'] != STALLED),
+                    'sorting': sum(1 for i in items if i['sorting'])})
     return out
 
 

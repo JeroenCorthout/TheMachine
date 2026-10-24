@@ -3,6 +3,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('graph_assistant', Path(__file__).with_name('assistant.py'))
@@ -894,12 +895,82 @@ class Boards(unittest.TestCase):
             self.assertEqual([s['name'] for s in board['stages']], ['Sourced', 'Interviews', 'Hired'])  # no Stalled row
             self.assertTrue(all(p['sorting'] and p['stage'] == 'Sourced' for p in board['projects']))
             brief = next(b for b in graph.boards_brief(db) if b['board'] == 'Hiring')
-            self.assertEqual((brief['about'], sorted(brief['to_sort'])), ('Roles we hire for', sorted(p['name'] for p in board['projects'])))
+            self.assertEqual(brief['about'], 'Roles we hire for')
+            self.assertEqual(sorted(r['name'] for r in graph.unsorted_projects(db)), sorted(p['name'] for p in board['projects']))
             # A review places one by its messages, with the reason, even in the stage it waits in
             event = db.execute('SELECT id FROM events ORDER BY id LIMIT 1').fetchone()[0]
             placed = graph.set_stage(db, board['projects'][0]['id'], 'Sourced', 'agent', NOW.isoformat(), reason='applied with a CV', event_id=event)
             self.assertNotIn('kept', placed)
-            self.assertEqual(len(next(b for b in graph.boards_brief(db) if b['board'] == 'Hiring')['to_sort']), 1)
+            self.assertEqual(len(graph.unsorted_projects(db)), 1)
+
+    def test_a_saved_board_is_sorted_by_the_next_review_which_answers_for_each_project_and_a_failure_shows(self):
+        asked, agreed, later = self.mails()
+        with self.store.connect() as db:
+            graph.label(db, [asked, agreed], 'Paperkite', 'review', NOW.isoformat())
+            graph.label(db, [later], 'Bramblebox', 'review', NOW.isoformat())
+            graph.project_id(db, 'Quillfeather', NOW.isoformat())  # no messages at all
+            graph.save_board(db, {'name': 'Partners', 'stages': ['Contacted', 'Agreed', 'Live'], 'about': 'Partners we list with',
+                                  'projects': ['Paperkite', 'Bramblebox', 'Quillfeather']}, NOW.isoformat())
+            ids = {r['name']: 'project:' + str(r['id']) for r in db.execute('SELECT id,name FROM projects')}
+            self.assertEqual(len(graph.unsorted_projects(db)), 3)
+        text = self.store.sort_text('run1')  # what the next review gets, at the top of its prompt
+        self.assertIn(f"Paperkite ({ids['Paperkite']}) on Partners (Contacted > Agreed > Live > Stalled or declined)", text)
+        self.assertIn(f'{agreed} (gmail.message, ', text)
+        self.assertIn('Bramblebox', text)
+        self.assertNotIn('Quillfeather', text)  # nothing to read: its tile says so at once
+        self.assertIn('Boards to sort, before anything else', a.review_prompt('run1', ['work'], sorting=text))
+        self.assertNotIn('Boards to sort, before', a.review_prompt('run1', ['work']))
+        with self.store.connect() as db:
+            tiles = {p['name']: p for p in graph.boards(db, NOW.isoformat())[1]['projects']}
+            self.assertTrue(tiles['Paperkite']['sorting'])
+            self.assertEqual((tiles['Quillfeather']['sorting'], tiles['Quillfeather']['sort_note']), (False, 'No messages about it yet'))
+            self.assertEqual(graph.boards(db, NOW.isoformat())[1]['sorting'], 2)
+            with self.assertRaises(ValueError) as said:  # the review can't finish without answering for each one
+                graph.sort_answer(db, 'run1', None)
+            self.assertIn('Paperkite', str(said.exception)); self.assertIn('Bramblebox', str(said.exception))
+            graph.set_stage(db, ids['Paperkite'], 'Agreed', 'agent', NOW.isoformat(), reason='Ann said yes', event_id=agreed)
+            with self.assertRaises(ValueError):
+                graph.sort_answer(db, 'run1', [{'project': ids['Bramblebox']}])  # says why
+            self.assertEqual(graph.sort_answer(db, 'run1', [{'project': ids['Bramblebox'], 'why': 'only our own note so far'}]), 1)
+            self.assertEqual(graph.sort_answer(db, 'other-run', None), 0)
+            tiles = {p['name']: p for p in graph.boards(db, NOW.isoformat())[1]['projects']}
+            self.assertEqual((tiles['Paperkite']['sorting'], tiles['Paperkite']['stage'], tiles['Paperkite']['reason']), (False, 'Agreed', 'Ann said yes'))
+            self.assertEqual(tiles['Bramblebox']['sort_note'], 'only our own note so far')
+            self.assertEqual(tiles['Bramblebox']['last_event_id'], later)  # its latest message instead of a move
+            self.assertEqual(graph.unsorted_projects(db), [])
+            # A review that got it and failed: the tile says so, and the next review tries again, up to SORT_TRIES
+            graph.label(db, [asked], 'Inkwell', 'review', NOW.isoformat())
+            graph.save_board(db, {'board_id': db.execute("SELECT id FROM boards WHERE name='Partners'").fetchone()[0], 'name': 'Partners',
+                                  'stages': ['Contacted', 'Agreed', 'Live'], 'about': 'Partners we list with',
+                                  'projects': ['Paperkite', 'Bramblebox', 'Quillfeather', 'Inkwell']}, NOW.isoformat())
+            self.assertIsNone(db.execute("SELECT sort_note FROM projects WHERE name='Paperkite'").fetchone()[0])
+        self.assertIn('Inkwell', self.store.sort_text('run2'))
+        with self.store.connect() as db:
+            db.execute("INSERT INTO review_runs(run_id,status,started_at,updated_at,error) VALUES('run2','lost',?,?,'runtime_lost')", (NOW.isoformat(),) * 2)
+            tile = next(p for p in graph.boards(db, NOW.isoformat())[1]['projects'] if p['name'] == 'Inkwell')
+            self.assertEqual((tile['sorting'], tile['sort_failed']), (False, 'Sorting failed, trying again'))
+            self.assertEqual([r['name'] for r in graph.unsorted_projects(db)], ['Inkwell'])
+        self.store.sort_text('run3'); self.store.sort_text('run4')
+        with self.store.connect() as db:
+            tile = next(p for p in graph.boards(db, NOW.isoformat())[1]['projects'] if p['name'] == 'Inkwell')
+            self.assertEqual(tile['sort_failed'], "Couldn't sort it in 3 reviews")
+            self.assertEqual(graph.unsorted_projects(db), [])
+        self.assertEqual(self.store.sort_text('run5'), '')
+
+    def test_finish_analysis_of_a_review_that_got_boards_to_sort_waits_for_its_answer(self):
+        asked, agreed, later = self.mails()
+        with self.store.connect() as db:
+            graph.label(db, [asked], 'Paperkite', 'review', NOW.isoformat())
+            graph.save_board(db, {'name': 'Partners', 'stages': ['Contacted', 'Agreed'], 'about': 'Partners', 'projects': ['Paperkite']}, NOW.isoformat())
+            node = 'project:' + str(db.execute("SELECT id FROM projects WHERE name='Paperkite'").fetchone()[0])
+        self.store.sort_text('r1')
+        done = []
+        with patch.object(self.store, 'finish_analysis', lambda *x, **k: done.append(x) or {'status': 'complete'}):
+            with self.assertRaises(ValueError):
+                self.app.action('finish_analysis', {'analysis_id': 'x', '_review_run': 'r1'})
+            self.assertEqual(done, [])
+            self.app.action('finish_analysis', {'analysis_id': 'x', '_review_run': 'r1', 'sorted': [{'project': node, 'why': 'just an intro'}]})
+            self.assertEqual(len(done), 1)
 
     def test_editing_stages_renames_moves_to_the_nearest_earlier_stage_and_deleting_keeps_projects(self):
         asked, agreed, later = self.mails()

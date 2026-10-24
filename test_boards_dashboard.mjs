@@ -14,8 +14,10 @@ const day=n=>new Date(Date.now()-n*864e5).toISOString();
 const proj=(i,name,stage,extra={})=>({id:'project:'+i,name,stage,reason:'they asked for a listing',by:'review',at:day(2),event_id:100+i,next:'Wait for their reply',first:stage==='Contacted',days:2,no_reply_days:0,org:{name,logo:null},...extra});
 const partners=['Paperkite','Bramblebox','Quillfeather','Otterly Mail','Fernwave','Copperleaf Apps','Puffin Metrics','Tinker Lane','Hazelbrook Software','Driftwood Docs','Pebblepath'];
 const boards=[
- {name:'Partner listings',stages,stuck:1,projects:[...partners.map((n,i)=>proj(i+1,n,'Contacted',i===1?{no_reply_days:14,card:{id:'0123456789abcdef',title:'Follow up with Bramblebox'}}:{})),
-  proj(20,'Larkfield Labs','Agreed'),proj(21,'Willowtick','Live',{by:'owner',event_id:null}),proj(22,'Lanternfish','Stalled or declined',{reason:'they said no'})]},
+ {name:'Partner listings',stages,stuck:1,sorting:1,projects:[...partners.map((n,i)=>proj(i+1,n,'Contacted',i===1?{no_reply_days:14,card:{id:'0123456789abcdef',title:'Follow up with Bramblebox'}}:{})),
+  proj(20,'Larkfield Labs','Agreed'),proj(23,'Mossgate','Contacted',{by:null,sorting:true,reason:null,at:null}),
+  proj(24,'Nettlebay','Contacted',{by:null,sorting:false,reason:null,at:null,sort_note:'only an intro call so far',last_at:day(3),last_event_id:124}),
+  proj(25,'Oakhollow','Contacted',{by:null,sorting:false,reason:null,at:null,sort_failed:'Sorting failed, trying again',last_at:day(1)}),proj(21,'Willowtick','Live',{by:'owner',event_id:null}),proj(22,'Lanternfish','Stalled or declined',{reason:'they said no'})]},
  {name:'Customer onboarding',stages:stages.slice(0,2).concat(stages.slice(-1)),stuck:0,projects:[proj(30,'Saffron Sync','Agreed')]}];
 const list=[{id:'project:1',kind:'project',name:'Paperkite',strength:1,last_at:day(2),signals:3}];
 const detail={id:'project:1',kind:'project',name:'Paperkite',strength:1,last_at:day(2),signals:3,ids:[],links:[],recent:[],around:[],open:{},
@@ -50,12 +52,18 @@ try{
   const lanes=await page.locator('.pboard .lane').evaluateAll(l=>l.map(x=>x.dataset.lane));assert.deepEqual(lanes,stages.map(s=>s.name));
   // A long column shows 8, then the rest on "Show N more"
   const contacted=page.locator('.lane[data-lane="Contacted"]');
-  assert.equal(await contacted.locator('.tile').count(),8);assert.equal((await contacted.locator('.lane-more').textContent()).trim(),'Show 3 more');
-  await contacted.locator('.lane-more').click();assert.equal(await contacted.locator('.tile').count(),11);
+  assert.equal(await contacted.locator('.tile').count(),8);assert.equal((await contacted.locator('.lane-more').textContent()).trim(),'Show 6 more');
+  await contacted.locator('.lane-more').click();assert.equal(await contacted.locator('.tile').count(),14);
   // The tile: next step, why it moved with the date, and the no-reply chip with its card
   const t=await page.locator('.tile[data-node="project:1"]').textContent();assert.match(t,/Wait for their reply/);assert.match(t,/Added: they asked for a listing · \w{3} \d{1,2} \w{3}/);
   const stuck=page.locator('.tile[data-node="project:2"]');assert.match(await stuck.textContent(),/No reply in 14 days/);assert.equal(await stuck.locator('a[href="#card=0123456789abcdef"]').count(),1);
   assert.match(await page.locator('.tile[data-node="project:21"]').textContent(),/Moved to Live by hand/);
+  // A project waiting to be sorted says so; one a review couldn't place says why with its latest message; a failed sort shows
+  assert.match(await page.locator('.tile[data-node="project:23"] .tile-why').textContent(),/^Sorting from its messages…$/);
+  assert.match(await page.locator('.tile[data-node="project:24"] .tile-why').textContent(),/^Not sorted: only an intro call so far · \w{3} \d{1,2} \w{3}$/);
+  assert.equal(await page.locator('.tile[data-node="project:24"] .tile-why [data-quote-event="124"]').count(),1);
+  assert.match(await page.locator('.tile[data-node="project:25"] .tile-why.failed').textContent(),/^Sorting failed, trying again · /);
+  assert.match(await page.locator('.board-sub').textContent(),/17 projects · 1 waiting on a reply · sorting 1 · a review moves them as your messages come in/);
   assert.match(await page.locator('.lane[data-lane="Contacted"] .lane-sum').textContent(),/1 with no reply in 10\+ days/);
   await fits(page,'1440');await shot(page,'board-1440');
   // Chips switch boards, and the board shown is remembered

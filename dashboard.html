@@ -581,6 +581,7 @@ span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:col
 .board-menu>summary:hover,.board-menu[open]>summary{background:var(--c-hover);color:var(--text)}
 .board-menu .fact-menu-list{left:0;right:auto;min-width:170px}
 .tile-why.sorting{font-style:italic}
+.tile-why.failed{color:var(--c-orange)}
 #board-dialog{width:min(520px,calc(100vw - 24px));padding:18px 18px 16px}
 #board-dialog h2{margin:0;color:var(--text);font-size:1.2rem}
 #board-form{display:flex;flex-direction:column;gap:14px}
@@ -4574,7 +4575,10 @@ let graphBoards=[],boardShown=sideStore.get('board-shown')||'',boardStage={},boa
 const projView=()=>graphBoards.length?(sideStore.get('projects-view')==='list'?'list':'board'):'list';
 const shortDay=v=>{if(!v)return '';const d=new Date(String(v).length<=10?v+'T12:00':v),p=k=>d.toLocaleDateString('en-US',{[k]:k==='day'?'numeric':'short'});return `${p('weekday')} ${p('day')} ${p('month')}`};  /* Fri 23 Oct */
 const boardNow=()=>graphBoards.find(b=>b.name===boardShown)||graphBoards[0];
-const tileWhy=(p,side)=>{if(p.sorting)return '<p class="tile-why sorting">Sorting from your messages</p>';const when=p.at?(p.event_id?`<button type="button" class="link" data-quote-event="${p.event_id}" title="Read the message">${esc(shortDay(p.at))}</button>`:esc(shortDay(p.at))):'';
+const tileWhy=(p,side)=>{const last=p.last_at?' · '+(p.last_event_id?`<button type="button" class="link" data-quote-event="${p.last_event_id}" title="Read its latest message">${esc(shortDay(p.last_at))}</button>`:esc(shortDay(p.last_at))):'';
+ if(p.sort_failed)return `<p class="tile-why failed">${esc(p.sort_failed)}${last}</p>`;
+ if(p.sort_note)return `<p class="tile-why">Not sorted: ${esc(p.sort_note)}${last}</p>`;
+ if(p.sorting)return '<p class="tile-why sorting">Sorting from its messages…</p>';const when=p.at?(p.event_id?`<button type="button" class="link" data-quote-event="${p.event_id}" title="Read the message">${esc(shortDay(p.at))}</button>`:esc(shortDay(p.at))):'';
  const what=p.by==='owner'?`Moved to ${esc(p.stage)} by hand`:p.reason?`${p.first?'Added':'Moved to '+esc(p.stage)}: ${esc(p.reason)}`:'';
  return what||when?`<p class="tile-why">${what}${what&&when?' · ':''}${when}</p>`:''};
 const stuckDays=p=>p.stage!==boardSide()&&(p.no_reply_days||0)>=10?p.no_reply_days:0;
@@ -4592,7 +4596,7 @@ const lane=(b,s,items,on)=>{const key=b.name+'|'+s.name,all=boardOpen.has(key)||
 function boardView(){const b=boardNow();if(!b)return '<div class="empty all-clear"><div><strong>No boards yet.</strong>Projects of one kind show here in stages, as your messages move them.</div></div>';
  const by=s=>b.projects.filter(p=>p.stage===s.name),main=b.stages.filter(s=>!s.side),firstFull=b.stages.find(s=>by(s).length)?.name||b.stages[0].name;
  const on=b.stages.some(s=>s.name===boardStage[b.name])?boardStage[b.name]:firstFull;
- return `<div class="board-head"><div><div class="board-name-row">${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title">${esc(b.name)}</h3>${b.team?'':`<details class="board-menu"><summary aria-label="Board options" title="Board options">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-board-edit="${b.id}">Edit board</button><button type="button" role="menuitem" data-board-new>New board</button></div></details>`}</div><p class="board-sub">${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''} · moves come from ${b.team?'the team\'s':'your'} messages</p></div>`
+ return `<div class="board-head"><div><div class="board-name-row">${graphBoards.length>1?`<select class="board-pick" aria-label="Board">${graphBoards.map(x=>`<option${x.name===b.name?' selected':''}>${esc(x.name)}</option>`).join('')}</select>`:''}<h3 class="board-title">${esc(b.name)}</h3>${b.team?'':`<details class="board-menu"><summary aria-label="Board options" title="Board options">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-board-edit="${b.id}">Edit board</button><button type="button" role="menuitem" data-board-new>New board</button></div></details>`}</div><p class="board-sub">${b.projects.length} project${b.projects.length===1?'':'s'}${b.stuck?` · ${b.stuck} waiting on a reply`:''}${b.sorting?` · sorting ${b.sorting}`:''} · a review moves them as ${b.team?'the team\'s':'your'} messages come in</p></div>`
   +(graphBoards.length>1?`<div class="board-chips" role="group" aria-label="Boards">${graphBoards.map(x=>`<button type="button" data-board="${esc(x.name)}" aria-pressed="${x.name===b.name}">${esc(x.name)}</button>`).join('')}</div>`:'')+'</div>'
   +`<div class="sub-tabs stage-tabs" role="tablist" aria-label="Stages">${b.stages.map(s=>`<button type="button" role="tab" data-stage-tab="${esc(s.name)}" aria-selected="${s.name===on}"><span class="ell">${esc(s.side?'Stalled':s.name)}</span> <span class="badge">${by(s).length}</span></button>`).join('')}</div>`
   +`<div class="pboard-wrap"><div class="pboard" style="--lanes:${main.length}">${b.stages.map(s=>lane(b,s,by(s),s.name===on)).join('')}</div></div>`}
@@ -4622,7 +4626,7 @@ const suggestBox=()=>{const s=graphSuggest[0];if(!s)return '';
  return `<article class="board-suggest" data-suggest="${s.id}"><div class="board-suggest-text"><p class="board-suggest-title">Start a board for ${esc(s.name)}?</p><p class="board-suggest-sub">${s.projects.length} projects${s.reason?' · '+esc(s.reason):''}</p><ol class="stage-flow" aria-label="Stages">${s.stages.map(x=>`<li>${esc(x.name)}</li>`).join(' ')}</ol></div>`
   +`<div class="board-suggest-actions"><button type="button" class="primary" data-suggest-save>Save</button><button type="button" class="ghost" data-suggest-edit>Edit</button><button type="button" class="ghost" data-suggest-dismiss>Not now</button></div></article>`};
 const boardSavedToast=(r,name)=>{const moved=(r.moved||[]).map(m=>m.to?`${m.count} from ${m.from} moved to ${m.to}.`:`${m.count} stalled left the board.`).join(' ');
- toast(`Saved ${name}.${r.added?' Sorting its projects from your messages.':''}${moved?' '+moved:''}`)};
+ toast(`Saved ${name}.${r.added?' A review sorts its projects in a few minutes.':''}${moved?' '+moved:''}`)};
 async function boardSave(args){const r=await graphPost('board_save',args);boardShown=r.name;sideStore.set('board-shown',boardShown);sideStore.set('projects-view','board');boardSavedToast(r,r.name);await people('',true);return r}
 function edOpen(from){const b=from?.board,s=from?.suggestion;
  ed=b?{id:b.id,name:b.name,stages:b.stages.filter(x=>!x.side).map(x=>({name:x.name,was:x.name,...(x.hint?{hint:x.hint}:{})})),side:b.side!==false,about:b.about||'',projects:b.projects.map(p=>({id:p.id,name:p.name})),counts:Object.fromEntries(b.stages.map(x=>[x.name,b.projects.filter(p=>p.stage===x.name).length]))}
