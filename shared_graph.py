@@ -804,7 +804,7 @@ def collect(db, scope, key, secret, today=None, held=None, kept=()):
                       'last': (row['last_at'] or '')[:10], **owner_pick(info), **crm_fields.shared(db, row)}
     tiles = {t['id']: t for b in graph.boards(db, today.isoformat()) for t in b['projects']}
     team_boards = graph.team_board_ids(db)
-    for row in db.execute("SELECT n.*,p.id pid,b.id bid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages,b.side side "
+    for row in db.execute("SELECT n.*,p.id pid,b.id bid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.stage_event_id,p.next_step,p.next_step_event_id,p.org porg,b.name board,b.stages stages,b.side side "
                           "FROM graph_nodes n JOIN projects p ON 'project:'||p.id=n.id LEFT JOIN boards b ON b.id=p.board_id "
                           "WHERE n.kind='project' AND p.closed_at IS NULL"):
         if not scope.shareable(row['id']):
@@ -840,12 +840,12 @@ def collect(db, scope, key, secret, today=None, held=None, kept=()):
 
 
 def _why(db, row, views):
-    """A project's why and next step, unless they came from a signal that never goes (another company's or a personal
-    account, the owner's own life, kept private): then neither does what was said about it."""
-    last = db.execute('SELECT event_id FROM project_moves WHERE project_id=? ORDER BY at DESC,id DESC LIMIT 1', (row['pid'],)).fetchone()
-    if last and last['event_id'] and views.get(last['event_id']) in (None, 'personal', 'private'):
-        return {'why': None, 'next': None}
-    return {'why': row['stage_reason'], 'next': row['next_step']}
+    """Share each summary only when its own source is shared in this recipient's scope. A next-step update can
+    happen without moving the stage, so it has separate provenance. Owner-written reasons have no source.
+    Legacy next steps without provenance stay local until refreshed; never guess from the last stage move."""
+    why_source, next_source = row['stage_event_id'], row['next_step_event_id']
+    return {'why': row['stage_reason'] if not why_source or views.get(why_source) == 'team' else None,
+            'next': row['next_step'] if next_source and views.get(next_source) == 'team' else None}
 
 
 def _line(text):

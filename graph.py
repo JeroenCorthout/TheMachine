@@ -131,7 +131,7 @@ OPEN_CARD = ('pending', 'accepted', 'prepared', 'instructions', 'snoozed')
 # Boards: projects of one kind (partner listings, buyers, onboardings) in stages. Every board ends in this row too.
 STALLED = 'Stalled or declined'
 PROJECT_STAGE_COLUMNS = ('board_id INTEGER', 'stage TEXT', 'stage_reason TEXT', 'stage_event_id INTEGER', 'stage_by TEXT', 'stage_at TEXT',
-                         'next_step TEXT', 'org TEXT')
+                         'next_step TEXT', 'next_step_event_id INTEGER', 'org TEXT')
 BOARD_COLUMNS = ('about TEXT', 'side INTEGER NOT NULL DEFAULT 1', 'updated_at TEXT', 'visibility TEXT')
 # Who sees a board and its projects (2026-10-24): 'only_you' (never on the Team Graph, also not its timelines), 'people'
 # (only the teammates the owner shared it with, shared_graph share_people) or 'team'. A project's own visibility (NULL:
@@ -2612,7 +2612,7 @@ def set_stage(db, project, stage, source, now, board=None, stages=None, reason=N
         step = one_line(next_step, 120)
         if step is None:
             raise ValueError('next: the owner\'s next step in a few words (up to 120 characters)')
-        db.execute('UPDATE projects SET next_step=? WHERE id=?', (step or None, row['id']))
+        db.execute('UPDATE projects SET next_step=?,next_step_event_id=? WHERE id=?', (step or None, event_id, row['id']))
     if org and not kept:
         domain = re.sub(r'^(?:https?://)?(?:www\.)?', '', str(org).strip().lower()).split('/')[0]
         if not ORG_DOMAIN.fullmatch(domain):
