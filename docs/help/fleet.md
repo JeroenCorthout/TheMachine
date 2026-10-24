@@ -23,6 +23,10 @@ It shows once you're in a Fleet, with a pane for each Fleet, Family, Friends, Ne
 
 Ask "who knows someone at Acme?" from the Fleet tab, or **Ask the Fleet** on an organization in the [Graph](graph.md). Each teammate's Machine answers by their own sharing rules, and asks them first when the rule says so.
 
+## Team Graph
+
+In a Work Fleet, client work is shared with your team, after you look it over. See [Team Graph](team-graph.md).
+
 ## What your Machine answers
 
 Set it per Fleet, on the Sharing pane. See [Sharing rules](sharing-rules.md). **Settings** has a shortcut: **Fleet rules**.

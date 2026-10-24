@@ -133,9 +133,10 @@ STALLED = 'Stalled or declined'
 PROJECT_STAGE_COLUMNS = ('board_id INTEGER', 'stage TEXT', 'stage_reason TEXT', 'stage_event_id INTEGER', 'stage_by TEXT', 'stage_at TEXT',
                          'next_step TEXT', 'org TEXT')
 BOARD_COLUMNS = ('about TEXT', 'side INTEGER NOT NULL DEFAULT 1', 'updated_at TEXT', 'visibility TEXT')
-# Who sees a board and its projects (2026-10-24): 'only_you' (never on the Team Graph, also not its timelines) or 'team'.
-# Text, so named people can be added later. A project's own visibility (NULL: its board's) overrides it.
-VISIBILITY = ('only_you', 'team')
+# Who sees a board and its projects (2026-10-24): 'only_you' (never on the Team Graph, also not its timelines), 'people'
+# (only the teammates the owner shared it with, shared_graph share_people) or 'team'. A project's own visibility (NULL:
+# its board's) overrides it.
+VISIBILITY = ('only_you', 'people', 'team')
 MAX_OPEN_SUGGESTIONS = 3  # board suggestions open at once
 # Sorting a project the owner put on a board (2026-10-24): the review run it was last given to, how many reviews got it,
 # and why a review couldn't place it (shown on its tile)
@@ -2591,27 +2592,35 @@ def project_events(db, pid, limit, until=None):
 
 
 def clean_visibility(value, allow_none=False):
-    """'only_you' or 'team' (None too when allowed: a project that follows its board)."""
+    """'only_you' or 'team' (None too when allowed: a project that follows its board). 'people' only through sharing a
+    board with chosen teammates (assistant graph_board_share)."""
     if value is None and allow_none:
         return None
     text = str(value or '').strip().lower().replace(' ', '_')
-    if text not in VISIBILITY:
+    if text not in VISIBILITY or text == 'people':
         raise ValueError('visibility is "only_you" or "team"' + (' (or null: as its board)' if allow_none else ''))
     return text
 
 
 def hidden_project_ids(db):
-    """Projects only the owner sees: their own visibility, else their board's, is 'only_you'. A project on no board in
-    an open Only-you suggestion (an M&A board not saved yet) is held back too. They, their board and their timelines
-    never go to the Team Graph. A stable hook for the sharing code."""
+    """Projects the whole team doesn't see: their own visibility, else their board's, is 'only_you' or 'people' (a
+    board shared with chosen teammates: only they get it, shared_graph). A project on no board in an open Only-you
+    suggestion (an M&A board not saved yet) is held back too. They, their board and their timelines never go to the
+    whole team. A stable hook for the sharing code."""
     return {r[0] for r in db.execute("SELECT p.id FROM projects p LEFT JOIN boards b ON b.id=p.board_id "
-                                     "WHERE coalesce(p.visibility,b.visibility,'team')='only_you' OR (p.board_id IS NULL AND p.visibility IS NULL "
+                                     "WHERE coalesce(p.visibility,b.visibility,'team') IN ('only_you','people') OR (p.board_id IS NULL AND p.visibility IS NULL "
                                      "AND p.id IN (SELECT j.value FROM board_suggestions s,json_each(s.projects) j WHERE s.state='open' AND s.visibility='only_you'))")}
 
 
-def hidden_event_ids(db):
-    """Messages of Only-you projects (labeled into one, or linked by the graph): their threads stay Only you."""
-    ids = sorted(hidden_project_ids(db))
+def hidden_event_ids(db, shown=()):
+    """Messages of Only-you projects (labeled into one, or linked by the graph): their threads stay Only you. shown:
+    project ids shared with someone by name, left out for what goes to them."""
+    return project_event_ids(db, hidden_project_ids(db) - set(shown))
+
+
+def project_event_ids(db, ids):
+    """Messages of these projects: labeled into one, or linked by the graph."""
+    ids = sorted(ids)
     if not ids:
         return set()
     marks = ','.join('?' * len(ids))
@@ -2835,7 +2844,9 @@ def save_board(db, args, now):
     old = db.execute('SELECT * FROM boards WHERE id=?', (board_id,)).fetchone() if board_id else None
     if board_id and not old:
         raise ValueError('That board is gone')
-    if args.get('visibility') is not None:  # who sees it; else as it was, as suggested, or the team
+    if args.get('visibility') == 'people' and old and old['visibility'] == 'people':
+        visibility = 'people'  # shared with chosen teammates: changed from its Share board sheet
+    elif args.get('visibility') is not None:  # who sees it; else as it was, as suggested, or the team
         visibility = clean_visibility(args['visibility'])
     elif old:
         visibility = old['visibility'] or 'team'
@@ -3497,7 +3508,7 @@ def backfill_brief(db, run_id, now, describe, batch=BACKFILL_BATCH, chars=BACKFI
                        (b['id'], key, c['name'], json.dumps(c['event_ids'][:60]), run_id, now))
     if not lines:
         return ''
-    boards_line = 'Boards: ' + '; '.join(f"{b['name']} ({' > '.join(stage_names(b))}{', only you' if b['visibility'] == 'only_you' else ''}): "
+    boards_line = 'Boards: ' + '; '.join(f"{b['name']} ({' > '.join(stage_names(b))}{', only you' if b['visibility'] == 'only_you' else ', only you and chosen teammates' if b['visibility'] == 'people' else ''}): "
                                          f"{b['about'] or 'no description'}" for b in running)
     return boards_line + '\n' + '\n'.join(lines)
 
@@ -3614,7 +3625,7 @@ def boards(db, now):
             items.append({'id': node, 'name': p['name'], 'stage': p['stage'] if p['stage'] in names else names[0], 'reason': p['stage_reason'],
                           'by': p['stage_by'], **sort_view(db, p), 'at': p['stage_at'], 'event_id': p['stage_event_id'], 'next': p['next_step'],
                           'first': not db.execute('SELECT 1 FROM project_moves WHERE project_id=? LIMIT 1 OFFSET 1', (p['id'],)).fetchone(),
-                          'days': max(0, (today - since).days), 'closed': bool(p['closed_at']),
+                          'days': max(0, (today - since).days), 'closed': bool(p['closed_at']), 'visibility': p['visibility'],
                           'no_reply_days': max(0, (today - parse_time(mine_since)).days) if mine_since else None,
                           'org': org_card(db, domain) if domain else None, 'card': {'id': card['id'], 'title': card['title']} if card else None,
                           **({'last_at': last['occurred_at'], 'last_event_id': last['id']} if last else {}),

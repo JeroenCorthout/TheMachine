@@ -98,6 +98,10 @@ On their page, open the ⋯ menu and pick **Delete permanently…**, then **Dele
 
 Roles your Machine read in your messages, waiting for your word. **✓ Right** confirms one; **Edit** opens their page in Edit. It learns from your edits. This shows only when roles are waiting.
 
+## In a Work Fleet
+
+Client work is shared with your teammates' Machines, and theirs shows in yours. Each thread shows **Team** or **Only you**. See [Team Graph](team-graph.md).
+
 ## Organizations
 
 Companies, from the addresses and names in your messages. See [Organization details](organization-data.md).

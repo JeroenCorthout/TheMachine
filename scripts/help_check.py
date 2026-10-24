@@ -64,6 +64,7 @@ FEATURES = {
     'support-bundle': ('cli.py', "'support-bundle'"),
     'keyboard': ('dashboard.html', 'Search and commands'),
     'share-learnings': ('team_learnings.py', 'def '),
+    'team-graph': ('shared_graph.py', 'def overview'),
 }
 # Features that exist in the code but have no article yet, each with the reason. Keep this short.
 PENDING = {

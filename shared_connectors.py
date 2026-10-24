@@ -234,7 +234,8 @@ class SharedConnectors:
         if prompt['kind'] == 'optout':  # they asked to stop sharing their Work with the team (shared_graph.py)
             return self.optout_ok(prompt, group, me, member, keys)
         if prompt['kind'] in ('admin', 'successor', 'member'):  # member: their Machine gets the team's Graph (shared_graph.py)
-            item = ft.sign(self._private(), ft.statement(prompt['kind'], group['id'], member['member_id'], keys['sign'], me['member_id']))
+            item = ft.sign(self._private(), ft.statement(prompt['kind'], group['id'], member['member_id'], keys['sign'], me['member_id'],
+                                                         at=_now() if prompt['kind'] == 'member' else None))
             self.relay.call('POST', '/trust', {'fleet': group['id'], 'item': item}, timeout=30)
             self.directory(refresh=True)
             if prompt['kind'] == 'member':  # their Machine gets the graph key and what this one shares, now

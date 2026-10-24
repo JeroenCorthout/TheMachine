@@ -4,28 +4,62 @@ A Work Fleet shares its Graph. People, organizations, projects, boards and clien
 up on every teammate's Machine, sealed Machine to Machine. The Network (the control plane, "CP") carries and keeps
 sealed blobs it can't read. Nothing syncs with an outside CRM: everything lives in The Machine.
 
-This page is the design, and it is built (code: `shared_graph.py`, `fleet_trust.py`; CP: `cloud/fleet_graph.py`).
+This page is the design, and it is built (code: `shared_graph.py`, `fleet_trust.py`; CP: `cloud/fleet_graph.py`). It is
+**experimental** and off by default: nothing goes until an admin turns on **Share the Graph in this Fleet** (a signed
+`pause` statement with `on: false`; with no statement at all, sharing is off). Turning it on asks the admin to
+confirm that the company may share this mail and has told its people. A Fleet that shared before the switch existed
+stays on after the update (below).
+
+## What feeds it
+
+Each owner picks per connection (**Your connections**, `graph_connections`, kept in `graph_conn:<fleet>`). The domain
+decides: a Work connection whose address is on one of the Fleet's domains (the members' account and work addresses,
+`fleet_domains`) starts on; one at another company's domain starts off and says "Other company, not shared", whatever it
+is named (a second company of the owner's, connected as Work too). A connection without an address (a code host, a
+social account) starts on only when it is named for the Fleet (`work:<Fleet name>`). The owner can turn another
+company's on. Personal connections never go and have no switch. Turning one off takes back what it shared, like an
+unshare. An admin can require every member's **Work email** and **Work calendar**
+(a signed `policy` statement, `{t: policy, fleet, member, key, by, require: [mail, calendar], at}`; the newest from a
+confirmed admin wins, so a CP can't make one up). Only connections on the Fleet's own domains can be required, and
+the admin confirms first that the company has told its people. A required connection is on whatever the owner chose before, and
+shows "Required by <Fleet>". Inside any connection that is on, each thread is still sorted: personal, sensitive,
+automated and colleague-only threads never go, and **Keep private** on a thread or record still wins. A member who wants to stop
+turns their connections off; the old ask to an admin (`optout`) is still honored but no longer offered.
+
+Boards and projects set to Only you (`only_you_projects`, the boards' own visibility) share nothing: not the project,
+its timeline, any thread that touches it, nor people known only through it. Each record passes one check before it
+is sealed (`Scope.shareable`); switching a board from Team to Only you takes back what went.
 
 ## What is shared
 
-Each thread is judged by the review, by what it is about, never by word lists. A choice made by hand always wins.
+Each thread is judged on its own by the review, by what it is about anywhere in it (quoted earlier mail too), never by
+word lists and never a whole company at once. Every verdict counts the same, whatever model made it. A choice made by
+hand always wins. When unsure, nothing goes.
 
 | Thread | Who reads it | What the team sees |
 |---|---|---|
 | **Client**: at least one person outside the company, at an organization on the Graph or with a work domain | The Fleet | The full email: body, from, to, date, and its attachments (up to 2.5 MB each; bigger ones show as "too large to share") |
-| **Sensitive client**: a personal matter, health, a dispute about one person, something said to one person in confidence | Only the people on it | That it exists, in one neutral line: "Private thread with Lee, 12 Oct" |
+| **Sensitive**: buying or selling a company, a merger, an investment or fundraising, a valuation, a term sheet or LOI, a deal NDA, HR, hiring or recruiting about one person (the owner too), legal, health, own money, security (access, keys, tokens, vulnerabilities, incidents) | Only the people on it | Nothing, not even that it exists. Sticky: a later review never makes it shareable again |
+| **Unsure**: probably client work, but not clear; a peer or competitor with no clear customer relationship | The owner first | Nothing until the owner picks Share in **Share these?** |
 | **Internal**: colleagues only | Only the people on it | Nothing. Never re-shared, also not by hand |
-| **Personal**: a personal account, or the review says it is personal | The owner | Nothing, not even that it exists |
+| **Other**: notifications, receipts, invoices, the company's own bills and support tickets with its suppliers, newsletters, cold pitches | The owner | Nothing |
+| **Personal**: a personal account, or the review says it is personal | The owner | Nothing, not even that it exists. Sticky, and never by hand either |
 
 - Every thread on the dashboard has a small label, **Team** or **Only you**. One tap changes it. In chat the owner can
   say "keep the Globex thread private" and the assistant sets the same thing. A review can never set it by hand.
 - A thread no review has judged yet is **Only you** until one does.
-- **Only you by hand** shares nothing about that thread, not even the neutral line.
+- **Only you by hand** shares nothing about that thread.
+- A new client thread waits an hour (`HOLD`) before it goes, so the owner can still change their mind.
+- **Unshare** on a shared thread sends an empty blob for its tag: teammates' Machines delete their copy and its files.
+  The copy says honestly that someone may have read it already.
+- Two hand choices for the same organization ask once: "Always keep threads with X private?" (a rule).
+- Automated mail is never client, whatever the review said: a thread where nobody on the owner's side wrote and
+  every message comes from a system sender (bulk, no-reply, notifications, receipts, invoices, billing, relays) or was
+  filed by the mailbox as an update, promotion, social, forum or spam message is **Other** by rule
+  (`automated_message`, `Scope.automated`), and is not sent to the review either. Once the owner or a colleague
+  replies, it is a conversation and the review judges it.
 - Hard limits come before the review's call and before a hand choice: only accounts with a Work boundary for this
-  Fleet; a thread with nobody outside the company is internal; a personal account is never read for this; an
-  account at a domain none of the Fleet's members work at (another company of the owner's) never goes to it.
-- Personal stays personal: once the review sorts a thread personal, a later review can't make it client or
-  sensitive (not even the neutral line). Only the owner can, by hand. A thread already shared is taken back.
+  Fleet; a thread with nobody outside the company is internal; a personal account is never read for this.
 - People of the owner's own life never go: someone only in their Family or Friends, or someone they marked Personal.
   No record of them, and a thread with them on it stays Only you, like Keep private.
 
@@ -35,7 +69,7 @@ Records are shared by default when they are Work:
 |---|---|---|
 | Exists | "Sam knows Lee at Globex, strong, last contact 3d" | Already, through "who knows someone" |
 | Record | Name, role, company, owner, project stage, next step | Yes, for Work people, organizations and projects |
-| Timeline | One short line per message or meeting, written by the review | Yes, for client threads; the neutral line for sensitive ones |
+| Timeline | One short line per message or meeting, written by the review | Yes, for client threads only |
 | Raw mail | The email itself and its attachments | Client threads (above). Nothing else, ever |
 
 The record's owner is the one picked by hand on it (`owner_pick`, a Work Fleet member id; `crm.py`), and otherwise
@@ -54,12 +88,34 @@ Only you takes back what was shared at the next publish, as Keep private does. C
 `graph.visible_to_team(db, node_id)` (False for an Only-you project) or `graph.hidden_project_ids(db)` (the set of
 Only-you project ids).
 
+**Shared by name.** The owner can share a board with chosen teammates (**Share board…** on its ⋯ menu,
+`graph_board_share`; `boards.visibility` 'people', the people in `share_people`), or one thread
+(**Share with…** on its label, `graph_thread_share`). For those teammates only (`grants`, `Scope.granted`) the board's
+open projects and every thread linked to them go, sensitive ones (deals, M&A) too; a thread shared by hand goes whatever
+the review said. Never personal threads, people kept private or marked Personal, threads with only colleagues, other
+companies' accounts (they aren't in `graph_accounts`) or automated mail. Teammates with the same grants get their own
+chain of records (a snapshot and deltas whose header says `only` and carries the chain as `tag`), and a thread only
+some get is sealed to them alone, also marked `only`. A Machine passes an `only` blob on to nobody outside its `to`
+(`_graph_serve`), and refuses one passed on to it when it isn't in `to` (`graph_take`). A snapshot for the whole team
+goes first in each round and ends every older chain; the chains follow in the same round, so the newest snapshot for
+anyone is the one meant for them. Taking someone off, the board back to Only you, or a project moved off the board
+changes their chain: their next snapshot no longer lists it, and their Machine deletes it. A thread nobody gets any
+more gets the usual empty blob.
+
 **A project on a Team board** shares its record (name, board, stage, why, next step, organization, people) even before
 a review has judged one of its threads, so the team pipeline shows every project on it. Its threads still go only as
 they are judged.
 
-The weekly recap says, in one line: "Shared with Acme: 214 threads, 31 people, 6 projects. 4 held back." with a
-link to review the held-back ones.
+The weekly recap says, in one line: "Shared 214 threads with Acme this week, 4 held back." with a link to
+**What's shared**.
+
+## The first share
+
+Nothing goes until the owner taps **Start now** on **What's shared** (Fleet tab, also from Settings and every thread's
+label). Before that, every non-hand verdict is sorted again with the current rules, and the pane lists the client
+threads that would go, by organization, each with **Keep private**. Until the owner decides, the Machine shows a card
+and reminds them every 3 days (`REMIND_EVERY`), only within their work hours. Admins see each teammate's state:
+sharing, not started, off, or taken out. A Machine that shared before goes on without a new Start now.
 
 ## Threat model
 
@@ -70,8 +126,9 @@ publishes, when, how big, to whom, and how many threads each Machine shares. It 
 - forge or change: every blob is signed (Ed25519) by the publishing Machine, and the seal binds the sender, the
   recipient, the kind and the blob id;
 - replay an old blob as new: sequence numbers per publisher, checked by every receiver;
-- add a member to get data sealed for it: a Machine seals only to members **confirmed by admin keys** (below). The CP
-  can remove someone from the directory (they stop getting new data), never add one;
+- add a member or a device to get data sealed for it: a Machine seals only to members **confirmed by admin keys**
+  (below). The CP can drop someone from the directory (they stop getting new data), never add one;
+- bring back someone an admin took out: removal is a signed statement each Machine keeps (below);
 - enumerate contacts: addresses inside records are keyed hashes (HMAC-SHA256 with the Fleet graph key, which the CP
   never has). The CP never sees them anyway; teammates without that contact can't read the address back either.
 
@@ -87,7 +144,8 @@ publishes, when, how big, to whom, and how many threads each Machine shares. It 
 
 A malicious admin can confirm a fake member. That is the trust root: admins are trusted, as in shared connectors.
 
-**Someone leaving.** The directory drops them at once and every Machine stops sealing for them. Within a round the
+**Someone leaving.** The directory drops them at once and every Machine stops sealing for them. An admin's Machine
+also signs a `remove` for them, so a CP that later lists them again can't get anything sealed to them. Within a round the
 Fleet graph key rotates, so blobs after the leave are sealed and hashed with a key they never had. What they shared
 stays with the Fleet: their records, timeline and client mail stay on teammates' Machines, shown as "via Sam (left)".
 Nothing more: no other mail of theirs is kept for the company or sealed to admins, so leaving never shares more than
@@ -109,9 +167,26 @@ The Shared Graph adds one statement kind to `fleet_trust.py`:
   OK on a member's ask to stop sharing (below). It counts only from an admin other than that member, for their current
   key and for that very ask.
 
-A member is confirmed while they are in the directory now, with the key a confirmed admin vouched for. Pins are kept
-between rounds, so a member vouched for by an admin who later left stays confirmed. A key change drops them until an
-admin says OK again. A Machine seals only to confirmed members and opens only blobs from confirmed members.
+- `remove`: `{t: remove, fleet, member, by, at}`, signed by a confirmed admin's Machine when someone leaves the
+  directory or an admin taps **Take out**. Each Machine keeps the newest per member. A removed member counts again only
+  with a `member` statement dated at or after the removal (**Share again**).
+- `pause`: `{t: pause, fleet, member, key, by, on, at, purged?}`, an admin turns sharing off (`on`: paused) or back
+  on for the whole Fleet, the **Share the Graph in this Fleet** switch. The newest wins. `purged` is when an admin last
+  picked **Turn off and remove shared data**; every later statement carries it on, so turning sharing back on can't
+  hide a removal from a Machine that was away.
+
+The trust decision is made once per person: an admin's OK when they join ("<name> joined <Fleet>. Share the team's
+Graph with them?", or **Share with all** for several). After that there is no OK per device. A new key of a person
+already admitted is vouched for by an admin's Machine by itself after 24 hours (`REKEY_HOLD`); during that time admins
+see "<name> has a new Machine" with its safety number and can tap **Not theirs**, which keeps the key out.
+
+A member is confirmed while they are in the directory now, with a key a confirmed admin vouched for, and not removed
+since. Pins are kept between rounds, so a member vouched for by an admin who later left stays confirmed. A Machine
+seals only to confirmed members and opens only blobs from confirmed members.
+
+Residual risk: a CP that hides a `remove` from the start can keep other Machines sealing to that person for as long
+as it also keeps them in the directory. The removing admin's own Machine stops at once, and once any Machine has seen
+the `remove` the CP can't undo it there.
 
 ## Data model
 
@@ -137,7 +212,6 @@ A record (JSON, inside a blob):
 person:  {r, t: person, name, name_hand, role, role_hand, org: {name, d}, ids: [hash], d, score, last, timeline: [{at, line}]}
 org:     {r, t: org, name, role, role_hand, d, score, last}
 project: {r, t: project, name, board, stages, stage, stage_hand, stage_at, why, next, org, people: [hash], score, last, timeline}
-thread:  {tag, subject, with, at, private: true}             (sensitive: the neutral line only)
 mail:    {tag, subject, messages: [{at, from, to, cc, body, attachments: [{name, size, mime, file | too_large}]}]}
 file:    {name, mime, data}                                   (one attachment; `file` above is its tag)
 ask:     {off, asked}                                         (a member asks to stop sharing, or not any more)
@@ -171,7 +245,7 @@ sends what to whom. `h` is the hash of header and ciphertext, so a wrap can't be
   that Machine. Sent when the recipients or the key change, and daily.
 - **delta**: changed and removed records since the last blob, with `prev` (the previous seq). A receiver that missed
   one waits for the next snapshot.
-- **mail**: one client thread, or one sensitive thread's neutral line, by `tag`. A newer blob with the same tag
+- **mail**: one client thread, by `tag`. A newer blob with the same tag
   replaces it; one with an empty ciphertext removes it. A receiver drops mail whose tag isn't in the publisher's
   latest snapshot.
 - **file**: one attachment of a shared client thread, by `tag`, up to 2.5 MB. Only for whole client threads: a
@@ -234,8 +308,9 @@ it. **Ask <name>** on a tile, person or organization starts a handoff to that te
 |---|---|---|---|
 | Records and timelines of Work | Yes | Yes | No (sealed) |
 | Client threads | Yes | Yes | No (sealed) |
-| Sensitive client threads | That they exist | That they exist | No |
+| Sensitive threads | No | No | No |
 | Internal, Personal, Keep private, Only-you boards | No | No | No |
+| Boards and threads shared by name | Only the people chosen | Only the people chosen | No (sealed) |
 | Who publishes, when, how much | Yes | Yes | Yes (metadata) |
 | A leaver's shared work | Yes, stays | Yes, stays | No |
 | A leaver's other work mail | No | No | No |
@@ -246,16 +321,49 @@ it. **Ask <name>** on a tile, person or organization starts a handoff to that te
 - **Mine / Team** on People, Organizations and Projects. Mine is the Graph as before. Team adds teammates' records.
 - A quiet **via Sam** under a record a teammate shared ("via Sam and Kim", "via Sam (left)").
 - **Ask Sam** on a teammate's record or tile.
-- **Team / Only you** on each thread on a record's page; **Keep private** on a record.
-- The Fleet tab, in the Team Graph box: "Share the team's Graph with <name>'s Machine?" and "<name> asks to stop
-  sharing their Work with the team." (Approve / Not now) for admins, and for everyone their own sharing: on, asked an
-  admin, or off, with one button (Stop sharing my Work, Keep sharing, Share again).
+- **Team / Only you** on each thread on a record's page. Tapping it shows why it went (or didn't), **Unshare** or
+  **Share with the team**, **Share with…** (chosen teammates), and a link to **What's shared**. **Keep private** on a record.
+- **Share board…** on a board's ⋯ menu: the Fleet's confirmed teammates, one line on what they get ("Robin gets these
+  12 projects and their threads, including deals. Personal never goes."), and **Share** or **Stop sharing**. The
+  board's header says "Shared with Robin".
+- **What's shared**, a pane per Work Fleet on the Fleet tab (also in Settings): counts per kind, the first-share review
+  with **Start now**, **Share these?**, every shared thread with its why-line and **Unshare**, and what is kept private.
+  For admins also **Teammates** (who shares, who hasn't started, **Take out**, **Share again**) and the switch
+  **Share the Graph in this Fleet**, which everyone sees.
+- The Fleet tab, in the Team Graph box: "<name> joined <Fleet>. Share the team's Graph with them?" and "<name> asks to
+  stop sharing their Work with the team." (Approve / Not now) for admins, new devices with **Not theirs**, and for
+  everyone their own sharing: on, asked an admin, or off, with one button (Stop sharing my Work, Keep sharing, Share
+  again).
 - On a teammate's client thread, its attachments open from the dashboard (served as downloads, never run).
+
+## Unsharing and removal
+
+Nothing a teammate holds is copied anywhere else: records, threads and files stay in `team_records`, `team_mail` and
+`team_files` and are read from there when shown, never into the owner's events, search index or cards. Deleting
+those rows deletes all of it. Retraction works three ways:
+
+- **Unshare a thread** (by hand, a rule, Keep private on a record, or a later review that makes it sensitive): the
+  owner's Machine sends, sealed and signed per recipient, an empty `mail` blob for its tag and one per file, plus a
+  delta whose `threads` list no longer has it. Each receiver deletes the thread, its files and the copies it keeps
+  to pass on. The records' timelines are rebuilt without its lines and go in the same delta.
+- **A Machine that was away**: the mailbox keeps blobs 30 days. Each Machine also sends a snapshot of what it shares
+  daily, so a Machine back after longer gets the newest list (from the mailbox or a teammate's catch-up) and drops
+  every thread not on it. A copy passed on late by a teammate is dropped when it is older than the publisher's newest
+  list and not on it, so new devices and late joiners never get what was unshared.
+- **Turn off and remove shared data**: an admin's signed `pause` with `purged`. Every Machine deletes all it got from
+  the Fleet, forgets what it sent and drops any blob from before then that still arrives. It is a trust statement,
+  not a mailbox blob, so it reaches Machines that come back after any time. Once back on, each owner taps Start now
+  again and everything goes again from the start.
+
+What isn't retracted: **Stop sharing my Work** (an admin's `optout`) and someone leaving only stop what's new; what went
+stays with the Fleet, as decided. Someone may already have read what was retracted. A Machine no longer in the Fleet
+deletes everything it got from it (`_graph_forget`); someone taken out but still in it keeps what they got before and
+gets no retractions after, since nothing is sealed to them any more.
 
 ## Stopping
 
-Like in any CRM, nobody switches sharing off on their own. A member taps **Stop sharing my Work**; their Machine tells
-the admins (an `ask` blob) and keeps sharing. An admin's owner sees the ask on the Fleet tab and approves it on their
+This section is the earlier flow, kept for Machines that asked before per-connection choices. A member taps Stop
+sharing my Work; their Machine tells the admins (an `ask` blob) and keeps sharing. An admin's owner sees the ask on the Fleet tab and approves it on their
 own Machine, which signs an `optout` statement. Once the member's Machine sees it, it publishes nothing new. What it
 shared before stays with the Fleet. **Share again** turns it back on at once, with no OK needed. A Network that
 forges, drops or replays these can at most delay a stop: it can't make one, because only a confirmed admin's key
@@ -264,12 +372,19 @@ signs it.
 ## Migration
 
 1. Machines on this version publish their root (owner) and their keys, as with shared connectors.
-2. An admin's Machine asks once per member: "Share the team's Graph with <name>'s Machine?". Until then nothing goes
-   to them.
-3. Sharing starts as soon as a Machine is confirmed and an admin has OK'd a teammate's Machine. Until then the Team view says "Sharing starts once you OK a teammate's Machine." (or "once an admin OKs") and "Nothing from the team yet."; after, "Work is shared with <Fleet>. Personal never."
-4. Past threads: all the Work history the Machine has, judged by the history pass, in batches (above).
-5. Machines that haven't updated publish nothing and get nothing; "who knows someone" keeps working.
-6. Nothing is imported from or written to another CRM.
+2. An admin's Machine asks once per person: "<name> joined <Fleet>. Share the team's Graph with them?". Until then
+   nothing goes to them. Their later devices need no new OK (above).
+3. Every thread no hand choice covers is sorted again with the current rules (sorter v2), sensitive stays sensitive.
+   The threads that went before are sorted first. Until it is sorted again, a thread that went before stays with the
+   team as it is (no take back and send again); then it stays or is taken back (owner-signed empty blobs). Anything a
+   rule already says no to (another company's connection, automated mail, personal, kept private) is taken back at once.
+4. A Fleet that shared before the switch existed stays on: a Machine that sent to it before treats it as on until an
+   admin says otherwise, and the first admin Machine on this version signs the switch on once (`_was_sharing`), so the
+   members' Machines that never sent anything follow. A Machine that shared before needs no new **Start now**; one
+   that never did looks it over first (above).
+5. Past threads: all the Work history the Machine has, judged by the history pass, in batches (above).
+6. Machines that haven't updated publish nothing and get nothing; "who knows someone" keeps working.
+7. Nothing is imported from or written to another CRM.
 
 ## Decided
 
@@ -277,6 +392,7 @@ signs it.
 2. Stopping takes an admin's OK, like in any CRM. Keep private on a record needs none.
 3. Attachments go with a shared client thread, sealed the same way, up to 2.5 MB each. In a Careful Fleet (security level) they don't: the thread lists them as not shared.
 4. History: as far back as the Machine has Work mail, through the same labels, in resumable batches.
-5. No look-first delay: sharing starts once a Machine is confirmed.
-6. Everything stays on the Machines. The CP is a mailbox: a blob goes once every Machine took it, or after 30 days.
+5. A look first: the first share waits for **Start now**, and each new client thread waits an hour.
+6. One trust decision per person, when they join; no OK per device. Removal is signed.
+7. Everything stays on the Machines. The CP is a mailbox: a blob goes once every Machine took it, or after 30 days.
    Machines catch each other up.
