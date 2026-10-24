@@ -9,8 +9,9 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 // the browser's back button works. Facts about them sit apart from what is open, each with Not about them and Forget.
 // Events come by day, each row with its source, who wrote it and the start of the text.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
-// Earlier today, whatever the hour the test runs at: n minutes ago, never before midnight.
-const now=new Date(),hour=n=>new Date(Math.max(new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime(),now-n*6e4)).toISOString(),daysAgo=d=>new Date(Date.now()-d*864e5).toISOString();
+// The page's clock is today at noon whatever the hour the test runs at, so a run of messages minutes apart a day ago
+// never straddles midnight (a run just after midnight split it in two days)
+const now=new Date();now.setHours(12,0,0,0);const hour=n=>new Date(now-n*6e4).toISOString(),daysAgo=d=>new Date(now-d*864e5).toISOString();
 const long='Can you pick up the kids at five today? I am stuck in a meeting that runs late and the school closes at half past, so it would really help. '.repeat(3);
 let known=[{id:5,text:'Ann prefers calls before 10.'},{id:6,text:'Ann is allergic to nuts.'}];
 const person=()=>({id:'wa:3247000001',kind:'person',name:'Ann Example',strength:2,closeness:'close',last_at:hour(1),signals:9,ids:['+3247000001'],links:[],
@@ -55,7 +56,7 @@ try{
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  page.on('pageerror',e=>errors.push(e.message));
  const dialogs=[];page.on('dialog',async d=>{dialogs.push(d.message());await(dialogs.length===1?d.dismiss():d.accept())});
- await page.goto(base);
+ await page.clock.install({time:now});await page.goto(base);
  await navClick(page.locator('nav [data-tab="people"]'));
  await page.locator('#people-view article[data-node="wa:3247000001"] button.node').click();
  await page.locator('.graph-crumbs').waitFor();

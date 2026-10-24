@@ -17,6 +17,7 @@ same results; the tests check both against the RFC test vectors)."""
 from __future__ import annotations
 
 import base64
+import functools
 import hashlib
 import hmac
 import json
@@ -241,11 +242,17 @@ def new_keys():
 
 def public_keys(private):
     """What the Network's directory shows of this Machine: both public keys, the box key signed by the sign key."""
-    box_pub = x25519_public(unb64(private['box'], 32))
-    sign_secret = unb64(private['sign'], 32)
+    return dict(_public_keys(private['box'], private['sign']))
+
+
+@functools.lru_cache(maxsize=64)
+def _public_keys(box, sign):
+    """Ed25519 signatures are deterministic: the same private keys always give the same entry, so make it once."""
+    box_pub = x25519_public(unb64(box, 32))
+    sign_secret = unb64(sign, 32)
     sign_pub = ed25519_public(sign_secret)
-    return {'v': VERSION, 'box': b64(box_pub), 'sign': b64(sign_pub),
-            'sig': b64(ed25519_sign(sign_secret, b'tm-network-keys/1\n' + box_pub))}
+    return tuple({'v': VERSION, 'box': b64(box_pub), 'sign': b64(sign_pub),
+                  'sig': b64(ed25519_sign(sign_secret, b'tm-network-keys/1\n' + box_pub))}.items())
 
 
 def check_keys(public):
@@ -256,9 +263,16 @@ def check_keys(public):
         box, sign, sig = unb64(public.get('box'), 32), unb64(public.get('sign'), 32), unb64(public.get('sig'), 64)
     except SealError:
         return None
-    if not ed25519_verify(sign, b'tm-network-keys/1\n' + box, sig):
+    if not _keys_signed(box, sign, sig):
         return None
     return {'box': box, 'sign': sign, 'fingerprint': fingerprint(sign, box)}
+
+
+@functools.lru_cache(maxsize=4096)
+def _keys_signed(box, sign, sig):
+    """The same directory entry is checked on every directory read and every sealed message: verify each entry once
+    (without the `cryptography` package a check takes milliseconds, and a Fleet sync made thousands of them)."""
+    return ed25519_verify(sign, b'tm-network-keys/1\n' + box, sig)
 
 
 def fingerprint(sign, box):

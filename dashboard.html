@@ -4113,7 +4113,9 @@ function pageHead(){const h=$('#page-head'),tab=[...document.querySelectorAll('m
  if(tab==='inbox'&&chatId){h.hidden=true;return}
  const c=sideCounts,busy=[[c.ready,'ready for you'],[c.needs,'to decide'],[c.preparing,'preparing']].filter(([k])=>k).map(([k,t])=>k+' '+t),sub=(busy.length?busy:['All clear',c.later&&c.later+' coming back later',c.promises&&c.promises+(c.promises===1?' promise':' promises')+' kept track of'].filter(Boolean)).join(' · ');
  const html=tab==='inbox'?`<img class="page-avatar" src="brand/avatar.png" data-blink="brand/avatar-blink.png" alt="" width="40" height="40"><div><h2 class="page-title">${esc($('#tagline').textContent)}</h2>${sub?`<p class="page-sub">${esc(sub)}</p>`:''}</div>`:tab==='people'?(()=>{try{return graphHead()}catch{return '<h2 class="page-title">Graph</h2>'}})():tab==='calendar'?calHead():`<h2 class="page-title">${PAGE_TITLES[tab]||''}</h2>`;
- h.classList.toggle('greet',tab==='inbox');h.classList.toggle('busy',tab==='inbox'&&busy.length>0);if(h.innerHTML!==html)h.innerHTML=html;h.hidden=false}
+ h.classList.toggle('greet',tab==='inbox');h.classList.toggle('busy',tab==='inbox'&&busy.length>0);
+ // A mascot mid-blink is the same head: comparing it as open keeps it (a rebuild would cut its blink short)
+ if(h.innerHTML.replace(/<img class="page-avatar[^"]*" src="[^"]*"/,'<img class="page-avatar" src="brand/avatar.png"')!==html)h.innerHTML=html;h.hidden=false}
 {const o=new MutationObserver(()=>pageHead());document.querySelectorAll('main>section').forEach(x=>o.observe(x,{attributes:true,attributeFilter:['hidden']}));o.observe($('#tagline'),{childList:true,characterData:true,subtree:true})}
 $('#suggestions').oninput=e=>{if(e.target.tagName==='TEXTAREA')e.target.classList.toggle('filled',!!e.target.value)};
 async function saveDecision(id,choice,feedback='',answer=false){

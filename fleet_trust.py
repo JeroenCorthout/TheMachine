@@ -24,6 +24,7 @@ recipient: their member id and the fingerprint of their keys when the admin said
 so the token itself is never in it. Statements are signed over b'tm-fleet-trust/1\\n' + canonical JSON."""
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import re
@@ -56,9 +57,15 @@ def verified(item, sign_key):
     try:
         if not isinstance(item, dict) or not isinstance(item.get('s'), dict) or not isinstance(sign_key, str):
             return False
-        return nc.ed25519_verify(nc.unb64(sign_key, 32), TAG + canon(item['s']), nc.unb64(item.get('sig'), 64))
+        return _verified(sign_key, canon(item['s']), item.get('sig'))
     except (nc.SealError, TypeError, ValueError):
         return False
+
+
+@functools.lru_cache(maxsize=4096)
+def _verified(sign_key, statement, sig):
+    """Each Fleet round checks the same signed statements again: check each one once."""
+    return nc.ed25519_verify(nc.unb64(sign_key, 32), TAG + statement, nc.unb64(sig, 64))
 
 
 def keys_of(member):

@@ -40,6 +40,11 @@ try{
    for(let i=0;i<mine.length;i+=2){assert.ok(mine[i].shut&&!mine[i+1].shut,'shut, then open again');
     const closed=mine[i+1].at-mine[i].at;assert.ok(closed>=140&&closed<=170,'eyes closed for about 150ms: '+closed)}
    const sizes=new Set(mine.map(s=>s.w+'x'+s.h));assert.equal(sizes.size,1,'no layout shift: '+[...sizes])}
+  let s0=0;for(;s0<1000&&!await page.evaluate(()=>document.querySelector('.page-avatar').getAttribute('src').includes('blink'));s0++)await page.clock.runFor(20);
+  assert.ok(s0<1000,'the mascot over the cards blinks');
+  // A refresh mid-blink keeps the mascot over the cards (rebuilding it would cut the blink short and leave its timer behind)
+  assert.ok(await page.evaluate(()=>{const a=document.querySelector('.page-avatar');pageHead();return document.querySelector('.page-avatar')===a}),'the head is not rebuilt mid-blink');
+  await run(page,500);
   // Never two at once: at most one mascot has its eyes closed at any time
   let shut=0;for(const s of swaps){shut+=s.shut?1:-1;assert.ok(shut<=1,'two mascots blinked together')}
   // Busy refreshing: no blink
