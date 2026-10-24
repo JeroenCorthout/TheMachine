@@ -6248,6 +6248,8 @@ class Store:
                                       'deferred_threads': sum(bool(c.get('deferred_thread')) for c in channels),
                                       'conversation_errors': sum(bool(c.get('error')) for c in channels),
                                       'first_import': slack_first_import_progress(state)}
+                if account.get('service') == 'intercom':  # who a reply goes out as, after the owner's Send; none: it only reads
+                    channel_health = {'replies_as': (account.get('reply_admin_name') or 'you') if next_actions.intercom_replies_on(account) else ''}
                 activity = [dict(r) for r in db.execute('SELECT at,status,signals,error,retry_at FROM sync_activity WHERE account_id=? ORDER BY at DESC,rowid DESC LIMIT 12',(account['id'],))]
                 last_failure = db.execute("SELECT at,error FROM sync_activity WHERE account_id=? AND status='failed' ORDER BY at DESC,rowid DESC LIMIT 1",(account['id'],)).fetchone()
                 failures_24h = db.execute("SELECT count(*) FROM sync_activity WHERE account_id=? AND status='failed' AND at>=?",(account['id'],cutoff)).fetchone()[0]

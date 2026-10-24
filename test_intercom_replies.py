@@ -320,5 +320,18 @@ class Send(unittest.TestCase):
         self.assertEqual(list(self.store.card_replies(rows).values())[0]['suggestion_id'], self.sid)
 
 
+class ConnectionsRow(unittest.TestCase):
+    """The Connections card says who replies go out as, or that it only reads."""
+
+    def test_replies_as_the_owner_only_with_their_own_sign_in(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = a.Store(Path(temp) / 'events.sqlite')
+            plain = {k: v for k, v in ACCOUNT.items() if not k.startswith('reply_')}
+            rows = {c['id']: c for c in store.snapshot([ACCOUNT, {**SHARED, 'id': 'intercom-fleet'}, {**plain, 'id': 'intercom-read'}])['connectors']}
+        self.assertEqual(rows['intercom']['replies_as'], 'Alex Example')
+        self.assertEqual(rows['intercom-fleet']['replies_as'], '')
+        self.assertEqual(rows['intercom-read']['replies_as'], '')
+
+
 if __name__ == '__main__':
     unittest.main()
