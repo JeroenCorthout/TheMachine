@@ -1722,16 +1722,16 @@ def connect_grant(config_path, provider, args):
             if error and not error.startswith(BUSY):
                 raise SetupError(f'{label(service)} for {email} did not check out ({error})', 'sign in again from Connections, + Add')
             checked.append(account)
+        for account in checked:
+            known = any(a.get('id') == account['id'] for a in config.get('accounts', []))
+            config['accounts'] = [account if a.get('id') == account['id'] else a for a in config.get('accounts', [])] + ([] if known else [account])
+        save(config_path, config)
     except BaseException:
         if previous:
             mail_grants.put(config, provider, email, previous)
         else:
             mail_grants.forget(config, provider, email, revoke=False)
         raise
-    for account in checked:
-        known = any(a.get('id') == account['id'] for a in config.get('accounts', []))
-        config['accounts'] = [account if a.get('id') == account['id'] else a for a in config.get('accounts', [])] + ([] if known else [account])
-    save(config_path, config)
     return {'ok': True, 'name': email}
 
 

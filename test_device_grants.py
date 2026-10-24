@@ -89,6 +89,19 @@ class ConnectGrant(unittest.TestCase):
             onboarding.connect_delivered(self.path, self.args(refresh_token='fixture-refresh-token-3'))
         self.assertEqual(mail_grants.get(self.config(), 'google', 'dee@acme.example'), 'fixture-refresh-token-2')
 
+    def test_a_config_save_failure_restores_the_previous_sign_in_or_removes_the_uncommitted_one(self):
+        for reconnect in (False, True):
+            self.save({'database': str(self.root / 'events.sqlite'), 'credentials': {'fleet': str(self.root / 'fleet.token')}, 'accounts': []})
+            mail_grants.forget(self.config(), 'google', 'dee@acme.example', revoke=False)
+            if reconnect:
+                onboarding.connect_delivered(self.path, self.args())
+            before = self.path.read_bytes()
+            with patch.object(onboarding, 'save', side_effect=OSError('disposable config write failure')):
+                with self.assertRaises(OSError):
+                    onboarding.connect_delivered(self.path, self.args(refresh_token='fixture-refresh-token-uncommitted'))
+            self.assertEqual(self.path.read_bytes(), before)
+            self.assertEqual(mail_grants.get(self.config(), 'google', 'dee@acme.example'), REFRESH if reconnect else None)
+
     def test_only_a_whole_grant_for_a_paired_self_hosted_machine(self):
         for args in (self.args(provider='microsoft') | {'source': 'google'}, self.args(email='not an address'),
                      self.args(refresh_token='short'), self.args(refresh_token=None), {'source': 'google'}):
