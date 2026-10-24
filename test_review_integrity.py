@@ -51,6 +51,12 @@ class GraphFixes(unittest.TestCase):
         self.assertEqual(self.store.boards_text('r4'),first)  # a day later
         with self.store.connect() as db:db.execute("UPDATE projects SET closed_at=? WHERE name='Hire: backend'",(tg.at(0),));db.execute("DELETE FROM board_offers")
         self.assertEqual(self.store.boards_text('r5'),'')  # fewer than three on no board
+    def test_the_board_check_comes_first_as_its_own_task_not_about_the_batch(self):
+        a=tg.a if hasattr(tg,'a') else __import__('assistant')
+        p=a.review_prompt('r1',['acct'],boards='- Hire: designer (project:1)')
+        self.assertLess(p.index('Hire: designer'),p.index('begin_analysis with account_ids'))
+        self.assertIn('not about this batch',p)
+        self.assertNotIn('Two tasks',a.review_prompt('r1',['acct']))
     def test_a_review_with_a_board_check_answers_it_before_it_finishes(self):
         with self.store.connect() as db:
             for name in ('Hire: designer','Hire: backend','Hire: support lead'):tg.graph.project_id(db,name,tg.at(0))
