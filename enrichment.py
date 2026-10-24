@@ -199,9 +199,10 @@ MARKETING = re.compile(r'^(?:e|em|email|emails|mail|mailer|mailing|news|newslett
 
 
 def worth(domain, people):
-    """How much a look-up is worth for one organisation, from what the graph says about its people: 0 for free mail,
-    a sender subdomain, or people who only ever wrote in (cold outreach) or were only copied. Someone the owner
-    writes with both ways or meets counts most, someone the owner only wrote to a little."""
+    """How much a look-up is worth for one organisation, from what the graph says about its people: 0 only for free
+    mail and campaign sender subdomains, which are no company. Someone the owner writes with both ways or meets counts
+    most, someone the owner only wrote to a little; an organisation whose people only wrote in (cold outreach), were
+    only copied or only send no-reply mail still gets looked up, last, within the day's budget."""
     import graph
     if not domain or domain in graph.FREEMAIL or FREEMAIL.match(domain) or MARKETING.match(domain):
         return 0
@@ -215,7 +216,7 @@ def worth(domain, people):
             score += 3
         elif wrote:
             score += 1
-    return score
+    return score or 0.5
 
 
 def due(db, now, limit):

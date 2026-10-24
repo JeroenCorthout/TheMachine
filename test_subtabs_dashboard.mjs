@@ -45,7 +45,7 @@ try{
  // its count last. The Graph row counts it too while the rows are folded away.
  await page.locator('#badge-people',{hasText:/^2$/}).waitFor({state:'attached'});
  await navClick(page.locator('nav [data-tab="people"]'));
- await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();assert.equal(await page.locator('#people-view .sub-tabs').count(),0);
+ await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();assert.equal(await page.locator('#people-view [data-graph-pane]').count(),0);
  assert.deepEqual((await rows(page)).map(r=>r.replace(/\n\d+$/,m=>m)),['People','Organisations','Projects','Who’s who\n2']);
  assert.equal(await lit(page),'People');assert.equal(await page.locator('#page-head .page-title').textContent(),'People');
  assert.equal(await page.locator('#people-view .whos').first().isVisible(),false);

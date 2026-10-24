@@ -85,6 +85,16 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   A suggested board is one calm box above it ("Start a board for Hiring?", its stages as a flow, Save, Edit, Not now),
   not a card. The editor is a dialog, a bottom sheet on a phone, with Save kept in reach at its foot; a removed stage
   says where its projects go, and Delete asks once more.
+- **Long lists**: one loader for every list, a page at a time from the Machine. In the sidebar and the drawer, Done
+  opens on its 10 latest and the other groups on 8; a quiet **Show more** adds 20 (fetching older done cards when
+  needed), folding starts over, and the counts stay whole. In the main pane (Done, People, Organisations, Projects) the
+  next 30 load as you near the end, with a subtle loading row and **Show more** as the fallback; going back from an
+  item keeps the pages and the scroll. A Graph page has tabs that filter, each with its count (an empty tab is not
+  shown): People All, Gone quiet, New this week; Organisations All, Warm up; Projects Open, Done. A quiet menu at their
+  right sets the order (Closest, Last contact, Name A–Z; for Projects Last activity, Name A–Z, Stage), kept per page on
+  the device. The Graph search waits for a short pause in typing (Enter and Find are at once); emptying it brings the
+  list back as it was, at once, and a late answer to an older search never shows. The chevron next to Graph darkens on
+  hover inside the row's own highlight, with no box of its own. The browser tab's title follows the page. The command palette lists done cards in a Done group under the open ones, also those not loaded yet.
 - **Calendar**: the next seven days, read-only. An agenda by day (Overdue, Today, Tomorrow, then each weekday), one
   row per item: the time (or Due, All day), a tone dot (a ring for a meeting, amber due, orange overdue, lavender coming
   back or a check-in, mint a promise), the title and one quiet line. A meeting's card shows as a chip (in the line on a

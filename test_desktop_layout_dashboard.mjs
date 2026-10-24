@@ -17,6 +17,7 @@ const foldedRow=async(page,label,tap)=>{const g=await page.evaluate(()=>{const r
  assert.equal(g.text,'1','the Graph count shows '+label);assert.ok(Math.abs(g.count.right-g.other.right)<=1,'the Graph count is in the rows\' column '+label+': '+g.count.right+' vs '+g.other.right);
  assert.ok(g.chev.left-g.lab.right>=5&&g.count.left-g.chev.right>=24,'the chevron sits apart from the label and the count '+label+': '+JSON.stringify(g));
  assert.ok(g.fold.width>=tap[0]&&g.fold.height>=tap[1],'the chevron has a tap target '+label+': '+g.fold.width+'x'+g.fold.height);
+ assert.ok(Math.abs((g.chev.left+g.chev.right)/2-(g.fold.left+g.fold.right)/2)<=1&&Math.abs((g.chev.top+g.chev.bottom)/2-(g.fold.top+g.fold.bottom)/2)<=1,'the chevron is centred in its box (and its hover) '+label+': '+JSON.stringify([g.chev,g.fold]));
  await page.waitForFunction(()=>getComputedStyle(document.querySelector('#graph-fold')).opacity==='1')};  // folded, the chevron shows (its fade can take a while on a busy computer)
 
 // The desktop layout (from 1024px): a fixed sidebar with the tabs as rows, the cards as a list by section (Done folded,
@@ -68,9 +69,9 @@ try{
   // The cards by section; Done starts folded with its count, opens, and stays open after a reload
   const done=page.locator('[data-side-fold="done"]');assert.equal(await done.getAttribute('aria-expanded'),'false');assert.match(await done.textContent(),/Done\s*12/);
   assert.equal(await page.locator('#side-cards a').count(),12);
-  await done.click();assert.equal(await page.locator('#side-cards a').count(),24);
-  await page.locator('[data-side-fold="ready"]').click();assert.equal(await page.locator('#side-cards a').count(),20);
-  await page.reload();await page.locator('#side-cards a').first().waitFor();assert.equal(await page.locator('#side-cards a').count(),20,'folds are remembered');
+  await done.click();assert.equal(await page.locator('#side-cards a').count(),22,'Done opens on its 10 latest');
+  await page.locator('[data-side-fold="ready"]').click();assert.equal(await page.locator('#side-cards a').count(),18);
+  await page.reload();await page.locator('#side-cards a').first().waitFor();assert.equal(await page.locator('#side-cards a').count(),18,'folds are remembered');
   // Long titles fade at the edge and keep the full name as a tooltip
   const a=page.locator('#side-cards a').first();  // the fade is measured on the next frame, once the fonts are in (slower on macOS)
   await page.waitForFunction(()=>document.querySelector('#side-cards a')?.classList.contains('fade'));assert.match(await a.getAttribute('class')||'',/fade/);assert.match(await a.getAttribute('title'),/does not fit the sidebar/);
@@ -161,7 +162,7 @@ try{
   await page.locator('.side-sub a[data-graph-sub="projects"]').click();await page.waitForFunction(()=>location.hash==='#graph=projects');await page.locator('[data-graph-panel="projects"]').waitFor();assert.equal(await pane(),'projects');assert.equal(await lit(),'projects');
   await page.goBack();await page.waitForFunction(()=>location.hash==='#graph=orgs');await page.locator('[data-graph-panel="orgs"]').waitFor();assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
   await page.reload();await page.locator('[data-graph-panel="orgs"]').waitFor();await page.waitForTimeout(300);assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
-  assert.equal(await page.locator('#people-view .sub-tabs').count(),0,'no pills: the rows are the panes');
+  assert.equal(await page.locator('#people-view [data-graph-pane]').count(),0,'no pane pills: the rows are the panes');
   assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations');assert.equal(await page.locator('#page-head .page-sub').textContent(),'38 organisations');
   assert.equal(await page.locator('#page-head .page-crumb').textContent(),'Graph');
   // the row lights once the pane is drawn, a moment after the hash

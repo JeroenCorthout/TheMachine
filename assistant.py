@@ -681,6 +681,8 @@ def metadata_page(row, offset):
 
 REVIEW_SESSION_PREFIX = 'agent:main:assistant-review-signals-'
 REVIEW_TERMINAL = ('ok', 'error', 'aborted', 'lost', 'timed_out')
+# The longest turn message the runner (preparation-run.mjs) starts; it refuses longer ones before the Gateway sees them.
+PROMPT_LIMIT = 60000
 PREVIEW_DAYS = 7  # what `assistant preview` reviews on a new install
 GRAPH_CHECK_SECONDS = 60  # how often the graph worker looks for new organisation profiles
 # The first look (App.first_look): starts once no new signal came in for this long, tried at most this often, this far apart
@@ -5423,7 +5425,7 @@ class Store:
         if resume_action and old:action_id=old['action_id']
         # New work replaces a confirmed final step that never saved its result. It may have
         # gone through already, so a later Confirm checks the source first, never resubmits blindly.
-        for left in db.execute("SELECT id,payload FROM action_jobs WHERE suggestion_id=? AND status='local_preparation' AND id IS NOT ?",(suggestion_id,action_id)).fetchall():
+        for left in db.execute("SELECT id,payload FROM action_jobs WHERE suggestion_id=? AND status IN ('local_preparation','paused') AND id IS NOT ?",(suggestion_id,action_id)).fetchall():
             payload=json.loads(left['payload'])
             if payload['kind']!='finish':continue
             payload['finish_result']={'state':'uncertain','body':'Replaced by new work before its result was saved.','at':now()}
@@ -5432,6 +5434,8 @@ class Store:
                    (suggestion_id,decision_id,uuid.uuid4().hex,now(),now()))
         db.execute('UPDATE preparations SET session_job_id=coalesce(?,job_id) WHERE suggestion_id=?',(session_job_id,suggestion_id))
         db.execute('UPDATE preparations SET action_id=? WHERE suggestion_id=?',(action_id,suggestion_id))
+        if action_id:  # the same approved step carries on (Try again, the end of a snooze, Undo, Reopen)
+            db.execute("UPDATE action_jobs SET status='local_preparation',updated_at=? WHERE id=? AND status='paused'",(now(),action_id))
 
     def decide(self, suggestion_id, choice, feedback, decision_id, source, snooze_hours=24, snoozed_until=None, snooze_option=None, verified_terminal_job=None, work=False):
         with self.connect() as db:
@@ -5608,8 +5612,9 @@ class Store:
                 db.execute("UPDATE preparations SET status='cancelled' WHERE suggestion_id=?",(suggestion_id,))
             self.queue_preparation(db,suggestion_id,decision_id,resume_action=choice=='accept' and row['status']=='snoozed')
         elif status in ('completed','rejected','snoozed'):
-            # Stop unfinished work; a finished preparation stays recorded as done.
+            # Stop unfinished work; a finished preparation stays recorded as done. Its confirmed step waits, paused.
             db.execute("UPDATE preparations SET status='cancelled',updated_at=? WHERE suggestion_id=? AND status!='done'",(now(),suggestion_id))
+            pause_idle_steps(db,suggestion_id)
         if choice in ['reject','complete']:
             db.execute("UPDATE deliveries SET status='cancelled',reminder=0 WHERE suggestion_id=? AND status='queued'",(suggestion_id,))
         return {'status': status, 'snoozed_until': until, 'note': 'Preference saved. Acceptance does not execute or authorize an unspecified external action.'}
@@ -5754,7 +5759,7 @@ class Store:
                 payload=json.loads(chosen['payload']);payload['finish_result']={'state':state,'body':body,'at':now()}
                 db.execute('UPDATE action_jobs SET status=?,payload=?,updated_at=? WHERE id=?',
                            ({'completed':'done','not_performed':'needs_input','uncertain':'finish_uncertain'}[state],encoded(payload),now(),chosen['id']))
-            db.execute("UPDATE action_jobs SET status='done',updated_at=? WHERE suggestion_id=? AND status='local_preparation' AND json_extract(payload,'$.kind')='prepare'",(now(),suggestion_id))
+            db.execute("UPDATE action_jobs SET status='done',updated_at=? WHERE suggestion_id=? AND status IN ('local_preparation','paused') AND json_extract(payload,'$.kind')='prepare'",(now(),suggestion_id))
             db.execute("UPDATE suggestions SET body=?,status='prepared',next_action=?,outcome=? WHERE id=?", (body[:5000],action_json,encoded(outcome) if outcome else None,suggestion_id))
             if title and current_title(row, title) != row['title']:
                 db.execute('UPDATE suggestions SET title=? WHERE id=?', (title, suggestion_id))  # the new notification and the edited message carry it
@@ -5795,7 +5800,7 @@ class Store:
             if lock:raise ValueError(lock)
             # A final step that ran, or whose outcome is still unknown, may already have gone out:
             # its text stays as confirmed, so a retry checks the source instead of posting other text.
-            if action['kind']=='finish' and db.execute("SELECT 1 FROM action_jobs WHERE suggestion_id=? AND revision=? AND status IN ('local_preparation','finish_uncertain','done')",(suggestion_id,revision)).fetchone():
+            if action['kind']=='finish' and db.execute("SELECT 1 FROM action_jobs WHERE suggestion_id=? AND revision=? AND status IN ('local_preparation','paused','finish_uncertain','done')",(suggestion_id,revision)).fetchone():
                 raise ValueError('This step already ran or is being checked. Use its current buttons.')
             if action['kind']=='finish':subject=None
             revised=next_actions.revise(action,subject,body)
@@ -5838,7 +5843,7 @@ class Store:
             if action['kind'] in ('prepare','finish') and db.execute("SELECT 1 FROM action_jobs WHERE suggestion_id=? AND status IN ('sending','uncertain')",(suggestion_id,)).fetchone():
                 raise ValueError('An earlier send is still being checked. Wait for that outcome before changing the result.')
             previous=db.execute('SELECT * FROM action_jobs WHERE suggestion_id=? AND revision=?',(suggestion_id,revision)).fetchone()
-            if previous and action['kind'] in ('prepare','finish') and previous['status'] in ('needs_input','finish_uncertain','cancelled','failed','blocked') and previous['approval_id']!=approval_id:
+            if previous and action['kind'] in ('prepare','finish') and previous['status'] in ('needs_input','finish_uncertain','cancelled','failed','blocked','paused') and previous['approval_id']!=approval_id:
                 # The same approved step resumes, not a new operation. An unknown outcome
                 # starts with reconciliation of that exact step, never a blind new submission.
                 db.execute("UPDATE action_jobs SET status='local_preparation',approval_id=?,source=?,updated_at=? WHERE id=?",(approval_id,source,now(),previous['id']))
@@ -5948,6 +5953,7 @@ class Store:
             # An empty list says the run asks nothing (ask_blocked); NULL is a blocker from before runs named questions.
             db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,questions=?,updated_at=? WHERE suggestion_id=?",
                        (reason,(details or '').strip() or None,encoded(questions),now(),suggestion_id))
+            pause_idle_steps(db,suggestion_id)  # nothing runs now: its confirmed step waits for Try again or an answer
             db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(suggestion_id,))
         return {'status':'blocked','reason':reason}
 
@@ -6023,6 +6029,9 @@ class Store:
             # The draft Telegram shows in full on the card, so its Send there confirms directly (card_draft).
             shown=card_draft({**suggestion,**extra})
             if shown and shown['full']:extra['card_send']=shown['action']['revision']
+        if suggestion.get('status') not in ('completed','rejected'):
+            stopped=stopped_step(db,suggestion)
+            if stopped:extra['step_stopped']=stopped
         prompt=db.execute('SELECT status,error FROM feedback_prompts WHERE request_id=?',(suggestion.get('feedback_request_id'),)).fetchone()
         if prompt:extra['change_prompt']=dict(prompt)
         job=db.execute('SELECT job_id,status,reason FROM preparations WHERE suggestion_id=?',(suggestion['id'],)).fetchone()
@@ -6123,6 +6132,72 @@ class Store:
                                              dt.datetime.fromisoformat(run['started_at'])).total_seconds()))
         return run
 
+    def card_views(self, db, cards, jobs=True):
+        """What the dashboard shows on cards beyond their row: the status payload and the Done pages alike. jobs=False
+        does the first half (labels, people, feedback); jobs=True the rest (preparations, results)."""
+        if not jobs:
+            labels = {r['suggestion_id']: {'accept': 'Add to ' + r['target_name'] if r['target_id'] else 'Create skill', 'reject': 'Not now'}
+                      for r in db.execute("SELECT suggestion_id,target_id,target_name FROM skill_clusters WHERE status IN ('pending','declined')")}
+            for card in cards:
+                if card['id'] in labels:
+                    card['labels'] = labels[card['id']]
+            # Written requests belong on the card too, even after preparation
+            # or a later button click, and beyond the recent-feedback limit.
+            for suggestion in cards:
+                if suggestion['status'] not in ('completed', 'rejected'):  # who it's about, to rank open cards by
+                    try:
+                        suggestion['people'], suggestion['weight'] = graph.card_people(db, json.loads(suggestion['event_ids'] or '[]'))
+                    except (sqlite3.Error, ValueError, TypeError):
+                        pass
+                if suggestion.get('next_action'):
+                    suggestion['next_action']=json.loads(suggestion['next_action'])
+                prompt=db.execute('SELECT status,error FROM feedback_prompts WHERE request_id=?',(suggestion.get('feedback_request_id'),)).fetchone()
+                if prompt:suggestion['change_prompt']=dict(prompt)
+                feedback = db.execute("SELECT id,feedback,choice,created_at,source FROM decisions WHERE suggestion_id=? AND trim(feedback)<>'' AND source IN ('telegram','dashboard') AND id NOT IN (SELECT decision_id FROM decision_annotations) ORDER BY created_at DESC,rowid DESC LIMIT 1", (suggestion['id'],)).fetchone()
+                suggestion['latest_feedback'] = dict(feedback) if feedback else None
+            return
+        few = len(cards) <= 200  # a Done page: only its own; the status payload: all at once
+        found={r['suggestion_id']:dict(r) for r in db.execute('SELECT p.*,d.choice cause FROM preparations p LEFT JOIN decisions d ON d.id=p.decision_id'
+                                                              +(' WHERE p.suggestion_id IN ('+','.join('?' for _ in cards)+')' if few else ''),[c['id'] for c in cards] if few else [])} if cards else {}
+        for suggestion in cards:
+            job=found.get(suggestion['id'])
+            if job: suggestion.update(preparation_status=job['status'],preparation_reason=job['reason'],preparation_error=job['error'],
+                                      preparation_details=job['details'],preparation_started_at=job['started_at'],preparation_retried=job['auto_retries']>0,
+                                      preparation_questions=blocker_questions(job.get('questions')),preparation_no_questions=job.get('questions')=='[]',
+                                      preparation_cause=job.get('cause'))
+            suggestion.update(self.suggestion_result(suggestion, db))
+
+    def done_rows(self, db, titles=False):
+        """Every done or dismissed card, the latest closed first, with its scope: light rows to count, filter and page."""
+        rows = db.execute("SELECT s.id," + ("s.title," if titles else "") + "s.account_ids,coalesce((SELECT max(d.created_at) FROM decisions d WHERE d.suggestion_id=s.id AND d.choice IN ('complete','reject')),s.created_at) closed_at "
+                          "FROM suggestions s WHERE s.status IN ('completed','rejected') ORDER BY closed_at DESC,s.id").fetchall()
+        return [{'id': r['id'], 'title': (r['title'] or '') if titles else '', 'closed_at': r['closed_at'],
+                 'scope': suggestion_scope(r['account_ids'], self.accounts) if getattr(self, 'accounts', None) and r['account_ids'] is not None else None} for r in rows]
+
+    def done_counts(self, db):
+        rows = self.done_rows(db)
+        return {'all': len(rows), 'work': sum(r['scope'] == 'work' for r in rows), 'personal': sum(r['scope'] == 'personal' for r in rows)}
+
+    def done_page(self, cursor=0, limit=30, query='', scope=''):
+        """A page of the Done list, the latest closed first, for the main pane and the sidebar; query matches card titles
+        (every done card, not only the ones loaded), scope is work or personal."""
+        offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit), 50))
+        words = [w for w in str(query or '').casefold().split() if w]
+        with self.connect() as db:
+            rows = [r for r in self.done_rows(db, titles=bool(words)) if (scope not in ('work', 'personal') or r['scope'] == scope)
+                    and all(w in r['title'].casefold() for w in words)]
+            ids = [r['id'] for r in rows[offset:offset + limit]]
+            by_id = {r['id']: dict(r) for r in db.execute('SELECT * FROM suggestions WHERE id IN (' + ','.join('?' for _ in ids) + ')', ids)} if ids else {}
+            cards = [by_id[i] for i in ids if i in by_id]
+            closed = {r['id']: r for r in rows[offset:offset + limit]}
+            self.card_views(db, cards, jobs=False)
+            self.card_views(db, cards, jobs=True)
+            for card in cards:
+                card['closed_at'] = closed[card['id']]['closed_at']
+                if closed[card['id']]['scope']:
+                    card['scope'] = closed[card['id']]['scope']
+        return {'cards': cards, 'next': str(offset + limit) if len(rows) > offset + limit else None, 'total': len(rows)}
+
     def snapshot(self, accounts):
         promises = self.promises()
         with self.connect() as db:
@@ -6147,25 +6222,9 @@ class Store:
                 result['condensed'] = {'at': last['at'], 'notes': db.execute("SELECT count(*) FROM facts WHERE merged_into IS NOT NULL AND substr(removed_at,1,10)=?", (day,)).fetchone()[0]}
             # Keep outstanding items visible even after a long completed history.
             result['suggestions'] = [dict(r) for r in db.execute("SELECT * FROM suggestions WHERE status NOT IN ('completed','rejected') OR id IN (SELECT id FROM suggestions WHERE status IN ('completed','rejected') ORDER BY created_at DESC LIMIT 100) ORDER BY created_at DESC")]
-            labels = {r['suggestion_id']: {'accept': 'Add to ' + r['target_name'] if r['target_id'] else 'Create skill', 'reject': 'Not now'}
-                      for r in db.execute("SELECT suggestion_id,target_id,target_name FROM skill_clusters WHERE status IN ('pending','declined')")}
-            for card in result['suggestions']:
-                if card['id'] in labels:
-                    card['labels'] = labels[card['id']]
-            # Written requests belong on the card too, even after preparation
-            # or a later button click, and beyond the recent-feedback limit.
-            for suggestion in result['suggestions']:
-                if suggestion['status'] not in ('completed', 'rejected'):  # who it's about, to rank open cards by
-                    try:
-                        suggestion['people'], suggestion['weight'] = graph.card_people(db, json.loads(suggestion['event_ids'] or '[]'))
-                    except (sqlite3.Error, ValueError, TypeError):
-                        pass
-                if suggestion.get('next_action'):
-                    suggestion['next_action']=json.loads(suggestion['next_action'])
-                prompt=db.execute('SELECT status,error FROM feedback_prompts WHERE request_id=?',(suggestion.get('feedback_request_id'),)).fetchone()
-                if prompt:suggestion['change_prompt']=dict(prompt)
-                feedback = db.execute("SELECT id,feedback,choice,created_at,source FROM decisions WHERE suggestion_id=? AND trim(feedback)<>'' AND source IN ('telegram','dashboard') AND id NOT IN (SELECT decision_id FROM decision_annotations) ORDER BY created_at DESC,rowid DESC LIMIT 1", (suggestion['id'],)).fetchone()
-                suggestion['latest_feedback'] = dict(feedback) if feedback else None
+            self.card_views(db, result['suggestions'], jobs=False)
+            # How many cards are done or dismissed, per scope: the Done lists' counts; they load the rest a page at a time
+            result['done_counts'] = self.done_counts(db)
             result['suggestion_counts'] = {r['status']: r['count'] for r in db.execute('SELECT status,count(*) count FROM suggestions GROUP BY status')}
             try:  # roles waiting in Graph, Who's who: the Graph tab's badge
                 result['graph_waiting'] = graph.waiting(db)
@@ -6201,14 +6260,7 @@ class Store:
                                              **(dict(row) if row else {}), **dict(counts), **channel_health})
             # Newest first: the dashboard shows the top few and says when each happened.
             result['deliveries'] = [dict(r) for r in db.execute('SELECT * FROM deliveries ORDER BY updated_at DESC,rowid DESC')]
-            jobs={r['suggestion_id']:dict(r) for r in db.execute('SELECT p.*,d.choice cause FROM preparations p LEFT JOIN decisions d ON d.id=p.decision_id')}
-            for suggestion in result['suggestions']:
-                job=jobs.get(suggestion['id'])
-                if job: suggestion.update(preparation_status=job['status'],preparation_reason=job['reason'],preparation_error=job['error'],
-                                          preparation_details=job['details'],preparation_started_at=job['started_at'],preparation_retried=job['auto_retries']>0,
-                                          preparation_questions=blocker_questions(job.get('questions')),preparation_no_questions=job.get('questions')=='[]',
-                                          preparation_cause=job.get('cause'))
-                suggestion.update(self.suggestion_result(suggestion, db))
+            self.card_views(db, result['suggestions'], jobs=True)
             counts = db.execute('SELECT count(*) total,sum(analyzed_version<version) pending,sum(analyzed_version=0) first_review,coalesce(sum(analyzed_version<version AND deferrals>=?),0) set_aside FROM events', (SET_ASIDE_AFTER,)).fetchone()
             result['review_health'] = {**dict(counts), 'last_completed': db.execute("SELECT max(finished_at) FROM analyses WHERE status='complete'").fetchone()[0]}
             result['review_runs'] = []
@@ -8324,7 +8376,7 @@ def owner_reports_handled(text):
 
 
 REVIEW_FAILURES = {'runtime_error','runtime_timeout','runtime_aborted','runtime_lost',
-                   'model_idle_timeout','bridge_error','rate_limited','connection_error'}
+                   'model_idle_timeout','bridge_error','rate_limited','connection_error','prompt_too_long'}
 REVIEW_FAILURE_PHASES = {'runtime','model','bridge','connection','queue','provider','tool','gateway_draining'}
 
 
@@ -8415,11 +8467,72 @@ def card(row):
             pass
     source = ' · '.join(x for x in (due, row.get('source_line'), tag) if x)
     source = ('\n\n' + source) if source else ''
-    return ('**' + title + '**\n\n' + row['body'] + source + ('\n\n' + status if status else '')).strip()
+    body = row.get('step_stopped') or row['body']  # a confirmed step that didn't go through: never the earlier "ready" text
+    return ('**' + title + '**\n\n' + body + source + ('\n\n' + status if status else '')).strip()
 
 
 CARD_DRAFT_KINDS = ('email', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')
-ACTION_BUSY = ('queued', 'sending', 'sent', 'uncertain', 'local_preparation', 'undoing', 'undone')
+ACTION_BUSY = ('queued', 'sending', 'sent', 'uncertain', 'local_preparation', 'paused', 'undoing', 'undone')
+# What is really working right now, for tools and for a check before a restart or an update (`assistant busy`).
+# A confirmed step whose preparation stopped (blocked, timed out, cancelled by a snooze or close) is 'paused', not here.
+ACTION_WORKING = ('queued', 'sending', 'undoing', 'local_preparation')
+PREPARATION_WORKING = ('starting', 'running')
+
+
+def pause_idle_steps(db, suggestion_id=None, stamp=None):
+    """A confirmed step (a finish or a next preparation) is 'local_preparation' only while a preparation of its card is
+    queued or running. When that preparation stops without saving a result (it is blocked, it timed out, a snooze or a
+    close cancelled it), the step is 'paused': still approved, nothing runs, so it never counts as active work. Try
+    again, the end of a snooze, Undo or Reopen resume it (queue_preparation, and admission in preparation_step)."""
+    return db.execute("""UPDATE action_jobs SET status='paused',updated_at=? WHERE status='local_preparation' AND (? IS NULL OR suggestion_id=?)
+        AND NOT EXISTS(SELECT 1 FROM preparations p WHERE p.suggestion_id=action_jobs.suggestion_id AND p.status IN ('queued','starting','running'))""",
+        (stamp or now(), suggestion_id, suggestion_id)).rowcount
+
+
+def stopped_step(db, suggestion):
+    """One true line for a card whose confirmed step stopped without going through (paused: its run was blocked, timed
+    out, or a snooze or close cancelled it). It replaces the card's earlier result text, which still reads as if the step
+    were ready or done: what didn't happen, why in a few words, and when it carries on. None otherwise."""
+    rows = db.execute("SELECT payload FROM action_jobs WHERE suggestion_id=? AND status='paused' ORDER BY updated_at DESC", (suggestion['id'],)).fetchall()
+    if not rows:
+        return None
+    step = json.loads(rows[0]['payload'])
+    label = ' '.join(str(step.get('label') or '').split())[:80] or 'The next step'
+    prep = db.execute('SELECT status,reason,error FROM preparations WHERE suggestion_id=?', (suggestion['id'],)).fetchone()
+    why = ''
+    if prep and prep['error'] in ('completion_unconfirmed', 'ai_run_timed_out'):
+        why = 'it ran too long'
+    elif prep and prep['error']:
+        why = 'the run failed'
+    elif prep and prep['reason']:
+        why = re.split(r'[.;:!?]|,? so |,? but | because ', str(prep['reason']).strip(), maxsplit=1)[0].strip()
+        why = why[:1].lower() + why[1:] if why[1:2] and why[1:2].islower() else why
+        why = why if len(why) <= 70 else ''
+    line = ('Not done yet: ' if step.get('kind') == 'finish' else 'Not prepared yet: ') + label + (f' ({why}).' if why else '.')
+    if suggestion.get('status') == 'snoozed' and suggestion.get('snoozed_until'):
+        back = dt.datetime.fromisoformat(suggestion['snoozed_until']).astimezone(local_tz())
+        today = dt.datetime.now(local_tz()).date()
+        at = back.strftime('%H:%M') if back.date() == today else back.strftime('%H:%M tomorrow') if (back.date() - today).days == 1 else back.strftime('%a %-d %b, %H:%M')
+        line += f' It carries on when the card comes back, {at}.'
+    elif prep and prep['status'] == 'blocked':
+        line += ' Try again carries it on.'
+    return line
+
+
+def active_work(db):
+    """Work a restart or an update would cut off: agent jobs that run, sends under way, confirmed steps being worked on
+    and preparations that started. Paused steps, blocked or queued preparations and finished work are not in it."""
+    found = {}
+    for name, sql, args in (
+            ('agent_jobs', 'SELECT id,suggestion_id,status FROM agent_jobs WHERE status IN (%s)', agent_jobs.ACTIVE),
+            ('action_jobs', 'SELECT id,suggestion_id,status FROM action_jobs WHERE status IN (%s)', ACTION_WORKING),
+            ('preparations', 'SELECT job_id id,suggestion_id,status FROM preparations WHERE status IN (%s)', PREPARATION_WORKING)):
+        try:
+            rows = db.execute(sql % ','.join('?' for _ in args), args).fetchall()
+        except sqlite3.OperationalError:  # a table this install doesn't have yet
+            rows = []
+        found[name] = [dict(zip(('id', 'suggestion_id', 'status'), tuple(r))) for r in rows]
+    return found
 
 
 def action_busy(state):
@@ -9029,7 +9142,8 @@ def push_notify(store, config, row, sender=None):
     if row.get('_result_notice'):
         ready = row['status'] == 'prepared'
         signin = not ready and (row.get('preparation_browser') or {}).get('signin_url')
-        payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ') + row['title'],
+        # A run the service stopped (a timeout, two failures) asks nothing: Stuck, as on the card
+        payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Stuck: ' if row.get('preparation_error') else 'Needs your help: ') + row['title'],
                    'body': plain(strip_result_links(row['body']) if ready else row.get('preparation_reason') or ''),
                    'url': signin or root + '#result=' + row['id']}
     else:
@@ -9092,7 +9206,7 @@ def telegram(config, row, action, message_id=None):
         ready=row['status']=='prepared'
         root='https://'+config['dashboard_host']+config.get('dashboard_path','/')
         signin=not ready and (row.get('preparation_browser') or {}).get('signin_url')
-        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if ask_blocked(row) or row.get('preparation_browser') else 'Stuck: ')+'**'+title+'**'
+        message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if ask_blocked(row) or (row.get('preparation_browser') and not row.get('preparation_error')) else 'Stuck: ')+'**'+title+'**'
         message+='\n\n[View '+('result' if ready else 'task')+']('+root+'#result='+row['id']+')'
         # A sign-in blocker opens the dashboard's sign-in for this task; once in, the task carries on by itself.
         blocks=[{'type':'buttons','buttons':[{'label':'Sign in','action':{'type':'url','url':signin}}]}] if signin else []
@@ -9934,7 +10048,7 @@ def skills_find_prompt(run_id, evidence, config=None, accounts=None):
     lines = [f"- {i['key']}: {i['name']} ({i['group']}{', licence does not allow import' if i.get('blocked') else ''}"
              f"{', already here' if i.get('here') else ''}): {i['description'][:140]}" for i in evidence.get('items') or []]
     listed = ''
-    for line in lines:  # the whole turn's message stays under the Gateway's 20,000 characters
+    for line in lines:  # the whole turn's message stays well under PROMPT_LIMIT
         if len(listed) + len(line) > 9000:
             listed += f'\n- … and {len(lines) - listed.count(chr(10)) - 1} more'
             break
@@ -12252,6 +12366,8 @@ class App:
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.settle_ahead(db)
+            # A confirmed step no preparation works on any more is paused, also one left from before paused existed.
+            pause_idle_steps(db)
             for row in db.execute("SELECT id FROM suggestions WHERE status IN ('accepted','instructions') AND NOT EXISTS(SELECT 1 FROM preparations WHERE suggestion_id=suggestions.id)").fetchall():
                 decision=db.execute("SELECT id FROM decisions WHERE suggestion_id=? AND choice IN ('accept','other','reopen') AND id NOT IN (SELECT decision_id FROM decision_annotations) ORDER BY created_at DESC LIMIT 1",(row['id'],)).fetchone()
                 if decision:self.store.queue_preparation(db,row['id'],decision['id'])
@@ -12274,6 +12390,8 @@ class App:
                 if job['status']=='queued':
                     db.execute("UPDATE preparations SET status='starting',updated_at=?,started_at=coalesce(started_at,?),attempts=attempts+1 WHERE job_id=?",(now(),now(),job['job_id']))
                     db.execute("INSERT OR IGNORE INTO preparation_runs(job_id,suggestion_id,session_job_id,status,started_at) VALUES(?,?,?,'starting',?)",(job['job_id'],job['suggestion_id'],job.get('session_job_id') or job['job_id'],now()))
+                    if job.get('action_id'):  # its paused confirmed step is worked on again (also after an automatic retry)
+                        db.execute("UPDATE action_jobs SET status='local_preparation',updated_at=? WHERE id=? AND status='paused'",(now(),job['action_id']))
                 jobs.append(job)
         for job in jobs:
             try:self.preparation_run_step(job,runner)
@@ -12310,26 +12428,26 @@ class App:
                                                       self.store.facts_for(job['suggestion_id'],'draft',known),style)
                 try:
                     lines=self.graph_lines(job['suggestion_id'])
-                    if len(request['message'])+len(lines)<19000:request['message']+=lines  # the runner refuses over 20,000
+                    if len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
                 except Exception as error:LOG.error('graph lines error=%s',type(error).__name__)
                 if getattr(self, 'fleet', None):
                     try:
                         lines=self.fleet.lines(job['suggestion_id'])
-                        if len(request['message'])+len(lines)<19000:request['message']+=lines
+                        if len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
                     except Exception as error:LOG.error('fleet lines error=%s',type(error).__name__)
                 if embeddings.settings(self.config):
                     try:
                         lines=self.related_lines(job['suggestion_id'])
-                        if len(request['message'])+len(lines)<19500:request['message']+=lines  # the runner refuses over 20,000
+                        if len(request['message'])+len(lines)<PROMPT_LIMIT-500:request['message']+=lines
                     except Exception as error:LOG.error('related error=%s',type(error).__name__)
                 if getattr(self,'skills',None) and not job.get('finish'):
                     try:  # "There's a skill for this": an installed one that isn't ready, or one on ClawHub (the agent can search it)
                         lines=self.skills.hint_prompt(clawhub=True)
-                        if lines and len(request['message'])+len(lines)<18500:request['message']+='\n\n'+lines
+                        if lines and len(request['message'])+len(lines)<PROMPT_LIMIT-1500:request['message']+='\n\n'+lines
                     except Exception as error:LOG.error('skill hint error=%s',type(error).__name__)
             try:
                 lines=self.agent_work(job['suggestion_id'])
-                if len(request['message'])+len(lines)<19000:request['message']+=lines  # the runner refuses over 20,000
+                if len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
             except Exception as error:LOG.error('agent work error=%s',type(error).__name__)
             if request['session_job_id'] != job['job_id']:
                 request['message']+='\nThis continues the SAME session, with earlier work in context. Before changing anything in an app, read assistant_signals preparation_history (offset 0, then any next_offset): a compact list of earlier calls. Summaries are shortened: when reconciling a call, request preparation_history with its call_ref, offset 0 and any next_offset for exact saved parameters and receipts. If detail_complete=false, check the retained transcript or original app for the missing suffix. Do not repeat an external step that already happened; check uncertain ones against the app first. If the owner\'s latest note asks for something different (a rewrite, another approach), do that. Saving your result or a blocker is always allowed.'
@@ -12365,11 +12483,13 @@ class App:
                 details={'run_ended_without_preparation':'The AI run ended without saving a result or a blocker.',
                          'ai_run_timed_out':'The AI run hit its time limit.'}.get(error,'The AI run failed (often a model timeout or overload).')+' The automatic retry ended the same way.'
                 db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,error=?,updated_at=? WHERE job_id=?",(reason,details,error,now(),job['job_id']))
+                pause_idle_steps(db,job['suggestion_id'])
                 db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(job['suggestion_id'],))
             elif (dt.datetime.fromisoformat(now())-dt.datetime.fromisoformat(current['started_at'] or current['created_at'])).total_seconds()>2100:
                 db.execute("UPDATE preparations SET status='blocked',reason=?,details=?,error='completion_unconfirmed',updated_at=? WHERE job_id=?",
                            ('This is taking too long. I’ll stop that run and try once more.' if not current['auto_retries'] else 'This didn’t finish, also on the second try. Tap Try again, or change the request.',
                             'No confirmed completion after 25 minutes plus 10 minutes for connection outages. The old run is stopped and confirmed ended before anything restarts.',now(),job['job_id']))
+                pause_idle_steps(db,job['suggestion_id'])
                 db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1,error=NULL WHERE suggestion_id=? AND status IN ('queued','sent','uncertain')",(job['suggestion_id'],))
             elif status=='unavailable':
                 # Keep the same admission ID and original deadline through short outages.
@@ -13134,7 +13254,7 @@ class App:
                              "capitals, punctuation, emoji, formality), update that channel's voice: remember_fact kind=voice, channel, " + VOICE_TEXT + ", "
                              "edit_id. Skip differences in content or facts.\n"
                              + (f"Current voices:\n{voices}\n" if voices else '') + lines)
-                    if len(request['message']) + len(block) < 18000:  # the runner refuses over 20,000
+                    if len(request['message']) + len(block) < PROMPT_LIMIT - 2000:
                         request['message'] += block
                         offered_edits += re.findall(r'\(edit_id ([^)]+)\)', lines)
             except Exception as error:
@@ -13147,7 +13267,7 @@ class App:
                              "its card, work it into that channel's voice: remember_fact kind=voice, channel, " + VOICE_TEXT + ", "
                              "decision_id; how a kind of task is done is kind=draft. Skip notes that only fit that one message.\n"
                              + (f"Current voices:\n{voices}\n" if voices else '') + lines)
-                    if len(request['message']) + len(block) < 18000:
+                    if len(request['message']) + len(block) < PROMPT_LIMIT - 2000:
                         request['message'] += block
                         offered_edits += ['note:' + value for value in re.findall(r'\(decision_id ([^)]+)\)', lines)]
             except Exception as error:
@@ -13174,14 +13294,14 @@ class App:
                               "text=<SKILL.md instructions that keep everything those notes say>, replaces=[their ids], and skill=<the name of one of "
                               "the owner's own skills it belongs in, when one clearly fits; else leave it out for a new skill>. The owner decides on a card. "
                               + (f"Their own skills: {own}." if own else "They have no skills of their own yet."))
-                    if len(request['message']) + len(block) < 18000:
+                    if len(request['message']) + len(block) < PROMPT_LIMIT - 2000:
                         request['message'] += block
                         offered_edits.append('condense:' + now()[:10])
             except Exception as error:
                 LOG.error('condense error=%s', type(error).__name__)
             try:  # "There's a skill for this": installed skills that aren't ready here, while there is room this week
                 hint = self.skills.hint_prompt() if getattr(self, 'skills', None) else ''
-                if hint and len(request['message']) + len(hint) < 18500:  # the runner refuses over 20,000
+                if hint and len(request['message']) + len(hint) < PROMPT_LIMIT - 1500:
                     request['message'] += '\n\n' + hint
             except Exception as error:
                 LOG.error('skill hint error=%s', type(error).__name__)
@@ -13194,7 +13314,11 @@ class App:
                 except Exception as error:
                     LOG.error('fleet teammates error=%s', type(error).__name__)
         # Offering learning context is not delivery: a Gateway outage must leave it eligible on retry.
-        receipt = runner(request)
+        if len(request.get('message') or '') > PROMPT_LIMIT:  # the runner would refuse it on every retry: say so and end the run
+            LOG.error('review prompt too long chars=%s limit=%s', len(request['message']), PROMPT_LIMIT)
+            receipt = {'status': 'error', 'error': 'prompt_too_long', 'error_phase': 'runtime'}
+        else:
+            receipt = runner(request)
         result = receipt.get('status', 'unavailable')
         with self.store.connect() as db:
             if result == 'admitted':
@@ -14078,6 +14202,19 @@ class App:
             result = graph.with_fleet(db, graph.overview(db, limit), marks)
             return {**result, 'changed': changed} if changed else result
 
+    def graph_find(self, query, cursor=0, limit=30):
+        """The Graph's search, a page at a time: every person, organisation and project that matches, strongest first."""
+        offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit), 50))
+        with self.store.connect() as db:
+            marks = self.graph_fleet_marks(db)
+            hits = graph.find(db, query, offset + limit + 1, also={k: m['name'] for k, m in marks.items() if m['name']})
+            found = [graph.node_view(r, graph.neighbours(db, r['id'], 6)) for r in hits[offset:offset + limit]]
+            return graph.with_fleet(db, {'found': found, 'next': str(offset + limit) if len(hits) > offset + limit else None}, marks)
+
+    def graph_list(self, name, sort='', cursor=0, limit=30):
+        with self.store.connect() as db:
+            return graph.with_fleet(db, graph.page(db, name, sort, cursor, limit), self.graph_fleet_marks(db))
+
     def account_view(self):
         """Settings, Account on a self-hosted Machine paired with the Network: its owner's account in short, from the
         control plane (fleet.Fleet.account). A hosted Machine's dashboard asks the control plane itself, with the owner's
@@ -14321,6 +14458,15 @@ class App:
                         self.output(200, found)
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'No such promise'})
+                elif path.path in ('/api/graph/list', '/api/cards/done'):  # the long lists, a page at a time
+                    args = {k: v[0] for k, v in urllib.parse.parse_qs(path.query).items()}
+                    try:
+                        if path.path == '/api/cards/done':
+                            self.output(200, app.store.done_page(args.get('cursor') or 0, args.get('limit') or 30, args.get('q', ''), args.get('scope', '')))
+                        else:
+                            self.output(200, app.graph_list(args.get('list', ''), args.get('sort', ''), args.get('cursor') or 0, args.get('limit') or 30))
+                    except (ValueError, sqlite3.OperationalError):
+                        self.output(400, {'error': 'Not a list'})
                 elif path.path == '/api/graph':
                     node = urllib.parse.parse_qs(path.query).get('node', [''])[0]
                     query = urllib.parse.parse_qs(path.query).get('q', [''])[0]
@@ -14344,7 +14490,7 @@ class App:
                             found.update(whos_who=mine.get('whos_who'), waiting=mine.get('waiting'), warmup=[])
                             self.output(200, found)
                         elif query.strip():
-                            self.output(200, app.graph_action({'query': query, 'limit': 20}))
+                            self.output(200, app.graph_find(query, urllib.parse.parse_qs(path.query).get('cursor', ['0'])[0] or 0))
                         elif node:
                             found = app.graph_action({'node_id': node, 'limit': 10, 'events': 120})  # a run of chat messages is one row
                             rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[int(line.split(' ', 1)[0]) for line in found['recent']])

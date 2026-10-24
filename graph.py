@@ -1297,7 +1297,8 @@ def overview(db, limit=12):
             'waiting': waiting(db),
             'warmup': hidden_list(db),
             'same_person': same_people(db),
-            'counts': counts(db)}
+            'counts': counts(db),
+            'list_counts': list_counts(db)}
 
 
 def counts(db):
@@ -1305,6 +1306,59 @@ def counts(db):
     found = dict(db.execute("SELECT kind,COUNT(*) FROM graph_nodes WHERE kind IN ('person','org') GROUP BY kind").fetchall())
     found['project'] = db.execute("SELECT COUNT(*) FROM graph_nodes WHERE kind='project' AND json_extract(info,'$.closed_at') IS NULL").fetchone()[0]
     return {kind: found.get(kind, 0) for kind in ('person', 'org', 'project')}
+
+
+def _week_ago(db):
+    state = db.execute('SELECT built_at FROM graph_state WHERE id=1').fetchone()
+    return ((parse_time(state['built_at']) if state else dt.datetime.now(dt.timezone.utc)) - dt.timedelta(days=7)).date().isoformat()
+
+
+# The lists the Graph panes show as tabs, each the whole list, strongest first: People (Closest, Gone quiet, New this
+# week), Organisations (Closest, Warm up) and Projects (Open, Done). The overview keeps its short lists for the agent.
+PAGED = {'people': ("kind='person'", ()), 'quiet': ("kind='person' AND quiet=1", ()),
+         'new': ("kind='person' AND signals<=3 AND last_at>=?", (_week_ago,)), 'orgs': ("kind='org'", ()),
+         'projects': ("kind='project' AND json_extract(info,'$.closed_at') IS NULL", ()),
+         'projects_done': ("kind='project' AND json_extract(info,'$.closed_at') IS NOT NULL", ())}
+
+
+def _paged_where(db, name):
+    where, args = PAGED[name]
+    return where, tuple(a(db) for a in args)
+
+
+STAGE = "CASE WHEN strength<0.3 THEN 3 WHEN trend IS NOT NULL AND trend<0.8 THEN 2 WHEN trend IS NULL OR trend>1.3 THEN 0 ELSE 1 END"
+SORTS = {'closest': 'strength DESC', 'last': 'last_at DESC', 'name': 'name COLLATE NOCASE', 'stage': STAGE + ',strength DESC'}
+DEFAULT_SORT = {'projects': 'last', 'projects_done': 'last'}
+
+
+def page(db, name, sort='', cursor=0, limit=30):
+    """One page of a Graph tab's list in the chosen order (closest, last contact, name, or a project's stage); the
+    cursor is where the page starts, next the cursor of the page after it, or None at the end."""
+    if name not in PAGED and name != 'warmup':
+        raise ValueError('list is one of ' + ', '.join([*PAGED, 'warmup']))
+    sort = sort if sort in SORTS and (sort != 'stage' or name.startswith('projects')) else DEFAULT_SORT.get(name, 'closest')
+    offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit), 50))
+    if name == 'warmup':
+        order = 'coalesce(name,domain) COLLATE NOCASE,domain' if sort == 'name' else 'created_at DESC,domain'
+        rows = [dict(r) for r in db.execute(f'SELECT domain,name,source,created_at FROM hidden_domains WHERE hidden=1 ORDER BY {order} LIMIT ? OFFSET ?',
+                                            (limit + 1, offset))]
+        items = rows[:limit]
+    else:
+        where, args = _paged_where(db, name)
+        rows = db.execute(f'SELECT * FROM graph_nodes WHERE {where} ORDER BY {SORTS[sort]},id LIMIT ? OFFSET ?', (*args, limit + 1, offset)).fetchall()
+        items = [node_view(r) for r in rows[:limit]]
+        if name.startswith('projects'):
+            for project in items:
+                project['people'] = [n['name'] for n in neighbours(db, project['id'], 8) if n['kind'] == 'person'][:4]
+    return {'items': items, 'sort': sort, 'next': str(offset + limit) if len(rows) > limit else None, 'total': list_counts(db)[name]}
+
+
+def list_counts(db):
+    """How long each Graph tab's list is, for its count; an empty tab is not shown."""
+    found = {name: db.execute(f'SELECT COUNT(*) FROM graph_nodes WHERE {where}', args).fetchone()[0]
+             for name, (where, args) in ((n, _paged_where(db, n)) for n in PAGED)}
+    found['warmup'] = db.execute('SELECT COUNT(*) FROM hidden_domains WHERE hidden=1').fetchone()[0]
+    return found
 
 
 def headline(db, node_id):

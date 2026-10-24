@@ -61,6 +61,20 @@ class FirstLook(unittest.TestCase):
         self.assertIsNone(self.state(60))  # once is enough
         self.assertIsNone(self.app.review_step(Runner()))
 
+    def test_a_review_prompt_over_the_runner_limit_ends_the_run_visibly_instead_of_retrying_as_unavailable(self):
+        self.store.commit_page('work', {}, [signal(f'm{n}', days_ago=3) for n in range(30)])
+        runner = Runner('admitted')
+        with self.later(4), patch.object(a, 'PROMPT_LIMIT', 100), self.assertLogs(a.LOG, 'ERROR'):
+            self.assertEqual(self.app.review_step(runner), 'error')
+        self.assertEqual(runner.requests, [])  # never sent: the runner would refuse it every time
+        run, = self.runs()
+        self.assertEqual((run['error'], run['last_error']), ('prompt_too_long', 'prompt_too_long'))
+        self.assertTrue(run['finished_at'])
+
+    def test_the_runner_and_the_service_agree_on_the_prompt_limit(self):
+        runner = open(a.ROOT / 'preparation-run.mjs').read()
+        self.assertIn(f'request.message.length>{a.PROMPT_LIMIT})', runner)
+
     def test_a_failed_first_look_is_tried_again_later_at_most_three_times(self):
         self.store.commit_page('work', {}, [signal('m1', days_ago=3)])
         for attempt in range(a.FIRST_LOOK_TRIES):

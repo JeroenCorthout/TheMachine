@@ -19,7 +19,14 @@ const cards=[
   outcome:JSON.stringify({state:'needs_you',needs:'check the message and send it'}),latest_feedback:note,
   next_actions:[{kind:'whatsapp',revision:'w1',label:'Send',account_id:'personal-whatsapp',chat_id:'32470000000@s.whatsapp.net',to_name:'Sam',body:'Hi Sam! We’d like ceiling speakers put in. Could you help?',max_length:4000}]},
  {id:'c3c3c3c3c3c3c3c3',title:'Answer the venue',body:'x',status:'instructions',scope:'work',created_at:now,event_ids:[3],
-  preparation_status:'blocked',preparation_reason:'I need one detail from you.',preparation_questions:[{question:'Which date suits you?'}]}];
+  preparation_status:'blocked',preparation_reason:'I need one detail from you.',preparation_questions:[{question:'Which date suits you?'}]},
+ // A run that hung in the browser and timed out: the service stopped it, nothing is asked. Stuck with Try again, not Needs your help.
+ {id:'d4d4d4d4d4d4d4d4',title:'Order the cable',body:'x',status:'accepted',scope:'work',created_at:now,event_ids:[4],
+  preparation_status:'blocked',preparation_reason:'This didn’t finish, also on the second try. Tap Try again, or change the request.',preparation_error:'completion_unconfirmed',
+  preparation_browser:{since:now,page:'https://shop.example.com/checkout',sign_in:false}},
+ // A snoozed card whose confirmed order didn't go through: one true line, never the earlier "ready at checkout"
+ {id:'e5e5e5e5e5e5e5e5',title:'Buy the cable',body:'Your cable is ready at checkout for €60.',status:'snoozed',snoozed_until:new Date(Date.now()+7*3600e3).toISOString(),scope:'personal',created_at:now,event_ids:[5],
+  step_stopped:'Not done yet: Order the cable (browser access is still failing). It carries on when the card comes back, 09:00.'}];
 const email={kind:'email',to:['sam@example.com'],subject:'Ceiling speakers',body:'Hi Sam, when can you do the speakers?',reply:false};
 const whatsapp={kind:'whatsapp',to:['Sam'],subject:'',body:'Hi Sam! We’d like ceiling speakers put in. Could you help?',reply:false};
 const items={
@@ -55,6 +62,13 @@ try{
   // A run that did ask still leads with Answer under Needs your help
   assert.equal((await card('c3c3c3c3c3c3c3c3').locator('.card-badges .chip').first().textContent()).trim(),'Needs your help');
   assert.equal(await card('c3c3c3c3c3c3c3c3').locator('[data-choice="answer"]').count(),1);
+  // A run the service stopped after browser steps (a timeout) is Stuck with Try again, never Needs your help
+  assert.equal((await card('d4d4d4d4d4d4d4d4').locator('.card-badges .chip').first().textContent()).trim(),'Stuck');
+  assert.equal(await card('d4d4d4d4d4d4d4d4').locator('[data-choice="retry"]').count(),1);
+  assert.equal(await card('d4d4d4d4d4d4d4d4').locator('[data-choice="answer"]').count(),0);
+  {const later=page.locator('summary,button,h2,h3',{hasText:'Coming back later'}).first();if(await later.count())await later.click();
+   const text=await card('e5e5e5e5e5e5e5e5').locator('.body').innerText();
+   assert.ok(text.includes('Not done yet: Order the cable'),text);assert.ok(!text.includes('ready at checkout'),text)}
   // The chat says what the card says, not Preparing
   for(const [id,want] of [['a1a1a1a1a1a1a1a1','Stuck'],['c3c3c3c3c3c3c3c3','Needs your help']]){
    await page.evaluate(id=>{location.hash='chat='+id},id);

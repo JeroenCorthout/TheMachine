@@ -12,6 +12,7 @@ import argparse
 import datetime as dt
 import importlib.util
 import json
+import sqlite3
 import os
 import sys
 import textwrap
@@ -790,6 +791,30 @@ def cmd_raw(config, args):
     out_json(call(config, args.action, json.loads(args.args) if args.args else {}))
 
 
+def cmd_busy(config, args):
+    """Work a restart or an update would cut off, read straight from the database (also while the service is down).
+    Exit status 0 when nothing runs, 3 when something does: port and update scripts rely on this state, not on age."""
+    path = Path(config['database']).expanduser()
+    try:
+        db = sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=15)
+        db.execute('PRAGMA busy_timeout=15000')
+        found = assistant.active_work(db)
+        db.close()
+    except sqlite3.Error as error:
+        raise CliError(f'Cannot read {path}: {error}') from None
+    busy = sum(len(rows) for rows in found.values())
+    if args.json:
+        out_json({'busy': busy, **found})
+    elif not busy:
+        print('Nothing running.')
+    else:
+        for name, rows in found.items():
+            for row in rows:
+                print(f"  {name:<13} {row['status']:<18} {row['id']} (task {row['suggestion_id']})")
+    if busy:
+        sys.exit(3)
+
+
 def parser():
     p = argparse.ArgumentParser(prog='assistant', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
                                 epilog='Examples:\n  assistant tasks\n  assistant show 7b61\n  assistant search "Acme"\n'
@@ -833,6 +858,7 @@ def parser():
     c.add_argument('--job', help='the preparation job id: saves under its attachments folder')
     c.add_argument('--open', help='a readable copy of an encrypted attachment saved earlier (with --job)')
     add('sources', 'Connection health per source', cmd_sources)
+    add('busy', 'What is running now (agent jobs, sends, preparations); exit status 3 while something runs, for scripts', cmd_busy)
     c = add('reviews', 'Review backlog and recent review runs', cmd_reviews)
     c.add_argument('--limit', type=int, default=10)
     c = add('feedback', 'Recent owner decisions and written feedback', cmd_feedback)
