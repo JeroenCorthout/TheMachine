@@ -868,6 +868,100 @@ def contact_photos_step(connect, now, limit=CONTACT_PHOTOS_PER_PASS, fetch=None)
     return saved
 
 
+# WhatsApp pictures: asked through the owner's always-on WhatsApp mirror (`wacli sync --follow
+# --profile-picture-budget N`), which owns the session; this Machine's own WhatsApp reads stay read-only. Only people
+# already in the graph without a photo, whose WhatsApp address the Machine has seen in a chat, at most 50 asks a day (the
+# mirror keeps its own daily cap too). Each picture is saved once here. Someone who has none, or hides it from the owner,
+# is asked again after 30 days. Nothing is sent to them: no message, read receipt or presence.
+WHATSAPP_PHOTOS_PER_DAY = 50
+WHATSAPP_PAUSE_HOURS = 6  # the mirror couldn't answer (off, older, restarting): try again later, not every pass
+WHATSAPP_SCHEMA = 'CREATE TABLE IF NOT EXISTS whatsapp_photo_asks(identifier TEXT PRIMARY KEY,asked_at TEXT NOT NULL,picture_id TEXT)'
+WHATSAPP_USER = re.compile(r'([0-9]{5,20})(?::[0-9]+)?@(s\.whatsapp\.net|lid)')
+WHATSAPP_SCAN = 5000  # group messages read to find the address of someone met only in groups
+
+
+def whatsapp_addresses(db, wanted, accounts):
+    """{'wa:<digits>': (account id, jid)} for the wanted people: the one-to-one chat first, else a group message
+    they sent (newest first)."""
+    found = {}
+    marks = ','.join('?' * len(accounts))
+    for (chat, account) in db.execute(f"SELECT DISTINCT json_extract(metadata,'$.chat_id'),account_id FROM events WHERE kind='whatsapp.message' "
+                                      f"AND account_id IN ({marks})", list(accounts)):
+        match = WHATSAPP_USER.fullmatch(str(chat or ''))
+        if match and 'wa:' + match[1] in wanted:
+            found.setdefault('wa:' + match[1], (account, match[1] + '@' + match[2]))
+    if len(found) < len(wanted):
+        rows = db.execute(f"SELECT metadata,account_id FROM events WHERE kind='whatsapp.message' AND account_id IN ({marks}) "
+                          f"AND json_extract(metadata,'$.chat_id') LIKE '%@g.us' ORDER BY occurred_at DESC LIMIT ?", [*accounts, WHATSAPP_SCAN])
+        for metadata, account in rows:
+            try:
+                sender = (json.loads(metadata) if isinstance(metadata, str) else metadata or {}).get('sender_id')
+            except (ValueError, AttributeError):
+                continue
+            match = WHATSAPP_USER.fullmatch(str(sender or ''))
+            if match and 'wa:' + match[1] in wanted:
+                found.setdefault('wa:' + match[1], (account, match[1] + '@' + match[2]))
+                if len(found) == len(wanted):
+                    break
+    return found
+
+
+def whatsapp_photos_step(connect, now, ask, accounts, limit=WHATSAPP_PHOTOS_PER_DAY, fetch=None):
+    """Asks the WhatsApp mirror for the pictures of people in the graph who have none, strongest first, within the day's
+    budget. ask(account id, jid) gives {'id', 'url'}, {} when they have none the owner can see, or None when the mirror
+    can't answer now (then nothing more is asked for a while). Returns how many pictures were saved."""
+    fetch = fetch or download_photo
+    accounts = [a for a in accounts if a]
+    if not accounts:
+        return 0
+    stamp = dt.datetime.fromisoformat(now)
+    today = stamp.astimezone(dt.timezone.utc).strftime('%Y-%m-%dT00:00:00')
+    retry = (stamp - dt.timedelta(days=PHOTO_RETRY_DAYS)).isoformat()
+    with connect() as db:
+        db.execute(WHATSAPP_SCHEMA)
+        contact_tables(db)
+        paused = db.execute("SELECT ran_at FROM contact_photo_runs WHERE source='whatsapp:paused'").fetchone()
+        if paused and paused[0] > (stamp - dt.timedelta(hours=WHATSAPP_PAUSE_HOURS)).isoformat():
+            return 0
+        left = limit - db.execute('SELECT count(*) FROM whatsapp_photo_asks WHERE asked_at>=?', (today,)).fetchone()[0]
+        if left <= 0:
+            return 0
+        try:
+            import graph
+            gone = graph.forgotten(db)
+        except Exception:
+            gone = lambda identifier: False
+        nodes = db.execute("SELECT n.id,j.value FROM graph_nodes n, json_each(n.info,'$.identifiers') j "
+                           "WHERE n.kind='person' ORDER BY n.strength DESC").fetchall()
+        photos = {i for (i,) in db.execute('SELECT identifier FROM person_photos')}
+        with_photo = {node for node, identifier in nodes if identifier in photos}
+        asked = {i: at for i, at in db.execute('SELECT identifier,asked_at FROM whatsapp_photo_asks')}
+        wanted = []
+        for node, identifier in nodes:
+            if (node in with_photo or not re.fullmatch(r'wa:[0-9]{5,20}', str(identifier)) or identifier in wanted
+                    or asked.get(identifier, '') > retry or gone(identifier)):
+                continue
+            wanted.append(identifier)
+        addresses = whatsapp_addresses(db, set(wanted), accounts) if wanted else {}
+    saved = 0
+    for identifier in [i for i in wanted if i in addresses][:left]:
+        account, jid = addresses[identifier]
+        answer = ask(account, jid)
+        if answer is None:
+            with connect() as db:
+                db.execute("INSERT INTO contact_photo_runs(source,ran_at) VALUES('whatsapp:paused',?) ON CONFLICT(source) DO UPDATE SET ran_at=excluded.ran_at", (now,))
+            break
+        got = fetch(answer['url']) if answer.get('url') else None
+        with connect() as db:
+            db.execute('INSERT INTO whatsapp_photo_asks(identifier,asked_at,picture_id) VALUES(?,?,?) ON CONFLICT(identifier) DO UPDATE SET '
+                       'asked_at=excluded.asked_at,picture_id=excluded.picture_id', (identifier, now, answer.get('id') or None))
+            if got and not db.execute('SELECT 1 FROM person_photos WHERE identifier=?', (identifier,)).fetchone():
+                db.execute('INSERT INTO person_photos(identifier,key,type,data,saved_at) VALUES(?,?,?,?,?)',
+                           (identifier, photo_key(identifier), got[1], got[0], now))
+                saved += 1
+    return saved
+
+
 # Facts about people from what the connectors already read while they run: Slack profiles (the users.info lookup done
 # for names), X's user objects in mentions and DMs, LinkedIn's messaging participants, Google contacts and the
 # Workspace directory (the same daily read as their photos), and CRM contacts. Never an extra call, scope or sign-in.

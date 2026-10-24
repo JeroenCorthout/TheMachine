@@ -1416,7 +1416,7 @@ class WhatsApp:
         self.config, self.account = config, account
 
     def read(self, command):
-        if command[:2] not in (['auth', 'status'], ['messages', 'list'], ['chats', 'show'], ['chats', 'list']):
+        if command[:2] not in (['auth', 'status'], ['messages', 'list'], ['chats', 'show'], ['chats', 'list'], ['profile', 'picture-info']):
             raise SourceError('unsupported_whatsapp_method')
         env = os.environ.copy()
         env['WACLI_READONLY'] = '1'
@@ -1445,6 +1445,30 @@ class WhatsApp:
                 or hashlib.sha256(linked.encode()).hexdigest() != self.account['identity_sha256']):
             raise SourceError('account_identity_mismatch')
         return data
+
+    def picture(self, jid):
+        """A person's profile picture, asked through the always-on mirror (`wacli sync --follow --profile-picture-budget`),
+        which owns the session: {'id', 'url'}, or {} when they have none the owner can see. Read-only here: wacli only
+        passes this one query on to the mirror, and refuses it when no mirror answers (SourceError)."""
+        if not re.fullmatch(r'[0-9]{5,20}@(?:s\.whatsapp\.net|lid)', str(jid)):
+            raise SourceError('whatsapp_invalid_person')
+        data = self.read(['profile', 'picture-info', '--jid', jid])
+        if data.get('none') is True or data.get('unchanged') is True:
+            return {}
+        url, picture = str(data.get('url') or ''), str(data.get('id') or '')
+        return {'id': picture[:64], 'url': url} if url.startswith('https://') and picture else {}
+
+
+def whatsapp_photo_asker(config):
+    """ask(account id, jid) for enrichment.whatsapp_photos_step: the owner's own WhatsApp accounts only (never one
+    shared from a Fleet); None when the mirror can't answer."""
+    accounts = {a['id']: a for a in config.get('accounts', []) if a.get('service') == 'whatsapp' and a.get('store') and not a.get('shared')}
+    def ask(account_id, jid):
+        try:
+            return WhatsApp(config, accounts[account_id]).picture(jid)
+        except (SourceError, KeyError):
+            return None
+    return list(accounts), ask
 
 
 WHATSAPP_JID = r'(?:[0-9]+(?::[0-9]+)?@(?:s\.whatsapp\.net|lid)|[0-9]+(?:-[0-9]+)?@g\.us)'
@@ -14031,6 +14055,9 @@ class App:
                             found += enrichment.offer_facts(db, [(ids, f, r) for ids, f, r in facts if any(i in known for i in ids)], 'google', now())
                             enrichment.contact_run_done(db, 'google:' + account['email'].lower(), now())
                 photos += enrichment.contact_photos_step(self.store.connect, now())
+                wa_accounts, ask = whatsapp_photo_asker(self.config)
+                if wa_accounts and not self.stop.is_set():
+                    photos += enrichment.whatsapp_photos_step(self.store.connect, now(), ask, wa_accounts)
                 found += enrichment.facts_from_signals(self.store.connect, now())  # once: facts already in stored signals
                 if found or photos:
                     LOG.info('enrichment people found=%s photos=%s', found, photos)
