@@ -58,7 +58,19 @@ Mail from email warm-up tools is kept out, under "Hidden as warm-up", with **Und
 
 ## Projects
 
-Named by your Machine from what your messages are about. Signals that look like they belong show as "probably part of it". **Rename** a project; renaming it to another project's name joins the two.
+Named by your Machine from what your messages are about. Signals that look like they belong show as "probably part of it". Renaming a project to another project's name joins the two.
+
+Or run them by hand, like deals in a CRM:
+
+- **New project**: at the top of a board, **+ Add** under a stage, in the list, or from a person's or organisation's page. Give it a name, a board and stage, an organisation, a value, people and notes.
+- **Edit** on a project's page, or **Edit** in a card's **⋯** on the board (or press E on a card). It changes all of the above.
+- **Won** or **Lost**, with why. Won moves it to the board's last stage, Lost to Stalled or declined. **Reopen** undoes it.
+- **Archive** takes it off the board and lists; a new message about it brings it back. **Delete** removes it for good; its messages and people stay.
+- Move a card by dragging it, or with **⋯**, **Move to** on a phone. Your move stands until a newer message moves it.
+
+### Boards
+
+Projects of one kind in stages, like an evaluation pipeline. **⋯** on a board: **Edit board** (name, stages, which projects belong), **Open on this board** and **New board**. Reviews keep adding projects that fit and place them in a stage. When they aren't sure, the board shows "2 projects could belong here": **Add** or **Leave out**.
 
 ## What it knows about someone
 

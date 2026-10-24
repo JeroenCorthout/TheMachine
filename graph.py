@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS person_orgs(identifier TEXT PRIMARY KEY,org TEXT NOT 
 CREATE TABLE IF NOT EXISTS graph_org_asks(identifier TEXT PRIMARY KEY,run_id TEXT,asked_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS boards(id INTEGER PRIMARY KEY,name TEXT NOT NULL UNIQUE COLLATE NOCASE,stages TEXT NOT NULL,source TEXT NOT NULL,
   created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS project_people(project_id INTEGER NOT NULL,node_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(project_id,node_id));
+CREATE TABLE IF NOT EXISTS board_fits(board_id INTEGER NOT NULL,project_id INTEGER NOT NULL,fit TEXT NOT NULL,why TEXT,run_id TEXT,state TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL,decided_at TEXT,PRIMARY KEY(board_id,project_id));
 CREATE TABLE IF NOT EXISTS project_moves(id INTEGER PRIMARY KEY,project_id INTEGER NOT NULL,board_id INTEGER,stage TEXT NOT NULL,reason TEXT,
   event_id INTEGER,source TEXT NOT NULL,at TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS project_moves_project ON project_moves(project_id,at);
@@ -134,6 +137,12 @@ SORT_TRIES = 3          # reviews that get an unplaced project before its tile s
 SORT_BATCH = 12         # projects to sort per review
 SORT_MESSAGES = 6       # each one's latest messages shown to the review
 SORT_RESET = 'sort_run=NULL,sort_tries=0,sort_note=NULL'
+# What the owner keeps on a project like in a CRM (2026-10-24): a value, notes, who made it (the owner's own stays without
+# messages), and how it ended (won or lost, with why)
+PROJECT_CRM_COLUMNS = ('value REAL', 'notes TEXT', 'made_by TEXT', 'outcome TEXT', 'outcome_reason TEXT')
+BOARD_EXTRA_COLUMNS = ('is_default INTEGER NOT NULL DEFAULT 0',)
+FIT_BATCH = 40          # projects on no board a review checks against the boards at a time
+FIT_FRESH_MINUTES = 30  # a board saved this recently starts a review for its check at once
 MAX_STAGES = 8
 STUCK_DAYS = 10         # no reply for this long after the owner wrote: the tile says so
 
@@ -156,11 +165,11 @@ def ensure(db):
     if 'people_shown' not in {r[1] for r in db.execute('PRAGMA table_info(graph_role_asks)')}:  # the ask showed an organisation's people with their roles
         db.execute('ALTER TABLE graph_role_asks ADD COLUMN people_shown INTEGER NOT NULL DEFAULT 0')
     have = {r[1] for r in db.execute('PRAGMA table_info(projects)')}
-    for column in PROJECT_STAGE_COLUMNS + SORT_COLUMNS:  # a project's place on a board (2026-10-23): its stage, why it last moved and from which message
+    for column in PROJECT_STAGE_COLUMNS + SORT_COLUMNS + PROJECT_CRM_COLUMNS:  # a project's place on a board (2026-10-23): its stage, why it last moved and from which message
         if column.split()[0] not in have:
             db.execute('ALTER TABLE projects ADD COLUMN ' + column)
     have = {r[1] for r in db.execute('PRAGMA table_info(boards)')}
-    for column in BOARD_COLUMNS:  # the owner's own boards (2026-10-24): which projects belong, and whether it has a Stalled row
+    for column in BOARD_COLUMNS + BOARD_EXTRA_COLUMNS:  # the owner's own boards (2026-10-24): which projects belong, and whether it has a Stalled row
         if column.split()[0] not in have:
             db.execute('ALTER TABLE boards ADD COLUMN ' + column)
     for table in ('projects', 'board_suggestions'):  # who sees it (2026-10-24): a project's own (NULL: its board's), a suggestion's default
@@ -855,7 +864,7 @@ def _build(db, config, now):
         last_day[node] = max(last_day.get(node, day), day)
 
     # Projects: labels, spread to the rest of their threads.
-    projects = {r['id']: dict(r) for r in db.execute('SELECT id,name,created_at,closed_at,board_id,stage FROM projects')}
+    projects = {r['id']: dict(r) for r in db.execute('SELECT id,name,created_at,closed_at,board_id,stage,made_by FROM projects')}
     labelled = collections.defaultdict(set)
     for r in db.execute('SELECT event_id,project_id FROM event_projects'):
         if r['project_id'] in projects:
@@ -895,6 +904,11 @@ def _build(db, config, now):
                     key = (node, pid)
                     project_people[key] += fade(0.15 if guess else 0.3, age(at.date()), HALF_LIFE['project_person'])
                     project_people_last[key] = max(project_people_last.get(key, at), at)
+    for r in db.execute('SELECT project_id,node_id FROM project_people'):  # people the owner put on a project themselves
+        if r['project_id'] in projects:
+            key = (r['node_id'], r['project_id'])
+            project_people[key] = max(project_people[key], 0.5)
+            project_people_last.setdefault(key, current)
     unnamed = unnamed_work(per_event, event_people, owner_events, set(spread) | set(probable), vectors, current)
 
     # The owner's decisions on cards: once per card, for the people it was directly about.
@@ -1093,7 +1107,7 @@ def _build(db, config, now):
     two_weeks = current - dt.timedelta(days=14)
     for pid, project in projects.items():
         value, before = heat(pid, current), heat(pid, two_weeks)
-        if value < FLOOR and not project_events.get(pid) and not project['board_id']:  # on a board it stays, however quiet
+        if value < FLOOR and not project_events.get(pid) and not project['board_id'] and not project['made_by']:  # on a board or made by the owner it stays
             continue
         events_ = sorted(project_events.get(pid, ()))
         # Last signal is what already happened; a meeting still to come is the next one, never the last.
@@ -1487,6 +1501,10 @@ def detail(db, node_id, events=12):
             view['org_quote'] = said_org['quote'] if said_org else None
     if row['kind'] == 'project':
         view['board'] = project_moves(db, node_id)
+        try:
+            view['project'] = project_card(db, node_id)
+        except ValueError:
+            view['project'] = None
     if row['kind'] == 'org':
         view['people_roles'] = [{'id': r['id'], 'name': r['name'], 'role': json.loads(r['info']).get('role')} for r in db.execute(
             "SELECT n.id,n.name,n.info FROM graph_links l JOIN graph_nodes n ON n.id=l.a WHERE l.b=? AND l.kind='member' ORDER BY n.strength DESC LIMIT 12", (node_id,))]
@@ -2207,6 +2225,8 @@ def set_stage(db, project, stage, source, now, board=None, stages=None, reason=N
                    (row['id'], target['id'], match, reason, event_id, source, at, now))
         db.execute('UPDATE projects SET board_id=?,stage=?,stage_reason=?,stage_event_id=?,stage_by=?,stage_at=? WHERE id=?',
                    (target['id'], match, reason, event_id, 'owner' if owner else 'review', at, row['id']))
+        if owner:  # a move by hand reopens a won or lost one; Won or Lost sets it again after its own move
+            db.execute('UPDATE projects SET outcome=NULL,outcome_reason=NULL WHERE id=?', (row['id'],))
     if not owner and not kept and next_step is not None:
         step = one_line(next_step, 120)
         if step is None:
@@ -2559,6 +2579,227 @@ def delete_board(db, board_id, now):
     return {'deleted': row['name'], 'projects': kept}
 
 
+def project_row(db, node_id):
+    ref = str(node_id or '')
+    row = db.execute('SELECT * FROM projects WHERE id=?', (ref.split(':', 1)[1],)).fetchone() if ref.startswith('project:') and ref[8:].isdigit() else None
+    if not row:
+        raise ValueError('That project is gone')
+    return row
+
+
+def save_project(db, args, now):
+    """The owner's project, new or edited, like a deal in a CRM: its name, board and stage (a move by hand), organisation
+    (a web domain), value, notes and the people on it (person node ids). Fields left out stay as they are."""
+    node = args.get('node_id')
+    if node:
+        row = project_row(db, node)
+        if 'name' in args and str(args['name'] or '').strip() != row['name']:
+            rename(db, 'project:' + str(row['id']), args['name'], now)
+    else:
+        name = re.sub(r'\s+', ' ', str(args.get('name') or '')).strip()
+        if not name or len(name) > 60:
+            raise ValueError('Give the project a name (up to 60 characters)')
+        if db.execute('SELECT 1 FROM projects WHERE name=? COLLATE NOCASE', (name,)).fetchone():
+            raise ValueError(f'There is a project called "{name}" already')
+        pid = db.execute("INSERT INTO projects(name,created_at,made_by) VALUES(?,?,'owner')", (name, now)).lastrowid
+        row = db.execute('SELECT * FROM projects WHERE id=?', (pid,)).fetchone()
+    pid, node = row['id'], 'project:' + str(row['id'])
+    if 'board_id' in args:
+        board_id = int(args.get('board_id') or 0)
+        if not board_id:
+            db.execute('UPDATE projects SET board_id=NULL,stage=NULL,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL,' + SORT_RESET +
+                       ' WHERE id=?', (pid,))
+        else:
+            board = db.execute('SELECT * FROM boards WHERE id=?', (board_id,)).fetchone()
+            if not board:
+                raise ValueError('That board is gone')
+            if row['board_id'] != board_id or args.get('stage'):
+                set_stage(db, node, args.get('stage') or stage_names(board)[0], 'owner', now, board=board['name'])
+                db.execute("DELETE FROM board_fits WHERE project_id=? AND state='open'", (pid,))
+    elif args.get('stage'):
+        set_stage(db, node, args['stage'], 'owner', now)
+    if 'org' in args:
+        domain = re.sub(r'^(?:https?://)?(?:www\.)?', '', str(args.get('org') or '').strip().lower()).split('/')[0]
+        if domain and not ORG_DOMAIN.fullmatch(domain):
+            raise ValueError('Organisation: its web domain, like "example.com"')
+        db.execute('UPDATE projects SET org=? WHERE id=?', (domain or None, pid))
+    if 'value' in args:
+        raw = str(args.get('value') if args.get('value') is not None else '').replace(',', '').replace(' ', '').lstrip('€$£')
+        try:
+            value = round(float(raw), 2) if raw else None
+        except ValueError:
+            raise ValueError('Value: a number, like 12000') from None
+        if value is not None and not 0 <= value < 1e12:
+            raise ValueError('Value: a number, like 12000')
+        db.execute('UPDATE projects SET value=? WHERE id=?', (value, pid))
+    if 'notes' in args:
+        notes = str(args.get('notes') or '').strip()
+        if len(notes) > 4000:
+            raise ValueError('Notes fit in 4000 characters')
+        db.execute('UPDATE projects SET notes=? WHERE id=?', (notes or None, pid))
+    if 'people' in args:
+        wanted = [str(x) for x in args.get('people') or [] if str(x).strip()]
+        known = {r[0] for r in db.execute(f"SELECT id FROM graph_nodes WHERE kind='person' AND id IN ({','.join('?' * len(wanted))})", wanted)} if wanted else set()
+        if set(wanted) - known:
+            raise ValueError('Pick people from the list')
+        db.execute('DELETE FROM project_people WHERE project_id=?', (pid,))
+        db.executemany('INSERT OR IGNORE INTO project_people(project_id,node_id,created_at) VALUES(?,?,?)', [(pid, n, now) for n in wanted])
+        if wanted:  # the people the owner took off stay off until the messages link them again
+            db.execute(f"DELETE FROM graph_links WHERE b=? AND kind='project' AND a NOT IN ({','.join('?' * len(wanted))})", (node, *wanted))
+    return {'node_id': node, 'name': db.execute('SELECT name FROM projects WHERE id=?', (pid,)).fetchone()['name'], 'created': not args.get('node_id')}
+
+
+def set_outcome(db, node_id, outcome, reason, now):
+    """Won or lost, by the owner, with why: won goes to the board's last stage, lost to its Stalled or declined row.
+    Like any move by hand it stands until a newer message moves the project. None reopens it."""
+    row = project_row(db, node_id)
+    reason = one_line(reason, 160)
+    if reason is None:
+        raise ValueError('Why, in one short line (up to 160 characters)')
+    if outcome not in ('won', 'lost', None):
+        raise ValueError('outcome is won or lost')
+    board = db.execute('SELECT * FROM boards WHERE id=?', (row['board_id'],)).fetchone() if row['board_id'] else None
+    stage = None
+    if board and outcome:
+        main = [s['name'] for s in json.loads(board['stages'])]
+        stage = main[-1] if outcome == 'won' else STALLED if board['side'] else None
+        if stage:
+            set_stage(db, 'project:' + str(row['id']), stage, 'owner', now)
+            db.execute('UPDATE projects SET stage_reason=? WHERE id=?', (reason or None, row['id']))
+            db.execute('UPDATE project_moves SET reason=? WHERE id=(SELECT max(id) FROM project_moves WHERE project_id=?)', (reason or None, row['id']))
+    db.execute('UPDATE projects SET outcome=?,outcome_reason=? WHERE id=?', (outcome, (reason or None) if outcome else None, row['id']))
+    return {'node_id': 'project:' + str(row['id']), 'outcome': outcome, 'stage': stage or row['stage']}
+
+
+def archive_project(db, node_id, archived, now):
+    """Archived: off the boards and lists of open work, with its history; a new message about it brings it back."""
+    row = project_row(db, node_id)
+    db.execute('UPDATE projects SET closed_at=? WHERE id=?', (now if archived else None, row['id']))
+    return {'node_id': 'project:' + str(row['id']), 'archived': bool(archived)}
+
+
+def delete_project(db, node_id):
+    """Gone for good: the project, its moves, labels and links. Its messages and people stay."""
+    row = project_row(db, node_id)
+    node = 'project:' + str(row['id'])
+    for sql in ('DELETE FROM event_projects WHERE project_id=?', 'DELETE FROM project_moves WHERE project_id=?', 'DELETE FROM project_people WHERE project_id=?',
+                'DELETE FROM board_fits WHERE project_id=?', 'DELETE FROM projects WHERE id=?'):
+        db.execute(sql, (row['id'],))
+    for sql in ('DELETE FROM graph_links WHERE a=? OR b=?', 'DELETE FROM graph_events WHERE node_id=?', 'DELETE FROM graph_nodes WHERE id=?'):
+        db.execute(sql, (node, node)[:sql.count('?')])
+    return {'deleted': row['name']}
+
+
+def default_board(db, board_id):
+    """The board Projects opens on, on every device."""
+    if not db.execute('SELECT 1 FROM boards WHERE id=?', (int(board_id or 0),)).fetchone():
+        raise ValueError('That board is gone')
+    db.execute('UPDATE boards SET is_default=(id=?)', (int(board_id),))
+    return {'default': int(board_id)}
+
+
+def project_card(db, node_id):
+    """What the project dialog edits: name, board, stage, organisation, value, notes, people and how it ended."""
+    row = project_row(db, node_id)
+    people = [{'id': r['id'], 'name': r['name']} for r in db.execute(
+        "SELECT n.id,n.name FROM graph_nodes n WHERE n.id IN (SELECT node_id FROM project_people WHERE project_id=? UNION "
+        "SELECT a FROM graph_links WHERE b=? AND kind='project') AND n.kind='person' ORDER BY n.strength DESC LIMIT 30", (row['id'], 'project:' + str(row['id'])))]
+    return {'node_id': 'project:' + str(row['id']), 'name': row['name'], 'board_id': row['board_id'], 'stage': row['stage'], 'org': row['org'],
+            'value': row['value'], 'notes': row['notes'], 'people': people, 'archived': bool(row['closed_at']), 'outcome': row['outcome'],
+            'outcome_reason': row['outcome_reason']}
+
+
+def fit_brief(db, run_id, now, limit=FIT_BATCH):
+    """The "Projects that may fit a board" block for review run_id: open projects on no board that weren't checked
+    against every board with an about yet. Marks them as given to this run (board_fits with fit 'asked')."""
+    boards_ = db.execute("SELECT * FROM boards WHERE about IS NOT NULL AND about<>'' ORDER BY id").fetchall()
+    if not boards_:
+        return ''
+    rows = db.execute('SELECT p.id,p.name FROM projects p WHERE p.board_id IS NULL AND p.closed_at IS NULL AND EXISTS(SELECT 1 FROM boards b '
+                      "WHERE b.about IS NOT NULL AND b.about<>'' AND NOT EXISTS(SELECT 1 FROM board_fits f WHERE f.board_id=b.id AND f.project_id=p.id "
+                      "AND f.fit<>'asked')) ORDER BY p.created_at DESC LIMIT ?", (limit,)).fetchall()
+    if not rows:
+        return ''
+    for r in rows:
+        for b in boards_:
+            db.execute("INSERT INTO board_fits(board_id,project_id,fit,run_id,created_at) VALUES(?,?,'asked',?,?) ON CONFLICT(board_id,project_id) "
+                       "DO UPDATE SET run_id=excluded.run_id WHERE fit='asked'", (b['id'], r['id'], run_id, now))
+    lines = [f"Boards: " + '; '.join(f"{b['name']} ({' > '.join(stage_names(b))}): {b['about']}" for b in boards_)]
+    for r in rows:
+        people = [p['name'] for p in db.execute("SELECT n.name FROM graph_links l JOIN graph_nodes n ON n.id=l.a WHERE l.b=? AND l.kind='project' "
+                                                "ORDER BY l.strength DESC LIMIT 2", ('project:' + str(r['id']),))]
+        lines.append(f"- {r['name']} (project:{r['id']})" + (f" with {', '.join(people)}" if people else ''))
+    return '\n'.join(lines)
+
+
+def fit_answer(db, run_id, answer):
+    """A review that got "Projects that may fit a board" answers for each before it finishes: placed on a board with
+    graph (it fits), or finish_analysis fits [{"project", "board", "fit": "maybe" or "no", "why"}]. A maybe shows on
+    the board as one the owner can add. Raises while one is left; returns how many it answered."""
+    asked = db.execute("SELECT f.board_id,f.project_id,p.name,p.board_id on_board FROM board_fits f JOIN projects p ON p.id=f.project_id "
+                       "WHERE f.run_id=? AND f.fit='asked'", (run_id,)).fetchall()
+    if not asked:
+        return 0
+    if answer is not None and not (isinstance(answer, list) and all(isinstance(a, dict) for a in answer)):
+        raise ValueError('fits is [{"project": "project:<id>", "board", "fit": "maybe" or "no", "why"}]')
+    names = {r['name'].casefold(): r['id'] for r in db.execute('SELECT id,name FROM boards')}
+    said = {}
+    for a in answer or []:
+        fit, why = str(a.get('fit') or '').lower(), one_line(a.get('why'), 160)
+        if fit not in ('maybe', 'no') or not why:
+            raise ValueError('fits: each one has fit "maybe" or "no" and why, in a few words (placing one that fits is graph project, board, stage)')
+        ref = str(a.get('project') or '').casefold()
+        boards_ = [names.get(str(a.get('board') or '').casefold())] if a.get('board') else list(names.values())
+        for b in boards_:
+            if b:
+                said[(ref, b)] = (fit, why)
+    left = []
+    for r in asked:
+        if r['on_board']:  # placed with graph (or by the owner meanwhile)
+            db.execute("UPDATE board_fits SET fit=?,state='added' WHERE board_id=? AND project_id=?",
+                       ('yes' if r['on_board'] == r['board_id'] else 'no', r['board_id'], r['project_id']))
+            continue
+        got = said.get(('project:' + str(r['project_id']), r['board_id'])) or said.get((r['name'].casefold(), r['board_id']))
+        if got:
+            db.execute('UPDATE board_fits SET fit=?,why=? WHERE board_id=? AND project_id=?', (*got, r['board_id'], r['project_id']))
+        else:
+            left.append(f"{r['name']} (project:{r['project_id']})")
+    if left:
+        raise ValueError('Projects that may fit a board: place ' + ', '.join(dict.fromkeys(left)) + ' with graph (project, board, stage, event_id, reason) '
+                         'when it clearly fits, or add it to finish_analysis fits [{"project", "board", "fit": "maybe" or "no", "why"}]')
+    return len(asked)
+
+
+def fit_due(db, now):
+    """A board saved in the last FIT_FRESH_MINUTES with projects on no board not yet checked against it: start a review now."""
+    since = (parse_time(now) - dt.timedelta(minutes=FIT_FRESH_MINUTES)).isoformat()
+    return bool(db.execute("SELECT 1 FROM boards b WHERE b.about IS NOT NULL AND b.about<>'' AND coalesce(b.updated_at,b.created_at)>=? AND EXISTS("
+                           "SELECT 1 FROM projects p WHERE p.board_id IS NULL AND p.closed_at IS NULL AND NOT EXISTS(SELECT 1 FROM board_fits f "
+                           "WHERE f.board_id=b.id AND f.project_id=p.id AND f.fit<>'asked'))", (since,)).fetchone())
+
+
+def board_maybes(db, board_id):
+    """Projects a review thought could belong on this board, for the owner to add or leave out."""
+    return [{'id': 'project:' + str(r['project_id']), 'name': r['name'], 'why': r['why']} for r in db.execute(
+        "SELECT f.project_id,f.why,p.name FROM board_fits f JOIN projects p ON p.id=f.project_id WHERE f.board_id=? AND f.fit='maybe' AND f.state='open' "
+        'AND p.board_id IS NULL AND p.closed_at IS NULL ORDER BY f.created_at DESC LIMIT 30', (board_id,))]
+
+
+def decide_fit(db, board_id, node_id, add, now):
+    """The owner adds a maybe to the board (sorted from its messages next) or leaves it out for good."""
+    row = project_row(db, node_id)
+    board = db.execute('SELECT * FROM boards WHERE id=?', (int(board_id or 0),)).fetchone()
+    if not board:
+        raise ValueError('That board is gone')
+    if add:
+        if row['board_id'] and row['board_id'] != board['id']:
+            raise ValueError('It is on another board already')
+        db.execute('UPDATE projects SET board_id=?,stage=?,stage_reason=NULL,stage_event_id=NULL,stage_by=NULL,stage_at=NULL,' + SORT_RESET + ' WHERE id=?',
+                   (board['id'], stage_names(board)[0], row['id']))
+    db.execute("UPDATE board_fits SET state=?,decided_at=? WHERE board_id=? AND project_id=?", ('added' if add else 'dismissed', now, board['id'], row['id']))
+    return {'node_id': 'project:' + str(row['id']), 'added': bool(add)}
+
+
 MESSAGE_KINDS = ('gmail.message', 'salesflare.email', 'linkedin.message', 'slack.message', 'whatsapp.message', 'intercom.conversation', 'x.dm',
                  'ms_graph.message', 'outlook.message')
 
@@ -2586,8 +2827,8 @@ def boards(db, now):
     card about it."""
     out = []
     today = parse_time(now)
-    for b in db.execute('SELECT * FROM boards ORDER BY id').fetchall():
-        rows = db.execute('SELECT * FROM projects WHERE board_id=? ORDER BY coalesce(stage_at,created_at) DESC', (b['id'],)).fetchall()
+    for b in db.execute('SELECT * FROM boards ORDER BY is_default DESC,id').fetchall():
+        rows = db.execute('SELECT * FROM projects WHERE board_id=? AND closed_at IS NULL ORDER BY coalesce(stage_at,created_at) DESC', (b['id'],)).fetchall()
         names, items = stage_names(b), []
         for p in rows:
             node = 'project:' + str(p['id'])
@@ -2615,11 +2856,12 @@ def boards(db, now):
                           'days': max(0, (today - since).days), 'closed': bool(p['closed_at']),
                           'no_reply_days': max(0, (today - parse_time(mine_since)).days) if mine_since else None,
                           'org': org_card(db, domain) if domain else None, 'card': {'id': card['id'], 'title': card['title']} if card else None,
-                          **({'last_at': last['occurred_at'], 'last_event_id': last['id']} if last else {})})
+                          **({'last_at': last['occurred_at'], 'last_event_id': last['id']} if last else {}),
+                          **({'value': p['value']} if p['value'] is not None else {}), **({'outcome': p['outcome']} if p['outcome'] else {})})
         out.append({'id': b['id'], 'name': b['name'], 'about': b['about'], 'side': bool(b['side']), 'visibility': b['visibility'] or 'team',
                     'stages': json.loads(b['stages']) + ([{'name': STALLED, 'side': True}] if b['side'] else []), 'projects': items,
                     'stuck': sum(1 for i in items if (i['no_reply_days'] or 0) >= STUCK_DAYS and i['stage'] != STALLED),
-                    'sorting': sum(1 for i in items if i['sorting'])})
+                    'sorting': sum(1 for i in items if i['sorting']), 'default': bool(b['is_default']), 'maybes': board_maybes(db, b['id'])})
     return out
 
 

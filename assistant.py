@@ -499,7 +499,7 @@ class SourceError(Exception):
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
                    'connect_signin', 'connect_signin_state')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'edit_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_visibility', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'edit_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_visibility', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -3608,6 +3608,11 @@ class Store:
                              + f" (event_ids {', '.join(map(str, ids[:12]))}{', …' if len(ids) > 12 else ''})")
                 db.execute('INSERT OR REPLACE INTO graph_offers(key,size,run_id,offered_at) VALUES(?,?,?,?)', (r['key'], r['size'], run_id, now()))
         return '\n'.join(lines)
+
+    def fit_text(self, run_id):
+        """Open projects on no board, for this review to check against the boards (graph.fit_brief)."""
+        with self.connect() as db:
+            return graph.fit_brief(db, run_id, now())
 
     def sort_text(self, run_id):
         """Projects the owner put on a board and no review placed yet, for this review to sort first (graph.sort_brief)."""
@@ -10423,12 +10428,15 @@ def promise_text(p):
     return title, body
 
 
-def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting='', sources=''):
+def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting='', sources='', fitting=''):
     return f'''This is a signal review started by the personal-assistant service (review run {run_id}). It is not a chat with the owner and not a preparation task.
 ''' + (f'''Boards to sort, before anything else (separate from the batch: these projects need no new message). The owner put these projects on a board and their tiles say "Sorting" until you place them. For each, read its messages with events (its event_ids below, all accounts) and judge where it stands now from what they mean between these people, never their wording. Place it with graph {{"project": its node_id, "board", "stage", "event_id": the message that shows it, "reason": one short clause that reads after "Moved to <stage>:" (like "Demo held on Thu, they asked for pricing"), "next": the owner's next step in a few words}}. When nothing has moved it past the first stage, place it in the first stage the same way, with the message and why. Only when none of its messages shows where it stands, add it to finish_analysis sorted ([{{"project": its node_id, "why": a few words}}]). finish_analysis refuses until each one is placed or in sorted.
 {sorting}
 
-''' if sorting else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a CRM or partner listing, a customer onboarding, a possible buyer or investor, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. A project whose messages are with several organisations in the same kind of work (several possible buyers in one acquisition project, several partners in one listings project) is really one project per counterpart: first name one per organisation, all in one call: graph {{"split": [{{"project": "<the work>: <organisation>", "event_ids": its message ids below}}, …]}} (up to 40). Then suggest a board with graph suggest_board, as in Boards below, for every clear group of three or more of the same kind of work, each with its own counterpart: several boards when there are several clear groups (up to three), never one only because names look alike. Give each its visibility: "only_you" for sensitive work (M&A, buyers, investors, legal, health, hiring a named person: its board, projects and messages never reach the team), "team" for customer, partner and other pipelines the team works on. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
+''' if sorting else '') + (f'''Projects that may fit a board, before the signal review (separate from the batch). These open projects are on no board yet; the owner's boards and which projects belong on each are on the first line. For each project, judge from what it is (open it with graph and its node_id when unsure), never from words in its name: when it clearly belongs on a board, place it with graph {{"project": its node_id, "board", "stage", "event_id": its message that shows where it stands, "reason", "next"}}; when it might belong, or clearly doesn't, add it to finish_analysis fits ([{{"project": its node_id, "board", "fit": "maybe" or "no", "why": a few words}}]). A maybe shows on the board for the owner to add. finish_analysis refuses until each one is placed or in fits.
+{fitting}
+
+''' if fitting else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a CRM or partner listing, a customer onboarding, a possible buyer or investor, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. A project whose messages are with several organisations in the same kind of work (several possible buyers in one acquisition project, several partners in one listings project) is really one project per counterpart: first name one per organisation, all in one call: graph {{"split": [{{"project": "<the work>: <organisation>", "event_ids": its message ids below}}, …]}} (up to 40). Then suggest a board with graph suggest_board, as in Boards below, for every clear group of three or more of the same kind of work, each with its own counterpart: several boards when there are several clear groups (up to three), never one only because names look alike. Give each its visibility: "only_you" for sensitive work (M&A, buyers, investors, legal, health, hiring a named person: its board, projects and messages never reach the team), "team" for customer, partner and other pipelines the team works on. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
 {boards}
 
 Second, the signal review.
@@ -11235,6 +11243,7 @@ class App:
                 with self.store.connect() as db:
                     graph.board_check_answer(db, args['_review_run'], args.get('boards'))
                     graph.sort_answer(db, args['_review_run'], args.get('sorted'))
+                    graph.fit_answer(db, args['_review_run'], args.get('fits'))
             return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
                                              args.get('stages'), args.get('team'))
         if name == 'graph':
@@ -11493,6 +11502,27 @@ class App:
                 raise ValueError('Only the owner sets who sees a project, on the dashboard')
             with self.store.connect() as db:
                 done = graph.set_project_visibility(db, args.get('node_id'), args.get('visibility'))
+            self.graph_build()
+            return done
+        if name in ('project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit'):
+            # The owner's own CRM work on projects and boards: make or edit a project, won or lost, archive, delete,
+            # the default board, and a project a review thought could belong on a board
+            if not owner_dashboard:
+                raise ValueError('Only the owner makes, edits or ends a project by hand, on the dashboard; reviews use graph and finish_analysis')
+            with self.store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if name == 'project_save':
+                    done = graph.save_project(db, args, now())
+                elif name == 'project_outcome':
+                    done = graph.set_outcome(db, args.get('node_id'), args.get('outcome') or None, args.get('reason'), now())
+                elif name == 'project_archive':
+                    done = graph.archive_project(db, args.get('node_id'), args.get('archived') is not False, now())
+                elif name == 'project_delete':
+                    done = graph.delete_project(db, args.get('node_id'))
+                elif name == 'board_default':
+                    done = graph.default_board(db, args.get('board_id'))
+                else:
+                    done = graph.decide_fit(db, args.get('board_id'), args.get('node_id'), args.get('add') is not False, now())
             self.graph_build()
             return done
         if name == 'graph_stage':
@@ -13679,7 +13709,7 @@ class App:
                     failed += 1
                 retry = min(settings.get('retry_seconds', 60) * 2 ** max(failed - 1, 0), settings.get('max_retry_seconds', 1800))
                 # Projects the owner just put on a board are sorted within minutes, with or without new signals
-                sort_due = bool(graph.unsorted_projects(db, 1))
+                sort_due = bool(graph.unsorted_projects(db, 1)) or graph.fit_due(db, now())
                 gap = retry if recovery or failed else settings.get('sort_gap_seconds', 60) if sort_due else settings.get('gap_seconds', 600)
                 if last and last['status'] == 'ok' and last['window_hours'] and not recovery:
                     gap = min(gap, 60)  # after the quick first review, the rest follows right away
@@ -13729,7 +13759,8 @@ class App:
                                                self.store.slipped(run['run_id']), self.store.promises_text(),
                                                self.store.unnamed_text(run['run_id']), self.store.role_text(run['run_id']), self.store.notes_to_learn(),
                                                self.waiting_handoffs_text(), self.split_notes_text(), self.store.boards_text(run['run_id']),
-                                               self.store.sort_text(run['run_id']), source_notes(account_services(self.config)))
+                                               self.store.sort_text(run['run_id']), source_notes(account_services(self.config)),
+                                               self.store.fit_text(run['run_id']))
             try:  # drafts the owner rewrote, or answered themselves instead: lasting habits go into that channel's voice
                 lines = self.store.edits_to_learn()
                 if lines:
@@ -15077,6 +15108,8 @@ class App:
                                 found['board_suggestions'] = graph.board_suggestions(db)  # "Start a board for …?", saved by the owner or not
                                 found['project_names'] = [{'id': 'project:' + str(r['id']), 'name': r['name'], 'board_id': r['board_id']} for r in db.execute(
                                     'SELECT id,name,board_id FROM projects WHERE closed_at IS NULL ORDER BY name COLLATE NOCASE LIMIT 2000')]  # the board editor's picker
+                                found['person_names'] = [{'id': r['id'], 'name': r['name']} for r in db.execute(
+                                    "SELECT id,name FROM graph_nodes WHERE kind='person' AND name<>'' ORDER BY strength DESC LIMIT 1500")]  # the project dialog's people picker
                                 if app.fleet:
                                     try:
                                         found['sharing'] = app.fleet.sharing()  # the Shared Graph: Mine or Team, and when sharing starts
@@ -15272,7 +15305,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

@@ -1072,6 +1072,102 @@ class Boards(unittest.TestCase):
         with self.store.connect() as db:
             self.assertFalse(db.execute("SELECT 1 FROM projects WHERE name='Company sale: Litware'").fetchone())
 
+    def test_the_owner_makes_edits_wins_loses_archives_and_deletes_a_project_like_in_a_crm(self):
+        asked, agreed, later = self.mails()
+        self.app.graph_build = lambda *a, **k: None
+        with self.store.connect() as db:
+            board_id = db.execute("SELECT id FROM boards WHERE name='Listings'").fetchone()[0]
+        with self.assertRaises(ValueError):  # owner only
+            self.app.action('project_save', {'name': 'Inkwell listing'})
+        made = self.app.action('project_save', {'name': 'Inkwell listing', 'board_id': board_id, 'stage': 'Agreed', 'org': 'https://www.Inkwell.example/x',
+                                                'value': '12,000', 'notes': 'Met at the fair'}, owner_dashboard=True)
+        node = made['node_id']
+        with self.assertRaises(ValueError):  # one name, one project
+            self.app.action('project_save', {'name': 'inkwell listing'}, owner_dashboard=True)
+        with self.store.connect() as db:
+            card = graph.project_card(db, node)
+            self.assertEqual((card['board_id'], card['stage'], card['org'], card['value'], card['notes']), (board_id, 'Agreed', 'inkwell.example', 12000.0, 'Met at the fair'))
+            tile = next(p for p in graph.boards(db, NOW.isoformat())[0]['projects'] if p['id'] == node)
+            self.assertEqual((tile['by'], tile['value'], tile['sorting']), ('owner', 12000.0, False))
+            person = db.execute("SELECT id FROM graph_nodes WHERE kind='person' LIMIT 1").fetchone()
+        for bad in ({'value': 'lots'}, {'org': 'not a domain'}, {'people': ['email:nobody@nowhere.example']}):
+            with self.assertRaises(ValueError):
+                self.app.action('project_save', {'node_id': node, **bad}, owner_dashboard=True)
+        self.app.action('project_save', {'node_id': node, 'name': 'Inkwell partner listing', 'stage': 'Contacted', 'value': '', 'people': [person['id']] if person else []},
+                        owner_dashboard=True)
+        with self.store.connect() as db:
+            card = graph.project_card(db, node)
+            self.assertEqual((card['name'], card['stage'], card['value']), ('Inkwell partner listing', 'Contacted', None))
+        won = self.app.action('project_outcome', {'node_id': node, 'outcome': 'won', 'reason': 'Signed the listing form'}, owner_dashboard=True)
+        self.assertEqual(won['stage'], 'Live')
+        with self.store.connect() as db:
+            self.assertEqual((graph.project_card(db, node)['outcome'], graph.project_moves(db, node)['moves'][0]['reason']), ('won', 'Signed the listing form'))
+        lost = self.app.action('project_outcome', {'node_id': node, 'outcome': 'lost', 'reason': 'They went with another app'}, owner_dashboard=True)
+        self.assertEqual(lost['stage'], graph.STALLED)
+        self.app.action('graph_stage', {'node_id': node, 'stage': 'Agreed'}, owner_dashboard=True)  # a move by hand reopens it
+        with self.store.connect() as db:
+            self.assertIsNone(graph.project_card(db, node)['outcome'])
+            # The owner's move stands against an older message, and a newer message moves it again
+            kept = graph.set_stage(db, node, 'Contacted', 'review', NOW.isoformat(), reason='asked', event_id=asked)
+            self.assertEqual(kept['kept'], 'The owner moved it after this message')
+        self.app.action('project_archive', {'node_id': node}, owner_dashboard=True)
+        with self.store.connect() as db:
+            self.assertNotIn(node, [p['id'] for p in graph.boards(db, NOW.isoformat())[0]['projects']])
+        self.app.action('project_archive', {'node_id': node, 'archived': False}, owner_dashboard=True)
+        self.assertEqual(self.app.action('project_delete', {'node_id': node}, owner_dashboard=True)['deleted'], 'Inkwell partner listing')
+        with self.store.connect() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM projects WHERE id=?', (node.split(':')[1],)).fetchone())
+        with self.assertRaises(ValueError):
+            self.app.action('project_delete', {'node_id': node}, owner_dashboard=True)
+
+    def test_the_default_board_comes_first(self):
+        self.app.graph_build = lambda *a, **k: None
+        with self.store.connect() as db:
+            other = graph.save_board(db, {'name': 'Hiring', 'stages': ['Sourced', 'Hired'], 'about': 'Roles'}, NOW.isoformat())['board_id']
+            self.assertEqual([b['name'] for b in graph.boards(db, NOW.isoformat())], ['Listings', 'Hiring'])
+        self.app.action('board_default', {'board_id': other}, owner_dashboard=True)
+        with self.store.connect() as db:
+            found = graph.boards(db, NOW.isoformat())
+            self.assertEqual([(b['name'], b['default']) for b in found], [('Hiring', True), ('Listings', False)])
+
+    def test_reviews_check_every_project_on_no_board_against_the_boards_and_maybes_wait_for_the_owner(self):
+        asked, agreed, later = self.mails()
+        self.app.graph_build = lambda *a, **k: None
+        with self.store.connect() as db:
+            for name, ids in (('Paperkite', [agreed]), ('Bramblebox', [later]), ('Quillfeather', [asked]), ('Home painting', [])):
+                graph.label(db, ids, name, 'review', NOW.isoformat()) if ids else graph.project_id(db, name, NOW.isoformat())
+            board_id = db.execute("SELECT id FROM boards WHERE name='Listings'").fetchone()[0]
+            ids = {r['name']: 'project:' + str(r['id']) for r in db.execute('SELECT id,name FROM projects')}
+            self.assertTrue(graph.fit_due(db, NOW.isoformat()))  # a board just saved: its check starts a review now
+        text = self.store.fit_text('run1')
+        self.assertIn('Boards: Listings (Contacted > Agreed > Live > Stalled or declined): Partners we list with', text)
+        for name in ids:
+            self.assertIn(f'{name} ({ids[name]})', text)
+        self.assertIn('Projects that may fit a board', a.review_prompt('run1', ['work'], fitting=text))
+        with self.store.connect() as db:
+            with self.assertRaises(ValueError):
+                graph.fit_answer(db, 'run1', None)
+            graph.set_stage(db, ids['Paperkite'], 'Agreed', 'agent', NOW.isoformat(), board='Listings', reason='Ann said yes', event_id=agreed)
+            with self.assertRaises(ValueError):
+                graph.fit_answer(db, 'run1', [{'project': ids['Bramblebox'], 'fit': 'maybe'}])  # says why
+            done = graph.fit_answer(db, 'run1', [{'project': ids['Bramblebox'], 'board': 'Listings', 'fit': 'maybe', 'why': 'a partner, listing not discussed yet'},
+                                                 {'project': ids['Quillfeather'], 'fit': 'maybe', 'why': 'asked about a listing once'},
+                                                 {'project': ids['Home painting'], 'fit': 'no', 'why': 'a home job'}])
+            self.assertEqual(done, 4)
+            self.assertFalse(graph.fit_due(db, NOW.isoformat()))
+            board = graph.boards(db, NOW.isoformat())[0]
+            self.assertEqual([m['name'] for m in board['maybes']], ['Quillfeather', 'Bramblebox'] if board['maybes'][0]['name'] == 'Quillfeather' else ['Bramblebox', 'Quillfeather'])
+        self.assertEqual(self.store.fit_text('run2'), '')  # each project is checked once per board
+        self.app.action('board_fit', {'board_id': board_id, 'node_id': ids['Bramblebox']}, owner_dashboard=True)
+        self.app.action('board_fit', {'board_id': board_id, 'node_id': ids['Quillfeather'], 'add': False}, owner_dashboard=True)
+        with self.store.connect() as db:
+            board = graph.boards(db, NOW.isoformat())[0]
+            self.assertEqual(board['maybes'], [])
+            tile = next(p for p in board['projects'] if p['id'] == ids['Bramblebox'])
+            self.assertTrue(tile['sorting'])  # added: the next review sorts it from its messages
+            graph.project_id(db, 'Fernwave listing', NOW.isoformat())  # a new project is checked by the next review
+        self.assertIn('Fernwave listing', self.store.fit_text('run3'))
+
     def test_editing_stages_renames_moves_to_the_nearest_earlier_stage_and_deleting_keeps_projects(self):
         asked, agreed, later = self.mails()
         with self.store.connect() as db:
