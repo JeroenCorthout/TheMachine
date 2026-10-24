@@ -1401,6 +1401,88 @@ class SharedGraph(unittest.TestCase):
                 self.assertNotIn(text, self.received(box) + json.dumps(self.team(box)))
         self.assertNotIn('Sidecorp side letter', json.dumps(self.net.calls) + json.dumps(self.net.blobs))
 
+    def deal_timeline(self):
+        """The M&A board's project with its whole timeline: a meeting with the buyer and its Zoom notes, an Intercom
+        conversation, and the same deal in Olive's second company's calendar and on her personal calendar."""
+        board = self.deal_board()
+        self.own.config['accounts'] += [{'id': 'cal', 'email': 'own1@acme.example', 'service': 'calendar', 'boundary': 'work:Acme'},
+                                        {'id': 'zoom', 'service': 'zoom', 'boundary': 'work:Acme'},
+                                        {'id': 'ic', 'service': 'intercom', 'boundary': 'work:Acme'},
+                                        {'id': 'sidecal', 'email': 'olive@sidecorp.example', 'service': 'calendar', 'boundary': 'work:Sidecorp'},
+                                        {'id': 'homecal', 'email': 'own1@home.example', 'service': 'calendar', 'boundary': 'personal:Home'}]
+        meeting = lambda acct, n, title, body, who: {'account_id': acct, 'source_id': f'{acct}-{n}', 'kind': 'calendar.event', 'occurred_at': ago(1), 'title': title,
+                                                     'body': body, 'deleted': False, 'metadata': {'organizer': {'email': who}, 'attendees': [
+                                                         {'email': who}, {'email': 'bo@buyer.example'}], 'end_at': ago(1)}}
+        self.add(self.own,
+                 meeting('cal', 1, 'Due diligence call', 'Agenda: walk through the data room.', 'own1@acme.example'),
+                 {'account_id': 'zoom', 'source_id': 'zoom-1', 'kind': 'zoom.summary', 'occurred_at': ago(1), 'title': 'Due diligence call',
+                  'body': 'Bo wants the closing in June.', 'deleted': False, 'metadata': {'host_email': 'own1@acme.example', 'meeting_id': '9'}},
+                 {'account_id': 'ic', 'source_id': 'ic-1', 'kind': 'intercom.conversation', 'occurred_at': ago(1), 'title': 'Buyer question',
+                  'body': 'Can our team test the API before closing?', 'deleted': False,
+                  'metadata': {'conversation_id': 'c1', 'from': 'Bo Hale <bo@buyer.example>'}},
+                 meeting('sidecal', 1, 'Sidecorp board', 'Sidecorp board prep for the sale.', 'olive@sidecorp.example'),
+                 meeting('homecal', 1, 'Dinner with Bo', 'Dinner at home, kids too.', 'own1@home.example'))
+        with self.own.store.connect() as db:
+            graph.label(db, [self.event_id(self.own, x) for x in ('cal-1', 'zoom-1', 'ic-1', 'sidecal-1', 'homecal-1')], 'Sale: Buyer', 'review', a.now())
+            graph.set_stage(db, 'Sale: Buyer', 'Signed', 'review', a.now(), reason='Bo signed the letter of intent', event_id=self.event_id(self.own, 'work-20'))
+            graph.set_stage(db, 'Sale: Buyer', 'Talks', 'review', a.now(), reason='Sidecorp board wants to wait', event_id=self.event_id(self.own, 'sidecal-1'))
+            db.isolation_level = None
+            graph.build(db, self.own.config, a.now())
+        return board
+
+    def test_a_board_shared_by_name_takes_its_full_timeline_meetings_notes_and_intercom_only_to_them(self):
+        board = self.deal_timeline()
+        self.own.graph_board_share(board, [{'fleet': FLEET, 'member': 'mem3'}])
+        self.rounds()
+        received = self.received(self.mem)
+        for text in ('walk through the data room', 'closing in June', 'test the API before closing'):
+            self.assertIn(text, received)  # a meeting, its Zoom notes and an Intercom conversation: by being on the board
+            self.assertNotIn(text, self.received(self.adm) + json.dumps(self.team(self.adm)))  # Ada isn't on it
+        kinds = {json.loads(r['body'])['subject']: json.loads(r['body']).get('kind') for r in self.team(self.mem, 'team_mail')}
+        self.assertEqual(kinds['Due diligence call'], 'meetings')
+        self.assertEqual(kinds['Buyer question'], 'intercom')
+        story = json.dumps(self.projects_of(self.mem)['Sale: Buyer']['timeline'])
+        self.assertIn('Moved to Signed: Bo signed the letter of intent', story)
+        self.assertIn('Meeting: Due diligence call', story)
+        self.assertNotIn('Sidecorp board wants to wait', story)  # a move that came from another company's calendar stays
+        blobs = self.only_blobs()
+        self.assertEqual({tuple(b['header']['to']) for b in blobs}, {('mem3',)})  # sealed to Mo alone
+        self.assertNotIn('closing in June', json.dumps(self.net.calls) + json.dumps(self.net.blobs))
+        self.assertEqual(self.own.graph_unjudged(), [])  # nothing of it waits to be sorted
+
+    def test_another_company_or_a_personal_item_on_a_shared_board_never_goes(self):
+        board = self.deal_timeline()
+        self.own.graph_board_share(board, [{'fleet': FLEET, 'member': 'mem3'}])
+        self.own.graph_board_share(board, [{'fleet': FLEET, 'member': 'mem3'}, {'fleet': FLEET, 'member': 'adm2'}])
+        self.rounds()
+        self.assertIn('walk through the data room', self.received(self.adm))
+        for box in (self.mem, self.adm):
+            everything = self.received(box) + json.dumps(self.team(box))
+            for text in ('Sidecorp board prep', 'Sidecorp board', 'Dinner at home', 'Dinner with Bo', 'Sidecorp pilot', 'Family weekend', 'Invoice 88'):
+                self.assertNotIn(text, everything)
+        subjects = [w['subject'] for w in self.own.graph_unjudged()]
+        self.assertNotIn('Sidecorp board', subjects)
+        self.assertNotIn('Dinner with Bo', subjects)
+
+    def test_meetings_of_a_team_board_are_sorted_first_and_go_only_when_client(self):
+        self.olive_mail()
+        self.own.config['accounts'].append({'id': 'cal', 'email': 'own1@acme.example', 'service': 'calendar', 'boundary': 'work:Acme'})
+        meet = lambda n, title, body: {'account_id': 'cal', 'source_id': f'cal-{n}', 'kind': 'calendar.event', 'occurred_at': ago(1), 'title': title, 'body': body,
+                                       'deleted': False, 'metadata': {'organizer': {'email': 'own1@acme.example'}, 'attendees': [{'email': 'lee@client.example'}]}}
+        self.add(self.own, meet(1, 'Renewal call', 'Walk Lee through the new plan.'), meet(2, 'Lee check-in', 'Lee asked about a raise for his team.'),
+                 meet(3, 'Unrelated call', 'Not on any board.'))
+        self.board(self.own, 'Renewals', 'team', {'Renewal: Client': ['work-1', 'cal-1', 'cal-2']})
+        waiting = [w['subject'] for w in self.own.graph_unjudged()]
+        self.assertEqual(sorted(waiting[:2]), ['Lee check-in', 'Renewal call'])  # the board's meetings first
+        self.assertNotIn('Unrelated call', waiting)  # a meeting on no board isn't sorted or shared, as before
+        self.rounds()
+        self.assertNotIn('Walk Lee through', self.received(self.mem))  # not sorted yet: stays
+        self.judge(self.own, ('cal-1', 'client', 'Renewal call with Lee'), ('cal-2', 'sensitive', 'Lee and a raise'))
+        self.rounds()
+        self.assertIn('Walk Lee through', self.received(self.mem))
+        self.assertIn('Walk Lee through', self.received(self.adm))
+        self.assertNotIn('a raise for his team', self.received(self.mem) + json.dumps(self.team(self.mem)))
+
     def test_a_project_added_to_a_shared_board_goes_and_one_moved_off_is_taken_back(self):
         board = self.deal_board()
         self.add(self.own, mail('work', 30, 'Cy Ross <cy@fund.example>', 'own1@acme.example', 'Term sheet', 'Our term sheet for the round.', 1, 't-fund'))

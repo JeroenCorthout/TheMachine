@@ -92,8 +92,11 @@ Only-you project ids).
 **Shared by name.** The owner can share a board with chosen teammates (**Share board…** on its ⋯ menu,
 `graph_board_share`; `boards.visibility` 'people', the people in `share_people`), or one thread
 (**Share with…** on its label, `graph_thread_share`). For those teammates only (`grants`, `Scope.granted`) the board's
-open projects and every thread linked to them go, sensitive ones (deals, M&A) too; a thread shared by hand goes whatever
-the review said. Never personal threads, people kept private or marked Personal, threads with only colleagues, or accounts
+open projects go with their full timelines: every thread linked to them, sensitive ones (deals, M&A) too, and their
+meetings, Zoom notes, Intercom conversations and chats (`ITEM_KINDS`, `Scope.board_items`), which count as shared by
+being on the board, without a review. Each project record carries its timeline (`TIMELINE_PROJECT` lines: a line per
+signal, its moves and its cards; a move or card only when every signal it came from goes). A thread shared by hand goes
+whatever the review said. Never personal threads, people kept private or marked Personal, threads with only colleagues, or accounts
 the owner has not selected in `graph_accounts`. Automated mail stays out when only its board is shared; an explicit
 thread share or Team choice can override that classification. Teammates with the same grants get their own
 chain of records (a snapshot and deltas whose header says `only` and carries the chain as `tag`), and a thread only
@@ -106,7 +109,9 @@ more gets the usual empty blob.
 
 **A project on a Team board** shares its record (name, board, stage, why, next step, organization, people) even before
 a review has judged one of its threads, so the team pipeline shows every project on it. Its threads still go only as
-they are judged.
+they are judged, and so do its meetings, Zoom notes and chats: the history review sorts them like mail (`Scope.team_items`),
+after the threads of boards shared by name and before the rest. A why or next step that came from a signal that never
+goes (another company's or a personal account, kept private) doesn't go either.
 
 The weekly recap says, in one line: "Shared 214 threads with Acme this week, 4 held back." with a link to
 **What's shared**.
@@ -328,7 +333,7 @@ it. **Ask <name>** on a tile, person or organization starts a handoff to that te
 - **Team / Only you** on each thread on a record's page. Tapping it shows why it went (or didn't), **Unshare** or
   **Share with the team**, **Share with…** (chosen teammates), and a link to **What's shared**. **Keep private** on a record.
 - **Share board…** on a board's ⋯ menu: the Fleet's confirmed teammates, one line on what they get ("Robin gets these
-  12 projects and their threads, including deals. Personal never goes."), and **Share** or **Stop sharing**. The
+  12 projects with their full timelines, deals too. Personal and other companies never go."), and **Share** or **Stop sharing**. The
   board's header says "Shared with Robin".
 - **What's shared**, a pane per Work Fleet on the Fleet tab (also in Settings): counts per kind, the first-share review
   with **Start now**, **Share these?**, every shared thread with its why-line and **Unshare**, and what is kept private.

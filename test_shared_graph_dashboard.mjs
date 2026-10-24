@@ -35,7 +35,7 @@ const robin={id:'team:'+'d'.repeat(32),kind:'person',name:'Robin Shore',strength
 let share={share:'team',fixed:false,why:'Client'};
 const detail=()=>({...lee,links:[],open:{you_promised:[],they_promised:[],cards:[],facts:[]},around:[],keep_private:false,
  recent:[{id:41,kind:'gmail.message',account_id:'work',from:'Lee Client',from_me:false,occurred_at:at,title:'Renewal',preview:'Can you send the quote?',share}],
- team:{via:'via Ada',people:[{fleet:FL,member:'m_ada',name:'Ada',score:2,left:false}],threads:[{id:TID,subject:'Rollout timeline',at,messages:1,via:'Ada'}],timeline:[{at,line:'Lee asked for the renewal quote',via:'Ada'}]}});
+ team:{via:'via Ada',people:[{fleet:FL,member:'m_ada',name:'Ada',score:2,left:false}],threads:[{id:TID,subject:'Rollout timeline',at,messages:1,via:'Ada'},{id:FL+':m_ada:'+'a'.repeat(32),subject:'Due diligence call',at,messages:1,via:'Ada',kind:'meetings'},{id:FL+':m_ada:'+'b'.repeat(32),subject:'Can we test the API?',at,messages:3,via:'Ada',kind:'intercom'}],timeline:[{at,line:'Lee asked for the renewal quote',via:'Ada'}]}});
 const fleet={on:true,kinds:{},kind_rules:{},no_details:[],scoped:[],scopes:{},waiting:[],asked:[],log:[],notices:[],
  fleets:[{id:FL,kind:'work',label:'Work Fleet',name:'Acme',asks:[],people:[{member_id:'me',name:'Sam Doe',role:'owner',me:true,email:'sam@acme.example'},
   {member_id:'m_kim',name:'Kim Lee',role:'member',email:'kim@acme.example'}],members:[],rules:{},exceptions:{}}],
@@ -122,10 +122,14 @@ try{
   await page.locator('#share-pop').waitFor({state:'detached'});
   assert.match(await page.locator('.keep-private').innerText(),/Not shared with your team yet\./);
   assert.match(await page.locator('.team-block').innerText(),/Lee asked for the renewal quote/);
+  // A shared board's whole timeline: a meeting and an Intercom conversation say what they are
+  assert.match(await page.locator('.team-thread',{hasText:'Due diligence call'}).innerText(),/Meeting · [A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2} · Ada/);  // US dates: Sat, Oct 24
+  assert.match(await page.locator('.team-thread',{hasText:'Can we test the API?'}).innerText(),/Intercom · 3 messages · /);
+  await shot(page.locator('.team-block'),(process.env.SHOTS||'/tmp')+'/team-block-timeline-'+width+'.png');
   await page.locator('[data-keep-private]').first().click();
   await new Promise(r=>setTimeout(r,300));
   assert.equal(calls.some(c=>c.action==='graph_private'&&c.args.node_id===lee.id&&c.args.private===true),true);
-  await page.locator('.team-thread summary').click();
+  await page.locator('.team-thread summary').first().click();
   await page.locator('.team-files li').nth(1).waitFor();
   const link=page.locator('.team-files a',{hasText:'rollout-plan.pdf'});
   assert.equal(await link.getAttribute('href'),'api/team-file?thread='+encodeURIComponent(TID)+'&file='+FILE);
@@ -162,6 +166,8 @@ try{
   assert.match(await pane.locator('.shared-tile').first().innerText(),/1,113|1\.113|1113/);
   assert.match(await pane.locator('.shared-first').innerText(),/1,?113 client threads with these organizations go to the team\. Keep any private first\./);
   assert.equal(await pane.locator('.shared-how').getAttribute('open'),'');
+  assert.match(await pane.locator('.shared-how').innerText(),/Shared boards\s+The people you pick get each project's full timeline: email, meetings, Intercom, chats, cards and moves\./);
+  await shot(pane.locator('.shared-how'),(process.env.SHOTS||'/tmp')+'/shared-how-'+width+'.png');
   if(width===1440)await page.screenshot({path:(process.env.SHOTS||'/tmp')+'/shared-pane-1440.png',fullPage:true});
   if(width===390)await page.screenshot({path:(process.env.SHOTS||'/tmp')+'/shared-pane-390.png',fullPage:true});
   await pane.locator('.shared-first [data-shared-rule]').first().click();

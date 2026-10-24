@@ -26,6 +26,7 @@ An admin can require everyone's **Work email** and **Work calendar** at the Flee
 
 - Client threads: email with people outside your company about work, with their attachments.
 - Work people, organizations and projects, with a short timeline.
+- On a Team board, a project's meetings, Zoom notes and chats too, once they're sorted as client work.
 
 ## Kept out of automatic sharing
 
@@ -38,7 +39,9 @@ Each thread is judged on its own, by what it is about. Classification can be wro
 
 ## Share a board with chosen people
 
-On a board's **⋯** menu, tap **Share board…** and pick teammates. Only they get its projects and their threads, sensitive ones too, such as deals. Personal and colleague-only threads stay out, as does automated mail when only its board is shared. Connections you have not selected stay out too.
+On a board's **⋯** menu, tap **Share board…** and pick teammates. Only they get its projects with their full timelines: email threads, meetings and their Zoom notes, Intercom conversations, chats, cards and moves. Sensitive ones go too, such as deals.
+
+Personal and colleague-only threads stay out, and so do people in your Family or Friends and automated mail when only its board is shared. Connections you have not selected stay out too.
 
 - A project added to the board later goes too. One moved off the board is taken back.
 - Take someone off, or pick nobody, and it is taken back from their Machine.

@@ -62,7 +62,19 @@ MAX_FILE = 2560 * 1024     # bytes of one attachment that goes with a shared thr
 MAX_MESSAGES = 30           # per thread
 MAX_BODY = 20000            # characters of one message
 TIMELINE = 12               # lines per record
+TIMELINE_PROJECT = 40       # lines per project: its full timeline (messages, meetings, chats, cards and moves)
 MAIL_KINDS = ('gmail.message', 'ms_graph.message', 'outlook.message', 'salesflare.email', 'intercom.conversation')
+# A project's timeline beyond its email threads: meetings and their notes, Intercom conversations and chats. On a board
+# shared with chosen teammates they count as shared by being on it; on a team board the review sorts them like mail.
+ITEM_KINDS = ('calendar.event', 'salesflare.meeting', 'zoom.summary', 'intercom.conversation', 'whatsapp.message', 'slack.message',
+              'linkedin.message', 'x.dm', 'x.mention', 'telegram.message')
+ITEM_WORDS = {'meetings': 'Meeting', 'intercom': 'Intercom', 'chats': 'Chat', 'email': 'Email'}
+
+
+def _source(kind):
+    """What a shared item is, for its label: meetings, intercom, chats or email."""
+    return ('meetings' if kind in ('calendar.event', 'salesflare.meeting', 'zoom.summary') else 'intercom' if kind == 'intercom.conversation'
+            else 'email' if kind in MAIL_KINDS else 'chats')
 HEX = re.compile(r'[a-f0-9]{32}')
 # One fixed statement per table that holds a Fleet's shared Graph: what goes when a Fleet's sharing is purged or left.
 FLEET_DELETE = {
@@ -349,6 +361,14 @@ def grants(db, fleet):
     return {m: (frozenset(p), frozenset(t)) for m, (p, t) in found.items() if p or t}
 
 
+def _items(db, event_ids):
+    """The meetings, Intercom conversations and chats among these signals."""
+    if not event_ids:
+        return set()
+    return {r[0] for r in db.execute('SELECT id FROM events WHERE deleted=0 AND id IN (SELECT value FROM json_each(?)) AND kind IN (SELECT value FROM json_each(?))',
+                                     (json.dumps(sorted(event_ids)), json.dumps(ITEM_KINDS)))}
+
+
 def _threads_of(db, event_ids):
     out = set()
     if event_ids:
@@ -367,6 +387,18 @@ def addresses(metadata):
 
 
 AUTOMATED_LABELS = graph.BULK_LABELS | {'SPAM'}  # what Gmail (and ms_graph's mapping) files as not a person writing
+
+
+def item_people(metadata):
+    """Everyone on a meeting, its notes or a chat, besides addresses(): the organizer and invitees, the host, the contact."""
+    found = addresses(metadata)
+    for a in [metadata.get('organizer'), *(metadata.get('attendees') or [])]:
+        if isinstance(a, dict) and '@' in str(a.get('email') or ''):
+            found.append(str(a['email']).strip().lower())
+    for field in ('host_email', 'contact_email'):
+        if '@' in str(metadata.get(field) or ''):
+            found.append(str(metadata[field]).strip().lower())
+    return found
 
 
 def automated_message(metadata):
@@ -402,6 +434,8 @@ class Scope:
         self.hidden_events = graph.hidden_event_ids(db) if self.only_you else set()
         self.hidden_threads = _threads_of(db, self.hidden_events)
         self.granted_projects, self.board_threads, self.hand_threads = set(), set(), set()
+        self.board_items = set()  # meetings, Intercom and chats of a board shared by name: shared by being on it
+        self._team_items, self._private_events = None, None
         self.calls = {r[0]: (r[1], r[2]) for r in db.execute('SELECT thread,verdict,hand FROM share_threads')}  # the review's and the owner's
         self.hold = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=HOLD)).isoformat(timespec='seconds')
         self.fresh = {r[0] for r in db.execute('SELECT thread FROM share_threads WHERE hand IS NULL AND sorted_at>?', (self.hold,))}
@@ -439,9 +473,34 @@ class Scope:
         out.granted_projects = shown
         out.hidden_events = graph.hidden_event_ids(self._db, {int(i[8:]) for i in shown}) if out.only_you else set()
         out.hidden_threads = _threads_of(self._db, out.hidden_events)
-        out.board_threads = _threads_of(self._db, graph.project_event_ids(self._db, {int(i[8:]) for i in shown}))
+        events = graph.project_event_ids(self._db, {int(i[8:]) for i in shown})
+        out.board_threads = _threads_of(self._db, events)
+        out.board_items = _items(self._db, events)
         out.hand_threads = set(threads)
         return out
+
+    @property
+    def team_items(self):
+        """Meetings, Intercom and chats of the projects on a board the team sees: the review sorts them like mail."""
+        if self._team_items is None:
+            hidden = graph.hidden_project_ids(self._db)
+            ids = {r[0] for r in self._db.execute("SELECT p.id FROM projects p JOIN boards b ON b.id=p.board_id "
+                                                  "WHERE coalesce(b.visibility,'team')='team' AND p.closed_at IS NULL")} - hidden
+            self._team_items = _items(self._db, graph.project_event_ids(self._db, ids))
+        return self._team_items
+
+    @property
+    def item_events(self):
+        return self.board_items | self.team_items
+
+    @property
+    def private_events(self):
+        """Signals linked to someone kept private (the owner's Family or Friends, or marked Personal): never on a board."""
+        if self._private_events is None:
+            people = sorted(n for n in self.private if not n.startswith(('project:', 'org:')))
+            self._private_events = {r[0] for r in self._db.execute('SELECT event_id FROM graph_events WHERE probable=0 AND node_id IN (SELECT value FROM json_each(?))',
+                                                                    (json.dumps(people),))} if people else set()
+        return self._private_events
 
     @property
     def automated(self):
@@ -510,10 +569,13 @@ def visibility(db, scope, event):
     if event['account_id'] not in scope.accounts:
         return None  # another company's mailbox, or a personal account: never, also not on a board shared by name
     metadata = event['metadata'] if isinstance(event['metadata'], dict) else json.loads(event['metadata'] or '{}')
-    people = addresses(metadata)
+    item = event['id'] in scope.board_items or (event['kind'] in ITEM_KINDS and event['id'] in scope.team_items)
+    people = item_people(metadata) if item else addresses(metadata)
     thread = thread_of(event['kind'], metadata, event['id'])
     verdict, hand = scope.calls.get(thread, (None, None))
     internal = bool(people) and not any(outside(a, scope.internal) and a not in scope.mine for a in people)
+    if item:
+        internal = internal and any(a not in scope.mine for a in people)  # notes with only their host on them are not colleagues only
     if thread in scope.hand_threads and verdict != 'personal' and not internal and not any(scope.private_address(a) for a in people):
         return 'team'  # shared by hand with chosen teammates (only in their scope, Scope.granted)
     if event['id'] in scope.hidden_events:
@@ -524,8 +586,21 @@ def visibility(db, scope, event):
         return 'private'  # part of an Only you board or project
     if verdict == 'personal':
         return 'personal'  # the owner's own life: never, not even by hand, not even that it exists
+    if item and event['id'] in scope.private_events:
+        return 'private'  # with someone of the owner's own life (Family, Friends, marked Personal)
     if internal:
         return 'internal'
+    if item:  # a meeting, its notes, an Intercom conversation or a chat of a project on a board
+        if hand == 'private':
+            return 'private'
+        if automated_message(metadata):
+            return 'other'
+        if event['id'] in scope.board_items:
+            return 'team'  # on a board shared with these teammates by name: it goes by being on it
+        if hand == 'team':
+            return 'team'
+        view = {'client': 'team', 'sensitive': 'sensitive', 'internal': 'internal', 'other': 'other', 'unsure': 'ask'}.get(verdict, 'pending')
+        return 'wait' if view == 'team' and thread in scope.fresh else view
     if thread in scope.board_threads:  # on a board shared with these teammates by name: sensitive ones too
         if hand == 'private':
             return 'private'
@@ -624,18 +699,26 @@ def collect(db, scope, key, secret, today=None, held=None, kept=()):
     if held is not None:
         held.update(keyed(secret, 'thread|' + t) for t, seen in thread_views.items() if seen and seen <= {'pending', 'wait'})
     lines = {r['event_id']: r['line'] for r in db.execute('SELECT event_id,line FROM share_lines')}
+    titles = {}
+    if scope.granted_projects:
+        for e in _events(db, sorted(scope.accounts), ''):
+            if views.get(e['id']) == 'team':
+                word = 'Meeting notes' if e['kind'] == 'zoom.summary' else ITEM_WORDS.get(_source(e['kind']), 'Note')
+                titles[e['id']] = _line(word + ': ' + str(e['title'] or '(no subject)'))
     out_threads, files = {}, {}
+    on_boards = scope.item_events
     newest = sorted(threads.items(), key=lambda t: t[1][-1]['occurred_at'], reverse=True)[:MAX_THREADS]
     for thread, items in newest:
         tag = keyed(secret, 'thread|' + thread)
-        last = items[-1]
-        if last['kind'] not in MAIL_KINDS:
+        items = [e for e in items if e['kind'] in MAIL_KINDS or e['id'] in on_boards]  # mail, or a board project's meeting or chat
+        if not items:
             continue
-        messages = [{'at': e['occurred_at'], 'from': str(e['metadata'].get('from') or '')[:200], 'to': str(e['metadata'].get('to') or '')[:500],
-                     'cc': str(e['metadata'].get('cc') or '')[:500], 'body': str(e['body'] or '')[:MAX_BODY]}
-                    for e in items[-MAX_MESSAGES:]]
-        out_threads[tag] = {'tag': tag, 'subject': str(items[0]['title'] or '')[:200], 'at': last['occurred_at'], 'messages': messages}
-        files[tag] = [(e['id'], e['account_id'], e['kind']) for e in items[-MAX_MESSAGES:]]
+        last = items[-1]
+        messages = [_message(e) for e in items[-MAX_MESSAGES:]]
+        out_threads[tag] = {'tag': tag, 'subject': str(items[0]['title'] or '')[:200], 'at': last['occurred_at'], 'messages': messages,
+                            **({} if last['kind'] in MAIL_KINDS and last['kind'] != 'intercom.conversation' else {'kind': _source(last['kind'])})}
+        # attachments come with mail only (read from the mailbox)
+        files[tag] = [(e['id'], e['account_id'], e['kind']) for e in items[-MAX_MESSAGES:]] if all(e['kind'] in MAIL_KINDS for e in items) else []
 
     def thread_tags(node_id):
         tags = []
@@ -646,15 +729,36 @@ def collect(db, scope, key, secret, today=None, held=None, kept=()):
                     tags.append(tag)
         return tags[:40]
 
-    def timeline(node_id):
+    def timeline(node_id, limit=TIMELINE):
         found = []
-        for (event_id, at) in db.execute('SELECT event_id,at FROM graph_events WHERE node_id=? AND probable=0 ORDER BY at DESC LIMIT 200', (node_id,)):
+        for (event_id, at) in db.execute('SELECT event_id,at FROM graph_events WHERE node_id=? AND probable=0 ORDER BY at DESC LIMIT 400', (node_id,)):
             view = views.get(event_id)
             if view == 'team' and lines.get(event_id):
                 found.append({'at': at, 'line': lines[event_id]})
-            if len(found) >= TIMELINE:
+            elif view == 'team' and scope.granted_projects and event_id in titles:
+                found.append({'at': at, 'line': titles[event_id]})  # shared by name: its whole timeline, also what has no line
+            if len(found) >= limit:
                 break
         return found
+
+    def project_story(row, limit=TIMELINE_PROJECT):
+        """A project's timeline: its signals' lines, and its moves and cards. A move or card goes only when every signal
+        it came from went (what came from mail that stays never shows through them)."""
+        found = timeline(row['id'], limit)
+        ok = lambda ids: all(views.get(i) == 'team' for i in ids)
+        for m in db.execute('SELECT stage,reason,event_id,source,at FROM project_moves WHERE project_id=? ORDER BY at DESC,id DESC LIMIT 40', (row['pid'],)):
+            if ok([m['event_id']]) if m['event_id'] else (m['source'] == 'owner' or scope.granted_projects):  # the owner's own move
+                found.append({'at': m['at'], 'line': _line(f"Moved to {m['stage']}" + (f": {m['reason']}" if m['reason'] else ''))})
+        events = sorted(graph.project_event_ids(db, {row['pid']}))
+        if events:
+            for c in db.execute("SELECT DISTINCT s.title,s.status,s.created_at,s.event_ids FROM suggestions s, json_each(s.event_ids) j "
+                                "WHERE j.value IN (SELECT value FROM json_each(?)) AND s.status IN (SELECT value FROM json_each(?))",
+                                (json.dumps(events), json.dumps(graph.TIMELINE_CARDS))):
+                ids = [int(i) for i in json.loads(c['event_ids'] or '[]') if str(i).isdigit()]
+                if ids and ok(ids):
+                    found.append({'at': c['created_at'], 'line': _line(('Card done: ' if c['status'] == 'completed' else 'Card: ') + str(c['title'] or ''))})
+        found.sort(key=lambda x: str(x['at'] or ''), reverse=True)
+        return found[:limit]
 
     def work(node_id):
         """(shared, last): a record goes when one of its threads is shared; not when its threads are only sensitive,
@@ -723,9 +827,9 @@ def collect(db, scope, key, secret, today=None, held=None, kept=()):
         records[r] = {'r': r, 't': 'project', 'name': row['name'], 'score': round(row['strength'], 3), 'last': (last or '')[:10],
                       'board': row['board'], 'stages': graph.stage_names(row) if row['board'] else None,
                       'stage': row['stage'] if row['board'] else None, 'stage_hand': row['stage_by'] == 'owner', 'stage_at': row['stage_at'],
-                      'why': row['stage_reason'], 'next': row['next_step'],
+                      **_why(db, row, views),
                       'org': {'name': org['name'], 'd': keyed(key, 'domain:' + domain)} if org else None,
-                      'people': sorted({h for p in linked for h in people.get(p, [])}), 'timeline': timeline(row['id']), 'threads': thread_tags(row['id']),
+                      'people': sorted({h for p in linked for h in people.get(p, [])}), 'timeline': project_story(row), 'threads': thread_tags(row['id']),
                       **owner_pick(json.loads(row['info'] or '{}')), **crm_fields.shared(db, row)}
     held_private = {r['thread'] for r in db.execute("SELECT thread FROM share_threads WHERE hand='private' AND hand_at>=?", (week,))}
     held = {t for t, v in this_week.items() if v in ('sensitive', 'ask')} | held_private  # sensitive, unsure, and Only you by hand
@@ -733,6 +837,27 @@ def collect(db, scope, key, secret, today=None, held=None, kept=()):
              'people': sum(1 for r in records.values() if r['t'] == 'person'), 'orgs': sum(1 for r in records.values() if r['t'] == 'org'),
              'projects': sum(1 for r in records.values() if r['t'] == 'project')}
     return records, out_threads, stats, files
+
+
+def _why(db, row, views):
+    """A project's why and next step, unless they came from a signal that never goes (another company's or a personal
+    account, the owner's own life, kept private): then neither does what was said about it."""
+    last = db.execute('SELECT event_id FROM project_moves WHERE project_id=? ORDER BY at DESC,id DESC LIMIT 1', (row['pid'],)).fetchone()
+    if last and last['event_id'] and views.get(last['event_id']) in (None, 'personal', 'private'):
+        return {'why': None, 'next': None}
+    return {'why': row['stage_reason'], 'next': row['next_step']}
+
+
+def _line(text):
+    return ' '.join(str(text or '').split())[:160]
+
+
+def _message(e):
+    """One message of a shared thread: mail as it is; a meeting with its organizer and who was invited; notes with their host."""
+    m = e['metadata']
+    sender = m.get('from') or (m.get('organizer') or {}).get('email') or m.get('host_email') or ''
+    to = m.get('to') or ', '.join(str(a.get('email') or '') for a in m.get('attendees') or [] if isinstance(a, dict) and a.get('email'))
+    return {'at': e['occurred_at'], 'from': str(sender)[:200], 'to': str(to)[:500], 'cc': str(m.get('cc') or '')[:500], 'body': str(e['body'] or '')[:MAX_BODY]}
 
 
 def owner_pick(info):
@@ -751,9 +876,10 @@ def unjudged(db, scope, limit, skip=(), first=None):
     found = []
     if not scope.accounts:
         return found
+    on_boards = scope.item_events
     rows = [dict(e) for e in db.execute('SELECT id,account_id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 '
                                         'AND account_id IN (SELECT value FROM json_each(?)) ORDER BY occurred_at DESC', (json.dumps(sorted(scope.accounts)),))
-            if e['kind'] in MAIL_KINDS]
+            if e['kind'] in MAIL_KINDS or e['id'] in on_boards]  # mail, and a board project's meetings and chats
     for e in rows:
         e['metadata'] = json.loads(e['metadata'] or '{}')
         e['thread'] = thread_of(e['kind'], e['metadata'], e['id'])
@@ -2073,7 +2199,10 @@ class SharedGraph:
                 if granted:
                     scope = scope.granted(set().union(*(p for p, _ in granted)), set().union(*(t for _, t in granted)))
                     named = (lambda t, mine=scope.board_threads | scope.hand_threads: t in mine)
-                for item in unjudged(db, scope, limit - len(out), first=[named, went]):
+                # then the meetings and chats of the team's boards, so a board's whole timeline gets sorted
+                on_board = _threads_of(db, scope.team_items)
+                boards = (lambda t, on=on_board: t in on) if on_board else None
+                for item in unjudged(db, scope, limit - len(out), first=[named, boards, went]):
                     if item['event_id'] not in skip:
                         skip.add(item['event_id'])
                         out.append(item)
@@ -2407,13 +2536,13 @@ class SharedGraph:
                     body = json.loads(row['body'])
                     if not body.get('private'):
                         threads.append({'id': f"{s['fleet']}:{s['member']}:{tag}", 'subject': body.get('subject'), 'at': body.get('at'),
-                                        'messages': len(body.get('messages') or []), 'via': who})
+                                        'messages': len(body.get('messages') or []), 'via': who, 'kind': body.get('kind') or 'email'})
         lines.sort(key=lambda x: str(x.get('at') or ''), reverse=True)
         threads.sort(key=lambda x: str(x.get('at') or ''), reverse=True)
         people = [{'member': s['member'], 'fleet': s['fleet'], 'name': _first_name(s['name']), 'left': s['left'],
                    'score': s['record'].get('score') or 0} for s in sorted(entry['sources'], key=lambda s: -(s['record'].get('score') or 0))]
         rec = resolve(entry)
-        return {'via': via(entry['sources']), 'people': people, 'timeline': lines[:24], 'threads': threads[:20],
+        return {'via': via(entry['sources']), 'people': people, 'timeline': lines[:TIMELINE_PROJECT], 'threads': threads[:40],
                 'fields': rec.get('fields') or [], 'tags': rec.get('tags') or []}
 
     def team_for(self, db, node_id):
@@ -2564,7 +2693,7 @@ def _clean_record(r):
            **({'owner_pick': r['owner_pick']} if isinstance(r.get('owner_pick'), str) and MEMBER_ID.fullmatch(r['owner_pick']) else {}),
            'timeline': [{'at': _clean_text(x.get('at'), 25), 'line': _clean_text(x.get('line'), 160), **({'private': True} if x.get('private') else {}),
                          **({'tag': x['tag']} if HEX.fullmatch(str(x.get('tag'))) else {})}
-                        for x in (r.get('timeline') or [])[:TIMELINE] if isinstance(x, dict) and _clean_text(x.get('line'), 160)]}
+                        for x in (r.get('timeline') or [])[:TIMELINE_PROJECT if r.get('t') == 'project' else TIMELINE] if isinstance(x, dict) and _clean_text(x.get('line'), 160)]}
     if org:
         out['org'] = {'name': _clean_text(org.get('name'), 100), **({'d': hashes(org['d'] if isinstance(org.get('d'), list) else [org.get('d')])} if org.get('d') else {})}
         out['org_hand'] = r.get('org_hand') is True
@@ -2605,4 +2734,6 @@ def _clean_mail(body, tag):
                              'attachments': [{'name': _clean_text(a.get('name'), 120) or 'attachment', 'size': a.get('size') if isinstance(a.get('size'), int) else None,
                                               **({'file': a['file']} if HEX.fullmatch(str(a.get('file'))) else {'too_large': True} if a.get('too_large') else {'not_shared': True} if a.get('not_shared') else {})}
                                              for a in (m.get('attachments') or [])[:20] if isinstance(a, dict)]})
-    return {'tag': tag, 'subject': _clean_text(body.get('subject'), 200), 'at': _clean_text(body.get('at'), 25), 'messages': messages}
+    kind = body.get('kind') if body.get('kind') in ITEM_WORDS else None  # a meeting, Intercom or a chat, not mail
+    return {'tag': tag, 'subject': _clean_text(body.get('subject'), 200), 'at': _clean_text(body.get('at'), 25), 'messages': messages,
+            **({'kind': kind} if kind else {})}

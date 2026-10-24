@@ -42,7 +42,7 @@ const shareFlow=async(page,w)=>{
  assert.deepEqual(await page.locator('.sp-people label').allTextContents(),[' Ada',' Robin']);
  assert.equal(await page.locator('.sp-line').textContent(),'Choose who gets it.');assert.ok(await page.locator('#share-people-form button.primary').isDisabled());
  await page.locator('.sp-people input[value="fl_1|m_robin"]').check();
- assert.equal(await page.locator('.sp-line').textContent(),'Robin gets these 3 projects and their threads, including deals. Personal never goes.');
+ assert.equal(await page.locator('.sp-line').textContent(),'Robin gets these 3 projects with their full timelines, deals too. Personal and other companies never go.');
  await fits(page,w+' sheet');await shot(page,`board-share-sheet-${w}`);
  await page.locator('#share-people-form button.primary').click();await page.locator('#share-people:not([open])').waitFor({state:'attached'});
  const c=calls.at(-1);assert.deepEqual(c,{action:'graph_board_share',args:{board_id:4,people:[{fleet:'fl_1',member:'m_robin'}]}});
@@ -57,7 +57,7 @@ const shareFlow=async(page,w)=>{
  await page.locator('.board-menu summary').click();await page.locator('[data-board-share]').click();await page.locator('#share-people[open]').waitFor();
  assert.ok(await page.locator('.sp-people input[value="fl_1|m_robin"]').isChecked());
  await page.locator('.sp-people input[value="fl_1|m_ada"]').check();
- assert.equal(await page.locator('.sp-line').textContent(),'Ada and Robin get these 3 projects and their threads, including deals. Personal never goes.');
+ assert.equal(await page.locator('.sp-line').textContent(),'Ada and Robin get these 3 projects with their full timelines, deals too. Personal and other companies never go.');
  await page.locator('.sp-people input[value="fl_1|m_ada"]').uncheck();await page.locator('.sp-people input[value="fl_1|m_robin"]').uncheck();
  assert.equal(await page.locator('.sp-line').textContent(),'Nobody else. It goes back to Only you.');assert.equal(await page.locator('#share-people-form button.primary').textContent(),'Stop sharing');
  await page.locator('#share-people-form button.primary').click();await page.waitForFunction(()=>/^Only you · 4 projects/.test(document.querySelector('.board-sub')?.textContent||''));

@@ -4764,6 +4764,7 @@ function sharedHTML(work,g,d){const n=x=>Number(x||0).toLocaleString(),fleet=esc
   ['Sensitive','Deals, HR and hiring, legal, health, money, security. Nothing of it goes.'],
   ['Never','Personal mail, receipts, alerts and newsletters, threads with only colleagues, and what you keep private.'],
   ['Not sure','Stays with you until you choose.'],
+  ['Shared boards','The people you pick get each project\'s full timeline: email, meetings, Intercom, chats, cards and moves.'],
   ['Who sees it','Confirmed Machines in '+work.name+'. The Network can\'t read it.'],
   ['Someone leaves','They get nothing new. What they had stays.']].map(([t,v])=>`<div><dt>${esc(t)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl><p class="fleet-fine"><a class="learn" href="${HELP}team-graph" target="_blank" rel="noopener">Learn more</a></p></details>`;
  if(d.unsure.length)h+=`<div class="fleet-box shared-ask"><h3>Share these?</h3><p class="sub">Not sure these are client work. They stay with you until you choose.</p><label class="shared-all"><input type="checkbox" data-shared-pick-all> All ${d.unsure.length+(d.unsure_more||0)}</label><ul class="list shared-list">${d.unsure.map(x=>`<li class="shared-row"><label class="grow shared-pick"><input type="checkbox" value="${x.event_id}" data-shared-pick><span class="grow"><span class="ell" title="${esc(x.title)}">${esc(x.title||'(no subject)')}</span><small class="muted">${esc([x.company||x.with,shortDay(x.at)].filter(Boolean).join(' · '))}</small></span></label></li>`).join('')}</ul><div class="actions"><button type="button" class="primary" data-shared-many="team" disabled>Share</button><button type="button" class="ghost" data-shared-many="private" disabled>Keep private</button></div></div>`;
@@ -5404,7 +5405,7 @@ function spDraw(){const f=$('#share-people-form'),key=p=>p.fleet+'|'+p.member,na
 function spOpen(o){sp={...o,on:new Set(o.chosen.map(p=>p.fleet+'|'+p.member)),was:o.chosen.length>0};spDraw();const d=$('#share-people');if(!d.open)d.showModal();d.querySelector('.sp-people input')?.focus()}
 function boardShareOpen(b){if(!b)return;const n=b.projects.filter(p=>p.visibility!=='only_you').length;
  spOpen({title:'Share '+b.name,action:'graph_board_share',args:{board_id:b.id},chosen:b.visibility==='people'?b.shared_with||[]:[],
-  line:(who,many)=>`${who} ${many?'get':'gets'} ${n===1?'this project and its threads':`these ${n} projects and their threads`}, including deals. Personal never goes.`,
+  line:(who,many)=>`${who} ${many?'get':'gets'} ${n===1?'this project with its full timeline':`these ${n} projects with their full timelines`}, deals too. Personal and other companies never go.`,
   done:(who)=>who?`Shared with ${who}.`:'Back to Only you. Taken back from their Machines.'})}
 function threadShareOpen(eventId,people){spOpen({title:'Share this thread',action:'graph_thread_share',args:{event_id:Number(eventId)},
  chosen:graphTeammates.filter(p=>(people||[]).includes(p.name)),line:(who,many)=>`${who} ${many?'get':'gets'} this thread, also if it is sensitive. Personal never goes.`,
@@ -5848,7 +5849,7 @@ const askForm=(p,about)=>`<details class="team-ask"><summary>Ask ${esc(p.name||'
 function teamBlock(n){const t=n.team;if(!t)return '';
  const people=t.people.filter(p=>!p.left);
  const lines=t.timeline.map(x=>`<li><span>${esc(x.line)}</span><small class="muted">${esc(shortDay(x.at))} · ${esc(x.via)}</small></li>`).join('');
- const threads=t.threads.map(x=>`<details class="team-thread" data-team-thread="${esc(x.id)}"><summary><span class="tt"><span class="ell">${esc(x.subject||'(no subject)')}</span><small class="muted">${x.messages} message${x.messages===1?'':'s'} · ${esc(shortDay(x.at))} · ${esc(x.via)}</small></span></summary><div class="team-thread-body"></div></details>`).join('');
+ const threads=t.threads.map(x=>`<details class="team-thread" data-team-thread="${esc(x.id)}"><summary><span class="tt"><span class="ell">${esc(x.subject||'(no subject)')}</span><small class="muted">${x.kind==='meetings'?'Meeting':`${{intercom:'Intercom · ',chats:'Chat · '}[x.kind]||''}${x.messages} message${x.messages===1?'':'s'}`} · ${esc(shortDay(x.at))} · ${esc(x.via)}</small></span></summary><div class="team-thread-body"></div></details>`).join('');
  return `<section class="team-block"><div class="section-head"><h2>From the team</h2><p>${esc(t.via)}</p></div>${lines?`<ul class="team-lines">${lines}</ul>`:''}${threads?`<div class="team-threads">${threads}</div>`:''}${people.length?`<div class="team-asks">${people.slice(0,3).map(p=>askForm(p,n.name)).join('')}</div>`:''}</section>`}
 const teamDetail=n=>{const [paneId,paneName]=GRAPH_KIND_PANE[n.kind]||GRAPH_KIND_PANE.person;
  const sub=[n.role&&cap(n.role),n.org_name,n.kind==='project'&&n.stage?n.board+': '+n.stage:'',n.last_at?'last contact '+day(n.last_at):''].filter(Boolean).join(' · ');
