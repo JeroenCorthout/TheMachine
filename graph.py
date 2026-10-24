@@ -1495,11 +1495,11 @@ def page(db, name, sort='', cursor=0, limit=30, filters=None):
         items = rows[:limit]
     else:
         where, args = _paged_where(db, name)
-        if extra_where:
-            where, args = f'({where}) AND {extra_where}', (*args, *extra_args)
-        order = extra_order or SORTS[sort]
-        rows = db.execute(f'SELECT * FROM graph_nodes WHERE {where} ORDER BY {order},id LIMIT ? OFFSET ?', (*args, limit + 1, offset)).fetchall()
-        total = db.execute(f'SELECT COUNT(*) FROM graph_nodes WHERE {where}', args).fetchone()[0] if extra_where else None
+        total = None
+        if extra_where or extra_order:  # filtered or in a CRM order (crm.list_query: fixed fragments, values as parameters)
+            rows, total = crm.page_rows(db, where, args, extra_where, extra_args, extra_order or SORTS[sort], limit + 1, offset)
+        else:
+            rows = db.execute(f'SELECT * FROM graph_nodes WHERE {where} ORDER BY {SORTS[sort]},id LIMIT ? OFFSET ?', (*args, limit + 1, offset)).fetchall()
         items = [node_view(r) for r in rows[:limit]]
         orgs = {v.get('org') for v in items if v.get('kind') == 'person' and v.get('org')}
         if orgs:  # the organization's name, not only its id

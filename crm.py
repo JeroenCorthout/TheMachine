@@ -519,6 +519,16 @@ def _project_where(filters, closed_too):
     return ' AND '.join(where) or '1', args
 
 
+def page_rows(db, where, args, extra_where, extra_args, order, limit, offset):
+    """A page of a Graph list with a filter or a CRM order: (rows, how many match). where, extra_where and order are
+    fixed fragments from graph and list_query; every value goes as a parameter."""
+    if extra_where:
+        where, args = '(' + where + ') AND ' + extra_where, (*args, *extra_args)
+    rows = db.execute('SELECT * FROM graph_nodes WHERE ' + where + ' ORDER BY ' + order + ',id LIMIT ? OFFSET ?', (*args, limit, offset)).fetchall()
+    total = db.execute('SELECT COUNT(*) FROM graph_nodes WHERE ' + where, args).fetchone()[0] if extra_where else None
+    return rows, total
+
+
 def list_query(db, name, filters, sort):
     """(where, args, order) to add to a Graph list's query, or (None, (), None) when nothing is asked. Facts about
     projects (board, stage, value, close date, and the value and close sorts) go through a temporary table of what

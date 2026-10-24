@@ -229,16 +229,41 @@ def preview(db, kind, text, mapping=None, limit=200):
 
 # ------------------------------------------------------------------ import and undo
 
-def _snapshot(db, table, key_column, key):
-    row = db.execute(f'SELECT * FROM {table} WHERE {key_column}=?', (key,)).fetchone()
+# What an import can change, and how each goes back: fixed statements per table (no table or column names from data)
+PROJECT_COLUMNS = ('org', 'value', 'close_date', 'notes', 'board_id', 'stage', 'stage_reason', 'stage_event_id', 'stage_by', 'stage_at',
+                   'outcome', 'outcome_reason', 'sort_run', 'sort_tries', 'sort_note')
+STATEMENTS = {
+    'person_edits': ('SELECT * FROM person_edits WHERE identifier=?', 'DELETE FROM person_edits WHERE identifier=?',
+                     'INSERT INTO person_edits(identifier,fields,updated_at) VALUES(:identifier,:fields,:updated_at)'),
+    'person_orgs': ('SELECT * FROM person_orgs WHERE identifier=?', 'DELETE FROM person_orgs WHERE identifier=?',
+                    'INSERT INTO person_orgs(identifier,org,org_id,source,via,event_id,quote,said_at,created_at) '
+                    'VALUES(:identifier,:org,:org_id,:source,:via,:event_id,:quote,:said_at,:created_at)'),
+    'graph_names': ('SELECT * FROM graph_names WHERE node_id=?', 'DELETE FROM graph_names WHERE node_id=?',
+                    'INSERT INTO graph_names(node_id,name,created_at) VALUES(:node_id,:name,:created_at)'),
+    'org_edits': ('SELECT * FROM org_edits WHERE domain=?', 'DELETE FROM org_edits WHERE domain=?',
+                  'INSERT INTO org_edits(domain,fields,updated_at) VALUES(:domain,:fields,:updated_at)'),
+    'projects': ('SELECT org,value,close_date,notes,board_id,stage,stage_reason,stage_event_id,stage_by,stage_at,outcome,outcome_reason,'
+                 'sort_run,sort_tries,sort_note FROM projects WHERE id=?', None,
+                 'UPDATE projects SET org=:org,value=:value,close_date=:close_date,notes=:notes,board_id=:board_id,stage=:stage,'
+                 'stage_reason=:stage_reason,stage_event_id=:stage_event_id,stage_by=:stage_by,stage_at=:stage_at,outcome=:outcome,'
+                 'outcome_reason=:outcome_reason,sort_run=:sort_run,sort_tries=:sort_tries,sort_note=:sort_note WHERE id=:id'),
+}
+
+
+def _snapshot(db, table, key):
+    row = db.execute(STATEMENTS[table][0], (key,)).fetchone()
     return dict(row) if row else None
 
 
-def _restore(db, table, key_column, key, row):
-    db.execute(f'DELETE FROM {table} WHERE {key_column}=?', (key,))
+def _restore(db, table, key, row):
+    read, delete, write = STATEMENTS[table]
+    if table == 'projects':  # only what an import can change goes back; the project itself stays
+        if row:
+            db.execute(write, {**{c: row.get(c) for c in PROJECT_COLUMNS}, 'id': key})
+        return
+    db.execute(delete, (key,))
     if row:
-        cols = list(row)
-        db.execute(f"INSERT INTO {table}({','.join(cols)}) VALUES({','.join('?' * len(cols))})", [row[c] for c in cols])
+        db.execute(write, row)
 
 
 def _person(db, rec, node_id, now, undo):
@@ -260,9 +285,9 @@ def _person(db, rec, node_id, now, undo):
         return node_id, True
     row = graph.resolve(db, node_id)
     group = crm.group_of(row)
-    undo['changed'].append({'kind': 'person', 'id': node_id, 'edits': {i: _snapshot(db, 'person_edits', 'identifier', i) for i in group},
-                            'orgs': {i: _snapshot(db, 'person_orgs', 'identifier', i) for i in group},
-                            'name': {i: _snapshot(db, 'graph_names', 'node_id', i) for i in group}})
+    undo['changed'].append({'kind': 'person', 'id': node_id, 'edits': {i: _snapshot(db, 'person_edits', i) for i in group},
+                            'orgs': {i: _snapshot(db, 'person_orgs', i) for i in group},
+                            'name': {i: _snapshot(db, 'graph_names', i) for i in group}})
     if fields:
         if 'phones' in fields:  # added to the numbers they have
             have = graph.shown_contacts(group, graph.person_edits_for(db, group))['phones']
@@ -292,7 +317,7 @@ def _org(db, rec, node_id, now, undo):
             db.execute('INSERT OR REPLACE INTO org_edits(domain,fields,updated_at) VALUES(?,?,?)', (key, json.dumps(fields), now))
         return node_id, True
     key = node_id if node_id.startswith('org:named:') else node_id[4:]
-    undo['changed'].append({'kind': 'org', 'id': node_id, 'key': key, 'edits': _snapshot(db, 'org_edits', 'domain', key)})
+    undo['changed'].append({'kind': 'org', 'id': node_id, 'key': key, 'edits': _snapshot(db, 'org_edits', key)})
     if fields:
         graph.org_edit(db, node_id, fields, now)
     return node_id, False
@@ -315,7 +340,7 @@ def _project(db, rec, node_id, now, undo):
         args['stage'] = rec['stage']
     if node_id:
         pid = int(node_id.split(':', 1)[1])
-        undo['changed'].append({'kind': 'project', 'id': node_id, 'row': _snapshot(db, 'projects', 'id', pid),
+        undo['changed'].append({'kind': 'project', 'id': node_id, 'row': _snapshot(db, 'projects', pid),
                                 'moves': db.execute('SELECT COALESCE(MAX(id),0) FROM project_moves WHERE project_id=?', (pid,)).fetchone()[0]})
         if 'stage' in args and 'board_id' not in args:
             row = db.execute('SELECT b.* FROM projects p JOIN boards b ON b.id=p.board_id WHERE p.id=?', (pid,)).fetchone()
@@ -381,15 +406,15 @@ def undo(db, import_id, now):
     plan_ = json.loads(row['undo'])
     for item in reversed(plan_['changed']):
         if item['kind'] == 'person':
-            for table, column, key in (('person_edits', 'identifier', 'edits'), ('person_orgs', 'identifier', 'orgs'), ('graph_names', 'node_id', 'name')):
+            for table, key in (('person_edits', 'edits'), ('person_orgs', 'orgs'), ('graph_names', 'name')):
                 for ident, snap in item[key].items():
-                    _restore(db, table, column, ident, snap)
+                    _restore(db, table, ident, snap)
         elif item['kind'] == 'org':
-            _restore(db, 'org_edits', 'domain', item['key'], item['edits'])
+            _restore(db, 'org_edits', item['key'], item['edits'])
         else:
             pid = int(item['id'].split(':', 1)[1])
             if item['row']:
-                _restore(db, 'projects', 'id', pid, item['row'])
+                _restore(db, 'projects', pid, item['row'])
             db.execute('DELETE FROM project_moves WHERE project_id=? AND id>?', (pid, item['moves']))
     for node_id in plan_['made']:
         if node_id.startswith('project:'):
