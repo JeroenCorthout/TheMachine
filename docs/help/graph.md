@@ -3,7 +3,7 @@ title: The Graph
 area: graph
 summary: The people, organizations and projects in your messages, kept up to date by themselves.
 covers: tab:people
-code: graph.py, crm.py, crm_import.py, enrichment.py, dashboard.html
+code: graph.py, crm.py, crm_import.py, crm_fields.py, enrichment.py, dashboard.html
 order: 1
 ---
 Your Machine builds a map of who you deal with and what's going on, from your messages, meetings and decisions. Nothing to set up, and it stays on your Machine.
@@ -28,13 +28,19 @@ An organization's timeline has its people's messages and the Intercom conversati
 
 ## Filter and sort
 
-**Filter**, next to the tabs on People, Organizations and Projects, narrows the list by owner, board, stage, organization, value and expected close date. People and organizations match through their open projects.
+**Filter**, next to the tabs on People, Organizations and Projects, narrows the list by owner, tag, board, stage, organization, value and expected close date. People and organizations match through their open projects.
 
 The filters you picked show above the list, with **Clear**. The order menu also sorts by **Value** and **Close date**. Your Machine does the filtering, so long lists stay fast. On a phone the filters open as a sheet.
 
 ## Owner
 
 In a Work Fleet, each person, organization and project has an owner: **Owner** under About you on its page. It's you, unless you pick someone from your Work Fleet. **Mine**, next to Filter and on a board, shows only yours. A board card shows its owner's name. Each change shows in its timeline. A record shared with your team carries its owner with it, under the same sharing rules as the rest.
+
+## Fields and tags
+
+**Edit fields** under Fields on a person, organization or project fills in your own fields. **New field** adds one for all of that kind: text, number, date or a choice from a list. **Remove** takes a field away for all of them.
+
+**+ Tag** adds a tag, like VIP or partner; **×** takes it off. Tags show in the lists and **Filter** finds them. A record shared with your team carries its fields and tags with it.
 
 ## Import a spreadsheet
 
@@ -117,6 +123,8 @@ Or run them by hand, like deals in a CRM:
 Projects of one kind in stages, like an evaluation pipeline. **⋯** on a board: **Edit board** (name, stages, which projects belong), **Open on this board** and **New board**. Reviews keep adding projects that fit and place them in a stage. When they aren't sure, the board shows "2 projects could belong here": **Add** or **Leave out**.
 
 Tick a few, or **Select all**, to do them at once, and **Undo** right after if you change your mind. A project that bundles several counterparts becomes one project per counterpart when you add it.
+
+**Pipeline**, at the top of a board, adds up the value of its open projects per stage, and what's expected to close per month from their close dates. **Mine** counts only yours.
 
 A new board, or a suggested board you save, looks through your whole history once. It finds projects and organizations that fit, makes one project per organization and puts each in a stage. The header says "Looking through your history…" while it works, then how many it added and how many wait for you to review. An Only-you board keeps what it finds to you.
 

@@ -86,7 +86,7 @@ try{
   // People as CSV
   await page.evaluate(()=>document.querySelector('[data-graph-sub="people"]').click());await click('#people-view .graph-sort summary');
   const [dl]=await Promise.all([page.waitForEvent('download'),click('#people-view [data-graph-csv]')]);
-  const csv=await readFile(await dl.path(),'utf8');assert.ok(csv.startsWith('﻿Name,Email,Phone,Title,Organization,To you,Type,Last contact\r\nAda Lovelace,ada@umicore.example,'),csv);
+  const csv=await readFile(await dl.path(),'utf8');assert.ok(csv.startsWith('﻿Name,Email,Phone,Title,Organization,To you,Type,Last contact,Tags\r\nAda Lovelace,ada@umicore.example,'),csv);
   await context.close()}
  assert.deepEqual(errors,[]);
  console.log('graph new dashboard ok');

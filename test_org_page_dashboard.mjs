@@ -49,7 +49,7 @@ try{
   assert.equal(await card.locator('.org-about').textContent(),'Lumen keeps the books for small companies and their founders.');
   assert.match(await card.locator('.person-rel').textContent(),/^4 people · last contact \w+, \w+ \d+$/);
   // Sections with headings, in order, as on a person's page.
-  assert.deepEqual(await card.locator('.detail-section>h4').allTextContents(),['Contact','About you','People','Projects']);
+  assert.deepEqual(await card.locator('.detail-section>h4').allTextContents(),['Contact','About you','Fields','People','Projects']);
   assert.deepEqual(await card.locator('.person-contact .kv .k').allTextContents(),['Website','LinkedIn']);
   assert.equal(await card.locator('.person-contact .kv .v').first().textContent(),'lumen.example ↗');
   assert.equal(await card.locator('.person-contact a[href="https://www.lumen.example/en/home"]').count(),1);

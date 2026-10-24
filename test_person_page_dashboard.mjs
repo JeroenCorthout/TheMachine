@@ -64,7 +64,7 @@ try{
   assert.equal(await card.locator('.person-bio').textContent(),'Learning, alloys and long walks.');
   assert.match(await card.locator('.person-rel').textContent(),/^Talk daily · last \w+, \w+ \d+ · next meeting \w+, \w+ \d+$/);
   // Sections with headings, in order; no scattered Edit links.
-  assert.deepEqual(await card.locator('.detail-section>h4').allTextContents(),['Contact','About you','People','Projects']);
+  assert.deepEqual(await card.locator('.detail-section>h4').allTextContents(),['Contact','About you','Fields','People','Projects']);
   assert.equal(await card.locator('[data-role-edit],[data-person-org-edit],.role-form,.person-org-form,.name-form').count(),0);
   assert.deepEqual(await card.locator('.person-contact .kv .k').allTextContents(),['Phone','Email','Email','LinkedIn','X','Also on']);
   assert.equal(await card.locator('.person-contact a[href="tel:+32470000071"]').textContent(),'+32 470 00 00 71');  // grouped to read; tap and Copy use the number

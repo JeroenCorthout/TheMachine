@@ -39,7 +39,8 @@ Records are shared by default when they are Work:
 | Raw mail | The email itself and its attachments | Client threads (above). Nothing else, ever |
 
 The record's owner is the one picked by hand on it (`owner_pick`, a Work Fleet member id; `crm.py`), and otherwise
-whoever in the team is closest to them. It travels only with a record that is shared anyway.
+whoever in the team is closest to them. It travels only with a record that is shared anyway, and so do its own
+fields and tags (`crm_fields.py`); for one record several members share, the closest one's field values win and the tags add up.
 
 **Keep private** on a person, organization or project shares nothing about it: no record, no timeline, none of their
 threads. It needs nobody's OK. Colleagues (people at the Fleet's own domains) are never shared as records. A person whose reviewed threads

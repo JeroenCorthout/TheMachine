@@ -1269,6 +1269,8 @@ def node_view(row, links=None):
                     next_meeting=info.get('next_meeting'))
     if info.get('owner'):  # someone in the owner's Work Fleet owns it; none: the owner here
         view.update(owner=info['owner'], owner_name=info.get('owner_name'))
+    if info.get('tags'):
+        view['tags'] = info['tags']
     if row['kind'] == 'org' and info.get('domains'):
         view.update(domains=info['domains'], aliases=info.get('aliases', []))
     if links is not None:
@@ -1597,6 +1599,9 @@ def detail(db, node_id, events=12):
             view['project'] = None
     import crm
     view['changes'] = crm.changes(db, row)  # owner changes, organizations merged in or split off
+    import crm_fields
+    view['fields'] = crm_fields.values_for(db, row)  # the owner's own fields, and the tags on it
+    view['tags'] = crm_fields.tags_for(db, row)
     if row['kind'] == 'org':
         view['doubles'] = crm.org_doubles(db, 5, node_id)
     if row['kind'] == 'org':

@@ -38,7 +38,9 @@ CHANGES = 30            # timeline lines per record
 
 
 def ensure(db):
+    import crm_fields
     db.executescript(SCHEMA)
+    crm_fields.ensure(db)
 
 
 def now_iso():
@@ -156,7 +158,8 @@ def decorate(db, nodes, links):
     owners = {r['node_id']: r for r in db.execute('SELECT node_id,owner,name,set_at FROM record_owners')}
     if owners:
         nodes = _owners(nodes, owners, folded)
-    return nodes, links
+    import crm_fields
+    return crm_fields.decorate(db, nodes, folded), links
 
 
 def _fold(db, nodes, links, folded):
@@ -447,7 +450,7 @@ def _brief(row):
 
 # ------------------------------------------------------------------ lists: filters and sorts on the Machine
 
-FILTERS = ('owner', 'board', 'stage', 'org', 'value_min', 'value_max', 'close_from', 'close_to')
+FILTERS = ('owner', 'tag', 'board', 'stage', 'org', 'value_min', 'value_max', 'close_from', 'close_to')
 SORTS = ('value', 'close')
 
 
@@ -461,6 +464,9 @@ def clean_filters(raw):
         if key == 'owner':
             if value != ME and not MEMBER.fullmatch(value):
                 raise ValueError('Owner: you or someone in your Work Fleet')
+        elif key == 'tag':
+            import crm_fields
+            value = crm_fields.clean_tag(value)
         elif key == 'board':
             if not value.isdigit():
                 raise ValueError('Board: one of your boards')
@@ -547,6 +553,9 @@ def list_query(db, name, filters, sort):
         else:
             where.append("json_extract(info,'$.owner')=?")
             args.append(filters['owner'])
+    if 'tag' in filters:
+        where.append("EXISTS(SELECT 1 FROM json_each(graph_nodes.info,'$.tags') t WHERE t.value=? COLLATE NOCASE)")
+        args.append(filters['tag'])
     if 'org' in filters:
         ids = org_ids(db, filters['org'])
         marks = ','.join('?' * len(ids)) or "''"

@@ -29,6 +29,7 @@ import re
 import secrets
 import time
 
+import crm_fields
 import fleet_trust as ft
 import graph
 import network_crypto as nc
@@ -476,7 +477,7 @@ def collect(db, scope, key, secret, today=None):
                       'org': {'name': org['name'], **({'d': keyed(key, 'domain:' + org_domain)} if org_domain else {})} if org else None,
                       'org_hand': info.get('org_by') == 'owner', 'ids': people[row['id']], 'd': [h for d in domains for h in every('domain:' + d)],
                       'score': round(row['strength'], 3), 'last': (last or row['last_at'] or '')[:10], 'timeline': timeline(row['id']),
-                      'threads': thread_tags(row['id']), **owner_pick(info)}
+                      'threads': thread_tags(row['id']), **owner_pick(info), **crm_fields.shared(db, row)}
     shared_orgs = {json.loads(db.execute('SELECT info FROM graph_nodes WHERE id=?', (p,)).fetchone()['info']).get('org') for p in people}
     for row in db.execute("SELECT * FROM graph_nodes WHERE kind='org'"):
         info = json.loads(row['info'] or '{}')
@@ -486,7 +487,7 @@ def collect(db, scope, key, secret, today=None):
         r = rid(row['id'])
         records[r] = {'r': r, 't': 'org', 'name': row['name'], 'name_hand': 'name' in (info.get('edited') or []), 'role': info.get('role'),
                       'role_hand': info.get('role_by') == 'owner', 'd': every('domain:' + domain), 'score': round(row['strength'], 3),
-                      'last': (row['last_at'] or '')[:10], **owner_pick(info)}
+                      'last': (row['last_at'] or '')[:10], **owner_pick(info), **crm_fields.shared(db, row)}
     tiles = {t['id']: t for b in graph.boards(db, today.isoformat()) for t in b['projects']}
     team_boards = graph.team_board_ids(db)
     for row in db.execute("SELECT n.*,p.id pid,b.id bid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages,b.side side "
@@ -515,7 +516,7 @@ def collect(db, scope, key, secret, today=None):
                       'why': row['stage_reason'], 'next': row['next_step'],
                       'org': {'name': org['name'], 'd': keyed(key, 'domain:' + domain)} if org else None,
                       'people': sorted({h for p in linked for h in people.get(p, [])}), 'timeline': timeline(row['id']), 'threads': thread_tags(row['id']),
-                      **owner_pick(json.loads(row['info'] or '{}'))}
+                      **owner_pick(json.loads(row['info'] or '{}')), **crm_fields.shared(db, row)}
     week = (today - dt.timedelta(days=7)).isoformat()
     recent = {}
     for thread, items in threads.items():
@@ -1504,7 +1505,9 @@ class SharedGraph:
         threads.sort(key=lambda x: str(x.get('at') or ''), reverse=True)
         people = [{'member': s['member'], 'fleet': s['fleet'], 'name': _first_name(s['name']), 'left': s['left'],
                    'score': s['record'].get('score') or 0} for s in sorted(entry['sources'], key=lambda s: -(s['record'].get('score') or 0))]
-        return {'via': via(entry['sources']), 'people': people, 'timeline': lines[:24], 'threads': threads[:20]}
+        rec = resolve(entry)
+        return {'via': via(entry['sources']), 'people': people, 'timeline': lines[:24], 'threads': threads[:20],
+                'fields': rec.get('fields') or [], 'tags': rec.get('tags') or []}
 
     def team_for(self, db, node_id):
         ensure(db)
@@ -1522,7 +1525,8 @@ class SharedGraph:
         org = rec.get('org') or {}
         return {'id': entry['key'], 'kind': entry['kind'], 'name': rec['name'] or '?', 'role': rec['role'], 'team_only': True, 'links': [], 'recent': [],
                 'probable_ids': [], 'last_at': rec['last'], 'strength': round(rec['score'], 2), 'closeness': graph.closeness(rec['score']), 'signals': 0,
-                'org_name': org.get('name'), 'state': 'active', 'stage': rec.get('stage'), 'board': rec.get('board'), 'next': rec.get('next'), 'team': section}
+                'org_name': org.get('name'), 'state': 'active', 'stage': rec.get('stage'), 'board': rec.get('board'), 'next': rec.get('next'), 'team': section,
+                'team_fields': rec.get('fields') or [], 'tags': rec.get('tags') or []}
 
     def team_thread(self, db, thread_id):
         """A client thread a teammate shared, in full: subject, messages with their text and their attachments (each one
@@ -1623,6 +1627,16 @@ def resolve(entry, local=None):
         member = picked['record']['owner_pick']
         named = next((c['who'] for c in cands if c['who'] and c['who'].get('member') == member), None)
         out.update(owner=member, owner_name=_first_name(named.get('name')) if named else None, owner_hand=True)
+    fields, tags = {}, {}  # the owner's own fields and tags: per field the closest one's value; every tag
+    for c in sorted(cands, key=lambda c: -c['score']):
+        for f in c['record'].get('fields') or ():
+            fields.setdefault(str(f.get('name') or '').casefold(), f)
+        for t in c['record'].get('tags') or ():
+            tags.setdefault(str(t).casefold(), t)
+    if fields:
+        out['fields'] = list(fields.values())
+    if tags:
+        out['tags'] = list(tags.values())
     out['score'] = max((c['score'] for c in cands), default=0)
     out['last'] = max((str(c['record'].get('last') or '') for c in cands), default='') or None
     return out
@@ -1648,6 +1662,14 @@ def _clean_record(r):
         out['org'] = {'name': _clean_text(org.get('name'), 100), **({'d': hashes(org['d'] if isinstance(org.get('d'), list) else [org.get('d')])} if org.get('d') else {})}
         out['org_hand'] = r.get('org_hand') is True
     out['threads'] = hashes(r.get('threads'))[:40] if r['t'] != 'org' else []
+    fields = [f for f in (r.get('fields') or [])[:crm_fields.MAX_FIELDS] if isinstance(f, dict)] if isinstance(r.get('fields'), list) else []
+    fields = [{'name': _clean_text(f.get('name'), 40), 'type': f.get('type') if f.get('type') in crm_fields.TYPES else 'text',
+               'value': _clean_text(f.get('value'), crm_fields.MAX_TEXT)} for f in fields]
+    if any(f['name'] and f['value'] for f in fields):
+        out['fields'] = [f for f in fields if f['name'] and f['value']]
+    tags = [_clean_text(t, 40) for t in (r.get('tags') or [])[:crm_fields.MAX_TAGS]] if isinstance(r.get('tags'), list) else []
+    if any(tags):
+        out['tags'] = [t for t in tags if t]
     if r['t'] == 'person':
         out.update(ids=hashes(r.get('ids')), d=hashes(r.get('d')))
     elif r['t'] == 'org':

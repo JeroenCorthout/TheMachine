@@ -160,6 +160,7 @@ def load(directory, states, port=8870, network_port=8871, fixture_path=HERE / 'f
             db.commit()  # graph.build opens its own transaction
             graph.build(db, config, base.isoformat())
             load_roles(db, base)
+            load_fields(db, base)
             load_skills(db, states, fixture, base)
             if 'fleet' in states:
                 load_share(db)
@@ -176,6 +177,26 @@ def load_owners(db, fixture, base):
         row = db.execute('SELECT id FROM projects WHERE name=?', (name,)).fetchone()
         if row:
             crm.set_owner(db, f'project:{row[0]}', team[m]['member_id'], team[m]['name'], stamp(2 * 24 * 60, base))
+    db.commit()
+
+
+def load_fields(db, base):
+    """Graph: two organization fields and a few tags (crm_fields.py), as someone running it like a CRM would add."""
+    import crm_fields
+    when = stamp(3 * 24 * 60, base)
+    plan = crm_fields.save_field(db, {'kind': 'org', 'name': 'Plan', 'type': 'choice', 'choices': 'Starter\nGrowth\nEnterprise'}, when)
+    seats = crm_fields.save_field(db, {'kind': 'org', 'name': 'Seats', 'type': 'number'}, when)
+    for domain, tier, count, tags in (('meridianrobotics.example', 'Enterprise', '120', ('Partner',)),
+                                      ('harborlinehealth.example', 'Growth', '40', ('Pilot',)),
+                                      ('northwindanalytics.example', None, None, ('Partner',))):
+        node = f'org:{domain}'
+        if not db.execute('SELECT 1 FROM graph_nodes WHERE id=?', (node,)).fetchone():
+            continue
+        if tier:
+            crm_fields.set_value(db, node, plan['id'], tier, when)
+            crm_fields.set_value(db, node, seats['id'], count, when)
+        for label in tags:
+            crm_fields.tag(db, node, label, now=when)
     db.commit()
 
 

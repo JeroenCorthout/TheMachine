@@ -45,6 +45,7 @@ from zoneinfo import ZoneInfo
 import embeddings
 import graph
 import crm
+import crm_fields
 import crm_import
 import mail_attachments
 import message_seal
@@ -546,7 +547,8 @@ LEARNING_ACTIONS = {'learnings_share', 'learnings_later', 'learnings_never', 'se
 OWNER_ACTIONS |= LEARNING_ACTIONS
 # The Graph as a CRM (crm.py, crm_import.py): who owns a record, one organization with several websites, and a
 # spreadsheet imported; the owner's own, from their dashboard only.
-CRM_ACTIONS = {'graph_owner', 'graph_org_merge', 'graph_org_split', 'graph_org_apart', 'graph_import_preview', 'graph_import_run', 'graph_import_undo'}
+CRM_ACTIONS = {'graph_owner', 'graph_org_merge', 'graph_org_split', 'graph_org_apart', 'graph_import_preview', 'graph_import_run', 'graph_import_undo',
+               'graph_field_save', 'graph_field_delete', 'graph_field_set', 'graph_tag'}
 OWNER_ACTIONS |= CRM_ACTIONS
 UPLOAD_ACTIONS, UPLOAD_REQUEST_BYTES = {'skill_import_upload', 'skill_import_report', 'skills_found', 'graph_import_preview', 'graph_import_run'}, 9 * 1024 * 1024
 # A merged fix to The Machine can be undone this long; one it merged by itself undoes itself when
@@ -15115,7 +15117,8 @@ class App:
             return []
 
     def crm_action(self, name, args):
-        """The owner's CRM changes on the dashboard: a record's owner, organizations merged or split, an import."""
+        """The owner's CRM changes on the dashboard: a record's owner, organizations merged or split, an import, their own
+        fields and tags (no rebuild needed for those: the node says its tags at once)."""
         if name == 'graph_import_preview':
             with self.store.connect() as db:
                 return crm_import.preview(db, str(args.get('kind') or ''), args.get('text'), args.get('mapping'))
@@ -15133,6 +15136,14 @@ class App:
                 done = crm.split_org(db, args.get('alias'), now())
             elif name == 'graph_org_apart':
                 done = crm.keep_apart(db, args.get('a'), args.get('b'), now())
+            elif name == 'graph_field_save':
+                return crm_fields.save_field(db, args, now())
+            elif name == 'graph_field_delete':
+                return crm_fields.delete_field(db, args.get('id'))
+            elif name == 'graph_field_set':
+                return crm_fields.set_value(db, args.get('node_id'), args.get('field_id'), args.get('value'), now())
+            elif name == 'graph_tag':
+                return crm_fields.tag(db, args.get('node_id'), args.get('tag'), args.get('add') is not False, now())
             elif name == 'graph_import_run':
                 done = crm_import.run(db, str(args.get('kind') or ''), args.get('text'), args.get('mapping'), now(), args.get('name'))
             else:
@@ -15587,6 +15598,8 @@ class App:
                                     "SELECT id,name FROM graph_nodes WHERE kind='person' AND name<>'' ORDER BY strength DESC LIMIT 1500")]  # the project dialog's people picker
                                 found['org_doubles'] = crm.org_doubles(db, 12)  # "Same organization?"
                                 found['last_import'] = crm_import.last(db)  # "Undo last import"
+                                found['crm_fields'] = crm_fields.fields(db)  # the owner's own fields per record type
+                                found['tags'] = crm_fields.tags_in_use(db)  # for the filter sheet
                                 if app.fleet:
                                     try:
                                         found['sharing'] = app.fleet.sharing()  # the Shared Graph: Mine or Team, and when sharing starts
