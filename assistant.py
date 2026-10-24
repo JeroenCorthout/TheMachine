@@ -44,6 +44,7 @@ import uuid
 from zoneinfo import ZoneInfo
 import embeddings
 import graph
+import own_addresses
 import crm
 import crm_fields
 import crm_fixes
@@ -507,7 +508,7 @@ class SourceError(Exception):
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
                    'connect_signin', 'connect_signin_state')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'edit_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_visibility', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_new', 'graph_org_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'security_level', 'security_setting', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'edit_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_visibility', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_new', 'graph_org_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'own_address', 'security_level', 'security_setting', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -4685,10 +4686,10 @@ class Store:
     def role_evidence(self, limit=ROLES_PEOPLE):
         """The closest people with no role yet, each with what the graph knows and their first and latest
         messages with the owner, plus the main organizations with no role, for one roles turn."""
-        owner = graph.Owner({'accounts': self.accounts})
-        owner.slack |= set(self.owner_user_ids)
         people = []
         with self.connect() as db:
+            owner = graph.Owner({'accounts': self.accounts}, db)
+            owner.slack |= set(self.owner_user_ids)
             rows = db.execute("SELECT * FROM graph_nodes WHERE kind='person' AND strength>=0.5 AND json_extract(info,'$.role') IS NULL AND coalesce(json_extract(info,'$.role_by'),'')!='owner' "
                               'ORDER BY strength DESC LIMIT ?', (limit,)).fetchall()
             for r in rows:
@@ -4737,10 +4738,10 @@ class Store:
     def org_evidence(self, limit=ORGS_PEOPLE):
         """People with no organization yet whose sources may state one: their LinkedIn headline and their own latest
         messages (a signature, them saying where they work). Those with a headline first, then the closest."""
-        owner = graph.Owner({'accounts': self.accounts})
-        owner.slack |= set(self.owner_user_ids)
         people = []
         with self.connect() as db:
+            owner = graph.Owner({'accounts': self.accounts}, db)
+            owner.slack |= set(self.owner_user_ids)
             rows = db.execute("SELECT * FROM graph_nodes WHERE kind='person' AND json_extract(info,'$.org') IS NULL AND id NOT IN (SELECT identifier FROM person_orgs) "
                               "AND (json_extract(info,'$.has_headline') OR (strength>=0.3 AND json_extract(info,'$.heard')>0)) "
                               "ORDER BY NOT json_extract(info,'$.has_headline'),strength DESC LIMIT ?", (limit,)).fetchall()
@@ -6260,12 +6261,15 @@ class Store:
         ids = [int(i) for i in ids]
         with self.connect() as db:
             rows = [dict(r) for r in db.execute('SELECT id,account_id,source_id,kind,occurred_at,title,body,metadata FROM events WHERE id IN (' + ','.join('?' for _ in ids) + ')', ids)] if ids else []
+            own = own_addresses.yours(db, self.config) if rows else set()
+        own |= {str(a.get('email') or '').lower() for a in self.accounts if a.get('service', 'gmail') in MAIL_SERVICES and '@' in str(a.get('email') or '')}
         rows.sort(key=lambda r: ids.index(r['id']))
         result = []
         for r in rows:
             m = json.loads(r['metadata'])
             url = m.get('source_url')
-            who = 'You' if m.get('from_me') else (m.get('sender_display') or m.get('from') or m.get('chat_name') or m.get('app_name')
+            mine = m.get('from_me') or (r['kind'] == 'gmail.message' and _address(m.get('from')) in own)  # also from another address of theirs
+            who = 'You' if mine else (m.get('sender_display') or m.get('from') or m.get('chat_name') or m.get('app_name')
                    or (('#' + m['channel_name']) if m.get('channel_name') else '') or '')
             body, details = r['body'], None
             if r['kind'] == 'machine.fault' and '\n' + FAULT_WHERE in body:  # code locations go under Details
@@ -9225,12 +9229,14 @@ MAIL_HEAD = re.compile(r'(?:(?:From|To|Cc|Date|Subject): [^\n]*\n)+\s*')
 SLACK_LINK = re.compile(r'<(https?://[^|>]+)(?:\|([^>]+))?>')
 
 
-def event_glance(event, accounts, chars=240):
-    """An event as a row in the Graph shows it: who wrote it (You for the owner) and the start of its text, in one line."""
+def event_glance(event, accounts, own=(), chars=240):
+    """An event as a row in the Graph shows it: who wrote it (You for the owner, also from another address of theirs:
+    own) and the start of its text, in one line."""
     m = event.get('metadata') or {}
     account = next((a for a in accounts if a.get('id') == event.get('account_id')), {})
     mine = bool(m.get('from_me')) or 'SENT' in (m.get('labels') or ()) or (
-        event.get('kind') == 'slack.message' and bool(m.get('user_id')) and m.get('user_id') == account.get('user_id'))
+        event.get('kind') == 'slack.message' and bool(m.get('user_id')) and m.get('user_id') == account.get('user_id')) or (
+        event.get('kind') == 'gmail.message' and _address(m.get('from')) in own)
     sender = str(m.get('sender_display') or m.get('from') or '')
     who = 'You' if mine else (email.utils.parseaddr(sender)[0] or sender if '@' in sender else sender)
     text = str(event.get('body') or '')
@@ -11015,7 +11021,14 @@ class App:
         return self.store.revise_draft(str(suggestion_id), editable[0]['revision'], 'agent', None, text, agent_job=job).get('status') == 'revised'
 
     def owner_emails(self):
-        return {str(e).lower() for a in self.config.get('accounts', []) for e in a.get('owner_emails', [a.get('email')]) if e}
+        """The owner's addresses: each account's (its owner_emails, else its own) and the ones found as theirs
+        (own_addresses.py: aliases, their calendar, their profiles; never a shared one or one they removed)."""
+        found = {str(e).lower() for a in self.config.get('accounts', []) for e in a.get('owner_emails', [a.get('email')]) if e}
+        try:
+            with self.store.connect() as db:
+                return found | own_addresses.yours(db, self.config)
+        except sqlite3.Error:
+            return found
 
     def calendar_write(self, args, transport=None):
         """The Calendar form's Add, Save or Delete: the owner filled it in and tapped it, so this one change runs now.
@@ -11431,6 +11444,7 @@ class App:
             result['agents_settings'] = self.agents_view()
             result['signatures'] = self.signature_view()
             result['lookups'] = self.lookups_view()
+            result['own_addresses'] = self.own_addresses_view()
             result['team_learnings'] = self.learnings_view()
             result['security'] = self.security_view()
             # Read only the existing heartbeat's runtime facts, never conversation
@@ -12011,6 +12025,13 @@ class App:
                 if ref and self.fleet:
                     self.fleet.set_rule(ref, security_levels.ALL, kind, rule)
             return {'security': self.security_view(), 'lookups': self.lookups_view(), 'team_learnings': self.learnings_view()}
+        if name == 'own_address':
+            if not owner_dashboard:
+                raise ValueError('Only the owner confirms or removes their addresses, in Settings')
+            with self.store.connect() as db:
+                own_addresses.choose(db, args.get('address'), str(args.get('choice') or ''), now())
+            self.graph_dirty.set()  # who counts as the owner changed: the graph follows within a minute
+            return {'own_addresses': self.own_addresses_view()}
         if name == 'set_people_lookup':
             if not owner_dashboard:
                 raise ValueError('Only the owner turns Look up work contacts on or off, in Settings')
@@ -14871,6 +14892,7 @@ class App:
             self.graph_dirty.clear()
             built, seen = time.monotonic(), fresh  # a failing build is not retried every minute
             try:
+                self.own_addresses_fetch()  # once a day per mailbox: its aliases, before the build tells the owner apart
                 self.graph_build()
                 seen = self.graph_freshness()
                 wait = 600
@@ -14995,7 +15017,46 @@ class App:
     def graph_build(self):
         with self.store.connect() as db:
             db.isolation_level = None  # graph.build runs its own transaction
-            return graph.build(db, self.config, now())
+            return graph.build(db, self.config, now(), self.fleet_addresses())
+
+    def fleet_addresses(self):
+        """The addresses of the people in the owner's Fleets (Work, Family, Friends): one they use too is never the
+        owner's own (own_addresses.py)."""
+        if not getattr(self, 'fleet', None):
+            return set()
+        try:
+            return {str(e).strip().lower() for f in self.fleet.fleets().values() for m in f.get('members') or ()
+                    if isinstance(m, dict) and not m.get('me') for e in m.get('emails') or ()}
+        except (fleet.Off, ValueError, OSError, sqlite3.Error, KeyError, TypeError):
+            return set()
+
+    def own_addresses_fetch(self, read=None):
+        """Each of the owner's own mailboxes' send-as addresses, once a day: Gmail's sendAs list (gmail.readonly, the
+        scope mail already reads with) or Outlook's proxy addresses (User.Read). A read that fails waits a day too."""
+        read = read or gog_read
+        for account in own_addresses.mail_accounts(self.config):
+            if getattr(self, 'stop', None) and self.stop.is_set():
+                return
+            with self.store.connect() as db:
+                if not own_addresses.fetch_due(db, account['id'], now()):
+                    continue
+            try:
+                answer = read(self.config, account, 'gmail', 'v1', 'gmail.users.settings.sendAs.list', {'userId': 'me'},
+                              'https://www.googleapis.com/auth/gmail.readonly')
+                entries = own_addresses.send_as_entries(answer, account.get('email'))
+            except (SourceError, OSError, ValueError, KeyError, TypeError) as error:
+                LOG.info('own addresses account=%s error=%s', account['id'], type(error).__name__)
+                entries = None
+            with self.store.connect() as db:
+                own_addresses.save_fetched(db, account['id'], entries, now())
+
+    def own_addresses_view(self):
+        """Settings, Account: the owner's addresses, where each came from, and the ones that may be theirs."""
+        try:
+            with self.store.connect() as db:
+                return own_addresses.view(db, self.config)
+        except sqlite3.Error:
+            return None
 
     def model_room(self, most=80):
         """The model's limits have room for extra work (a board's look through the history): no window the sign-in reports
@@ -15361,7 +15422,8 @@ class App:
         with self.store.connect() as db:
             got = graph.resolve(db, node)
         info = json.loads(got['info'] or '{}') if got and got['kind'] == 'person' else {}
-        graph_owner = graph.Owner(self.config)
+        with self.store.connect() as db:
+            graph_owner = graph.Owner(self.config, db)
         owner = self.owner_emails() | graph_owner.emails
         given = owner | {str(i)[6:].lower() for i in [got['id'] if got else '', *(info.get('identifiers') or [])] if str(i).startswith('email:')}
 
@@ -15384,7 +15446,7 @@ class App:
                 return None
             m = r['metadata']
             row = {'id': r['id'], 'type': 'event', 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
-                   'source': item['source'], 'source_url': m.get('source_url'), 'probable': item['probable'], **event_glance(r, accounts)}
+                   'source': item['source'], 'source_url': m.get('source_url'), 'probable': item['probable'], **event_glance(r, accounts, owner)}
             if r['kind'] == 'intercom.conversation':
                 row['state'] = 'open' if m.get('open') is True or m.get('state') in ('open', 'snoozed') else 'closed'
                 row['thread'] = None  # one conversation is one row
@@ -15730,7 +15792,7 @@ class App:
                 elif path.path == '/api/calendar':  # the Calendar tab: meetings in a window, and the calendars it can add to
                     args = urllib.parse.parse_qs(path.query)
                     try:
-                        owner = {e for a in app.config['accounts'] for e in a.get('owner_emails', [a.get('email')]) if e}
+                        owner = app.owner_emails()
                         writable = writable_calendars(app.config)
                         self.output(200, {'meetings': app.store.calendar([a['id'] for a in app.config['accounts']],
                                                                          args.get('from', [''])[0], args.get('to', [''])[0], owner,
@@ -15761,7 +15823,7 @@ class App:
                         found = app.store.promise_page(int(urllib.parse.parse_qs(path.query).get('id', [''])[0]))
                         rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[found['event_id']])
                         found['source'] = [{'id': r['id'], 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
-                                            'source_url': r['metadata'].get('source_url'), **event_glance(r, app.config['accounts'])} for r in rows][:1]
+                                            'source_url': r['metadata'].get('source_url'), **event_glance(r, app.config['accounts'], app.owner_emails())} for r in rows][:1]
                         self.output(200, found)
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'No such promise'})
@@ -16044,7 +16106,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in CRM_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_new','graph_org_delete','graph_same','graph_same_all','set_people_lookup','security_level','security_setting','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in CRM_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_new','graph_org_delete','graph_same','graph_same_all','set_people_lookup','own_address','security_level','security_setting','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

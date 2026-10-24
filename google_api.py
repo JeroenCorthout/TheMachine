@@ -32,6 +32,7 @@ READ = {
     'gmail.users.threads.get': ('GET', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/threads/{id}'),
     'gmail.users.labels.list': ('GET', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/labels'),
     'gmail.users.settings.sendAs.get': ('GET', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/settings/sendAs/{sendAsEmail}'),
+    'gmail.users.settings.sendAs.list': ('GET', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/settings/sendAs'),
     'calendar.calendars.get': ('GET', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}'),
     'calendar.events.list': ('GET', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events'),
     'calendar.events.get': ('GET', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}'),

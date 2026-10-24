@@ -523,6 +523,18 @@ def gmail_message(config, credential, account, message_id, form='full'):
     return out
 
 
+def send_as(me):
+    """A Microsoft mailbox's own addresses in Gmail's sendAs shape: its main address, and its other SMTP proxy addresses
+    as aliases (Exchange delivers each one to this mailbox). A personal Outlook.com account has none to show."""
+    primary = identity(me)
+    out = [{'sendAsEmail': primary, 'isPrimary': True, 'treatAsAlias': True, 'verificationStatus': 'accepted'}] if primary else []
+    for proxy in me.get('proxyAddresses') or ():
+        kind, _, address = str(proxy).partition(':')
+        if kind.lower() == 'smtp' and '@' in address and address.lower() != str(primary or '').lower():
+            out.append({'sendAsEmail': address.lower(), 'isPrimary': False, 'treatAsAlias': True, 'verificationStatus': 'accepted'})
+    return {'sendAs': out}
+
+
 def gmail_call(config, credential, account, method, params):
     """The Gmail reads the app makes, answered from Graph. The history cursor is a time: messages changed since."""
     params = dict(params or {})
@@ -531,6 +543,8 @@ def gmail_call(config, credential, account, method, params):
         return {'emailAddress': identity(me), 'historyId': _iso(dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=2))}
     if method == 'gmail.users.settings.sendAs.get':
         return {'sendAsEmail': params.get('sendAsEmail'), 'signature': ''}  # Graph has no API for Outlook signatures
+    if method == 'gmail.users.settings.sendAs.list':  # the mailbox's own addresses: its proxy addresses (User.Read)
+        return send_as(call(config, credential, account, 'me', {'$select': 'mail,userPrincipalName,proxyAddresses'}))
     if method == 'gmail.users.messages.get':
         return gmail_message(config, credential, account, params['id'], params.get('format', 'full'))
     if method == 'gmail.users.messages.attachments.get':

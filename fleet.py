@@ -1669,8 +1669,19 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         return next((m for m in self.teammates(fleet) if m['member_id'] == member_id), None)
 
     def my_emails(self):
+        """The owner's addresses: theirs in the directory, their accounts', and the ones found as theirs here (aliases,
+        their calendar; own_addresses.py). The last stay on this Machine: the directory only hears account_emails."""
+        import sqlite3
+        import own_addresses
         mine = {e for ref in self.work_fleets() for m in self.fleets()[ref].get('members', []) if m.get('me') for e in m.get('emails', [])}
-        return mine | {str(a.get('email') or '').lower() for a in self.config.get('accounts', []) if a.get('email')}
+        found = set()
+        if self.connect:
+            try:
+                with self.connect() as db:
+                    found = own_addresses.yours(db, self.config)
+            except sqlite3.Error:
+                pass
+        return mine | found | {str(a.get('email') or '').lower() for a in self.config.get('accounts', []) if a.get('email')}
 
     def rule(self, db, fleet, member_id, kind, raw=False):
         """A teammate's rule for a kind of question: their exception if they have one, else the Fleet's rule (member ALL).

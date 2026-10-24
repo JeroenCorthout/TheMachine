@@ -8,7 +8,7 @@ order: 1
 ---
 Open **Settings** with the gear at the top. Its tabs:
 
-- **Account**: your plan in short, buttons to your account pages, and **Sign out**. See [Plans and billing](plans-and-billing.md).
+- **Account**: **Your addresses**, the ones that count as you, with where each came from. Your plan in short, buttons to your account pages, and **Sign out**. See [Plans and billing](plans-and-billing.md).
 - **General**: this device, coding agents, your Machine's browser, your Fleet and your account.
 - **Security**: Standard or Careful, and the settings they set. See [Security levels](security-levels.md).
 - **Work hours**: when your Machine may message you. See [Work hours](work-hours.md).
@@ -25,3 +25,9 @@ A tab with nothing to show is hidden.
 - **Open the Machine’s browser ↗**: the browser your Machine uses for sites like LinkedIn.
 - **Fleet rules**: see [Sharing rules](sharing-rules.md).
 - **Account**: **Open account** and **Sign out**, on a hosted Machine.
+
+## Your addresses
+
+Every address of yours the Machine found: your accounts, Gmail or Outlook aliases, your calendar, your Slack and Intercom profile. Mail and meetings from any of them show as you. **Remove** one that isn't yours.
+
+A shared address, like info@ or a Google Group, never counts by itself. One the Machine isn't sure about is under **Maybe yours**: tap **Confirm** if only you use it, or **Not mine**.

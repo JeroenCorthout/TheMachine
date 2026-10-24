@@ -9,6 +9,7 @@
 | Key | Default | Meaning |
 |---|---|---|
 | `owner_name` | — | Your name; preparations sign emails with your first name |
+| `owner_emails`, `not_owner_emails` | `[]` | Addresses that are always yours, and ones that never are. The Machine also finds your own addresses itself ([Your addresses](intelligence.md#your-addresses)); these override it |
 | `timezone` | `Europe/Amsterdam` (the installer sets this computer's) | IANA zone for your work hours, digests, snoozes and recaps (the dashboard's Work hours, or `assistant hours --timezone`) |
 | `telegram_owner` | empty | Your Telegram chat ID; the only chat that gets cards and whose taps count. Empty: Telegram off, cards go to the dashboard app's notifications |
 | `telegram_account` | `default` | The OpenClaw Telegram account (bot) that sends cards, when you run several; the installer sets it |

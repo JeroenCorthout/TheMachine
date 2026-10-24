@@ -205,16 +205,23 @@ def ensure(db):
             db.execute(f'ALTER TABLE {table} ADD COLUMN visibility TEXT')
     import crm  # owners, organizations with several websites (2026-10-24)
     crm.ensure(db)
+    import own_addresses  # the owner's own addresses, where each came from, and their word on them (2026-10-24)
+    own_addresses.ensure(db)
 
 
 class Owner:
-    """The owner's own identities, from the configured accounts: never a person in the graph."""
-    def __init__(self, config):
+    """The owner's own identities, from the configured accounts and, with a database, the addresses found as theirs
+    (own_addresses.py: aliases, their calendar, their profiles; never a shared one): never a person in the graph."""
+    def __init__(self, config, db=None):
+        import own_addresses
         accounts = config.get('accounts', [])
         self.emails = {str(a.get('email', '')).lower() for a in accounts if '@' in str(a.get('email', ''))}
         for a in accounts:
             self.emails |= {str(e).lower() for e in a.get('owner_emails') or () if '@' in str(e)}
         self.emails |= {str(e).lower() for e in config.get('owner_emails') or ()}
+        self.excluded = own_addresses.excluded(db, config) if db is not None else own_addresses.configured(config)[1]
+        if db is not None:
+            self.emails |= own_addresses.yours(db, config)
         self.domains = {e.rsplit('@', 1)[1] for e in self.emails} - FREEMAIL
         self.slack = {a['user_id'] for a in accounts if a.get('service') == 'slack' and a.get('user_id')}
         self.handles = {str(a.get('handle') or a.get('login') or '').lower() for a in accounts if a.get('service') in ('x', 'github')} - {''}
@@ -225,6 +232,8 @@ class Owner:
         for _, _, kind, _, m in signals:
             if kind == 'gmail.message' and 'SENT' in (m.get('labels') or ()):
                 for name, addr in addresses(m.get('from'))[:1]:
+                    if addr in self.excluded:
+                        continue  # the owner said it isn't theirs
                     self.emails.add(addr)
                     if plain_name(name):
                         self.names.add(plain_name(name))
@@ -706,22 +715,23 @@ def owner_tz(config):
         return dt.timezone.utc
 
 
-def build(db, config, now):
-    """Publish one coherent graph. Concurrent edits cannot be overwritten by an older build."""
+def build(db, config, now, team=()):
+    """Publish one coherent graph. Concurrent edits cannot be overwritten by an older build. team: the addresses of the
+    people in the owner's Fleets, so an address they use too is never the owner's own (own_addresses.py)."""
     db.execute('BEGIN IMMEDIATE')
     try:
-        return _build(db, config, now)
+        return _build(db, config, now, team)
     except BaseException:
         if db.in_transaction:
             db.execute('ROLLBACK')
         raise
 
 
-def _build(db, config, now):
+def _build(db, config, now, team=()):
     """Recompute graph_nodes, graph_links and graph_events. Returns a short summary."""
+    import own_addresses
     started = dt.datetime.now(dt.timezone.utc)
     current = parse_time(now)
-    owner = Owner(config)
     tz = owner_tz(config)
     horizon = (current - dt.timedelta(days=HORIZON_DAYS)).isoformat()
     rows = db.execute("SELECT id,account_id,kind,occurred_at,metadata FROM events WHERE deleted=0 AND occurred_at>=? ORDER BY occurred_at", (horizon,)).fetchall()
@@ -732,6 +742,8 @@ def _build(db, config, now):
         except ValueError:
             continue
         signals.append((r['id'], r['account_id'], r['kind'], parse_time(r['occurred_at']), m if isinstance(m, dict) else {}))
+    own_addresses.refresh(db, config, signals, team, now)  # the owner's own addresses, before anyone is told apart from them
+    owner = Owner(config, db)
     owner.learn(signals)
     wrote_to = set()
     for _, _, kind, _, m in signals:
@@ -3832,7 +3844,7 @@ def delete_person(db, node_id, config, now):
     salt = _salt(db, create=True)
     db.executemany('INSERT OR IGNORE INTO forgotten_people(digest,created_at) VALUES(?,?)', [(forgotten_digest(salt, i), now) for i in ids])
     gone = forgotten(db)
-    owner = Owner(config or {})
+    owner = Owner(config or {}, db)
     # Messages they sent, or only between them and the owner.
     dropped = []
     if _table(db, 'events'):
