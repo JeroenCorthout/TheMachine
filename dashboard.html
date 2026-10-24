@@ -5142,7 +5142,11 @@ const tile=(p,b)=>{const stuck=stuckDays(p),age=p.days+'d';  /* under a day the 
   +(p.value!=null||p.close_date?`<p class="tile-val">${p.value!=null?`<span title="Value">${esc(money(p.value))}</span>`:''}${p.value!=null&&p.close_date?' · ':''}${p.close_date?`<span title="Expected close">closes ${esc(closeDay(p.close_date))}</span>`:''}</p>`:'')+(p.next?`<p class="tile-next">${esc(p.next)}</p>`:'')+tileWhy(p)
   +(stuck?`<div class="tile-chips"><span class="chip">No reply in ${stuck} days</span>${p.card?`<a class="tile-card" href="#card=${esc(p.card.id)}" title="${esc(p.card.title)}">Card: ${esc(p.card.title)}</a>`:''}</div>`:'')+(p.owner_name?`<p class="tile-owner" title="Owner">${esc(p.owner_name)}</p>`:'')+'</article>'};
 const closeDay=v=>{const d=new Date(v+'T12:00');return isNaN(d)?v:d.toLocaleDateString([],{day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})})};
-const money=v=>new Intl.NumberFormat(undefined,{notation:v>=10000?'compact':'standard',maximumFractionDigits:v>=10000?1:0}).format(v);
+// Project values in the owner's currency (config "currency", EUR when not set): short on tiles, in full where there is room.
+var graphCurrency='EUR';
+const moneyFormat=(v,o)=>{try{return new Intl.NumberFormat(undefined,{style:'currency',currency:graphCurrency,...o}).format(v)}catch{return new Intl.NumberFormat(undefined,o).format(v)}};
+const money=v=>moneyFormat(v,{notation:v>=10000?'compact':'standard',maximumFractionDigits:v>=10000?1:0});
+const moneyFull=v=>moneyFormat(v,{maximumFractionDigits:0});
 const LANE_ROWS=()=>matchMedia('(max-width:560px)').matches?6:8;
 const lane=(b,s,items,on)=>{const key=b.name+'|'+s.name,all=boardOpen.has(key)||s.side&&!matchMedia('(max-width:560px)').matches,shown=all?items:items.slice(0,LANE_ROWS()),stuck=items.filter(stuckDays).length;
  return `<section class="lane${s.side?' side':''}${on?' on':''}" data-lane="${esc(s.name)}" aria-label="${esc(s.name)}"><div class="lane-h"><h4>${esc(s.name)}</h4><span>${items.length}</span>${items.some(p=>p.value!=null)?`<span class="lane-total" title="Total value">${esc(money(items.reduce((t,p)=>t+(p.value||0),0)))}</span>`:''}</div>${s.hint?`<p class="lane-hint">${esc(s.hint)}</p>`:''}${stuck?`<p class="lane-sum">${stuck} with no reply in 10+ days</p>`:''}`
@@ -5249,7 +5253,7 @@ $('#board-form').addEventListener('submit',async e=>{e.preventDefault();if(!ed)r
  if(new Set(stages.map(x=>x.name.toLowerCase())).size<stages.length)return say('Each stage needs its own name.');
  const btn=e.submitter||$('#board-form button.primary');btn.disabled=true;
  try{await boardSave({...(ed.id?{board_id:ed.id}:{}),...(ed.suggestion?{suggestion_id:ed.suggestion}:{}),name:ed.name.trim(),stages,side:ed.side,about:ed.about.trim(),visibility:ed.visibility,projects:ed.projects.map(p=>p.id)});$('#board-dialog').close()}catch(x){say(x.message)}finally{btn.disabled=false}});
-$('#board-dialog').addEventListener('close',()=>{ed=null});
+$('#board-dialog').addEventListener('close',e=>{if(!e.currentTarget.open)ed=null});
 $('#people-view').addEventListener('click',async e=>{const t=e.target.closest('[data-suggest-save],[data-suggest-edit],[data-suggest-dismiss],[data-board-new],[data-board-edit]');if(!t)return;e.stopPropagation();
  t.closest('details')?.removeAttribute('open');const s=graphSuggest.find(x=>String(x.id)===t.closest('[data-suggest]')?.dataset.suggest);
  try{if(t.hasAttribute('data-board-new'))edOpen();else if(t.dataset.boardEdit)edOpen({board:graphBoards.find(b=>String(b.id)===t.dataset.boardEdit)});
@@ -5271,7 +5275,7 @@ let graphMineBoards=null,graphPeopleNames=[],pj=null;
 const projActions=c=>`<span class="org-actions"><button class="ghost" data-proj-edit="${esc(c.node_id)}">Edit</button><details class="fact-menu"><summary aria-label="More for this project" title="More">⋯</summary><div class="fact-menu-list" role="menu"><button type="button" role="menuitem" data-card-here>New card</button>`
  +(c.outcome?`<button type="button" role="menuitem" data-proj-reopen="${esc(c.node_id)}">Reopen</button>`:`<button type="button" role="menuitem" data-proj-outcome="won" data-proj-node="${esc(c.node_id)}">Won</button><button type="button" role="menuitem" data-proj-outcome="lost" data-proj-node="${esc(c.node_id)}">Lost</button>`)
  +`<button type="button" role="menuitem" data-proj-archive="${esc(c.node_id)}"${c.archived?' data-restore':''}>${c.archived?'Restore':'Archive'}</button><button type="button" role="menuitem" class="danger" data-proj-delete="${esc(c.node_id)}">Delete…</button></div></details></span>`;
-const projFacts=n=>{const c=n.project;if(!c)return '';const bits=[c.value!=null?'Value '+new Intl.NumberFormat().format(c.value):'',c.close_date?'Expected close '+closeDay(c.close_date):'',c.org||''].filter(Boolean);
+const projFacts=n=>{const c=n.project;if(!c)return '';const bits=[c.value!=null?'Value '+moneyFull(c.value):'',c.close_date?'Expected close '+closeDay(c.close_date):'',c.org||''].filter(Boolean);
  return `<div class="proj-facts">${c.archived?'<p class="muted">Archived</p>':''}${c.outcome?`<p><b>${c.outcome==='won'?'Won':'Lost'}</b>${c.outcome_reason?': '+esc(c.outcome_reason):''}</p>`:''}${bits.length?`<p class="detail-sub">${esc(bits.join(' · '))}</p>`:''}${c.notes?`<p class="proj-notes">${esc(c.notes)}</p>`:''}${n.board?'':`<p><button type="button" class="link" data-proj-edit="${esc(c.node_id)}">Put it on a board</button></p>`}${graphOwners.length&&!n.team_only?ownerRow(n):''}</div>`};
 async function pjData(){if(graphMineBoards)return;const g=await request('api/graph');graphMineBoards=(g.boards||[]).filter(b=>!b.team);graphPeopleNames=g.person_names||[]}
 async function pjOpen(o={}){try{await pjData();
@@ -5328,7 +5332,7 @@ $('#project-form').addEventListener('submit',async e=>{e.preventDefault();if(!pj
   if(r.created&&pj.board_id){const b=(graphMineBoards||[]).find(x=>x.id===pj.board_id);if(b){boardShown=b.name;sideStore.set('board-shown',b.name)}}
   if(r.created&&pj.from!=='board'){$('#project-dialog').close();graphMineBoards=null;toast(`Added ${r.name}.`);return recShow(r.node_id)}
   pjDone(r,r.created?`Added ${r.name}.`:'Saved.')}catch(x){say(x.message)}finally{btn.disabled=false}});
-$('#project-dialog').addEventListener('close',()=>{pj=null});
+$('#project-dialog').addEventListener('close',e=>{if(!e.currentTarget.open)pj=null});
 // New person and New organization: a short form (a name; for a person their email and organization, for an
 // organization its website). Ones already in the Graph that look like what is typed show as "Already in your Graph?",
 // each a link that opens it; the Machine also hands back the one there for the same address or website. Saving opens
@@ -5366,7 +5370,7 @@ $('#record-form').addEventListener('submit',async e=>{e.preventDefault();if(!rec
   const r=await graphPost('graph_new',{kind:rec.kind,...Object.fromEntries(REC[rec.kind].fields.map(([k])=>[k,v(k)]))});
   $('#record-dialog').close();graphMineBoards=null;toast(r.existing?`${r.name} is in your Graph already.`:`Added ${r.name}.`);recShow(r.node_id)}
  catch(x){say(x.message)}finally{btn.disabled=false}});
-$('#record-dialog').addEventListener('close',()=>{rec=null});
+$('#record-dialog').addEventListener('close',e=>{if(!e.currentTarget.open)rec=null});  // a close event comes later: the dialog may be open again by then
 // New person, organization or project from a Graph page's head; New card, Same person as… and Delete on a page
 document.addEventListener('click',async e=>{const n=e.target.closest('[data-graph-new]');if(n){e.preventDefault();return n.dataset.graphNew==='project'?pjOpen({}):recOpen(n.dataset.graphNew)}
  const t=e.target.closest('[data-card-here],[data-same-as],[data-org-delete]');if(!t||!t.closest('#people-view'))return;e.preventDefault();t.closest('details')?.removeAttribute('open');
@@ -5688,7 +5692,7 @@ async function people(node=graphNode,quiet=false){const was=graphNode;graphNode=
  const forTeam=graphTeam;let g=await cachedGet(graphTeam||graphPane==='held'?'api/graph?view=team':'api/graph',graphFresh);graphSharing=g.sharing||graphSharing;if(g.team&&!teamOn())g=await request('api/graph');
  if(forTeam!==graphTeam)return;  // Mine or Team changed while this loaded: the newer load draws
  const team=!!g.team&&(graphTeam||graphPane==='held'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';const start=team?shareNote(g.sharing):'';
- if(!team){graphOwners=g.owners||[];graphLastImport=g.last_import||null;graphFields=g.crm_fields||[];graphTags=g.tags||[];tagsPaint()}
+ if(!team){graphOwners=g.owners||[];graphLastImport=g.last_import||null;graphFields=g.crm_fields||[];graphTags=g.tags||[];if(g.currency)graphCurrency=g.currency;tagsPaint()}
  const back=graphScroll;  /* back from a person: a quiet refresh that wins the race restores it too */const lc=!team&&g.list_counts||Object.fromEntries(['people','quiet','new','orgs','warmup','projects','projects_done'].map(k=>[k,(g[k]||[]).length]));graphLocal=!team&&g.list_counts?null:g;  /* the team's lists come whole */
  const had=quiet&&new Map([...pagers].filter(([k,p])=>k.startsWith('graph:')&&p.items.length).map(([k,p])=>[k,p.items.length]));
  if(team||graphListsTeam||JSON.stringify(lc)!==JSON.stringify(graphLists)||!g.list_counts){pagerDrop('graph');graphLists=lc}graphListsTeam=team;
@@ -5796,7 +5800,7 @@ $('#crm-form').addEventListener('submit',async e=>{e.preventDefault();const c=cr
    const r=await graphPost('graph_org_merge',{node_id:c.id,into:id});$('#crm-dialog').close();toast('Merged. Split off undoes it.');return crmAfter(r.node_id)}
   if(c.mode==='org-site'){if(!v('website'))return crmSay('Type a website, like acme.io.');const r=await graphPost('graph_org_merge',{node_id:c.id,website:v('website')});$('#crm-dialog').close();toast('Added.');return crmAfter(r.node_id)}}
  catch(x){crmSay(x.message)}finally{btn.disabled=false}});
-$('#crm-dialog').addEventListener('close',()=>{crm=null});
+$('#crm-dialog').addEventListener('close',e=>{if(!e.currentTarget.open)crm=null});
 document.addEventListener('click',async e=>{const t=e.target.closest('[data-crm-mine],[data-crm-filter],[data-crm-clear],[data-crm-import],[data-crm-undo-import],[data-org-split],[data-org-merge],[data-org-apart],[data-org-same],[data-org-site],[data-board-mine]');if(!t)return;
  e.preventDefault();e.stopPropagation();t.closest('details')?.removeAttribute('open');
  if(t.dataset.crmMine){const p=t.dataset.crmMine,f={...crmF(p)};if(f.owner==='me')delete f.owner;else f.owner='me';return crmSet(p,f)}
@@ -5820,18 +5824,23 @@ document.addEventListener('change',async e=>{const t=e.target.closest?.('[data-o
 // expected close date (the projects on the board as shown, so Mine counts only the owner's own). One series, so one
 // color; every bar carries its label and value as text.
 const pipeMonth=k=>{const d=new Date(Math.floor(k/12),k%12,1),y=d.getFullYear()!==new Date().getFullYear();return d.toLocaleDateString('en-US',{month:'short',...(y?{year:'numeric'}:{})})};
-const pipeRow=(label,value,n,max,cls='')=>`<div class="pipe-row${cls}" title="${esc(label)}: ${esc(new Intl.NumberFormat().format(value))} in ${n} project${n===1?'':'s'}"><span class="pipe-k ell">${esc(label)}</span><span class="pipe-bar" aria-hidden="true">${value>0?`<i style="width:${Math.max(2,Math.round(value/max*100))}%"></i>`:''}</span><span class="pipe-v">${value?esc(money(value)):'0'} <small>${n}</small></span></div>`;
-function pipeline(b){const ps=b.projects;if(!ps.some(p=>p.value!=null))return '';
- const sum=a=>a.reduce((t,p)=>t+(p.value||0),0),total=sum(ps);
- const stages=b.stages.map(s=>{const it=ps.filter(p=>p.stage===s.name);return [s.side?'Stalled':s.name,sum(it),it.length]});
- const now=new Date(),m0=now.getFullYear()*12+now.getMonth(),key=d=>{const [y,m]=String(d).split('-').map(Number);return y*12+m-1};
+const pipeRow=(label,value,n,max,cls='')=>`<div class="pipe-row${cls}" title="${esc(label)}: ${esc(moneyFull(value))} in ${n} project${n===1?'':'s'}"><span class="pipe-k ell">${esc(label)}</span><span class="pipe-bar" aria-hidden="true">${value>0?`<i style="width:${Math.max(2,Math.round(value/max*100))}%"></i>`:''}</span><span class="pipe-v">${esc(money(value))} <small>${n}</small></span></div>`;
+function pipeline(b){if(!b.projects.some(p=>p.value!=null))return '';
+ // Open is what can still close: not won or lost, not in the last stage (where Won puts it) nor Stalled or declined
+ const main=b.stages.filter(s=>!s.side),wonStage=main.length>1?main.at(-1).name:null,side=new Set(b.stages.filter(s=>s.side).map(s=>s.name));
+ const won=p=>p.outcome==='won'||p.stage===wonStage,ps=b.projects.filter(p=>!p.outcome&&!won(p)&&!side.has(p.stage));
+ const sum=a=>a.reduce((t,p)=>t+(p.value||0),0),total=sum(ps),now=new Date(),m0=now.getFullYear()*12+now.getMonth();
+ const key=d=>{const [y,m]=String(d).split('-').map(Number);return y*12+m-1};
+ const wonNow=b.projects.filter(p=>won(p)&&p.value!=null&&p.at&&key(String(p.at).slice(0,7))===m0);
+ const stages=main.filter(s=>s.name!==wonStage).map(s=>{const it=ps.filter(p=>p.stage===s.name);return [s.name,sum(it),it.length]});
  const months=new Map(),over=[0,0],none=[0,0],later=[0,0];
  for(const p of ps){const v=p.value||0;if(p.value==null)continue;if(!p.close_date){none[0]+=v;none[1]++;continue}const k=key(p.close_date);
   if(k<m0){over[0]+=v;over[1]++}else if(k>m0+11){later[0]+=v;later[1]++}else{const x=months.get(k)||[0,0];x[0]+=v;x[1]++;months.set(k,x)}}
  const last=Math.max(m0+2,...months.keys()),monthRows=[];for(let k=m0;k<=last;k++){const x=months.get(k)||[0,0];monthRows.push([pipeMonth(k),x[0],x[1]])}
  const max1=Math.max(1,...stages.map(s=>s[1])),max2=Math.max(1,over[0],later[0],...monthRows.map(m=>m[1]));
- return `<details class="pipeline"${sideStore.get('board-pipeline')==='0'?'':' open'}><summary><b>Pipeline</b> <span>${esc(money(total))} open in ${ps.filter(p=>p.value!=null).length} with a value</span></summary><div class="pipe-grid">`
-  +`<div class="pipe-block"><h5>By stage</h5>${stages.map(s=>pipeRow(s[0],s[1],s[2],max1)).join('')}</div>`
+ return `<details class="pipeline"${sideStore.get('board-pipeline')==='0'?'':' open'}><summary><b>Pipeline</b> <span>${esc(money(total))} open in ${ps.filter(p=>p.value!=null).length} with a value</span> `
+  +`${wonNow.length?`<span class="pipe-won">Won this month: ${esc(money(sum(wonNow)))} in ${wonNow.length}</span>`:''}</summary><div class="pipe-grid">`
+  +`<div class="pipe-block"><h5>Open by stage</h5>${stages.map(s=>pipeRow(s[0],s[1],s[2],max1)).join('')}</div>`
   +`<div class="pipe-block"><h5>Expected to close</h5>${over[1]?pipeRow('Overdue',over[0],over[1],max2,' over'):''}${monthRows.map(m=>pipeRow(m[0],m[1],m[2],max2)).join('')}${later[1]?pipeRow('Later',later[0],later[1],max2):''}`
   +`${none[1]?`<p class="pipe-note">No close date: ${esc(money(none[0]))} in ${none[1]}</p>`:''}</div></div></details>`}
 document.addEventListener('click',e=>{const d=e.target.closest?.('.pipeline>summary')?.parentElement;if(d)sideStore.set('board-pipeline',d.open?'0':'1')});  /* the owner's pick, not a redraw's */

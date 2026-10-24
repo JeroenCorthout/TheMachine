@@ -12,11 +12,12 @@ const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8
 const day=n=>new Date(Date.now()-n*864e5).toISOString();
 const month=k=>{const d=new Date();d.setDate(15);d.setMonth(d.getMonth()+k);return d.toISOString().slice(0,10)};
 const node=(kind,id,name,extra={})=>({id,kind,name,strength:2,last_at:day(1),signals:3,ids:[],links:[],recent:[],around:[],open:{},...extra});
-const stages=[{name:'Discovery'},{name:'Demo'},{name:'Won'}];
+const stages=[{name:'Discovery'},{name:'Demo'},{name:'Won'},{name:'Stalled or declined',side:true}];
 const tiles=[{id:'project:1',name:'Globex pilot',stage:'Demo',days:3,value:12000,close_date:month(1)},
  {id:'project:2',name:'Umber deal',stage:'Discovery',days:1,value:3000,close_date:month(0)},
  {id:'project:3',name:'Late one',stage:'Discovery',days:9,value:5000,close_date:month(-2),owner:'m-kim',owner_name:'Kim Vale'},
- {id:'project:4',name:'Someday',stage:'Won',days:2,value:7000},{id:'project:5',name:'No value',stage:'Demo',days:2}];
+ {id:'project:4',name:'Signed',stage:'Won',days:0,value:7000,at:new Date().toISOString(),outcome:'won'},{id:'project:5',name:'No value',stage:'Demo',days:2},
+ {id:'project:6',name:'Someday',stage:'Discovery',days:2,value:2000},{id:'project:7',name:'Gone',stage:'Stalled or declined',days:4,value:9000,outcome:'lost'}];
 const boards=[{id:1,name:'Sales',stages,default:true,stuck:0,maybes:[],projects:tiles}];
 const FIELDS=[{id:1,kind:'org',name:'Plan',type:'choice',choices:['Starter','Pro']},{id:2,kind:'org',name:'Seats',type:'number'}];let fields=[...FIELDS];
 let values={1:'Pro',2:null},tags=['partner'];
@@ -61,16 +62,16 @@ try{
   await page.evaluate(()=>document.querySelector('[data-graph-sub="projects"]').click());
   // The Pipeline: value per stage, and expected per month (overdue first, then this month on), the ones with no date apart
   await page.locator('#people-view .pipeline').waitFor();
-  assert.match((await page.locator('#people-view .pipeline summary').textContent()).replace(/\s+/g,' '),/Pipeline ?27k open in 4 with a value/i);
+  assert.match((await page.locator('#people-view .pipeline summary').textContent()).replace(/\s+/g,' '),/Pipeline ?€22k open in 4 with a value ?Won this month: €7,000 in 1/i);
   const stageRows=await text(page.locator('#people-view .pipe-block').first().locator('.pipe-row'));
-  assert.deepEqual(stageRows,['discovery 8,000 2','demo 12k 2','won 7,000 1']);
+  assert.deepEqual(stageRows,['discovery €10k 3','demo €12k 2']);  // won and lost are not open
   const monthRows=await text(page.locator('#people-view .pipe-block').nth(1).locator('.pipe-row'));
-  assert.equal(monthRows[0],'overdue 5,000 1');assert.match(monthRows[1],/ 3,000 1$/);assert.match(monthRows[2],/ 12k 1$/);assert.equal(monthRows.length,4);
-  assert.equal(await page.locator('#people-view .pipe-note').textContent(),'No close date: 7,000 in 1');
+  assert.equal(monthRows[0],'overdue €5,000 1');assert.match(monthRows[1],/ €3,000 1$/);assert.match(monthRows[2],/ €12k 1$/);assert.equal(monthRows.length,4);
+  assert.equal(await page.locator('#people-view .pipe-note').textContent(),'No close date: €2,000 in 1');
   await fits(page,'pipeline '+tag);await page.locator('#people-view .pipeline').scrollIntoViewIfNeeded();await shot(page,`pipeline-${tag}`);
   // Mine: only your own count (a teammate owns the overdue one)
   await click('#people-view [data-board-mine]');await page.waitForFunction(()=>!document.querySelector('#people-view .tile[data-node="project:3"]'));
-  assert.match(await page.locator('#people-view .pipeline summary').textContent(),/22k open in 3/i);
+  assert.match(await page.locator('#people-view .pipeline summary').textContent(),/€17k open in 3/i);
   await click('#people-view [data-board-mine]');
   // Closed, it stays closed
   await click('#people-view .pipeline summary');await page.waitForFunction(()=>!document.querySelector('#people-view .pipeline').open);

@@ -29,6 +29,7 @@
   "delivery_enabled": false,
   "delivery_batch_size": 5,
   "digest_at": "08:30",
+  "currency": "EUR",
   "work_hours": {
     "days": [1, 2, 3, 4, 5],
     "start": "08:00",

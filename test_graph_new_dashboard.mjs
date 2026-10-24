@@ -49,7 +49,8 @@ try{
   await click('#record-form [data-rec-open="person:a"]');await page.locator('#record-dialog[open]').waitFor({state:'detached'});
   await page.waitForFunction(()=>graphNode==='person:a');
   // A new person: name required; then name, email and organization; it opens their page
-  await page.evaluate(()=>recOpen('person'));await page.locator('#record-dialog[open]').waitFor();
+  // Opened again at once after a close (the close event comes later): the form still works
+  await page.evaluate(()=>recOpen('person'));await page.locator('#record-dialog[open]').waitFor();await page.evaluate(()=>{$('#record-dialog').close();recOpen('person')});
   await click('#record-form button.primary');await page.waitForFunction(()=>document.querySelector('#record-form [data-rec-error]')?.textContent);assert.equal(await page.locator('#record-form [data-rec-error]').textContent(),'Give them a name.');
   await page.locator('#record-form [name="name"]').fill('Rae Vos');await page.locator('#record-form [name="email"]').fill('rae@umber.example');await page.locator('#record-form [name="org"]').fill('Umber Labs');
   await shot(page,`new-person-${tag}`);await click('#record-form button.primary');await page.locator('#record-dialog[open]').waitFor({state:'detached'});

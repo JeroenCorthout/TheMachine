@@ -124,7 +124,7 @@ Projects of one kind in stages, like an evaluation pipeline. **⋯** on a board:
 
 Tick a few, or **Select all**, to do them at once, and **Undo** right after if you change your mind. A project that bundles several counterparts becomes one project per counterpart when you add it.
 
-**Pipeline**, at the top of a board, adds up the value of its open projects per stage, and what's expected to close per month from their close dates. **Mine** counts only yours.
+**Pipeline**, at the top of a board, adds up the value of its open projects per stage, and what's expected to close per month from their close dates. Won, lost and stalled projects aren't open; what you won this month shows apart. Values are in euros unless your Machine is set to another currency. **Mine** counts only yours.
 
 A new board, or a suggested board you save, looks through your whole history once. It finds projects and organizations that fit, makes one project per organization and puts each in a stage. The header says "Looking through your history…" while it works, then how many it added and how many wait for you to review. An Only-you board keeps what it finds to you.
 

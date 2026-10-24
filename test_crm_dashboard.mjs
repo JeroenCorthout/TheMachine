@@ -73,7 +73,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('[data-graph-panel="projects"] .graph-active'));
   await until(()=>last('projects').value_min,'the filtered list is asked for');
   assert.deepEqual({owner:last('projects').owner,board:last('projects').board,value_min:last('projects').value_min},{owner:'me',board:'1',value_min:'5000'});
-  assert.match(await page.locator('[data-graph-panel="projects"] .graph-active').textContent(),/Board: Sales.*Value from 5,000/);
+  assert.match(await page.locator('[data-graph-panel="projects"] .graph-active').textContent(),/Board: Sales.*Value from €5,000/);
   assert.equal(await page.locator('[data-crm-filter="projects"] .badge').textContent(),'2');
   await page.locator('[data-graph-panel="projects"] .pager-empty').waitFor();assert.equal(await page.locator('[data-graph-panel="projects"] .pager-empty').textContent(),'Nothing matches these filters.');
   await shot(page,`projects-filtered-${tag}`);
@@ -119,9 +119,9 @@ try{
   await page.locator('#crm-form [name=file]').setInputFiles({name:'contacts.csv',mimeType:'text/csv',buffer:Buffer.from('Full name,E-mail,Company\nAda Lovelace,ada@globex.example,Globex\nNia Holm,,Newco\n,,\n')});
   await page.locator('#crm-form .crm-count').waitFor();assert.equal(await page.locator('#crm-form .crm-count').textContent(),'1 new · 1 match existing · 1 skipped');
   assert.deepEqual(uploads,['graph_import_preview:graph-import']);assert.equal(calls.find(c=>c.action==='graph_import_preview').args.kind,'person');
+  assert.equal(await page.locator('#crm-form [data-crm-col="2"]').inputValue(),'org');await fits(page,'import '+tag);await shot(page,`import-preview-${tag}`);  // Company: Organization
   await page.locator('#crm-form [data-crm-col="2"]').selectOption('title');await until(()=>calls.filter(c=>c.action==='graph_import_preview').length===2,'previewed again');
   assert.deepEqual(calls.filter(c=>c.action==='graph_import_preview').at(-1).args.mapping,{0:'name',1:'email',2:'title'});
-  await fits(page,'import '+tag);await shot(page,`import-preview-${tag}`);
   assert.equal(await page.locator('#crm-form button.primary').textContent(),'Import 2');await click('#crm-form button.primary');await page.locator('#crm-dialog[open]').waitFor({state:'detached'});
   assert.equal(calls.find(c=>c.action==='graph_import_run').args.name,'contacts.csv');
   assert.match(await page.locator('#toast').textContent(),/Imported: 1 new, 1 updated, 1 skipped\. Undo/);await click('#toast [data-crm-undo-import]');

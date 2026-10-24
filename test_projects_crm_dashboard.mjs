@@ -101,7 +101,7 @@ try{
   await page.keyboard.press('Escape');await dialog(page).waitFor({state:'detached'});
   // The project page: Edit, and the ⋯ with Won, Lost, Archive and Delete; its value, organization and notes
   await page.locator('.tile[data-node="project:1"] .tile-name').click();await page.locator('.proj-facts').waitFor();
-  assert.match(await page.locator('.proj-facts').textContent(),/Value 12,000 · paperkite\.example/);assert.match(await page.locator('.proj-facts').textContent(),/Wants SSO/);
+  assert.match(await page.locator('.proj-facts').textContent(),/Value €12,000 · paperkite\.example/);assert.match(await page.locator('.proj-facts').textContent(),/Wants SSO/);
   await shot(page,'crm-project-1440',false);
   calls=[];await page.locator('.graph-detail .fact-menu summary').click();await page.locator('.graph-detail [data-proj-delete]').click();await dialog(page).waitFor();
   assert.match(await page.locator('#project-form').textContent(),/goes for good/);await page.locator('#project-form [data-pj-delete]').click();await dialog(page).waitFor({state:'detached'});

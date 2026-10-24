@@ -14996,6 +14996,11 @@ class App:
         except (ValueError, KeyError, TypeError, sqlite3.Error):
             return []
 
+    def currency(self):
+        """The currency project values are in (config "currency", an ISO code like EUR or USD; EUR when not set)."""
+        code = str(self.config.get('currency') or 'EUR').strip().upper()
+        return code if re.fullmatch(r'[A-Z]{3}', code) else 'EUR'
+
     def graph_action(self, args, source='agent'):
         """People and projects for the agent: look up, explore around, label, merge and say who someone is."""
         changed = False
@@ -15600,6 +15605,7 @@ class App:
                                 found['last_import'] = crm_import.last(db)  # "Undo last import"
                                 found['crm_fields'] = crm_fields.fields(db)  # the owner's own fields per record type
                                 found['tags'] = crm_fields.tags_in_use(db)  # for the filter sheet
+                                found['currency'] = app.currency()  # project values are in it
                                 if app.fleet:
                                     try:
                                         found['sharing'] = app.fleet.sharing()  # the Shared Graph: Mine or Team, and when sharing starts

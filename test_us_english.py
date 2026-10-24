@@ -26,6 +26,7 @@ ALLOWED = [
     ('skills.py', "'LICENCE'"),  # a file name in third-party skills
     ('dashboard.html', "keywords:'organisation organization"),  # the palette finds it typed either way
     ('test_dismiss_and_snooze.py', "I didn't realise"),  # a reason as the owner types it
+    ('test_crm.py', "'Organisation'"),  # a spreadsheet's column header as it may be written
 ]
 
 

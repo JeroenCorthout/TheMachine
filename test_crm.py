@@ -186,6 +186,12 @@ class Crm(unittest.TestCase):
 
     # ---------------------------------------------------------------- import
 
+    def test_import_guesses_a_company_column_as_the_organization(self):
+        for header in ('Company', 'Organisation', 'Organization', 'Account', 'Firm', 'Company name'):
+            self.assertEqual(crm_import.guess('person', ['Full name', 'E-mail', header, 'Job title']), {0: 'name', 1: 'email', 2: 'org', 3: 'title'})
+            self.assertEqual(crm_import.guess('project', ['Deal', header, 'Value'])[1], 'org')
+            self.assertEqual(crm_import.guess('org', [header, 'Website'])[0], 'name')
+
     def test_import_previews_new_matches_and_skips_then_imports_and_undoes(self):
         self.mails()
         text = ('First name;Last name;E-mail;Company;Job title;Phone\n'
