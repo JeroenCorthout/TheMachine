@@ -340,10 +340,16 @@ class InstallerTest(unittest.TestCase):
         which = lambda name: {'node': str(self.bin / 'node'), 'npm': str(self.bin / 'npm')}.get(name)
         with mock.patch.dict(os.environ, {'HOME': str(self.home), 'OPENCLAW_CONFIG_PATH': str(settings), 'PATH': str(self.bin)}), \
              mock.patch.object(installer, 'run', side_effect=run), mock.patch.object(installer.shutil, 'which', side_effect=which), \
-             mock.patch.object(installer, 'say'):
+             mock.patch.object(installer, 'say'), mock.patch.object(installer.openclaw_pin, 'check') as pinned:
             installer.offer_openclaw(UI([False]))  # no: nothing installed
             self.assertFalse(any(a[1:3] == ['install', '-g'] for a in ran))
+            pinned.side_effect = installer.openclaw_pin.PinMismatch('the registry checksum does not match')
+            installer.offer_openclaw(UI([True]))  # a checksum that doesn't match the pin: nothing installed either
+            self.assertFalse(any(a[1:3] == ['install', '-g'] for a in ran))
+            self.assertIn('was not installed: the registry checksum does not match', '\n'.join(said))
+            pinned.side_effect = None
             installer.offer_openclaw(UI([True, True]))
+            pinned.assert_called_with('2026.10.5')
             self.assertIn(str(self.home / '.local/bin'), os.environ['PATH'])  # the rest of this run finds it
         local = self.home / '.local'
         self.assertIn([str(self.bin / 'npm'), 'install', '-g', 'openclaw@2026.10.5', '--prefix', str(local)], ran)

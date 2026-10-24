@@ -43,6 +43,7 @@ from zoneinfo import ZoneInfo
 
 import message_seal
 import onboarding
+import openclaw_pin
 import service
 from onboarding import CONNECTORS, expand, write_private
 
@@ -304,6 +305,11 @@ def offer_openclaw(ui):
         ui.say('\nThe Machine runs on OpenClaw: your own agent, with your model, talking to you through its dashboard app and, if you like, a Telegram bot.'
                ' It is not installed here.')
         if not ui.yes(f'Install OpenClaw {want} now? (runs: npm {" ".join(command[1:])})', True):
+            return
+        try:  # the registry must name the checksum pinned in openclaw-pin.json; npm checks the download against it
+            openclaw_pin.check(want)
+        except Exception as error:
+            ui.say(f'  ✗ OpenClaw {want} was not installed: {error}. Nothing changed; try again later or report it.')
             return
         ui.say('  Installing (a few minutes)...')
         result = run(command, timeout=1800)
