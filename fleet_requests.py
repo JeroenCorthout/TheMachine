@@ -609,10 +609,24 @@ class Requests:
                 "or email to them (delegate:true) can be a second choice. Your result says you prepared a handoff to them "
                 "through The Machine. Anyone else gets a Slack message or email as usual.")
 
-    def hand_off(self, card_id, fleet_ref, member_id, title, summary, contact=None, sources=True):
+    def open_handoffs(self, db, card_id):
+        """The card's handoffs still waiting on a teammate (asked or waiting, not taken back), oldest first."""
+        out = []
+        for r in db.execute("SELECT id,fleet,member_id,name,status,answer,at FROM fleet_out WHERE kind='handoff' AND context=? ORDER BY at",
+                            ('handoff:' + str(card_id),)):
+            try:
+                stage = (json.loads(r['answer'] or 'null') or {}).get('stage') or r['status']
+            except (ValueError, AttributeError):
+                stage = r['status']
+            if stage in ('asked', 'waiting') and not db.execute('SELECT 1 FROM fleet_meta WHERE key=?', ('handoff_withdrawn:' + r['id'],)).fetchone():
+                out.append(dict(r))
+        return out
+
+    def hand_off(self, card_id, fleet_ref, member_id, title, summary, contact=None, sources=True, replace=False):
         """Hand a card to a teammate, with the summary exactly as the owner read and edited it and the card's sources
         (handoff_sources): all of them (True), none (False) or those the owner kept, by their place in the draft's list.
-        Their card says how it went."""
+        Their card says how it went. `replace`: it goes to them instead of whoever still has it, who it is taken back
+        from once this one went out; otherwise both have it."""
         with self.connect() as db:
             latest = db.execute('SELECT id FROM decisions WHERE suggestion_id=? ORDER BY rowid DESC LIMIT 1', (str(card_id),)).fetchone()
             expected = latest['id'] if latest else None
@@ -647,6 +661,9 @@ class Requests:
         carried = parse_sources(found)
         if carried:
             question['sources'] = carried
+        with self.connect() as db:
+            earlier = [r for r in self.open_handoffs(db, card_id) if (r['fleet'], r['member_id']) != (fleet_ref, member_id)] if replace else []
+        taken_at = fleet.now()
         try:
             sent = self.ask('handoff', question, context='handoff:' + str(card_id), fleet=fleet_ref, to=[member_id])
         except Exception:
@@ -656,6 +673,12 @@ class Requests:
             raise
         with self.connect() as db:
             db.execute('DELETE FROM fleet_meta WHERE key=?', ('handoff_failed:' + str(card_id),))
+            # Taken back from whoever had it: on this card only. The relay has no way yet to withdraw a question, so
+            # their Machine still shows it; a late answer of theirs no longer moves this card (the newest handoff owns it).
+            for r in earlier:
+                db.execute('INSERT OR REPLACE INTO fleet_meta(key,value) VALUES(?,?)',
+                           ('handoff_withdrawn:' + r['id'], json.dumps({'at': taken_at, 'name': r['name']})))
+                self.log(db, 'out', r['fleet'], r['member_id'], r['name'], 'handoff', title, 'taken back on your card; their Machine is not told')
         if self.wait_card:  # it's with them now: the card leaves Ready and waits under Later until their Machine answers
             try:
                 self.wait_card(str(card_id), f"Handed off to {fleet.label(self.member(fleet_ref, member_id))}",
@@ -759,6 +782,9 @@ class Requests:
         them); never over a choice the owner made later than that, and only once per answer."""
         if not self.wake_card or not str(row['context'] or '').startswith('handoff:'):
             return None
+        with self.connect() as db:
+            if db.execute('SELECT 1 FROM fleet_meta WHERE key=?', ('handoff_withdrawn:' + str(row['id']),)).fetchone():
+                return None  # taken back from them: their answer doesn't bring the card back
         try:
             return self.wake_card(row['context'][8:], 'fleet-handoff-back-' + str(row['id']), row['at'])
         except ValueError as error:
@@ -1144,9 +1170,15 @@ class Requests:
         """A card handed off (to whom, how it went), and who does what after the meeting a card is on."""
         handed = {}
         mine = {r['key'][13:] for r in db.execute("SELECT key FROM fleet_meta WHERE key LIKE 'handoff_mine:%'")}
+        withdrawn = {r['key'][18:] for r in db.execute("SELECT key FROM fleet_meta WHERE key LIKE 'handoff_withdrawn:%'")}
+        still = {}  # card: first names of everyone it is still with (both, when the owner kept both)
         for r in db.execute("SELECT * FROM fleet_out WHERE context LIKE 'handoff:%' ORDER BY at"):
+            if r['id'] in withdrawn:  # taken back: not current, and nothing it says moves the card
+                continue
             answer = json.loads(r['answer'] or 'null') or {}
             stage = answer.get('stage') or r['status']
+            if stage in ('asked', 'waiting'):
+                still.setdefault(r['context'][8:], []).append(first_name(r['name']))
             # The owner already moved on after it came back (a Change or an answer, Do it, Try again): the card is theirs
             # again, so the newest question leads instead of the old handoff's Do it myself.
             if stage in ('declined', 'expired') and r['id'] not in mine and db.execute(
@@ -1160,6 +1192,11 @@ class Requests:
                                         **({'note': answer['note']} if answer.get('note') else {}),
                                         # handed back: Do it myself, Hand to someone else or Mark done, until the owner picks
                                         **({'back': r['id'] not in mine} if stage in ('declined', 'expired') else {})}
+        for card, names in still.items():
+            lead = handed.get(card)
+            others = [n for n in dict.fromkeys(names) if lead and n != first_name(lead['name'])]
+            if lead and lead['stage'] in ('asked', 'waiting for them') and others:
+                lead['also'] = others
         splits = {}
         for r in db.execute("SELECT * FROM fleet_splits WHERE status IN ('sent','accepted') AND event_id IS NOT NULL"):
             splits[r['event_id']] = '; '.join(f"{'you' if p.get('mine') else p['name']}: {p['what']}" for p in json.loads(r['parts']) if p.get('what'))

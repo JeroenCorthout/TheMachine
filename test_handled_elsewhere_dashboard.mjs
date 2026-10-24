@@ -33,7 +33,7 @@ try{
  assert.equal(await done.locator('[data-fleet-handoff]').count(),0);  // nothing to hand on
  assert.equal(await done.locator('.actions>button.primary').first().innerText(),'Mark done');
  const open=page.locator('#task-c2');
- assert.equal(await open.locator('[data-fleet-handoff]').first().innerText(),'Hand off to Kim');  // not handled: as before
+ assert.equal(await open.locator('[data-fleet-handoff]').first().innerText(),'Review handoff to Kim');  // not handled: as before
  const plain=await open.locator('.draft .db').innerText();
  assert.equal(plain,'Can you check the tax settings ('+URL_+') with the accountant?');  // what Kim gets: no raw Markdown
  const mail=page.locator('#task-c3 .draft .db');

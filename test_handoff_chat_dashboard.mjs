@@ -17,6 +17,12 @@ const declined=card('c1c1c1c1c1c1c1c1','Export leaks rows',{fleet_handoff:{name:
 const accepted=card('d1d1d1d1d1d1d1d1','Fix the export filter',{status:'completed',updated_at:iso(t0+2*hour),fleet_handoff:{name:'Pat Lee',stage:'accepted',note:'On it this week'}});
 // Another one with Pat, under Later until its check-in: an urgent card stays there too.
 const later=card('e1e1e1e1e1e1e1e1','Patch the tag search endpoint',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Pat'},fleet_handoff:{name:'Pat Lee',stage:'waiting for them'}});
+// Handed to Pat, then the owner asked for Kim instead: the new handoff waits for review, Pat still has it until then.
+const redirect=card('f1f1f1f1f1f1f1f1','Frank needs help recovering his account',{status:'prepared',body:'A corrected handoff to Kim is ready for review.',
+ fleet_handoff:{name:'Pat Lee',stage:'waiting for them'},next_actions:[{kind:'handoff',label:'Hand off to Kim',to_name:'Kim Doe',to_email:'kim@acme.example',body:'Can you pick up Frank’s account recovery on Monday?'}]});
+// Sent to Kim instead: taken back from Pat. And one both have.
+const moved=card('a2a2a2a2a2a2a2a2','Reset the shared inbox rules',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Kim'},fleet_handoff:{name:'Kim Doe',stage:'asked'}});
+const both=card('a3a3a3a3a3a3a3a3','Plan the support rota',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Kim'},fleet_handoff:{name:'Kim Doe',stage:'waiting for them',also:['Pat']}});
 const failed=card('b1b1b1b1b1b1b1b1','Rotate the shared webhook secret',{fleet_handoff_failed:{name:'Pat Lee',at:iso(t0+60e3)}});
 const source={kind:'source',from:'Alex Doe',via:'intercom',title:'Security triage',text:'Security triage\nVerdict: CONFIRMED\nConfidence: 90%',mine:false,at:t0-10*60e3};
 const items={
@@ -25,8 +31,10 @@ const items={
   {kind:'event',text:'Pat declined it. Their note: “Not my area”',handoff:true,at:t0+2*hour}],
  [accepted.id]:[source,{kind:'event',text:'Handed off to Pat’s Machine',mine:true,handoff:true,at:t0+60e3},
   {kind:'event',text:'Pat accepted it. Their note: “On it this week”',handoff:true,at:t0+2*hour}],
+ [moved.id]:[source,{kind:'event',text:'Handed off to Pat’s Machine',mine:true,handoff:true,at:t0+60e3},
+  {kind:'event',text:'Taken back from Pat',mine:true,handoff:true,at:t0+hour},{kind:'event',text:'Handed off to Kim’s Machine',mine:true,handoff:true,at:t0+hour}],
  [failed.id]:[source,{kind:'event',text:'Handoff didn’t go out to Pat’s Machine',handoff:true,retry_handoff:failed.id,at:t0+60e3}]};
-const state=()=>({suggestions:[waiting,declined,failed,later,accepted],connectors:[],suggestion_counts:{pending:3,snoozed:1,completed:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
+const state=()=>({suggestions:[waiting,declined,failed,redirect,later,moved,both,accepted],connectors:[],suggestion_counts:{pending:3,prepared:1,snoozed:3,completed:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
 const view={on:true,kinds:{},ask_meetings:false,fleets:[],waiting:[],asked:[],intro_offers:[],splits:[],log:[],notices:[]};
 const calls=[];
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;res.setHeader('Content-Type','application/json');
@@ -34,6 +42,8 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
  if(req.url==='/api/status'){res.end(JSON.stringify(state()));return}
  if(req.url==='/api/action'){const call=JSON.parse(body);calls.push(call);
   if(call.action==='card_chat'){res.end(JSON.stringify({session:false,active:false,status:null,cursor:null,items:items[call.args.suggestion_id]||[]}));return}
+  if(call.action==='fleet_handoff_draft'&&call.args.suggestion_id===redirect.id){res.end(JSON.stringify({suggestion_id:redirect.id,title:redirect.title,summary:'Can you pick up Frank’s account recovery on Monday?',contact:'',sources:[],
+   fleets:[{id:'fl1',name:'Acme',members:[{member_id:'kim1',name:'Kim Doe'},{member_id:'pat1',name:'Pat Lee'}]}]}));return}
   if(call.action==='fleet_handoff_draft'){res.end(JSON.stringify({suggestion_id:call.args.suggestion_id,title:failed.title,summary:'Rotate the shared webhook secret today.',contact:'',sources:[],
    fleets:[{id:'fl1',name:'Acme',members:[{member_id:'pat1',name:'Pat Lee'}]}]}));return}
   res.end('{}');return}
@@ -106,6 +116,34 @@ try{
   const c=page.locator('#task-'+failed.id);await c.waitFor();
   assert.equal((await c.locator('.note.handoff-failed').textContent()).trim(),'Handoff didn’t go out to Pat’s Machine · Try again');
   if(dir){await c.scrollIntoViewIfNeeded();await c.screenshot({path:`${dir}/handoff-failed-card-${width}.png`})}
+  // Redirected: Pat isn't shown as current; the new handoff is the primary button and opens the form on Kim
+  await page.goto('http://127.0.0.1:'+server.address().port+'/');
+  const r=page.locator('#task-'+redirect.id);await r.waitFor();
+  assert.equal((await r.locator('.note.fleet').textContent()).trim(),'Still with Pat until you send it to Kim');
+  const review=r.locator('button.primary',{hasText:'Review handoff to Kim'});
+  assert.equal(await review.count(),1);
+  if(dir){await r.scrollIntoViewIfNeeded();await r.screenshot({path:`${dir}/handoff-redirect-card-${width}.png`})}
+  const sent=calls.filter(c=>c.action==='fleet_handoff').length;
+  await review.click();
+  const f=r.locator('.fleet-handoff-form');await f.waitFor();
+  assert.equal(await f.locator('input[name=to]:checked').getAttribute('value'),'fl1|kim1');
+  assert.equal(await f.locator('textarea[name=task]').inputValue(),'Can you pick up Frank’s account recovery on Monday?');
+  const take=f.locator('input[name=replace]');
+  assert.ok(await take.isChecked());
+  assert.equal((await f.locator('.handoff-back').textContent()).trim(),'Take it back from Pat');
+  assert.equal(calls.filter(c=>c.action==='fleet_handoff').length,sent);  // nothing sent without the owner's Hand off
+  if(dir){await f.scrollIntoViewIfNeeded();await f.screenshot({path:`${dir}/handoff-redirect-form-${width}.png`})}
+  await f.locator('button.primary').click();await page.waitForTimeout(300);
+  assert.deepEqual(calls.filter(c=>c.action==='fleet_handoff').at(-1).args,{suggestion_id:redirect.id,fleet:'fl1',member_id:'kim1',title:redirect.title,summary:'Can you pick up Frank’s account recovery on Monday?',contact:'',sources:[],replace:true});
+  // Under Later: who has it now, both when both do
+  const ll=page.locator('#later-list');if(!await ll.evaluate(d=>d.open))await ll.locator(':scope > summary').click();
+  assert.equal((await ll.locator('#task-'+moved.id+' .note.fleet').textContent()).trim(),'With Kim · waiting');
+  assert.equal((await ll.locator('#task-'+both.id+' .note.fleet').textContent()).trim(),'With Kim and Pat · waiting');
+  // Its chat: handed to Pat, taken back, handed to Kim
+  await open(moved.id);
+  assert.deepEqual((await page.locator('#chat-log .chat-event').allTextContents()).map(t=>t.replace(/ · \d\d:\d\d$/,'').trim()),
+   ['Handed off to Pat’s Machine','Taken back from Pat','Handed off to Kim’s Machine']);
+  if(dir)await page.screenshot({path:`${dir}/handoff-redirect-chat-${width}.png`});
   assert.deepEqual(errors,[]);
   await context.close();
  }

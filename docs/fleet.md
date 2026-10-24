@@ -87,6 +87,11 @@ default, Always accept, Never), and nothing happens on your side until you accep
    myself**, **Hand to someone else** and **Mark done**. Decline asks "Why? (optional)" with quick picks (Not mine,
    Already done, No time this week); **Accept with a note** (under More) adds a short note too. Only the sender sees it,
    sealed like the answer. A card handed to you can't be handed straight back to whoever gave it; to others it can.
+   To hand it to someone else while the first teammate still has it, say so in its chat: the new handoff text waits on
+   the card ("Still with <teammate> until you send it to <other>", **Review handoff to <other>**), and nothing goes
+   until your **Hand off**. **Take it back from <teammate>** (on by default) makes the new one the only one: the chat
+   says "Taken back from <teammate>", and their late answer no longer moves your card. Their Machine isn't told yet (the
+   relay can't withdraw a question), so tell them. Off, both have it ("With <other> and <teammate> · waiting").
 
    If you are already on a handoff before you answer it, it can become yours without a tap. Your Machine's review
    looks only at messages you sent and calls you joined after it came, and judges by what they are about whether you

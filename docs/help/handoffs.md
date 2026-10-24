@@ -20,6 +20,12 @@ The card chat shows when it went ("Handed off to Pat's Machine · 14:02") and wh
 
 If the handoff didn't go out, the card and its chat say so, with **Try again**.
 
+## Hand it to someone else instead
+
+Say so in the card's chat ("this should go to Kim"). The new handoff waits on the card for you to read: "Still with Pat until you send it to Kim", with **Review handoff to** Kim. That opens the form with the text, on Kim.
+
+**Take it back from** Pat is on by default; turn it off to let both have it. Nothing goes out until you pick **Hand off**. Then the chat says "Taken back from Pat" and "Handed off to Kim's Machine". Pat's Machine isn't told yet, so let them know.
+
 ## When they decline
 
 They can say why: not theirs, already done, or no time this week. Then pick **Do it myself**, **Hand to someone else** or **Mark done**.

@@ -265,6 +265,47 @@ class Requests(unittest.TestCase):
         self.assertNotEqual(draft['summary'], 'Hi Ann')
         self.assertEqual([m['member_id'] for m in draft['fleets'][0]['members']], ['pat1', 'kim1'])
 
+    def redirected(self, replace):
+        """Handed to Pat, then the owner asked for Kim instead: the handoff text for Kim waits on the card for review."""
+        self.with_kim()
+        card = self.handed_card()
+        self.fleet.wait_card = lambda card_id, why, key, expected: self.store.wait_handoff(card_id, why, key, expected)
+        self.fleet.wake_card = lambda card_id, key, at: self.store.handoff_back(card_id, key, key.removeprefix('fleet-handoff-back-'), at)
+        self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Sam wants pricing.')
+        with self.store.connect() as db:
+            pat = db.execute("SELECT id FROM fleet_out WHERE kind='handoff'").fetchone()[0]
+        self.fleet.take_answer({'id': pat, 'status': 'waiting'})
+        self.store.decide(card, 'other', 'Sorry, this should go to Kim', 'chat-1', 'dashboard')
+        with self.store.connect() as db:
+            db.execute("UPDATE suggestions SET status='prepared',next_action=? WHERE id=?", (json.dumps({'kind': 'menu', 'actions': [
+                {'kind': 'handoff', 'label': 'Hand off to Kim', 'to_name': 'Kim Doe', 'to_email': 'kim@acme.example', 'body': 'Can you send Sam the pricing?'}]}), card))
+        draft = self.fleet.handoff_draft(card)
+        self.assertEqual(draft['fleets'][0]['members'][0]['member_id'], 'kim1')  # the form opens on Kim
+        self.fleet.hand_off(card, self.ref, 'kim1', 'Send Sam the pricing', draft['summary'], replace=replace)  # the owner's Send
+        return card, pat
+
+    def handed_to(self, card):
+        with self.store.connect() as db:
+            suggestions = [{'id': card, 'status': 'snoozed'}]
+            self.fleet.annotate(db, suggestions)
+        return suggestions[0].get('fleet_handoff')
+
+    def test_a_handoff_sent_to_someone_else_takes_it_back_from_the_first(self):
+        card, pat = self.redirected(replace=True)
+        events = [t for t, _, _ in self.chat_events(card)]
+        self.assertEqual(events[-3:], ['Handed off to Pat’s Machine', 'Taken back from Pat', 'Handed off to Kim’s Machine'])
+        self.assertEqual(self.handed_to(card), {'name': 'Kim Doe', 'stage': 'asked'})  # Pat isn't shown as current
+        self.assertEqual(self.card_row(card)['status'], 'snoozed')  # with Kim now
+        # Pat's late answer doesn't move the card: Kim's handoff owns it
+        self.fleet.take_answer({'id': pat, 'status': 'answered', 'answer': {'stage': 'declined'}})
+        self.assertEqual(self.card_row(card)['status'], 'snoozed')
+        self.assertEqual(self.handed_to(card)['name'], 'Kim Doe')
+
+    def test_a_handoff_to_both_shows_both(self):
+        card, _ = self.redirected(replace=False)
+        self.assertNotIn('Taken back from Pat', [t for t, _, _ in self.chat_events(card)])
+        self.assertEqual(self.handed_to(card), {'name': 'Kim Doe', 'stage': 'asked', 'also': ['Pat']})
+
     # -- handled elsewhere: a teammate already closed their card on the same email
     def stripe_alert(self, status, key, next_action=None, decided=None):
         """A card on a vendor alert that reached the team's shared address, as each teammate's copy of it has."""

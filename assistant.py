@@ -8242,10 +8242,19 @@ def card_chat_handoffs(db, suggestion_id):
     if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fleet_out'").fetchone():
         return []  # no Fleet on this Machine yet
     out = []
-    for r in db.execute("SELECT name,status,answer,at,answered_at FROM fleet_out WHERE kind='handoff' AND context=? ORDER BY at",
+    meta = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fleet_meta'").fetchone()
+    for r in db.execute("SELECT id,name,status,answer,at,answered_at FROM fleet_out WHERE kind='handoff' AND context=? ORDER BY at",
                         ('handoff:' + str(suggestion_id),)):
         first = (str(r['name'] or '').split() or ['Your teammate'])[0]
         out.append({'kind': 'event', 'text': 'Handed off to ' + handoff_machine(r['name']), 'mine': True, 'handoff': True, 'at': chat_ms(r['at'])})
+        taken = db.execute('SELECT value FROM fleet_meta WHERE key=?', ('handoff_withdrawn:' + str(r['id']),)).fetchone() if meta else None
+        try:
+            taken = json.loads(taken[0]) if taken else None
+        except ValueError:
+            taken = {}
+        if taken is not None:  # handed to someone else instead: said once, when that one went
+            out.append({'kind': 'event', 'text': 'Taken back from ' + first, 'mine': True, 'handoff': True,
+                        'at': chat_ms((taken if isinstance(taken, dict) else {}).get('at') or r['at'])})
         try:
             answer = json.loads(r['answer'] or 'null') or {}
         except ValueError:
@@ -8261,8 +8270,7 @@ def card_chat_handoffs(db, suggestion_id):
             continue
         said += f'. Their note: “{note}”' if note else ''
         out.append({'kind': 'event', 'text': said, 'handoff': True, 'at': chat_ms(r['answered_at'] or r['at'])})
-    failed = db.execute("SELECT value FROM fleet_meta WHERE key=?", ('handoff_failed:' + str(suggestion_id),)).fetchone() if db.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fleet_meta'").fetchone() else None
+    failed = db.execute("SELECT value FROM fleet_meta WHERE key=?", ('handoff_failed:' + str(suggestion_id),)).fetchone() if meta else None
     try:
         failed = json.loads(failed[0]) if failed else None
     except ValueError:
@@ -12606,7 +12614,8 @@ class App:
         if name == 'fleet_handoff':
             return self.fleet.hand_off(str(args.get('suggestion_id') or ''), str(args.get('fleet') or ''), str(args.get('member_id') or ''),
                                        str(args.get('title') or ''), str(args.get('summary') or ''), str(args.get('contact') or '') or None,
-                                       sources=args['sources'] if isinstance(args.get('sources'), list) else args.get('sources') is not False)  # all, none or those kept
+                                       sources=args['sources'] if isinstance(args.get('sources'), list) else args.get('sources') is not False,  # all, none or those kept
+                                       replace=args.get('replace') is True)  # instead of whoever still has it
         if name == 'fleet_handoff_not_mine':  # Not mine, on a card that became the owner's by what they did: undone, the teammate told
             card = str(args.get('suggestion_id') or '')
             done = self.fleet.handoff_not_mine(card)

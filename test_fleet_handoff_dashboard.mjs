@@ -35,7 +35,7 @@ try{
  await page.goto('http://127.0.0.1:'+server.address().port);
  const c=page.locator('#task-c1');await c.waitFor();
  const primary=c.locator('.actions>button.primary');
- assert.equal(await primary.first().innerText(),'Hand off to Kim');  // the Fleet handoff leads
+ assert.equal(await primary.first().innerText(),'Review handoff to Kim');  // the Fleet handoff leads
  assert.equal(await primary.first().getAttribute('data-fleet-handoff'),'c1');  // it opens the form, it never sends
  assert.match(await c.innerText(),/Review and send to Kim/);  // Slack stays as the alternative
  assert.match(await c.locator('.draft').first().innerText(),/To: Kim[\s\S]*Confirmed P1/);  // the message itself
