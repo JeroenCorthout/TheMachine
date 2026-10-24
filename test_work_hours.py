@@ -1,5 +1,5 @@
 """Work hours (`work_hours`): one setting for work days, the hours cards may go out, when snoozes land,
-the digest and the time zone. The defaults are exactly the old fixed behaviour."""
+the digest and the time zone. The defaults are exactly the old fixed behavior."""
 import contextlib
 import datetime as dt
 import importlib.util

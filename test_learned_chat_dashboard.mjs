@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // A card's chat says what a note there taught, from what was stored (the service's `learned` items), never from what
-// the reply says: a quiet centred line "Saved to what I’ve learned · Edit · Undo" with what was saved under it. The link
+// the reply says: a quiet centered line "Saved to what I’ve learned · Edit · Undo" with what was saved under it. The link
 // opens that learning on What I've learned (its block unfolded, the row lit), Edit opens it there in its editor, Undo
 // removes it and the line then says so. No line starts with "You".
 // All mocked; LEARNED_CHAT_SHOTS=dir saves phone and desktop screenshots.
@@ -46,14 +46,14 @@ try{
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/#chat=${card.id}`);
   const log=page.locator('#chat-log'),line=log.locator('.chat-learned').first();await line.waitFor();
-  // Under the reply it belongs to, centred, quiet, and with what was saved under it.
+  // Under the reply it belongs to, centered, quiet, and with what was saved under it.
   const order=await log.locator('.chat-msg,.chat-event,.chat-work').evaluateAll(es=>es.map(e=>e.className));
   const reply=order.findIndex(c=>/chat-msg machine/.test(c)&&!/chat-card/.test(c)),first=order.findIndex(c=>/chat-learned/.test(c));
   assert.ok(reply>=0&&first===reply+1,'the learned line follows the reply: '+order.join(' | '));
   assert.equal((await line.locator('.learned-acts').innerText()).replace(/\s+/g,' ').trim(),'Saved to what I’ve learned · Edit · Undo');
   assert.equal(await line.locator('q').innerText(),rule);
   const [lb,cb]=await Promise.all([line.boundingBox(),log.boundingBox()]);
-  assert.ok(Math.abs((lb.x+lb.width/2)-(cb.x+cb.width/2))<12,'centred');
+  assert.ok(Math.abs((lb.x+lb.width/2)-(cb.x+cb.width/2))<12,'centered');
   assert.ok(await line.evaluate(e=>parseFloat(getComputedStyle(e).fontSize)<15),'quiet, small');
   for(const t of await log.locator('.chat-event').evaluateAll(es=>es.map(e=>e.firstElementChild?.innerText??e.innerText)))assert.doesNotMatch(t,/^You\b/,'no line starts with You: '+t);
   // A long rule makes the line nearly as wide as the chat: nothing beside it sticks out sideways (a hover time did once).

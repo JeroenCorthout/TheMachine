@@ -194,7 +194,7 @@ class Preparation(unittest.TestCase):
 
     def test_a_step_left_running_from_before_is_paused_by_the_next_preparation_step(self):
         sid,job=self.confirmed_finish()
-        with self.store.connect() as db:  # how a cancelled preparation left it before paused existed
+        with self.store.connect() as db:  # how a canceled preparation left it before paused existed
             db.execute("UPDATE preparations SET status='cancelled' WHERE suggestion_id=?",(sid,))
             db.execute("UPDATE preparation_runs SET status='ok',finished_at=?",(a.now(),))
         self.assertEqual(self.step_state(sid),'local_preparation')

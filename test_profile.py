@@ -109,7 +109,7 @@ class Profile(unittest.TestCase):
         self.assertNotIn('news@digest.test', json.dumps(page))  # only people close enough
         with self.assertRaisesRegex(ValueError, 'no draft'):
             self.app.action('save_profile', {'_profile_session': session, 'profile': {'tone': 'x'}})
-        self.assertEqual([o['node_id'] for o in page['organisations']], ['org:globex.test'])  # organisations get a role too
+        self.assertEqual([o['node_id'] for o in page['organisations']], ['org:globex.test'])  # organizations get a role too
         sign = next(m['event_id'] for m in sam['messages'] if m['text'] == 'Can you sign?')
         with self.store.connect() as db:
             a.graph.set_role(db, 'email:sam@globex.test', 'CFO at Globex', 'agent', a.now())

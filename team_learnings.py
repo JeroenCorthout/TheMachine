@@ -11,7 +11,7 @@ What is stripped, twice:
 - the turn is told to write only the general pattern, with a short made-up example at most, and nothing that names
   the owner, their people, companies or projects, nor addresses, links, numbers, amounts, dates or message text;
 - the service then takes out what still slips through (strip): addresses, links, phone numbers, long numbers,
-  amounts and dates, @handles, and every name this Machine knows (its graph's people, organisations and projects,
+  amounts and dates, @handles, and every name this Machine knows (its graph's people, organizations and projects,
   and its own accounts). An item the owner edits is checked the same way; when the check would change it, the send is
   refused and the owner told what to take out, so what goes is always what they saw.
 - an error excerpt is never written by the model: the service builds it from the fault record (its type, the
@@ -97,7 +97,7 @@ PLACEHOLDER = {'person': 'someone', 'org': 'a company', 'project': 'a project', 
 
 
 def known_names(db, config=None):
-    """Every name this Machine knows, as (name, kind): its graph's people, organisations and projects, and its own
+    """Every name this Machine knows, as (name, kind): its graph's people, organizations and projects, and its own
     accounts. People also by their first and last names, so "Sam" goes as well as "Sam Lee"."""
     found, products = {}, set(PRODUCTS)
     try:

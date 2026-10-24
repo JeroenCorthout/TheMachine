@@ -1,13 +1,13 @@
-"""Organisation data from an enrichment service, looked up by domain.
+"""Organization data from an enrichment service, looked up by domain.
 
 Works with any service that answers GET <url with the domain> with JSON about the company: a preset
 (apollo, peopledatalabs, hunter) or your own url template with {domain} and {key}, and headers that can
 use {key} too. The key is read from a file or an environment variable, never stored in the config.
-Only organisation domains from the graph are sent (never free-mail or the owner's own domains), a few
+Only organization domains from the graph are sent (never free-mail or the owner's own domains), a few
 at a time, each looked up again after REFRESH_DAYS: first those of people the owner writes with both ways or
 meets, never those only cold outreach, newsletters or no-reply senders come from (see due). What comes back is
-normalised to a small profile (industry, size, location, founded, about, links, logo) that the graph, reviews and
-preparations show next to the organisation; it describes the company, never what it is to the owner. An answer about
+normalized to a small profile (industry, size, location, founded, about, links, logo) that the graph, reviews and
+preparations show next to the organization; it describes the company, never what it is to the owner. An answer about
 another company (the service matched a page that merely sits on the domain) is dropped, as if nothing was found.
 Work contacts are looked up too, on their own budget, with `people_url` (see people_due)."""
 from __future__ import annotations
@@ -32,7 +32,7 @@ REFRESH_DAYS = 90
 RETRY_HOURS = 24        # after an error (timeout, rate limit)
 PER_PASS = 5
 PER_DAY = 50
-# Paired with the Network, a self-hosted Machine gets hosted's organisation budget (the control plane's 1,000 a day).
+# Paired with the Network, a self-hosted Machine gets hosted's organization budget (the control plane's 1,000 a day).
 PAIRED_PER_PASS = 50
 PAIRED_PER_DAY = 1000
 PRESETS = {
@@ -201,9 +201,9 @@ MARKETING = re.compile(r'^(?:e|em|email|emails|mail|mailer|mailing|news|newslett
 
 
 def worth(domain, people):
-    """How much a look-up is worth for one organisation, from what the graph says about its people: 0 only for free
+    """How much a look-up is worth for one organization, from what the graph says about its people: 0 only for free
     mail and campaign sender subdomains, which are no company. Someone the owner writes with both ways or meets counts
-    most, someone the owner only wrote to a little; an organisation whose people only wrote in (cold outreach), were
+    most, someone the owner only wrote to a little; an organization whose people only wrote in (cold outreach), were
     only copied or only send no-reply mail still gets looked up, last, within the day's budget."""
     import graph
     if not domain or domain in graph.FREEMAIL or FREEMAIL.match(domain) or MARKETING.match(domain):
@@ -222,7 +222,7 @@ def worth(domain, people):
 
 
 def due(db, now, limit):
-    """Organisation domains from the graph that were never looked up or are due again, those worth it most first
+    """Organization domains from the graph that were never looked up or are due again, those worth it most first
     (people the owner writes with both ways or meets, then the strongest); never ones only cold outreach, bulk
     senders or free mail come from. A paying customer is always worth it."""
     current = dt.datetime.fromisoformat(now)
@@ -259,7 +259,7 @@ def save(db, domain, status, profile, now):
 
 
 def step(connect, config, now, per_pass=None, paired=False):
-    """Look up a few organisations. Returns how many got a profile; stops at the first service error. Paired with the
+    """Look up a few organizations. Returns how many got a profile; stops at the first service error. Paired with the
     Network: hosted's budget (PAIRED_PER_DAY, PAIRED_PER_PASS) unless per_day says otherwise."""
     cfg = settings(config)
     if not cfg:
@@ -284,7 +284,7 @@ def step(connect, config, now, per_pass=None, paired=False):
 
 
 def readable_name(domain):
-    """A name to show for an organisation known only by its domain: "Remy" for remy.be, "Blue Fox" for blue-fox.io,
+    """A name to show for an organization known only by its domain: "Remy" for remy.be, "Blue Fox" for blue-fox.io,
     "KBC" for kbc.be (no vowels: an acronym)."""
     label = registrable(str(domain or '').strip().lower().removeprefix('www.')).split('.')[0]
     words = [w for w in re.split(r'[-_]+', label) if w]
@@ -484,7 +484,7 @@ def fetch_person(cfg, person, timeout=15, why=None):
 
 def work_contact(info, name):
     """(email, domain) to look this person up by, or None when a look-up can't work: no full name, or no company
-    address (free mail, a shared inbox, a no-reply sender). Their organisation's own address goes first."""
+    address (free mail, a shared inbox, a no-reply sender). Their organization's own address goes first."""
     import graph
     if not graph.plain_name(name) or graph.incomplete_name(name):
         return None  # a lookup needs their full name

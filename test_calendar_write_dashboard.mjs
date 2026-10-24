@@ -26,7 +26,7 @@ const meetings=[
  {id:205,account_id:'cal',title:'Lunch',start:iso(at(2,12)),end:iso(at(2,13)),all_day:false,location:'',guests:0,people:[],url:null,edit:{start:local(at(2,12)),end:local(at(2,13)),all_day:false}},
  {id:204,account_id:'partner',title:'Away',start:iso(at(1,8)),end:iso(at(1,9)),all_day:false,location:'',guests:0,people:[],shared:'Robin',url:'https://calendar.google.com/calendar/event?eid=away'}];
 const sid='abcdef0123456789',revision='a1b2c3d4e5f6';
-const change={kind:'calendar',op:'create',revision,label:'Add to calendar',account_id:'kid',calendar_name:'Kid’s calendar',title:'Doctor check-up',when:'Thu 30 Oct 2026, 09:30 to 10:00',location:'Health centre',start:'2026-10-30T09:30:00+01:00',end:'2026-10-30T10:00:00+01:00'};
+const change={kind:'calendar',op:'create',revision,label:'Add to calendar',account_id:'kid',calendar_name:'Kid’s calendar',title:'Doctor check-up',when:'Thu 30 Oct 2026, 09:30 to 10:00',location:'Health center',start:'2026-10-30T09:30:00+01:00',end:'2026-10-30T10:00:00+01:00'};
 const card={id:sid,title:'Book the check-up',body:'The doctor confirmed Thursday 9:30.',status:'prepared',scope:'personal',created_at:now,event_ids:[],next_action:change,next_actions:[change],
  outcome:JSON.stringify({state:'needs_you',needs:'Add it to the calendar'})};
 const placesFound=[{value:'Café Labath, Oude Houtlei 1, Gent',label:'Café Labath',detail:'Oude Houtlei 1, Gent',source:'calendar'},
@@ -62,13 +62,13 @@ try{
   const task=page.locator('#task-'+sid);
   assert.equal(await task.locator('.draft.cal-change .dm').textContent(),'Add to Kid’s calendar');
   // Label and value rows in the card's own type, like the review; the card shows all of it, so no Read result
-  assert.deepEqual(await task.locator('.draft.cal-change .cal-rows > div').evaluateAll(r=>r.map(x=>x.querySelector('dt').textContent+': '+x.querySelector('dd').textContent)),['What: Doctor check-up','When: Thu 30 Oct 2026, 09:30 to 10:00','Where: Health centre']);
+  assert.deepEqual(await task.locator('.draft.cal-change .cal-rows > div').evaluateAll(r=>r.map(x=>x.querySelector('dt').textContent+': '+x.querySelector('dd').textContent)),['What: Doctor check-up','When: Thu 30 Oct 2026, 09:30 to 10:00','Where: Health center']);
   assert.equal(await task.locator('.cal-rows').evaluate(e=>getComputedStyle(e).fontFamily),await task.locator('.body,p').first().evaluate(e=>getComputedStyle(e).fontFamily));
   assert.equal(await task.locator('[data-result="read"]').count(),0);
   if(shots)await task.screenshot({path:`${shots}/calwrite-card-${width}-${scheme}.png`});
   await task.locator(`[data-smart="${revision}"]`).click();await page.locator('#send-dialog').waitFor({state:'visible'});
   assert.equal(await page.locator('#send-title').textContent(),'Add to Kid’s calendar?');assert.equal(await page.locator('#send-confirm').textContent(),'Add');
-  const head=await page.locator('#send-head').textContent();assert.ok(head.includes('Doctor check-up')&&head.includes('09:30 to 10:00')&&head.includes('Health centre'),head);
+  const head=await page.locator('#send-head').textContent();assert.ok(head.includes('Doctor check-up')&&head.includes('09:30 to 10:00')&&head.includes('Health center'),head);
   assert.equal(await page.locator('#send-fine').textContent(),'Nobody is invited or gets an update.');
   assert.ok(await page.locator('#send-edit').isHidden());assert.equal(calls.filter(c=>c.action==='confirm_action').length,0);
   if(shots)await page.locator('#send-dialog').screenshot({path:`${shots}/calwrite-review-${width}-${scheme}.png`});
@@ -135,7 +135,7 @@ try{
   assert.equal(await page.locator('#cal-f-where').inputValue(),'Labath Roastery, Dok Noord 4, 9000 Gent, België');assert.ok(await page.locator('#cal-f-where-sug').isHidden());
   // Free text still works: type, no pick
   await page.locator('#cal-f-where').fill('acme');await page.locator('#cal-f-where-sug button').first().waitFor();
-  assert.deepEqual(await page.locator('#cal-f-where-sug button span').allTextContents(),['Acme'],'an organisation only when its name or place matches');
+  assert.deepEqual(await page.locator('#cal-f-where-sug button span').allTextContents(),['Acme'],'an organization only when its name or place matches');
   await page.keyboard.press('Escape');assert.ok(await page.locator('#cal-dialog').isVisible(),'Escape closes the suggestions, not the form');
   await page.locator('#cal-f-where').fill('At the office');await page.waitForTimeout(450);
   assert.ok(await page.locator('#cal-f-where-sug').isHidden());assert.equal(await page.locator('#cal-f-where').inputValue(),'At the office');

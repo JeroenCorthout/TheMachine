@@ -17,13 +17,13 @@ const foldedRow=async(page,label,tap)=>{const g=await page.evaluate(()=>{const r
  assert.equal(g.text,'1','the Graph count shows '+label);assert.ok(Math.abs(g.count.right-g.other.right)<=1,'the Graph count is in the rows\' column '+label+': '+g.count.right+' vs '+g.other.right);
  assert.ok(g.chev.left-g.lab.right>=5&&g.count.left-g.chev.right>=24,'the chevron sits apart from the label and the count '+label+': '+JSON.stringify(g));
  assert.ok(g.fold.width>=tap[0]&&g.fold.height>=tap[1],'the chevron has a tap target '+label+': '+g.fold.width+'x'+g.fold.height);
- assert.ok(Math.abs((g.chev.left+g.chev.right)/2-(g.fold.left+g.fold.right)/2)<=1&&Math.abs((g.chev.top+g.chev.bottom)/2-(g.fold.top+g.fold.bottom)/2)<=1,'the chevron is centred in its box (and its hover) '+label+': '+JSON.stringify([g.chev,g.fold]));
+ assert.ok(Math.abs((g.chev.left+g.chev.right)/2-(g.fold.left+g.fold.right)/2)<=1&&Math.abs((g.chev.top+g.chev.bottom)/2-(g.fold.top+g.fold.bottom)/2)<=1,'the chevron is centered in its box (and its hover) '+label+': '+JSON.stringify([g.chev,g.fold]));
  await page.waitForFunction(()=>getComputedStyle(document.querySelector('#graph-fold')).opacity==='1')};  // folded, the chevron shows (its fade can take a while on a busy computer)
 
 // The desktop layout (from 1024px): a fixed sidebar with the tabs as rows, the cards as a list by section (Done folded,
 // each fold remembered), a filter and a Work/Personal switch; the main area gets a title per tab. The sidebar folds to
 // icons and remembers it, also when the browser blocks storage. Every tab scrolls as a page at 1024, 1440 and 1920,
-// folded or not. Graph has its own rows (People, Organisations, Projects) whose pane is in the address. Below 1024px the
+// folded or not. Graph has its own rows (People, Organizations, Projects) whose pane is in the address. Below 1024px the
 // same sidebar is a drawer under a slim top bar: it opens from the menu button or a swipe from the edge, and closes on
 // ✕, the shade, Esc, back, a swipe or a pick; nothing is wider than the screen.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
@@ -106,7 +106,7 @@ try{
  for(const empty of [false,true]){emptyOn=empty;const {context,page}=await open(2000,1000,empty?{wait:'#suggestions .all-clear'}:{});
   const m=await page.evaluate(()=>{const s=document.querySelector('#app-side').getBoundingClientRect(),c=document.querySelector('#suggestions').getBoundingClientRect(),w=document.body.getBoundingClientRect().right;
    return {off:Math.abs((c.left+c.right)/2-(s.right+w)/2),pad:Math.min(...['.app-side .brand','#side-search','.app-side nav button'].map(q=>document.querySelector(q).getBoundingClientRect().left))}});
-  assert.ok(m.off<2,`column centred next to the sidebar (${empty?'all clear':'cards'}, off by ${m.off})`);assert.ok(m.pad>=8,`sidebar padding (${empty?'all clear':'cards'}: ${m.pad})`);
+  assert.ok(m.off<2,`column centered next to the sidebar (${empty?'all clear':'cards'}, off by ${m.off})`);assert.ok(m.pad>=8,`sidebar padding (${empty?'all clear':'cards'}: ${m.pad})`);
   if(empty)assert.equal(await page.locator('#page-head .page-sub').innerText(),'All clear · 3 promises kept track of');
   await context.close()}
  emptyOn=false;
@@ -154,7 +154,7 @@ try{
  // screen is lit, the counts show, and the group folds (remembered); folded to icons each row has its name and count
  {const {context,page}=await open(1440,900);
   await page.waitForFunction(()=>document.querySelector('#count-people').textContent==='214');
-  assert.deepEqual(await page.locator('.side-sub a:not([hidden])').evaluateAll(a=>a.map(x=>x.textContent)),['People214','Organisations38','Projects9']);
+  assert.deepEqual(await page.locator('.side-sub a:not([hidden])').evaluateAll(a=>a.map(x=>x.textContent)),['People214','Organizations38','Projects9']);
   const lit=()=>page.evaluate(()=>[...document.querySelectorAll('.side-sub a[aria-current="page"]')].map(a=>a.dataset.graphSub).join());
   const pane=()=>page.evaluate(()=>[...document.querySelectorAll('[data-graph-panel]')].find(p=>!p.hidden)?.dataset.graphPanel);
   await page.locator('.side-sub a[data-graph-sub="orgs"]').click();await page.locator('[data-graph-panel="orgs"]').waitFor();
@@ -163,7 +163,7 @@ try{
   await page.goBack();await page.waitForFunction(()=>location.hash==='#graph=orgs');await page.locator('[data-graph-panel="orgs"]').waitFor();assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
   await page.reload();await page.locator('[data-graph-panel="orgs"]').waitFor();await page.waitForTimeout(300);assert.equal(await pane(),'orgs');assert.equal(await lit(),'orgs');
   assert.equal(await page.locator('#people-view [data-graph-pane]').count(),0,'no pane pills: the rows are the panes');
-  assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations');assert.equal(await page.locator('#page-head .page-sub').textContent(),'38 organisations');
+  assert.equal(await page.locator('#page-head .page-title').textContent(),'Organizations');assert.equal(await page.locator('#page-head .page-sub').textContent(),'38 organizations');
   assert.equal(await page.locator('#page-head .page-crumb').textContent(),'Graph');
   // the row lights once the pane is drawn, a moment after the hash
   await page.locator('.side-sub a[data-graph-sub="people"]').click();await page.waitForFunction(()=>location.hash==='#graph=people');
@@ -180,7 +180,7 @@ try{
   assert.ok(await page.locator('.side-sub .sq').first().isVisible());assert.ok(!(await page.locator('.side-sub .nl').first().isVisible()));
   // hover once the sidebar has folded: a row still sliding moves out from under the pointer
   await page.waitForFunction(()=>document.documentElement.dataset.side==='collapsed'&&!document.querySelector('#app-side').getAnimations({subtree:true}).length);
-  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible'});assert.equal(await page.locator('#side-tip').textContent(),'Organisations · 38 · G then O');
+  await page.locator('.side-sub a[data-graph-sub="orgs"]').hover();await page.locator('#side-tip').waitFor({state:'visible'});assert.equal(await page.locator('#side-tip').textContent(),'Organizations · 38 · G then O');
   await page.locator('#side-toggle').click();await context.close()}
  // A phone and a tablet: a slim top bar with the menu button and the page's title; the sidebar is a drawer
  const touch=(page,from,to)=>page.evaluate(([from,to])=>{const el=document.elementFromPoint(from[0],from[1]),t=(x,y)=>new Touch({identifier:1,target:el,clientX:x,clientY:y});
@@ -206,9 +206,9 @@ try{
   await context.close()}
  for(const [w,h] of [[390,844],[360,740],[430,932],[900,1100]]){const {context,page}=await open(w,h);
   assert.ok(await page.locator('#drawer-open').isVisible(),'the menu button at '+w);assert.ok(!(await page.locator('#app-side').isVisible()),'the drawer is closed at '+w);
-  // The slim bar: the menu left, a small centred "The Machine", the tagline heading below it
+  // The slim bar: the menu left, a small centered "The Machine", the tagline heading below it
   {const b=await page.evaluate(()=>{const r=e=>document.querySelector(e).getBoundingClientRect();return {bar:r('#topbar'),t:r('#topbar-title'),m:r('#drawer-open'),h:r('#suggestions')}});
-   assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centred at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
+   assert.ok(Math.abs(b.t.left+b.t.width/2-(b.bar.left+b.bar.width/2))<2,'the title is centered at '+w);assert.ok(b.m.right<b.t.left&&b.t.bottom<=b.bar.bottom+1,'menu left of the title at '+w);
    assert.ok(b.h.top>=b.bar.bottom,'the tagline heading sits below the bar at '+w);
    // ☰ and + are 44px boxes whose glyphs sit on the cards' gutters, like the chat header's ‹ and ⋯
    if(w<861){const g=await page.evaluate(()=>{const r=e=>e.getBoundingClientRect(),q=s=>document.querySelector(s),ink=el=>{const rs=[...el.querySelectorAll('svg :is(path,rect,line,circle)')].map(r),k=r(el.querySelector('svg')).width/24*0.8;return {l:Math.min(...rs.map(x=>x.left))-k,r:Math.max(...rs.map(x=>x.right))+k}};

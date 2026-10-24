@@ -1,4 +1,4 @@
-"""People and organisations added by hand (New person, New organisation): in the graph at once and after every
+"""People and organizations added by hand (New person, New organization): in the graph at once and after every
 rebuild, also with no messages; never made twice; a later message joins them; deleting works."""
 import unittest
 
@@ -95,7 +95,7 @@ class GraphNew(unittest.TestCase):
             self.assertEqual((listed['close_date'], listed['org_domain'], listed['board']), ('2026-12-15', 'umber.example', None))
         with self.assertRaisesRegex(ValueError, 'Expected close'):
             self.app.action('project_save', {'node_id': made['node_id'], 'close_date': 'soon'}, owner_dashboard=True)
-        # An organisation by its name, when it has a website
+        # An organization by its name, when it has a website
         self.new('org', name='Fern Co', website='fern.example')
         self.app.action('project_save', {'node_id': made['node_id'], 'org': 'fern co'}, owner_dashboard=True)
         with self.store.connect() as db:

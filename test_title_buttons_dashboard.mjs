@@ -5,10 +5,10 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// A long organisation name wraps; its Edit button keeps its shape on a phone. The tagline can say since when The Machine reads.
+// A long organization name wraps; its Edit button keeps its shape on a phone. The tagline can say since when The Machine reads.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const made=new Date(Date.now()-3600e3).toISOString(),started=new Date(Date.now()-9*864e5).toISOString();
-const org={id:'org:research-hub.example',kind:'org',name:'Example Research and Innovation Centre - A deliberately long synthetic organisation name',strength:3,last_at:made,signals:3,role:'Example partner',
+const org={id:'org:research-hub.example',kind:'org',name:'Example Research and Innovation Center - A deliberately long synthetic organization name',strength:3,last_at:made,signals:3,role:'Example partner',
  role_by:'owner',links:[],open:{},recent:[],around:[],about:'Research and Development, 2-10 people, Example City',profile:{industry:'Research and Development'}};
 const errors=[];
 const server=createServer(async(req,res)=>{

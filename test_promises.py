@@ -163,7 +163,7 @@ class Promises(unittest.TestCase):
             ask, yes = [r[0] for r in db.execute("SELECT id FROM events WHERE source_id IN ('ask','yes') ORDER BY source_id")]
         # A bare "sure" to a request is the owner's promise; the request says what.
         mine = self.app().action('promise', {'direction': 'mine', 'event_id': yes, 'who': 'Pat', 'what': 'check both paints'})['id']
-        theirs = self.app().action('promise', {'direction': 'theirs', 'event_id': ask, 'who': 'Pat', 'what': 'send the paint colours'})['id']
+        theirs = self.app().action('promise', {'direction': 'theirs', 'event_id': ask, 'who': 'Pat', 'what': 'send the paint colors'})['id']
         self.assertIsNone(self.row(theirs)['watch'])
         self.store.commit_page('work', {}, [chat('later', '2026-10-20T10:00:00+00:00')])
         self.app().promise_step()

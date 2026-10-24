@@ -49,4 +49,4 @@ For ordinary bugs, include the version, a redacted error category and steps to r
 with synthetic data. Do not attach a raw database, environment dump or full service logs.
 Follow [SECURITY.md](SECURITY.md) for vulnerabilities.
 
-Contributions are accepted under the project licence, AGPL-3.0-only (see [LICENSE](LICENSE)).
+Contributions are accepted under the project license, AGPL-3.0-only (see [LICENSE](LICENSE)).

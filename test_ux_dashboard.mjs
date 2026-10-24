@@ -274,7 +274,7 @@ await page.screenshot({path:'/tmp/261013-review-observability.png',fullPage:true
 await page.setViewportSize({width:390,height:844});
 reviewRuns=[];reviewHealth={};await page.evaluate(()=>refresh());
 await page.screenshot({path:'/tmp/261011-assistant-connections.png',fullPage:true});await navClick(page.locator('nav [data-tab="inbox"]'));await page.screenshot({path:'/tmp/261011-assistant-inbox.png',fullPage:true});
-// Light mode: a sun/moon switch in Settings, remembered per browser; HTML emails keep their own colours in light.
+// Light mode: a sun/moon switch in Settings, remembered per browser; HTML emails keep their own colors in light.
 await navClick(page.locator('#open-settings'));
 {const theme=()=>page.evaluate(()=>[document.documentElement.dataset.theme,document.documentElement.dataset.themeMode]);
 const toggle=page.locator('#theme-toggle');const size=()=>toggle.evaluate(el=>{const b=el.getBoundingClientRect();return b.width+'x'+b.height});

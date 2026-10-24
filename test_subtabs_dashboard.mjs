@@ -41,12 +41,12 @@ try{
  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base);
- // Graph: its panes are rows in the sidebar (no pills on the page): People, Organisations, Projects, and Who's who with
+ // Graph: its panes are rows in the sidebar (no pills on the page): People, Organizations, Projects, and Who's who with
  // its count last. The Graph row counts it too while the rows are folded away.
  await page.locator('#badge-people',{hasText:/^2$/}).waitFor({state:'attached'});
  await navClick(page.locator('nav [data-tab="people"]'));
  await page.locator('[data-graph-panel="people"]:not([hidden])').waitFor();assert.equal(await page.locator('#people-view [data-graph-pane]').count(),0);
- assert.deepEqual((await rows(page)).map(r=>r.replace(/\n\d+$/,m=>m)),['People','Organisations','Projects','Who’s who\n2']);
+ assert.deepEqual((await rows(page)).map(r=>r.replace(/\n\d+$/,m=>m)),['People','Organizations','Projects','Who’s who\n2']);
  assert.equal(await lit(page),'People');assert.equal(await page.locator('#page-head .page-title').textContent(),'People');
  assert.equal(await page.locator('#people-view .whos').first().isVisible(),false);
  await navClick(page.locator('.side-sub a[data-graph-sub="roles"]'));

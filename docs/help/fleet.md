@@ -21,7 +21,7 @@ It shows once you're in a Fleet, with a pane for each Fleet, Family, Friends, Ne
 
 ## Ask your Fleet
 
-Ask "who knows someone at Acme?" from the Fleet tab, or **Ask the Fleet** on an organisation in the [Graph](graph.md). Each teammate's Machine answers by their own sharing rules, and asks them first when the rule says so.
+Ask "who knows someone at Acme?" from the Fleet tab, or **Ask the Fleet** on an organization in the [Graph](graph.md). Each teammate's Machine answers by their own sharing rules, and asks them first when the rule says so.
 
 ## What your Machine answers
 

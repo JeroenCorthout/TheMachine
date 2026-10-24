@@ -639,7 +639,7 @@ def scope_verdict(scope, domains=(), names=()):
 
 
 def node_subjects(db, row):
-    """A graph person's companies: their email domains (not free-mail), their organisations, and their own name."""
+    """A graph person's companies: their email domains (not free-mail), their organizations, and their own name."""
     domains, names = {e.rsplit('@', 1)[1] for e in _emails(row)} - graph.FREEMAIL, [row['name']]
     for org in db.execute("SELECT n.id,n.name,n.info FROM graph_links l JOIN graph_nodes n ON n.id=l.b WHERE l.a=? AND l.kind='member' "
                           "AND n.kind='org'", (row['id'],)):

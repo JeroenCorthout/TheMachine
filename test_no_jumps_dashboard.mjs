@@ -8,7 +8,7 @@ const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modul
 // with new data above (a new card, a new person, a new source, a banner), lists drawn anew, folds the reader opened,
 // headers fitted after drawing. What is on screen keeps its place (within 2px) and nothing shifts (CLS ~0), with the
 // browser's own scroll anchoring and without it (Safari on an iPhone has none).
-// Screens: Cards, a card chat, People, Organisations, Projects (board and list), Calendar, Connections, Fleet, Settings.
+// Screens: Cards, a card chat, People, Organizations, Projects (board and list), Calendar, Connections, Fleet, Settings.
 process.env.TZ='Europe/Brussels';
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const iso=d=>new Date(d).toISOString(),ago=m=>iso(Date.now()-m*60000),hex=(p,n)=>p+n.toString(16).padStart(15,'0');
@@ -60,7 +60,7 @@ const screens=[
   await page.locator('#task-'+hex('a',4)+' details.agent-more>summary').click()}],
  ['Card chat',async page=>{await page.evaluate(id=>{location.hash='#chat='+id},hex('a',1));await page.locator('#chat-log .bubble').first().waitFor()}],
  ['People',async page=>{await page.evaluate(()=>{location.hash='';showTab('people','people')});await page.locator('[data-pager="graph:people:closest"] .pager-rows>*').nth(29).waitFor()}],
- ['Organisations',async page=>{await page.evaluate(()=>showTab('people','orgs'));await page.locator('[data-pager="graph:orgs:closest"] .pager-rows>*').nth(29).waitFor()}],
+ ['Organizations',async page=>{await page.evaluate(()=>showTab('people','orgs'));await page.locator('[data-pager="graph:orgs:closest"] .pager-rows>*').nth(29).waitFor()}],
  ['Projects board',async page=>{await page.evaluate(()=>showTab('people','projects'));await page.locator('#people-view .proj-board:not([hidden]) .tile').first().waitFor();
   await page.evaluate(()=>{for(const b of document.querySelectorAll('.lane-more'))b.click()})}],
  ['Projects list',async page=>{await page.locator('#page-head [data-proj-view="list"]').click();await page.locator('#people-view .proj-list:not([hidden])').waitFor()}],

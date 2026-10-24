@@ -1,5 +1,5 @@
-"""The timeline on a person's and an organisation's page: one list, newest first, from every source. Intercom
-conversations on their address, their Intercom contact or their organisation's domain; the Zoom summary of a meeting
+"""The timeline on a person's and an organization's page: one list, newest first, from every source. Intercom
+conversations on their address, their Intercom contact or their organization's domain; the Zoom summary of a meeting
 they were in; the cards, promises and project moves around them; a source filter and pages."""
 import unittest
 
@@ -56,7 +56,7 @@ class Timeline(unittest.TestCase):
         titles = [i.get('title') for i in found['items']]
         self.assertIn('Export fails', titles)
         self.assertIn('Invoice copy', titles)  # the same Intercom contact, another address
-        self.assertNotIn('Seats question', titles)  # a colleague's: on the organisation, not on her
+        self.assertNotIn('Seats question', titles)  # a colleague's: on the organization, not on her
         self.assertNotIn('Not hers', titles)
         self.assertIn('Pilot call', [i['title'] for i in found['items'] if i['kind'] == 'zoom.summary'])
         self.assertNotIn('Another call', titles)  # no meeting of hers then

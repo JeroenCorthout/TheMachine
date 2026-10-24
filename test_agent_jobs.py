@@ -866,7 +866,7 @@ class TaskFirstBrief(unittest.TestCase):
         self.assertEqual(lines[0], 'Task: Add the agreed Listly link to your agency lead-generation article.')
         self.assertEqual(lines[2:4], ['My note on the card, as I wrote it:', self.NOTE])
         self.assertNotIn('What this is about', brief)
-        # The latest chat reply is background, labelled so, after the task; never the lead.
+        # The latest chat reply is background, labeled so, after the task; never the lead.
         self.assertIn('So far (background only; the task above is what to do):', brief)
         self.assertIn('- The Machine answered: ' + self.REPLY, brief)
         self.assertGreater(brief.index(self.REPLY), brief.index('Task: '))

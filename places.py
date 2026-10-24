@@ -1,6 +1,6 @@
 """Place suggestions for the Calendar form's Where field.
 
-Local first: places the owner already used on their calendar, and the organisations in their Graph with a known
+Local first: places the owner already used on their calendar, and the organizations in their Graph with a known
 location. Then, when that isn't enough, addresses from Photon (photon.komoot.io), a free geocoder on OpenStreetMap
 data. Only the typed text goes out, from this server (never the browser), at most one request a second, cached, with
 an honest User-Agent. Set "place_search": false in the config to keep every search local."""
@@ -28,7 +28,7 @@ def clean(text):
 
 
 def local(db, query, limit=LIMIT):
-    """Earlier event locations and Graph organisations whose words match, the most used and strongest first."""
+    """Earlier event locations and Graph organizations whose words match, the most used and strongest first."""
     q = clean(query).casefold()
     if len(q) < MIN_LOCAL:
         return []

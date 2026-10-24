@@ -45,7 +45,7 @@ try{
  assert.match(panel,/Resets available: 2/);
  assert.equal(await page.locator('#model-panel progress').count(),2);
  assert.ok(await page.evaluate(()=>document.querySelector('#model-panel').getBoundingClientRect().right<=innerWidth));
- // Cancelling the confirm sends nothing.
+ // Canceling the confirm sends nothing.
  let asked='';page.once('dialog',d=>{asked=d.message();d.dismiss()});
  await page.locator('#model-panel [data-model-reset]').first().click();
  assert.match(asked,/This uses 1 of your 2 resets/);
@@ -65,7 +65,7 @@ try{
  status={...status,limit_reached:true,limit_resets_at:t+3600,can_reset:false,resets:null};
  await page.evaluate(()=>refresh());
  await page.locator('#model-panel a',{hasText:'See resets in ChatGPT'}).first().waitFor();
- // A link that looks like a button: no underline, its text centred in it, as tall as a button.
+ // A link that looks like a button: no underline, its text centered in it, as tall as a button.
  {const a=await page.locator('#model-panel a',{hasText:'See resets in ChatGPT'}).first().evaluate(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect(),t=document.createRange();t.selectNodeContents(el);const q=t.getBoundingClientRect();
   return {line:s.textDecorationLine,h:r.height,dx:Math.abs((q.left-r.left)-(r.right-q.right)),dy:Math.abs((q.top-r.top)-(r.bottom-q.bottom))}});
   assert.equal(a.line,'none');assert.ok(a.h>=30&&a.dx<=2&&a.dy<=2,JSON.stringify(a))}

@@ -8,7 +8,7 @@ order: 5
 ---
 ## The palette
 
-Press `⌘K` on a Mac or `Ctrl K` on Windows and Linux, or `/`, to open **Search and commands**. Type part of a name: an action, a page, a card, a person, an organisation or a project. Use the arrow keys and Enter, or Esc to close. Recent commands come first.
+Press `⌘K` on a Mac or `Ctrl K` on Windows and Linux, or `/`, to open **Search and commands**. Type part of a name: an action, a page, a card, a person, an organization or a project. Use the arrow keys and Enter, or Esc to close. Recent commands come first.
 
 On a phone, tap the search icon in the top bar.
 
@@ -16,7 +16,7 @@ On a phone, tap the search icon in the top bar.
 
 Press `?` for **Keyboard shortcuts**, the full list for your computer.
 
-- Go to a page: `G` then `S` Suggestions, `C` Calendar, `E` Events, `P` People, `O` Organisations, `J` Projects, `F` Fleet, `B` Feedback, `N` Connections, `,` Settings.
+- Go to a page: `G` then `S` Suggestions, `C` Calendar, `E` Events, `P` People, `O` Organizations, `J` Projects, `F` Fleet, `B` Feedback, `N` Connections, `,` Settings.
 - `C` adds a new card. `J` and `K` move through a list, Enter opens.
 - On a card: `E` renames it, `S` snoozes it, `D` marks it done, `R` writes in its chat.
 

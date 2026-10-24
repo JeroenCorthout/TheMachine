@@ -142,4 +142,4 @@ await hooks.before_tool_call({toolName:'assistant_signals',params:{action:'finis
 assert.equal(await hooks.reply_payload_sending({...delivery,runId:human.runId},destination),undefined);
 assert.equal(await hooks.before_prompt_build({}, {...human,trigger:'heartbeat'}),undefined);
 assert.equal(await hooks.reply_payload_sending({...delivery,runId:'unproven-internal'},destination),undefined);
-console.log('Quiet reviews: both real leaked summaries cancelled; internal continuations, user replies, mixed alerts, media, scope and service-owned suggestions protected.');
+console.log('Quiet reviews: both real leaked summaries canceled; internal continuations, user replies, mixed alerts, media, scope and service-owned suggestions protected.');

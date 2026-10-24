@@ -5,22 +5,22 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// The one-line rows on a person or organisation page (To you, the organisation row, addresses, place, about, links,
+// The one-line rows on a person or organization page (To you, the organization row, addresses, place, about, links,
 // relations) wrap on a phone instead of being cut off, and their Edit and ✓ Right buttons stay on screen and tappable.
 // Checked at 360 and 390 with long made-up values. SHOT_DIR=… saves shots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const day=new Date(Date.now()-864e5).toISOString();
-const long='potential acquirer and VP of ecosystem operations for the partner programme across Northwind';
+const long='potential acquirer and VP of ecosystem operations for the partner program across Northwind';
 const mira={id:'email:mira.vandenberghe-oyelaran@northwind-logistics.example',kind:'person',name:'Mira Vandenberghe-Oyelaran',strength:2.1,closeness:'close',last_at:day,signals:9,
  ids:['mira.vandenberghe-oyelaran@northwind-logistics.example','+32 470 00 00 00'],usual_gap_days:2,quiet:false,role:long,role_by:'review',
- org:'org:northwind-logistics.example',org_name:'Northwind Logistics and Fulfilment Partners',org_by:'review',org_via:'LinkedIn headline',org_at:day,
- profile:{title:'VP, Platform and Ecosystem Operations for Partner Programmes',company:'Northwind',city:'Saint-Jean-sur-Richelieu',country:'CA',linkedin_url:'https://www.linkedin.com/in/mira-example'},
+ org:'org:northwind-logistics.example',org_name:'Northwind Logistics and Fulfillment Partners',org_by:'review',org_via:'LinkedIn headline',org_at:day,
+ profile:{title:'VP, Platform and Ecosystem Operations for Partner Programs',company:'Northwind',city:'Saint-Jean-sur-Richelieu',country:'CA',linkedin_url:'https://www.linkedin.com/in/mira-example'},
  relations:[{a:'email:mira.vandenberghe-oyelaran@northwind-logistics.example',b:'email:sam@umbrella.example',a_name:'Mira Vandenberghe-Oyelaran',b_name:'Samuel Reed-Castellanos',relation:'the manager and longtime mentor of',source:'review'}],
- recent:[],around:[],open:{},links:[{id:'email:sam@umbrella.example',kind:'person',name:'Samuel Reed-Castellanos'},{id:'project:p1',kind:'project',name:'Northwind partner programme rollout'}]};
-const north={id:'org:northwind-logistics.example',kind:'org',name:'Northwind Logistics and Fulfilment Partners',strength:1.4,last_at:day,signals:3,
- ids:['northwind-logistics.example','northwind-fulfilment-partners.example'],role:'prospect evaluating the whole platform for every regional fulfilment hub',role_by:'review',
- about:'Owner note: talk with them about the partner programme before the regional rollout starts next quarter',
- profile:{about:'Northwind runs regional fulfilment hubs and last-mile delivery for retailers across Europe and North America.',linkedin_url:'https://www.linkedin.com/company/northwind-example',website:'https://northwind-logistics.example'},
+ recent:[],around:[],open:{},links:[{id:'email:sam@umbrella.example',kind:'person',name:'Samuel Reed-Castellanos'},{id:'project:p1',kind:'project',name:'Northwind partner program rollout'}]};
+const north={id:'org:northwind-logistics.example',kind:'org',name:'Northwind Logistics and Fulfillment Partners',strength:1.4,last_at:day,signals:3,
+ ids:['northwind-logistics.example','northwind-fulfilment-partners.example'],role:'prospect evaluating the whole platform for every regional fulfillment hub',role_by:'review',
+ about:'Owner note: talk with them about the partner program before the regional rollout starts next quarter',
+ profile:{about:'Northwind runs regional fulfillment hubs and last-mile delivery for retailers across Europe and North America.',linkedin_url:'https://www.linkedin.com/company/northwind-example',website:'https://northwind-logistics.example'},
  links:[{id:mira.id,kind:'person',name:mira.name}],recent:[],around:[],open:{},people:[]};
 const server=createServer(async(req,res)=>{
  const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');

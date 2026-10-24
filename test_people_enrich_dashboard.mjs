@@ -70,7 +70,7 @@ try{
   assert.equal(await page.locator('.graph-detail .name-row .person-head h3 + .person-job').count(),1);  // title under the name, beside the photo
   assert.equal(await page.locator('[data-person-lookup]').count(),0);
   assert.ok(await page.locator('.graph-detail [data-person-delete]').isHidden());  // in the ⋯ menu, not on the page
-  assert.deepEqual(await page.locator('.graph-detail .name-row .org-actions>button:visible').allTextContents(),['Edit']);  // Edit in the header, as on an organisation
+  assert.deepEqual(await page.locator('.graph-detail .name-row .org-actions>button:visible').allTextContents(),['Edit']);  // Edit in the header, as on an organization
   assert.ok(await page.locator('.person-delete-confirm').isHidden());
   if(width>=700){const [head,sub]=await page.evaluate(()=>[document.querySelector('.graph-detail .person-head').getBoundingClientRect().left,document.querySelector('.graph-detail .person-rel').getBoundingClientRect().left]);
    assert.ok(Math.abs(head-sub)<=2,`details line up with the name: ${head} ${sub}`)}

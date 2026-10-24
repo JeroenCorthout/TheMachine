@@ -54,7 +54,7 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
   if(r.action==='card_chat'){
    if(r.args.suggestion_id==='c6c6c6c6c6c6c6c6'){res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k6',items:[{kind:'source',from:'Andrea',via:'intercom',note:true,text:'We need to ask J.',mine:false,at:t0-1000},{kind:'reply',text:'Drafted your note for Andrea. Nothing sent.',drafts:[],files:[{label:'Draft and sources',path:'memory/assistant/note.md'}],at:t0}]}));return}
    if(r.args.suggestion_id==='c8c8c8c8c8c8c8c8'){const m={kind:'slack',to:['Andrea'],subject:'',body:'how did it go?',reply:false};res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k8',items:[
-    {kind:'reply',text:'Drafted a nudge.',drafts:[m],at:t0},{kind:'event',text:'Send cancelled',mine:true,at:t0+1000},{kind:'reply',text:'Fixed her name.',drafts:[m],at:t0+2000},
+    {kind:'reply',text:'Drafted a nudge.',drafts:[m],at:t0},{kind:'event',text:'Send canceled',mine:true,at:t0+1000},{kind:'reply',text:'Fixed her name.',drafts:[m],at:t0+2000},
     {kind:'event',text:'Sent to Andrea on Slack',sent:'how did it go?',mine:true,at:t0+3000}]}));return}
    if(r.args.suggestion_id==='c9c9c9c9c9c9c9c9'){res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k9',items:[{kind:'reply',text:'Drafted a reply to Robin.',drafts:[{kind:'email',to:['Robin'],subject:'Re: Pilot',body:'Hi Robin, Thursday works.',reply:true}],at:t0}]}));return}
    if(r.args.suggestion_id==='c7c7c7c7c7c7c7c7'){res.end(JSON.stringify({session:true,status:'ok',active:false,cursor:'k7',items:[{kind:'reply',text:'Drafted a short nudge to Andrea.',drafts:[{kind:'slack',to:['andrea'],subject:'',body:'did you get a chance to try it?',reply:false}],at:t0}]}));return}
@@ -109,7 +109,7 @@ try{
  for(const t of await page.locator('#chat-log .chat-event').allTextContents())assert.doesNotMatch(t,/^You\s/);
  for(const text of ['Do it','Reopened','Snoozed','Unsnoozed','Marked done','Not needed','Try again','Snoozed in Telegram','You asked for a shorter draft'])
   assert.doesNotMatch(await page.evaluate(text=>chatEventText({kind:'event',mine:true,text}),text),/^You\s/,text);
- // Every event line, the owner's own too, is centred the same way; the hover time sits beside it without moving it
+ // Every event line, the owner's own too, is centered the same way; the hover time sits beside it without moving it
  {const ev=await page.evaluate(()=>[...document.querySelectorAll('#chat-log .chat-event')].map(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect(),log=e.parentElement.getBoundingClientRect(),t=e.querySelector('.chat-time');
    return {align:s.textAlign+' '+s.alignSelf,off:Math.abs((r.left+r.right)/2-(log.left+log.right)/2),time:t?getComputedStyle(t).position:'absolute'}}));
   for(const e of ev)assert.ok(e.align==='center center'&&e.off<1&&e.time==='absolute',JSON.stringify(e))}
@@ -227,7 +227,7 @@ try{
  await page.locator('.side-cards a',{hasText:'Nudge Andrea'}).click();await page.locator('#chat-log .chat-draft.current').waitFor();
  assert.match(await page.locator('#chat-log .chat-draft.current').textContent(),/did you get a chance to try it\?/);
  assert.match(await page.locator('#chat-log .chat-draft.current .chat-draft-foot button.primary').textContent(),/send to Andrea/i);
- // The header: back, the title's first line and ⋯ on one centre line (the title's x-height centre on the chevron's)
+ // The header: back, the title's first line and ⋯ on one center line (the title's x-height center on the chevron's)
  {const m=await page.evaluate(()=>{const q=s=>document.querySelector(s),R=n=>n.getBoundingClientRect(),c=r=>r.top+r.height/2,h=q('.chat-title'),cs=getComputedStyle(h),cv=document.createElement('canvas').getContext('2d');cv.font=cs.font;
   const f=cv.measureText('x'),L=parseFloat(cs.lineHeight),base=R(h).top+(L-(f.fontBoundingBoxAscent+f.fontBoundingBoxDescent))/2+f.fontBoundingBoxAscent;
   return {x:base-f.actualBoundingBoxAscent/2,back:c(R(q('.chat-back path'))),menu:c(R(q('.chat-menu>summary svg')))}});
@@ -238,7 +238,7 @@ try{
  assert.deepEqual(await page.evaluate(()=>{const a=document.querySelector('#open-browser'),r=[];browserPill({browser_link:'https://machine.example/browser'});r.push(a.hidden,a.getAttribute('href'),a.target);browserPill({browser_link:'javascript:alert(1)'});r.push(a.hidden);browserPill(state);return r}),[false,'https://machine.example/browser','_blank',true]);
  // Emoji shortcodes render; unknown ones and times stay as typed
  assert.equal(await page.evaluate(()=>chatEmoji('Oki doki :face_with_hand_over_mouth: :tada: :not_a_code: 10:30:45')),'Oki doki 🤭 🎉 :not_a_code: 10:30:45');
- // Only the draft that went out says Sent; the cancelled one before it, with the same text, says Not sent
+ // Only the draft that went out says Sent; the canceled one before it, with the same text, says Not sent
  await page.locator('.side-cards a',{hasText:'Waiting on Andrea'}).click();await page.locator('#chat-log .chat-draft .went-tag').first().waitFor();
  assert.deepEqual(await page.locator('#chat-log .chat-draft .went-tag').allTextContents(),['Not sent','Sent']);
  assert.equal(await page.locator('#chat-log',{hasText:'#DM'}).count(),0);
@@ -340,7 +340,7 @@ try{
  await page.evaluate(()=>scrollTo(0,0));await shot('phone-top');
  // A long title stays on one line on a phone too, ending in an ellipsis before ⋯, with the full text on hover; the back
  // arrow and ⋯ are 44px boxes whose glyphs sit on the chat's gutters (the chevron's stroke over the text, the dots' edge
- // over the bubbles), all three on the title's cap-height centre; a tap still renames
+ // over the bubbles), all three on the title's cap-height center; a tap still renames
  {const long='A mutual NDA from the vendor is ready for review before the call on Thursday';
   await page.evaluate(t=>{const h=document.querySelector('.chat-title');h.firstChild.textContent=t;h.title=t;chatFades()},long);
   for(const width of [390,360]){await page.setViewportSize({width,height:800});await page.waitForTimeout(150);await page.evaluate(()=>chatFades());
@@ -356,7 +356,7 @@ try{
      cap:[path.top+path.height/2-cap,(dots[0].top+dots[0].bottom)/2-cap],ellipsis:cs.textOverflow,end:Math.min(range.getBoundingClientRect().right,R(h).right),menuLeft:menu.left}});
    assert.deepEqual(g.box,[44,44,44,44],'44px boxes at '+width);
    assert.ok(Math.abs(g.chev-g.text)<=0.5&&Math.abs(g.dots-g.bubble)<=0.5,'the glyphs on the gutters at '+width+': '+JSON.stringify(g));
-   assert.ok(g.cap.every(d=>Math.abs(d)<=0.5),'on the title\'s cap centre at '+width+': '+JSON.stringify(g.cap));
+   assert.ok(g.cap.every(d=>Math.abs(d)<=0.5),'on the title\'s cap center at '+width+': '+JSON.stringify(g.cap));
    assert.equal(g.ellipsis,'ellipsis');assert.ok(g.end<=g.menuLeft,'the title ends before ⋯ at '+width)}
   await page.setViewportSize({width:390,height:800});await page.locator('.chat-title').click();await page.locator('.rename-box input').waitFor();
   await page.keyboard.press('Escape');await page.locator('.rename-box').waitFor({state:'detached'})}

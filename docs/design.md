@@ -4,7 +4,7 @@ One design system for the dashboard, the hosted app and the website. Its tokens 
 `design-tokens:end` at the top of `dashboard.html`; the hosted service carries the identical block, and a test there
 keeps the two equal. Change a token in both places at once.
 
-The model is the calm, editorial feel of Claude's apps and sites, in our own colours, with our mascot and logo. What
+The model is the calm, editorial feel of Claude's apps and sites, in our own colors, with our mascot and logo. What
 makes that feel is mostly restraint: warm neutral paper, ink text, one accent used rarely, hairlines instead of shadows,
 and a serif that only speaks at the top of the hierarchy.
 
@@ -30,11 +30,11 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   sunken fill, small sans text.
 - **Inputs.** White (dark: sunken) fill, hairline border, 8 to 10px radius; focus darkens the border and adds a soft ring.
 - **Menus and dialogs.** Raised surface, hairline, 12 to 16px radius, one soft shadow. The only place shadows are strong.
-- **Hover and focus.** Hover changes the fill a little, never the border colour or size; focus is a visible ring.
+- **Hover and focus.** Hover changes the fill a little, never the border color or size; focus is a visible ring.
 - **Motion.** Short (about 150ms) and eased out; nothing bounces.
 - **Density and alignment.** Content sits in one reading column, left aligned, with consistent 8px-based gaps; air
   comes from the spacing between groups, not from big paddings inside them.
-- **Icons.** Thin, rounded line icons (about 1.5 to 1.75px stroke) at 16 to 20px, in the text colour.
+- **Icons.** Thin, rounded line icons (about 1.5 to 1.75px stroke) at 16 to 20px, in the text color.
 
 ## Our translation
 
@@ -52,7 +52,7 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
 
 - **Mint is our clay.** One filled mint button per card or page (the thing to do), the live dot, the current tab's
   tint, focus rings. Not headings, not links, not hero text.
-- **Cream warms the dark text** (`#F3F0E8`) instead of colouring headings. Headings are ink in both themes.
+- **Cream warms the dark text** (`#F3F0E8`) instead of coloring headings. Headings are ink in both themes.
 - **Typefaces.** Source Serif 4 (with its optical sizes, so display sizes get the fine display cut) for the display
   line, page titles, section heads and dialog titles, at weight 380 to 460. Inter for everything else at 400 and 500,
   600 only for card titles and numbers. Both are bundled under the SIL Open Font License.
@@ -66,10 +66,10 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   short tab like Events doesn't shift or look narrower than a long one.
 - **Phone header bars** (the top bar, a card's chat): the buttons at either end are 44px boxes whose glyphs sit on the
   content's gutters (☰ and + on the cards' edges, ‹ and ⋯ on the chat's text and bubbles), every glyph on the title's
-  cap-height centre line, and a long title ends in an ellipsis before the right button.
+  cap-height center line, and a long title ends in an ellipsis before the right button.
 - **Sidebar**: one component for every width. From 1024px it is a column on the left: the tabs as quiet rows with
   icons (Suggestions, Calendar, Events, Graph, Feedback, Connections), Find a card, the cards by section (Done folded), and Browser, Settings and the status at the bottom; it folds
-  to icons (Ctrl/⌘+B). Graph has its own rows, People, Organisations and Projects, each a coloured square and a count,
+  to icons (Ctrl/⌘+B). Graph has its own rows, People, Organizations and Projects, each a colored square and a count,
   under a fold that is remembered; a row opens that pane and the address keeps it (`#graph=orgs`). Below 1024px the
   same sidebar is a drawer under a slim top bar with a menu button: a swipe from the left edge or All tasks in a chat
   also opens it, and ✕, the shade, Esc, back or a swipe to the left closes it, as does picking a row. On a phone, the
@@ -87,10 +87,10 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
   says where its projects go, and Delete asks once more.
 - **Long lists**: one loader for every list, a page at a time from the Machine. In the sidebar and the drawer, Done
   opens on its 10 latest and the other groups on 8; a quiet **Show more** adds 20 (fetching older done cards when
-  needed), folding starts over, and the counts stay whole. In the main pane (Done, People, Organisations, Projects) the
+  needed), folding starts over, and the counts stay whole. In the main pane (Done, People, Organizations, Projects) the
   next 30 load as you near the end, with a subtle loading row and **Show more** as the fallback; going back from an
   item keeps the pages and the scroll. A Graph page has tabs that filter, each with its count (an empty tab is not
-  shown): People All, Gone quiet, New this week; Organisations All, Warm up; Projects Open, Done. A quiet menu at their
+  shown): People All, Gone quiet, New this week; Organizations All, Warm up; Projects Open, Done. A quiet menu at their
   right sets the order (Closest, Last contact, Name A–Z; for Projects Last activity, Name A–Z, Stage), kept per page on
   the device. The Graph search waits for a short pause in typing (Enter and Find are at once); emptying it brings the
   list back as it was, at once, and a late answer to an older search never shows. The chevron next to Graph darkens on
@@ -105,9 +105,9 @@ Observed on claude.ai, claude.com and anthropic.com (public pages, light and dar
 - **Section heads**: the serif heading and its count as a small pill on one line, a one-line explainer below.
 - **Cards**: surface, 1px line, 14px radius; a slim tone mark at the top left for urgency; title in sans 600;
   body in secondary text; actions left to right, one primary.
-- **Buttons**: primary (mint fill), secondary (lifted fill and hairline), quiet (text; on hover a rounded soft tint with room around the text, its negative margin keeping the layout still). Links styled as buttons match the others: no underline, same height, centred.
+- **Buttons**: primary (mint fill), secondary (lifted fill and hairline), quiet (text; on hover a rounded soft tint with room around the text, its negative margin keeping the layout still). Links styled as buttons match the others: no underline, same height, centered.
   8px radius, 500 weight.
-- **Chips**: round, sunken fill, 12px sans 500, with a 6px dot in the tone colour.
+- **Chips**: round, sunken fill, 12px sans 500, with a 6px dot in the tone color.
 - **Inputs**: hairline, 8px radius, mint border and soft ring on focus.
 - **Empty states**: the mascot, one short serif line, one muted sentence; no dashed boxes.
 - **Eyebrows** (small labels above headings): 12.5px sans 500 in tertiary text, sentence case.

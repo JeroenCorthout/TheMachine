@@ -199,7 +199,7 @@ class Sealing:
         with self.fleet.connect() as db:
             previous = db.execute('SELECT body FROM network_replies WHERE ask_id=?', (ask_id,)).fetchone()
             if previous and body.get('status') == 'waiting' and json.loads(previous[0]).get('status') != 'waiting':
-                body = json.loads(previous[0])  # an old waiting acknowledgement cannot undo the final result
+                body = json.loads(previous[0])  # an old waiting acknowledgment cannot undo the final result
             db.execute('INSERT INTO network_replies(ask_id,body,at) VALUES(?,?,?) '
                        'ON CONFLICT(ask_id) DO UPDATE SET body=excluded.body,at=excluded.at', (ask_id, json.dumps(body), now()))
             aliases = [r[0] for r in db.execute('SELECT ask_id FROM network_aliases WHERE original_id=?', (ask_id,))]
@@ -238,7 +238,7 @@ class Sealing:
         import fleet as fleet_module
         encoded = json.dumps(body, sort_keys=True)
         with self.fleet.connect() as db:
-            # A final answer supersedes an unsent waiting acknowledgement, not the reverse.
+            # A final answer supersedes an unsent waiting acknowledgment, not the reverse.
             if path == '/answer' and body.get('status') != 'waiting':
                 db.execute('DELETE FROM network_outbox WHERE key=?', ('answer:' + str(body.get('id')) + ':waiting',))
             elif path == '/answer' and db.execute("SELECT 1 FROM network_outbox WHERE path='/answer' AND json_extract(body,'$.id')=? AND json_extract(body,'$.status')!='waiting'", (body.get('id'),)).fetchone():

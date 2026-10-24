@@ -99,7 +99,7 @@ try{
   // E edits a focused tile
   await page.locator('[data-board="CRM evaluations"]').click();await page.locator('.tile[data-node="project:3"]').focus();await page.keyboard.press('e');await dialog(page).waitFor();
   await page.keyboard.press('Escape');await dialog(page).waitFor({state:'detached'});
-  // The project page: Edit, and the ⋯ with Won, Lost, Archive and Delete; its value, organisation and notes
+  // The project page: Edit, and the ⋯ with Won, Lost, Archive and Delete; its value, organization and notes
   await page.locator('.tile[data-node="project:1"] .tile-name').click();await page.locator('.proj-facts').waitFor();
   assert.match(await page.locator('.proj-facts').textContent(),/Value 12,000 · paperkite\.example/);assert.match(await page.locator('.proj-facts').textContent(),/Wants SSO/);
   await shot(page,'crm-project-1440',false);

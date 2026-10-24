@@ -80,10 +80,10 @@ try{
   // "new" → New card; it opens the composer and nothing is saved
   await page.keyboard.type('new');assert.equal((await labels(page))[0],'New card');await page.keyboard.press('Enter');await page.locator('#new-card').waitFor();
   await page.keyboard.press('Escape');await page.locator('#new-card').waitFor({state:'hidden'});
-  // Cards from the list, People / Organisations / Projects from the Graph's search; the late "ac" answer is ignored
+  // Cards from the list, People / Organizations / Projects from the Graph's search; the late "ac" answer is ignored
   await page.keyboard.press('Control+k');await page.keyboard.type('ac');await page.waitForTimeout(250);await page.keyboard.type('me');
-  await page.locator('#pal-list .pal-group',{hasText:'Organisations'}).waitFor();await page.waitForTimeout(900);
-  assert.deepEqual(await groups(page),['Organisations','Projects'],'no People from the stale answer');
+  await page.locator('#pal-list .pal-group',{hasText:'Organizations'}).waitFor();await page.waitForTimeout(900);
+  assert.deepEqual(await groups(page),['Organizations','Projects'],'no People from the stale answer');
   assert.ok(graphQueries.includes('acme'));
   await page.locator('#pal-q').fill('contract');await page.locator('#pal-list .pal-group',{hasText:'Cards'}).waitFor();
   assert.ok((await labels(page)).includes('Send Sam the signed contract'));

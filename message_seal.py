@@ -61,7 +61,7 @@ PLAIN_METADATA = frozenset({'thread_id', 'from', 'to', 'labels', 'notification_k
                             'channel_id', 'chat_id', 'conversation_id'})
 # Text the app derives from messages: card text and the drafts behind it, edits, what a preparation's tools returned,
 # a review's own summary (and its answer on a board check), what teammates' Machines asked and answered, what they shared in the team's Graph (and the review's
-# line for each shared thread), a Claude Code or Codex job's brief and result, a task page's record (with its link's key), the weekly recap as sent and the lines it offers a choice on, the line a role or an organisation was read from, promises (what
+# line for each shared thread), a Claude Code or Codex job's brief and result, a task page's record (with its link's key), the weekly recap as sent and the lines it offers a choice on, the line a role or an organization was read from, promises (what
 # and the note closing one), and the messages a profile, roles or skills run was given. JSON columns keep the named
 # keys in the clear. Not here, on purpose: columns the app matches in SQL, and what the Machine learned (facts, rules,
 # feedback, skills, profile, voices, roles), which support may read (docs/configuration.md).

@@ -17,11 +17,11 @@ evidence (that name shared by two people on one channel, a similar name with the
 project or role) is only offered as "Same person?" (graph_same); the owner's Merge or Not the same is
 kept in graph_merges, and Not the same also undoes a merge for good. Projects are named
 by the review agent and the owner, and spread to the rest of their threads; a signal that reads like
-a labelled one and shares a person with it is probably part of it too (weaker, until a review
+a labeled one and shares a person with it is probably part of it too (weaker, until a review
 confirms). Threads that read alike and share people, but nobody named, are offered to a review as
-possibly one piece of work. People and organisations get a role (what they are to the owner), said
+possibly one piece of work. People and organizations get a role (what they are to the owner), said
 by the owner or by a review that read it in a message (kept with the line it came from, so the owner
-can confirm it); the sources only give hints. A person's organisation comes from their work email domain, or
+can confirm it); the sources only give hints. A person's organization comes from their work email domain, or
 from a source that states it plainly (their LinkedIn headline, an email signature, them saying where they work),
 read by a review and kept with that line, where and when it was said; nothing is guessed. People can be related to each other ("assistant of",
 "introduced by"). Going quiet compares the silence with that person's own usual gap. Messages are
@@ -151,7 +151,7 @@ BOARD_EXTRA_COLUMNS = ('is_default INTEGER NOT NULL DEFAULT 0',)
 FIT_BATCH = 40          # projects on no board a review checks against the boards at a time
 FIT_FRESH_MINUTES = 30  # a board saved this recently starts a review for its check at once
 MAX_STAGES = 8
-# A new board looks through the whole history once (2026-10-24): every organisation (or person without one) with
+# A new board looks through the whole history once (2026-10-24): every organization (or person without one) with
 # messages or meetings in no project yet is checked against it, BACKFILL_BATCH at a time in each review, the likeliest
 # first (by meaning, when there are local embeddings), at most BACKFILL_MAX per board.
 BACKFILL_BATCH = 30
@@ -179,7 +179,7 @@ def ensure(db):
     for column in ('event_id INTEGER', 'quote TEXT', 'hints TEXT', 'checked_at TEXT'):  # a role's evidence and when it was last read
         if column.split()[0] not in have:
             db.execute('ALTER TABLE person_roles ADD COLUMN ' + column)
-    if 'people_shown' not in {r[1] for r in db.execute('PRAGMA table_info(graph_role_asks)')}:  # the ask showed an organisation's people with their roles
+    if 'people_shown' not in {r[1] for r in db.execute('PRAGMA table_info(graph_role_asks)')}:  # the ask showed an organization's people with their roles
         db.execute('ALTER TABLE graph_role_asks ADD COLUMN people_shown INTEGER NOT NULL DEFAULT 0')
     have = {r[1] for r in db.execute('PRAGMA table_info(projects)')}
     for column in PROJECT_STAGE_COLUMNS + SORT_COLUMNS + PROJECT_CRM_COLUMNS:  # a project's place on a board (2026-10-23): its stage, why it last moved and from which message
@@ -576,7 +576,7 @@ class Union:
         a, b = self.find(a), self.find(b)
         if a == b or self.kept_apart(a, b):
             return False
-        # An email address names the node when there is one: stable and recognisable.
+        # An email address names the node when there is one: stable and recognizable.
         if b.startswith('email:') and not a.startswith('email:'):
             a, b = b, a
         self.parent[b] = a
@@ -627,7 +627,7 @@ def cosine(a, b):
 
 
 def probable_projects(labelled, event_people, vectors, times, current, open_projects, kinds=None):
-    """Signals that read like a labelled one (cosine >= PROBABLE) and share a person with it:
+    """Signals that read like a labeled one (cosine >= PROBABLE) and share a person with it:
     {event_id: {project ids}}. Only for open projects and signals no label reached, and not for
     meetings: a bare calendar title reads like every other one with the same people."""
     by_person = collections.defaultdict(list)
@@ -1074,14 +1074,14 @@ def _build(db, config, now):
                        'domains': set(domains), 'role': ' '.join(str(role).casefold().split()) if role else None}
         nodes.append((node, 'person', name[:200], round(value, 4), last_day[node].isoformat() if node in last_day else None,
                       len(node_events[node]), usual, int(quiet), None, info))
-    # Organisations the owner added by hand stand even with nobody in them yet.
+    # Organizations the owner added by hand stand even with nobody in them yet.
     for r in manual:
         if r['kind'] == 'org' and r['identifier'].startswith('org:named:'):
             named_orgs.setdefault(r['identifier'], [])
         elif r['kind'] == 'org' and r['identifier'][4:] not in owner.domains | warmup:
             members.setdefault(r['identifier'][4:], [])
 
-    # Stated organisations join the one with that name or domain, or stand as their own (no domain, never looked up).
+    # Stated organizations join the one with that name or domain, or stand as their own (no domain, never looked up).
     def org_name(domain):
         # A CRM or Stripe name that is only the domain says nothing; a looked-up or readable one reads better.
         said = [n for n in (crm_names.get(domain), paying_names.get(domain)) if n and str(n).strip().lower().removeprefix('www.') != domain]
@@ -1090,7 +1090,7 @@ def _build(db, config, now):
     by_org_name = {}
     for domain in sorted(members):
         by_org_name.setdefault(folded_words(org_name(domain)), domain)
-    for domain in sorted(members):  # "Acme" is acme.com when no organisation is called that
+    for domain in sorted(members):  # "Acme" is acme.com when no organization is called that
         by_org_name.setdefault(folded_words(domain.split('.')[0]), domain)
     infos = {n[0]: n[9] for n in nodes}
     own = {folded_words(d.split('.')[0]) for d in owner.domains}
@@ -1434,7 +1434,7 @@ def overview(db, limit=12):
 
 
 def counts(db):
-    """How many people and organisations the graph knows, and how many projects are open: the sidebar's Graph rows."""
+    """How many people and organizations the graph knows, and how many projects are open: the sidebar's Graph rows."""
     found = dict(db.execute("SELECT kind,COUNT(*) FROM graph_nodes WHERE kind IN ('person','org') GROUP BY kind").fetchall())
     found['project'] = db.execute("SELECT COUNT(*) FROM graph_nodes WHERE kind='project' AND json_extract(info,'$.closed_at') IS NULL").fetchone()[0]
     return {kind: found.get(kind, 0) for kind in ('person', 'org', 'project')}
@@ -1446,7 +1446,7 @@ def _week_ago(db):
 
 
 # The lists the Graph panes show as tabs, each the whole list, strongest first: People (Closest, Gone quiet, New this
-# week), Organisations (Closest, Warm up) and Projects (Open, Done). The overview keeps its short lists for the agent.
+# week), Organizations (Closest, Warm up) and Projects (Open, Done). The overview keeps its short lists for the agent.
 PAGED = {'people': ("kind='person'", ()), 'quiet': ("kind='person' AND quiet=1", ()),
          'new': ("kind='person' AND signals<=3 AND last_at>=?", (_week_ago,)),
          'work': ("kind='person' AND json_extract(info,'$.side')='work'", ()), 'personal': ("kind='person' AND json_extract(info,'$.side')='personal'", ()),
@@ -1482,7 +1482,7 @@ def page(db, name, sort='', cursor=0, limit=30):
         rows = db.execute(f'SELECT * FROM graph_nodes WHERE {where} ORDER BY {SORTS[sort]},id LIMIT ? OFFSET ?', (*args, limit + 1, offset)).fetchall()
         items = [node_view(r) for r in rows[:limit]]
         orgs = {v.get('org') for v in items if v.get('kind') == 'person' and v.get('org')}
-        if orgs:  # the organisation's name, not only its id
+        if orgs:  # the organization's name, not only its id
             named = dict(db.execute(f"SELECT id,name FROM graph_nodes WHERE id IN ({','.join('?' * len(orgs))})", tuple(orgs)).fetchall())
             for v in items:
                 if v.get('org') in named:
@@ -1490,7 +1490,7 @@ def page(db, name, sort='', cursor=0, limit=30):
         if name.startswith('projects'):
             for project in items:
                 project['people'] = [n['name'] for n in neighbours(db, project['id'], 8) if n['kind'] == 'person'][:4]
-                # Its board, stage, organisation, value and expected close, for the list as a spreadsheet (CSV)
+                # Its board, stage, organization, value and expected close, for the list as a spreadsheet (CSV)
                 pid = project['id'].removeprefix('project:')
                 crm = db.execute('SELECT b.name board,p.stage,p.org,p.value,p.close_date FROM projects p LEFT JOIN boards b ON b.id=p.board_id WHERE p.id=?',
                                  (int(pid) if pid.isdigit() else -1,)).fetchone()
@@ -1546,7 +1546,7 @@ def detail(db, node_id, events=12):
     node_id = row['id']
     view = node_view(row, neighbours(db, node_id, 20))
     rows = db.execute('SELECT event_id,probable FROM graph_events WHERE node_id=? ORDER BY at DESC LIMIT ?', (node_id, events)).fetchall()
-    if row['kind'] == 'org':  # an organisation's timeline: the messages and meetings of the people in it
+    if row['kind'] == 'org':  # an organization's timeline: the messages and meetings of the people in it
         rows = db.execute("SELECT g.event_id,MIN(g.probable) AS probable,MAX(g.at) AS at FROM graph_events g JOIN graph_links l ON l.a=g.node_id "
                           "WHERE l.b=? AND l.kind='member' GROUP BY g.event_id ORDER BY at DESC LIMIT ?", (node_id, events)).fetchall()
     view['event_ids'] = [r[0] for r in rows]
@@ -1581,9 +1581,9 @@ def detail(db, node_id, events=12):
 
 
 
-# The timeline on a person's, organisation's or project's page: one list, newest first, from every source the Machine
+# The timeline on a person's, organization's or project's page: one list, newest first, from every source the Machine
 # keeps. Their signals (mail, meetings, chats, Intercom), plus what the graph's links miss: Intercom conversations on
-# their address, their Intercom contact or their organisation's domain, a Zoom summary of a meeting they were in, the
+# their address, their Intercom contact or their organization's domain, a Zoom summary of a meeting they were in, the
 # cards and promises that came from their signals, and their projects' moves. The owner's own view only: the team's
 # Graph (shared_graph.py) never reads it.
 TIMELINE_SOURCES = (('email', ('gmail.message', 'salesflare.email')),
@@ -1624,14 +1624,14 @@ def intercom_index(db):
 
 
 def _timeline_people(db, row):
-    """The person nodes whose signals make up this page's timeline: the person, or an organisation's people."""
+    """The person nodes whose signals make up this page's timeline: the person, or an organization's people."""
     if row['kind'] == 'org':
         return [r[0] for r in db.execute("SELECT a FROM graph_links WHERE b=? AND kind='member'", (row['id'],))]
     return [row['id']]
 
 
 def timeline(db, node_id, source='', cursor=0, limit=40):
-    """One page of a person's, organisation's or project's timeline: {'items', 'next', 'sources'}. An item is a signal
+    """One page of a person's, organization's or project's timeline: {'items', 'next', 'sources'}. An item is a signal
     ({'type': 'event', 'id': event id}), a card, a promise or a project's move, each with 'at' and its 'source' group
     (email, meetings, intercom, chats, cards, projects, other). source narrows it to one group; sources counts them all."""
     row = resolve(db, node_id)
@@ -1655,7 +1655,7 @@ def timeline(db, node_id, source='', cursor=0, limit=40):
                             f"WHERE g.node_id IN ({','.join('?' * len(chunk))}) AND e.deleted=0 GROUP BY g.event_id", chunk):
             add(r['event_id'], r['at'], r['kind'], r['probable'])
     if kind in ('person', 'org'):
-        # Intercom: on their address, on the Intercom contact that wrote from it, or (an organisation) on its domain.
+        # Intercom: on their address, on the Intercom contact that wrote from it, or (an organization) on its domain.
         emails = set()
         for p in people:
             got = db.execute('SELECT info FROM graph_nodes WHERE id=?', (p,)).fetchone()
@@ -1686,7 +1686,7 @@ def timeline(db, node_id, source='', cursor=0, limit=40):
                                 f"AND s.status IN ({','.join('?' * len(TIMELINE_CARDS))})", (*chunk, *TIMELINE_CARDS)):
                 cards[r['id']] = r
             promised += db.execute(f"SELECT id,direction,who,what,due,status,created_at FROM promises WHERE event_id IN ({marks})", chunk).fetchall()
-        if kind == 'org':  # a card the owner made about this organisation (New card, Who)
+        if kind == 'org':  # a card the owner made about this organization (New card, Who)
             for r in db.execute("SELECT metadata FROM events WHERE kind='owner.card' AND deleted=0"):
                 m = json.loads(r['metadata'] or '{}')
                 if any(isinstance(a, dict) and a.get('id') == node for a in m.get('about') or ()) and m.get('card_id'):
@@ -1698,7 +1698,7 @@ def timeline(db, node_id, source='', cursor=0, limit=40):
                    'due': r['due']} for r in cards.values()]
         items += [{'type': 'promise', 'id': r['id'], 'at': r['created_at'], 'source': 'cards', 'what': r['what'], 'who': r['who'],
                    'mine': r['direction'] == 'mine', 'status': r['status'], 'due': r['due']} for r in promised]
-        # Projects: the moves of the projects they are on (an organisation's: the projects for its domain).
+        # Projects: the moves of the projects they are on (an organization's: the projects for its domain).
         if kind == 'person':
             pids = {r[0] for r in db.execute("SELECT b FROM graph_links WHERE a=? AND kind='project'", (node,))}
             pids |= {'project:' + str(r[0]) for r in db.execute('SELECT project_id FROM project_people WHERE node_id=?', (node,))}
@@ -1829,7 +1829,7 @@ def open_between(db, node_id, limit=6, skip_card=None):
             f"SELECT s.id,s.title,s.status,s.due FROM suggestions s WHERE s.status IN ({marks}) AND s.id IS NOT ? AND (EXISTS ({on_node.format('s.event_ids')}) "
             "OR (? IS NOT NULL AND s.project=? COLLATE NOCASE)) ORDER BY coalesce(s.due,s.created_at) LIMIT ?",
             (*OPEN_CARD, skip_card, node_id, project and project['name'], project and project['name'], limit))]
-        if row and row['kind'] == 'org':  # a card the owner made about this organisation (New card, Who)
+        if row and row['kind'] == 'org':  # a card the owner made about this organization (New card, Who)
             mine = [m.get('card_id') for m in (json.loads(r['metadata'] or '{}') for r in db.execute("SELECT metadata FROM events WHERE kind='owner.card' AND deleted=0"))
                     if any(isinstance(a, dict) and a.get('id') == node_id for a in m.get('about') or ())]
             have = {c['id'] for c in out['cards']}
@@ -1862,7 +1862,7 @@ def open_line(items):
 
 def card_people(db, event_ids, limit=3):
     """Who a card is directly about, closest first, with their role, and a weight to rank cards by: how close
-    they are to the owner, more when their organisation pays the owner (billed through Stripe)."""
+    they are to the owner, more when their organization pays the owner (billed through Stripe)."""
     ids = [int(i) for i in event_ids or ()]
     if not ids:
         return [], 0.0
@@ -1894,7 +1894,7 @@ def projects_for(db, event_ids):
 
 
 def set_role(db, node_id, role, source, now, event_id=None, quote=None):
-    """Say what someone (or an organisation) is to the owner ("accountant", "Ann's partner", "customer at
+    """Say what someone (or an organization) is to the owner ("accountant", "Ann's partner", "customer at
     Globex", "accounting firm"). A review gives the message it read it in (event_id) and the line that
     shows it (quote, words from that message), so the owner can confirm it. The owner's word stays until
     the owner changes it; the owner saying the same role confirms it; an empty role from the owner
@@ -1903,7 +1903,7 @@ def set_role(db, node_id, role, source, now, event_id=None, quote=None):
         db.execute('BEGIN IMMEDIATE')
     row = db.execute("SELECT id,kind,name,info FROM graph_nodes WHERE id=? AND kind IN ('person','org')", (str(node_id),)).fetchone()
     if not row:
-        raise ValueError('role needs a person or organisation node_id from graph results')
+        raise ValueError('role needs a person or organization node_id from graph results')
     role = ' '.join(str(role or '').split())
     if len(role) > 60 or (not role and source != 'owner'):
         raise ValueError('A role is a few words (up to 60 characters): "accountant", "investor", "customer at Globex", "accounting firm"')
@@ -1958,13 +1958,13 @@ def set_org(db, node_id, org, source, now, event_id=None, quote=None):
     if org.startswith('org:'):
         found = db.execute("SELECT id,name FROM graph_nodes WHERE id=? AND kind='org'", (org,)).fetchone()
         if not found:
-            raise ValueError('Unknown organisation node_id; give its name instead')
+            raise ValueError('Unknown organization node_id; give its name instead')
         org, org_id = found['name'], found['id']
     if len(org) > 100 or (not org and source != 'owner'):
-        raise ValueError('org is the organisation\'s name as the source states it ("Acme"), up to 100 characters, or an org:… node_id')
+        raise ValueError('org is the organization\'s name as the source states it ("Acme"), up to 100 characters, or an org:… node_id')
     current = db.execute('SELECT * FROM person_orgs WHERE identifier=?', (row['id'],)).fetchone()
     if current and current['source'] == 'owner' and source != 'owner':
-        return {'org': current['org'] or None, 'kept': 'The owner set this organisation; it stays.'}
+        return {'org': current['org'] or None, 'kept': 'The owner set this organization; it stays.'}
     quote = ' '.join(str(quote or '').split())[:200] or None
     via = said_at = None
     if source != 'owner':
@@ -2005,7 +2005,7 @@ def hidden_list(db):
 
 
 def hide_warmup(db, node_id, warmup, source, now, event_id=None):
-    """Say an organisation's mail is an email warm-up tool's traffic (templated exchanges between inboxes that
+    """Say an organization's mail is an email warm-up tool's traffic (templated exchanges between inboxes that
     keep a sender's reputation up, with no real conversation behind them): its domain and its people leave the
     graph, and it isn't looked up. A review judges it from what the messages are; the owner's word stays, so an
     owner's undo is never hidden again by a review. The owner can undo with warmup false and the domain or node_id."""
@@ -2017,9 +2017,9 @@ def hide_warmup(db, node_id, warmup, source, now, event_id=None):
     row = db.execute("SELECT name FROM graph_nodes WHERE id=? AND kind='org'", ('org:' + domain,)).fetchone()
     current = db.execute('SELECT * FROM hidden_domains WHERE domain=?', (domain,)).fetchone()
     if (not row and not (source == 'owner' and current)) or domain.startswith('named:'):
-        raise ValueError('warmup needs an organisation node_id (org:…) with an email domain from graph results')
+        raise ValueError('warmup needs an organization node_id (org:…) with an email domain from graph results')
     if current and current['source'] == 'owner' and source != 'owner':
-        return {'warmup': bool(current['hidden']), 'kept': 'The owner decided about this organisation; it stays.'}
+        return {'warmup': bool(current['hidden']), 'kept': 'The owner decided about this organization; it stays.'}
     if source != 'owner' and event_id is not None:
         members = [r[0] for r in db.execute("SELECT a FROM graph_links WHERE b=? AND kind='member'", ('org:' + domain,))]
         if not db.execute(f"SELECT 1 FROM graph_events WHERE event_id=? AND node_id IN ({','.join('?' for _ in members) or 'NULL'})",
@@ -2087,7 +2087,7 @@ def waiting(db):
 
 def stale_roles(db, now, limit=3, days=RECHECK_DAYS):
     """A review's roles to read again: older than RECHECK_DAYS with contact since, with new hints since it
-    was set (now billed through Stripe, a new organisation), or saved without the line it came from. The
+    was set (now billed through Stripe, a new organization), or saved without the line it came from. The
     owner's own roles are never rechecked."""
     current = parse_time(now)
     out = []
@@ -2107,8 +2107,8 @@ def stale_roles(db, now, limit=3, days=RECHECK_DAYS):
 
 
 def rename(db, node_id, name, now):
-    """The owner's name for a person, organisation or project. A project renamed to another project's
-    name joins it; an empty name gives a person or organisation back the name from their messages."""
+    """The owner's name for a person, organization or project. A project renamed to another project's
+    name joins it; an empty name gives a person or organization back the name from their messages."""
     node_id, name = str(node_id or ''), ' '.join(str(name or '').split())
     if node_id.startswith('project:'):
         row = db.execute('SELECT id,name FROM projects WHERE id=?', (node_id.split(':', 1)[1],)).fetchone()
@@ -2133,7 +2133,7 @@ def rename(db, node_id, name, now):
         db.execute('DELETE FROM projects WHERE id=?', (row['id'],))
         return {'node_id': 'project:' + str(other['id']), 'name': other['name'], 'merged': True}
     if not db.execute("SELECT 1 FROM graph_nodes WHERE id=? AND kind IN ('person','org')", (node_id,)).fetchone():
-        raise ValueError('Rename a person, organisation or project from graph results')
+        raise ValueError('Rename a person, organization or project from graph results')
     if len(name) > 100:
         raise ValueError('A name is up to 100 characters')
     if name:
@@ -2150,9 +2150,9 @@ def website_domain(text):
 
 
 def create_record(db, kind, args, now):
-    """A person or organisation the owner adds by hand, before (or without) any message from them. A person has a
-    name, and optionally an email address and where they work; an organisation a name and optionally its website.
-    One that is already in the graph (the same address, website or name for an organisation) is not made twice:
+    """A person or organization the owner adds by hand, before (or without) any message from them. A person has a
+    name, and optionally an email address and where they work; an organization a name and optionally its website.
+    One that is already in the graph (the same address, website or name for an organization) is not made twice:
     {'node_id', 'name', 'existing': True} points to it. Otherwise {'node_id', 'name', 'created': True}; the caller
     rebuilds the graph, which keeps them from then on (manual_nodes), also with no messages."""
     if not db.in_transaction:
@@ -2169,7 +2169,7 @@ def create_record(db, kind, args, now):
             raise ValueError(f'{email} is not an email address')
         org = ' '.join(str(args.get('org') or '').split())
         if len(org) > 100:
-            raise ValueError('An organisation name is up to 100 characters')
+            raise ValueError('An organization name is up to 100 characters')
         identifier = 'email:' + email if email else 'manual:' + secrets.token_hex(8)
         found = resolve(db, identifier) if email else None
         if found:
@@ -2207,13 +2207,13 @@ def create_record(db, kind, args, now):
 
 
 def delete_org(db, node_id):
-    """Deletes an organisation the owner added by hand, while nobody is in it. One built from people's addresses
+    """Deletes an organization the owner added by hand, while nobody is in it. One built from people's addresses
     comes from their messages, so it stays."""
     node_id = str(node_id or '')
     if not db.execute("SELECT 1 FROM manual_nodes WHERE identifier=? AND kind='org'", (node_id,)).fetchone():
-        raise ValueError('Only an organisation you added yourself can be deleted')
+        raise ValueError('Only an organization you added yourself can be deleted')
     if db.execute("SELECT 1 FROM graph_links WHERE b=? AND kind='member'", (node_id,)).fetchone():
-        raise ValueError('People are in it: change their organisation first')
+        raise ValueError('People are in it: change their organization first')
     name = db.execute('SELECT name FROM graph_nodes WHERE id=?', (node_id,)).fetchone()
     db.execute('DELETE FROM manual_nodes WHERE identifier=?', (node_id,))
     db.execute('DELETE FROM graph_names WHERE node_id=?', (node_id,))
@@ -2235,12 +2235,12 @@ def org_domain(db, node_id):
     if row and str(node_id).startswith('org:named:'):
         return str(node_id)  # one with no website: its details are kept under its id
     if not row or not json.loads(row['info']).get('domain'):
-        raise ValueError('Edit an organisation from graph results')
+        raise ValueError('Edit an organization from graph results')
     return json.loads(row['info'])['domain']
 
 
 def org_edit(db, node_id, fields, now):
-    """The owner's own details for an organisation. They win over what an enrichment service says and survive
+    """The owner's own details for an organization. They win over what an enrichment service says and survive
     every refresh; an empty field gives that one back to the service."""
     if not db.in_transaction:
         db.execute('BEGIN IMMEDIATE')
@@ -2532,7 +2532,7 @@ def set_stage(db, project, stage, source, now, board=None, stages=None, reason=N
     if org and not kept:
         domain = re.sub(r'^(?:https?://)?(?:www\.)?', '', str(org).strip().lower()).split('/')[0]
         if not ORG_DOMAIN.fullmatch(domain):
-            raise ValueError('org: the organisation\'s web domain, like "example.com"')
+            raise ValueError('org: the organization\'s web domain, like "example.com"')
         db.execute('UPDATE projects SET org=? WHERE id=?', (domain, row['id']))
     if not owner and not moved and not kept and (next_step is not None or org):
         # The stage stayed the same, but its next step/details have newer evidence. Keep that watermark too;
@@ -2554,7 +2554,7 @@ def boards_brief(db, limit=150):
 
 
 def project_events(db, pid, limit, until=None):
-    """A project's latest messages, newest first: the ones labelled into it and the ones the graph links to it."""
+    """A project's latest messages, newest first: the ones labeled into it and the ones the graph links to it."""
     return db.execute('SELECT id,kind,occurred_at FROM events WHERE deleted=0 AND id IN (SELECT event_id FROM event_projects WHERE project_id=? '
                       "UNION SELECT event_id FROM graph_events WHERE node_id=? AND probable=0)" + (' AND occurred_at<=?' if until else '') +
                       ' ORDER BY occurred_at DESC LIMIT ?', (pid, 'project:' + str(pid), *((until,) if until else ()), limit)).fetchall()
@@ -2580,7 +2580,7 @@ def hidden_project_ids(db):
 
 
 def hidden_event_ids(db):
-    """Messages of Only-you projects (labelled into one, or linked by the graph): their threads stay Only you."""
+    """Messages of Only-you projects (labeled into one, or linked by the graph): their threads stay Only you."""
     ids = sorted(hidden_project_ids(db))
     if not ids:
         return set()
@@ -2890,8 +2890,8 @@ def project_row(db, node_id):
 
 
 def save_project(db, args, now):
-    """The owner's project, new or edited, like a deal in a CRM: its name, board and stage (a move by hand), organisation
-    (a web domain, or the name of an organisation in the graph that has one), value, expected close date (YYYY-MM-DD),
+    """The owner's project, new or edited, like a deal in a CRM: its name, board and stage (a move by hand), organization
+    (a web domain, or the name of an organization in the graph that has one), value, expected close date (YYYY-MM-DD),
     notes and the people on it (person node ids). Fields left out stay as they are."""
     node = args.get('node_id')
     if node:
@@ -2928,7 +2928,7 @@ def save_project(db, args, now):
             found = db.execute("SELECT json_extract(info,'$.domain') AS domain FROM graph_nodes WHERE kind='org' AND (id=? OR name=? COLLATE NOCASE) "
                                "AND json_extract(info,'$.domain') IS NOT NULL ORDER BY strength DESC LIMIT 1", (said, said)).fetchone()
             if not found:
-                raise ValueError('Organisation: its website, like "example.com", or the name of one in your Graph')
+                raise ValueError('Organization: its website, like "example.com", or the name of one in your Graph')
             domain = found['domain']
         db.execute('UPDATE projects SET org=? WHERE id=?', (domain or None, pid))
     if 'value' in args:
@@ -3014,7 +3014,7 @@ def default_board(db, board_id):
 
 
 def project_card(db, node_id):
-    """What the project dialog edits: name, board, stage, organisation, value, notes, people and how it ended."""
+    """What the project dialog edits: name, board, stage, organization, value, notes, people and how it ended."""
     row = project_row(db, node_id)
     people = [{'id': r['id'], 'name': r['name']} for r in db.execute(
         "SELECT n.id,n.name FROM graph_nodes n WHERE n.id IN (SELECT node_id FROM project_people WHERE project_id=? UNION "
@@ -3120,7 +3120,7 @@ def board_maybes(db, board_id):
         parts = len(split_plan(db, r['project_id'])) if r['split'] else 0
         if parts >= 2:  # Add makes one project per counterpart
             found[-1]['split'] = parts
-    # and organisations or people from the look through the history with no project yet (Add makes one)
+    # and organizations or people from the look through the history with no project yet (Add makes one)
     return found + [{'id': r['key'], 'name': r['name'], 'why': r['why']} for r in db.execute(
         "SELECT a.key,a.name,a.why FROM board_backfill_asks a WHERE a.board_id=? AND a.fit='maybe' AND a.state='open' AND (a.project_id IS NULL OR "
         "EXISTS(SELECT 1 FROM projects p WHERE p.id=a.project_id AND p.board_id IS NULL AND p.closed_at IS NULL)) AND NOT EXISTS(SELECT 1 FROM json_each(a.event_ids) j "
@@ -3132,7 +3132,7 @@ UNDO_COLUMNS = ('board_id', 'org', 'stage', 'stage_event_id', 'stage_by', 'stage
 
 
 def counterpart_keys(db, event_ids):
-    """Who each message is with, outside the owner's team: {event_id: [key]} with the organisation's node id as key, or
+    """Who each message is with, outside the owner's team: {event_id: [key]} with the organization's node id as key, or
     the person's when they have none (as the look through the history keys them)."""
     out = collections.defaultdict(list)
     ids = [int(i) for i in event_ids]
@@ -3148,7 +3148,7 @@ def counterpart_keys(db, event_ids):
 
 
 def split_plan(db, project_id):
-    """How Add splits a project that bundles several counterparts (a review said so): one part per organisation (or
+    """How Add splits a project that bundles several counterparts (a review said so): one part per organization (or
     person without one) its messages are with, each going into the open project already with them when there is one
     (no duplicates), else a new "<project>: <counterpart>". [{name, key, event_ids, project_id or None}]; fewer than
     two parts means it is one project after all."""
@@ -3284,7 +3284,7 @@ def _decide(db, board, node_id, add, now, steps, strict=True):
 
 def decide_fit(db, board_id, node_id, add, now):
     """The owner adds maybes to the board (sorted from their messages next) or leaves them out for good: node_id, or
-    node_ids for several at once. A maybe from the look through the history (an organisation or person, no project
+    node_ids for several at once. A maybe from the look through the history (an organization or person, no project
     yet) becomes a project; a project a review said bundles several counterparts becomes one per counterpart. Returns
     how many projects it put on the board and an undo token."""
     board = db.execute('SELECT * FROM boards WHERE id=?', (int(board_id or 0),)).fetchone()
@@ -3347,7 +3347,7 @@ def undo_fit(db, token):
 
 
 def backfill_counterparts(db):
-    """Who a new board's look through the history goes over: each organisation (or person without one) the owner has
+    """Who a new board's look through the history goes over: each organization (or person without one) the owner has
     messages or meetings with that are in no project yet, leaving out colleagues and anyone an open project is with
     already (no duplicates). {key (its graph node id): {name, people, event_ids newest first, first, last}}."""
     taken = {'org:' + r[0] for r in db.execute('SELECT org FROM projects WHERE closed_at IS NULL AND org IS NOT NULL')}
@@ -3525,7 +3525,7 @@ MESSAGE_KINDS = ('gmail.message', 'salesflare.email', 'linkedin.message', 'slack
 
 
 def org_card(db, domain):
-    """An organisation's name and logo for a tile: the owner's edits over the enrichment service's profile."""
+    """An organization's name and logo for a tile: the owner's edits over the enrichment service's profile."""
     found = db.execute("SELECT name,info FROM graph_nodes WHERE id=?", ('org:' + domain,)).fetchone()
     info = json.loads(found['info'] or '{}') if found else {}
     profile = info.get('profile')
@@ -3542,7 +3542,7 @@ def org_card(db, domain):
 
 def boards(db, now):
     """Every board with its stages and projects, for the Projects board view. Each project: its stage, why it last
-    moved and when (with the message), its next step, its organisation (logo from enrichment), how long it has been
+    moved and when (with the message), its next step, its organization (logo from enrichment), how long it has been
     in the stage, how long the other side hasn't answered the owner (no_reply_days, from its messages), and an open
     card about it."""
     out = []
@@ -3553,7 +3553,7 @@ def boards(db, now):
         for p in rows:
             node = 'project:' + str(p['id'])
             domain = p['org']
-            if not domain:  # the organisation most of its people are at, leaving out the owner's colleagues
+            if not domain:  # the organization most of its people are at, leaving out the owner's colleagues
                 weight = collections.Counter()
                 for r in db.execute("SELECT json_extract(n.info,'$.org') org,l.strength FROM graph_links l JOIN graph_nodes n ON n.id=l.a "
                                     "WHERE l.b=? AND l.kind='project' AND n.kind='person' AND json_extract(n.info,'$.colleague') IS NOT 1", (node,)):

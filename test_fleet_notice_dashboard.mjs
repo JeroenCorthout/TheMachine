@@ -6,7 +6,7 @@ import {navClick} from './nav-click.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // The top of Fleet and its Handoffs box, at 390px and 1440px, light and dark:
-// - "One Fleet item waits for you under Suggestions." sits in a quiet notice card (pageNotice), its text centred with a
+// - "One Fleet item waits for you under Suggestions." sits in a quiet notice card (pageNotice), its text centered with a
 //   Show button on the right, with room above the Fleet tabs; plural with two items; the Network off is the same card.
 // - Handoffs have their own box, not the "Who knows someone?" one: open ones first, accepted and done ones quieter with
 //   three shown and a Show more, the time leading two lines of summary, and the whole row opening its card where it is still there.
@@ -58,7 +58,7 @@ try{
   assert.ok(show.right<=card.right-8&&show.left>=card.left&&show.top>=card.top&&show.bottom<=card.bottom,`${at_}: Show is inside the card`);
   assert.ok(card.right-show.right<24,`${at_}: Show sits at the right of the card`);
   assert.ok(text.right<=show.left||text.bottom<=show.top+1,`${at_}: the text comes first`);
-  if(width===1440)assert.ok(Math.abs(text.mid-show.mid)<=1.5,`${at_}: text centred with Show (${text.mid} vs ${show.mid})`);
+  if(width===1440)assert.ok(Math.abs(text.mid-show.mid)<=1.5,`${at_}: text centered with Show (${text.mid} vs ${show.mid})`);
   const gap=tabs.top-card.bottom;assert.ok(gap>=12&&gap<=32,`${at_}: card to tabs ${gap}px`);
   assert.ok(card.top-title.bottom>=16,`${at_}: room under the title`);
   assert.ok(await notice.evaluate(e=>{const s=getComputedStyle(e);return parseFloat(s.borderTopLeftRadius)>=10&&s.borderTopStyle==='solid'}),`${at_}: a rounded, bordered card`);

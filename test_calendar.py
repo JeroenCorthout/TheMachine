@@ -1,5 +1,5 @@
 """The dashboard's Calendar: meetings that overlap a window of at most 15 days, as slim read-only rows, soonest first.
-Declined and cancelled meetings stay out, all-day ones count on every day they cover, and only https links go out.
+Declined and canceled meetings stay out, all-day ones count on every day they cover, and only https links go out.
 No live calls."""
 import http.client
 import importlib.util

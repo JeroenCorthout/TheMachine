@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // A new board looks through the history once: its header says "Looking through your history…" while it runs, then how
-// many it added and how many wait for review. An organisation from the history with no project yet waits under "could
+// many it added and how many wait for review. An organization from the history with no project yet waits under "could
 // belong here" like a project, and Add or Leave out posts one board_fit with its key. A project that bundles several
 // counterparts says "Add as N". Ticking rows (or Select all) turns the top buttons into "Add N" / "Leave out N", which
 // post one board_fit with node_ids, and the toast offers Undo. The list stays open and in place after each one, also

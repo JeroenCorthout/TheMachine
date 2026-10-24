@@ -1,7 +1,7 @@
 ---
 title: The Graph
 area: graph
-summary: The people, organisations and projects in your messages, kept up to date by themselves.
+summary: The people, organizations and projects in your messages, kept up to date by themselves.
 covers: tab:people
 code: graph.py, enrichment.py, dashboard.html
 order: 1
@@ -10,7 +10,7 @@ Your Machine builds a map of who you deal with and what's going on, from your me
 
 ## People
 
-Everyone you're in touch with, closest first. A person's page starts with their photo, name, title, organisation and place, and one line on how you're in touch ("Talk daily · last Fri, Oct 23 · next meeting Tue, Oct 27"). Below that:
+Everyone you're in touch with, closest first. A person's page starts with their photo, name, title, organization and place, and one line on how you're in touch ("Talk daily · last Fri, Oct 23 · next meeting Tue, Oct 27"). Below that:
 
 - **Contact**: their phones and emails. Tap one to call or write, or **Copy** it.
 - **About you**: what they are to you, Work or Personal contact, and your Family or Fleet, with **See in Fleet**.
@@ -18,27 +18,27 @@ Everyone you're in touch with, closest first. A person's page starts with their 
 
 Someone's addresses and chats are joined by themselves when it's clear they're one person, like a work email with their own address in CC.
 
-The **Work** and **Personal** tabs list only those contacts. **Download CSV**, under the order menu, saves the tab you're on as a spreadsheet, also for Organisations and Projects.
+The **Work** and **Personal** tabs list only those contacts. **Download CSV**, under the order menu, saves the tab you're on as a spreadsheet, also for Organizations and Projects.
 
 ### Timeline
 
-Every person and organisation page has one, newest first: email, meetings and their Zoom summaries, Intercom conversations (open or closed, with **Open in Intercom**), WhatsApp, Slack, LinkedIn and X chats, cards, promises and project moves. The chips on top show one source at a time. **Show more** loads older ones.
+Every person and organization page has one, newest first: email, meetings and their Zoom summaries, Intercom conversations (open or closed, with **Open in Intercom**), WhatsApp, Slack, LinkedIn and X chats, cards, promises and project moves. The chips on top show one source at a time. **Show more** loads older ones.
 
-An organisation's timeline has its people's messages and the Intercom conversations from its domain. Your timelines are yours: the team's Graph shows only what your sharing rules allow.
+An organization's timeline has its people's messages and the Intercom conversations from its domain. Your timelines are yours: the team's Graph shows only what your sharing rules allow.
 
-## Add someone or an organisation
+## Add someone or an organization
 
-**New person** at the top of People, **New organisation** at the top of Organisations, or **+** in the top bar on a phone. Give a name, and for a person an email and organisation if you have them; for an organisation, its website. When someone like it is already in your Graph, the form shows them first, so you can open that one instead. **Add** opens the new page.
+**New person** at the top of People, **New organization** at the top of Organizations, or **+** in the top bar on a phone. Give a name, and for a person an email and organization if you have them; for an organization, its website. When someone like it is already in your Graph, the form shows them first, so you can open that one instead. **Add** opens the new page.
 
-Someone you add stays, also with no messages yet. Their first message joins them. An organisation you added can be deleted from its **⋯** menu while nobody is in it.
+Someone you add stays, also with no messages yet. Their first message joins them. An organization you added can be deleted from its **⋯** menu while nobody is in it.
 
 ## Notes
 
-**Edit** on a person's or organisation's page has a **Notes** field, for anything you want to remember. Notes show on the page and stay through merges.
+**Edit** on a person's or organization's page has a **Notes** field, for anything you want to remember. Notes show on the page and stay through merges.
 
 ## Edit someone
 
-**Edit**, at the top of their page, changes their name, title, organisation, location, LinkedIn, phones and emails, what they are to you, and Work or Personal. **Save** keeps it, **Cancel** leaves it as it was.
+**Edit**, at the top of their page, changes their name, title, organization, location, LinkedIn, phones and emails, what they are to you, and Work or Personal. **Save** keeps it, **Cancel** leaves it as it was.
 
 Your edits stay, also when their details are looked up again or a review reads something else, and through **Merge** and **Undo**. Empty a field to use the looked-up value again. An empty name brings back the one from their messages.
 
@@ -54,7 +54,7 @@ To join two people yourself, open one of them, then **⋯**, **Same person as…
 
 ## Job title and photo
 
-People with a company address get a job title, photo, LinkedIn and city, looked up like [organisation details](organisation-data.md). Only their name and company domain are sent on a hosted Machine. Turn it off in **Settings**, under Security: **Look up work contacts**.
+People with a company address get a job title, photo, LinkedIn and city, looked up like [organization details](organization-data.md). Only their name and company domain are sent on a hosted Machine. Turn it off in **Settings**, under Security: **Look up work contacts**.
 
 Your connections fill in more as they run, with what they already read and nothing extra asked: a title, phone and time zone from Slack, a bio, place and website from X, a headline and photo from LinkedIn, and job titles from Google contacts and Salesflare. What someone says about themselves comes first. Hover over the line under their name to see where it came from. It all stays on your Machine.
 
@@ -68,11 +68,11 @@ On their page, open the ⋯ menu and pick **Delete permanently…**, then **Dele
 
 Roles your Machine read in your messages, waiting for your word. **✓ Right** confirms one; **Edit** opens their page in Edit. It learns from your edits. This shows only when roles are waiting.
 
-## Organisations
+## Organizations
 
-Companies, from the addresses and names in your messages. See [Organisation details](organisation-data.md).
+Companies, from the addresses and names in your messages. See [Organization details](organization-data.md).
 
-An organisation's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you), the people and projects there and its **Timeline**. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
+An organization's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you), the people and projects there and its **Timeline**. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
 
 Mail from email warm-up tools is kept out, under "Hidden as warm-up", with **Undo** per domain.
 
@@ -82,7 +82,7 @@ Named by your Machine from what your messages are about. Signals that look like 
 
 Or run them by hand, like deals in a CRM:
 
-- **New project**: at the top of a board, **+ Add** under a stage, **New project** at the top of the list, **+** in the top bar on a phone, or from a person's or organisation's page. Give it a name, a board and stage, an organisation (its website or name), a value, an expected close date, people and notes. Projects already in your Graph with a name like it show first.
+- **New project**: at the top of a board, **+ Add** under a stage, **New project** at the top of the list, **+** in the top bar on a phone, or from a person's or organization's page. Give it a name, a board and stage, an organization (its website or name), a value, an expected close date, people and notes. Projects already in your Graph with a name like it show first.
 - **Edit** on a project's page, or **Edit** in a card's **⋯** on the board (or press E on a card). It changes all of the above.
 - **Won** or **Lost**, with why. Won moves it to the board's last stage, Lost to Stalled or declined. **Reopen** undoes it.
 - **Archive** takes it off the board and lists; a new message about it brings it back. **Delete** removes it for good; its messages and people stay.
@@ -94,11 +94,11 @@ Projects of one kind in stages, like an evaluation pipeline. **⋯** on a board:
 
 Tick a few, or **Select all**, to do them at once, and **Undo** right after if you change your mind. A project that bundles several counterparts becomes one project per counterpart when you add it.
 
-A new board, or a suggested board you save, looks through your whole history once. It finds projects and organisations that fit, makes one project per organisation and puts each in a stage. The header says "Looking through your history…" while it works, then how many it added and how many wait for you to review. An Only-you board keeps what it finds to you.
+A new board, or a suggested board you save, looks through your whole history once. It finds projects and organizations that fit, makes one project per organization and puts each in a stage. The header says "Looking through your history…" while it works, then how many it added and how many wait for you to review. An Only-you board keeps what it finds to you.
 
 ## A card about someone
 
-**New card** in the **⋯** menu of a person, organisation or project starts a card about them.
+**New card** in the **⋯** menu of a person, organization or project starts a card about them.
 
 ## What it knows about someone
 

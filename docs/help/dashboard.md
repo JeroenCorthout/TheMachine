@@ -11,7 +11,7 @@ order: 4
 - **Suggestions**: your cards. See [Cards](cards.md).
 - **Calendar**: the week ahead with your meetings, due cards and promises. See [Calendar](calendar.md).
 - **Events**: everything your Machine has read, to search.
-- **Graph**: the people, organisations and projects in your messages. See [Graph](graph.md).
+- **Graph**: the people, organizations and projects in your messages. See [Graph](graph.md).
 - **Fleet**: your team, family and friends on The Machine Network, once you have one. See [Fleet](fleet.md).
 - **Feedback**: how the cards are doing, and what it learned.
 - **Connections**: your sources and how they're doing. See [Connections](connections.md).

@@ -5,8 +5,8 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// A person's page reads at a glance: photo, name, title · organisation, place and one plain line on how you're in touch;
-// then Contact (labelled rows in the normal font, tap to call or mail, Copy), About you (what they are to you, Work or
+// A person's page reads at a glance: photo, name, title · organization, place and one plain line on how you're in touch;
+// then Contact (labeled rows in the normal font, tap to call or mail, Copy), About you (what they are to you, Work or
 // Personal, Family or Fleet) and Related (People, Projects) as their own sections, and "Joined from" as a quiet
 // disclosure. Edit in the header opens one form (Cancel and Save where Edit was) with fields as long as what goes in
 // them; Save sends only what changed. At 390 and 1440, light and dark. SHOT_DIR=… saves screenshots.
@@ -56,7 +56,7 @@ try{
   const card=page.locator('#people-view .person-page');await card.waitFor();
   await page.waitForFunction(()=>document.querySelector('.person-page .person-pic img')?.complete);
   const tag=`${width} ${scheme}`;
-  // Header: title · organisation, the place, and one plain line.
+  // Header: title · organization, the place, and one plain line.
   assert.equal((await card.locator('.person-job').textContent()).trim(),'Head of the Northwind Technical and Digital Academy · Northwind',tag);
   assert.equal(await card.locator('.person-job button.node[data-node="org:eu.northwind.example"]').count(),1);
   assert.match((await card.locator('.person-place').textContent()).trim(),/^Antwerpen, Belgium · \d\d:\d\d their time$/);  // 24h, as their clock differs from the owner's

@@ -1,6 +1,6 @@
 # Development
 
-Run the tests with `python3 scripts/test.py` (see [CONTRIBUTING.md](../CONTRIBUTING.md)). To look at the dashboard and click through it without a real install, use the sandbox. The look (colours, type, components) is described in [design.md](design.md).
+Run the tests with `python3 scripts/test.py` (see [CONTRIBUTING.md](../CONTRIBUTING.md)). To look at the dashboard and click through it without a real install, use the sandbox. The look (colors, type, components) is described in [design.md](design.md).
 
 ## The sandbox
 

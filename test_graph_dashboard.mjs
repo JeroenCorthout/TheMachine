@@ -47,7 +47,7 @@ try{
  assert.ok((await page.locator('.graph-known').textContent()).includes('Ann prefers calls before 10')&&text.includes('Known about Ann'));
  assert.equal(await page.locator('.graph-open a[href="#card=0123456789abcdef"]').count(),1);
  assert.match(text,/probably part of it/i);
- // Where they work, as their LinkedIn headline states it, linked to the organisation.
+ // Where they work, as their LinkedIn headline states it, linked to the organization.
  assert.equal(await page.locator('.person-job button.node[data-node="org:named:globex"]').count(),1);
  assert.match(await page.locator('.person-form [name=org]+small').textContent(),/^From their LinkedIn headline, .*: “Engineering at Globex”$/);
  const widths=[];

@@ -202,7 +202,7 @@ class CloudCodex:
         try:
             while True:
                 if handle.cancelled:
-                    raise aj.Stopped('cancelled', 'Cancelled here. It may still finish in Codex cloud.')
+                    raise aj.Stopped('cancelled', 'Canceled here. It may still finish in Codex cloud.')
                 if time.time() - started > max(timeout, 3600):
                     raise aj.Stopped('timeout', 'Still running in Codex cloud. Open it there.')
                 found = self.task(task_id) or {}

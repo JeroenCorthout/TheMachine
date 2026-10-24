@@ -27,7 +27,7 @@ their answers, and the log.
 
 ## What a Work Fleet does
 
-1. **Who knows someone at X?** Ask from the **Fleet** tab, or with **Ask the Fleet** on a person or organisation in
+1. **Who knows someone at X?** Ask from the **Fleet** tab, or with **Ask the Fleet** on a person or organization in
    the Graph. Each teammate's Machine answers from its own graph: "knows 2 people, closest: regular, last contact
    2026-09". Names only when that teammate set With names for you.
 2. **Meeting prep.** If you turn it on, your Machine asks your Work Fleet about the outside people in your meetings this
@@ -41,7 +41,7 @@ their answers, and the log.
 4. **Shared connectors.** An admin connects Intercom once and shares it from the Fleet tab, **Shared connectors**: the
    Machines they say OK to get it as a work source, sealed Machine to Machine. Connections shows "Shared by <Fleet>".
    How it's kept safe: [Network](network.md#shared-connectors).
-5. **Shared Graph.** Work People, Organisations and Projects are shared with the Fleet: name, role, company, stage,
+5. **Shared Graph.** Work People, Organizations and Projects are shared with the Fleet: name, role, company, stage,
    next step, a short timeline and client threads with their attachments, as far back as the Machine has them.
    Sensitive client threads show only that they exist; colleague threads and Personal never leave. Every thread has
    Team or Only you, every record Keep private. Stopping altogether takes an admin's OK on the Fleet tab. Graph has
@@ -71,7 +71,7 @@ default, Always accept, Never), and nothing happens on your side until you accep
    email, from their own Machine, without access to your mailbox. Only that card's own emails and messages go (up to
    three, about 6,000 characters each: sender, date, subject and text; attachments don't travel). The contact is the
    person who wrote, by Reply-To if there is one, never a Google Group's own address on a "via" email. If they already
-   have an open card on it (the same email, recognised by a key of its Message-ID, or else the one open card on email
+   have an open card on it (the same email, recognized by a key of its Message-ID, or else the one open card on email
    from the same contact), your handoff joins that card, sources included, instead of making a second one. Your card says "Handed off to <teammate>" and how it went. The Fleet tab
    lists your handoffs in their own **Handoffs** box, both ways: open ones first (waiting, declined, or one waiting for
    you), accepted and done ones after them, with **Open** to go to the card. While it waits for them
@@ -336,7 +336,7 @@ Or simply ask your Machine's AI to do it: "Pair this Machine with my Fleet: in T
 `python3 cli.py fleet-pair ABCD-EFGH --label "My computer"`, then restart The Machine." Your account page shows this
 with your code filled in, ready to copy.
 
-Your Machine then shares the addresses of its work accounts with your Fleet, so your teammates' Machines recognise
+Your Machine then shares the addresses of its work accounts with your Fleet, so your teammates' Machines recognize
 them, and nothing else about you. Everything in "You decide, per Fleet" and "Safe by construction" applies the same
 way. You can disconnect it from your account at any time; its key then stops working.
 
@@ -436,7 +436,7 @@ checked, and every switch you flip, is kept in the Fleet activity history (see W
 
 ## Delivery and retry
 
-Current Machines save returned answers locally before acknowledging the exact answer receipt/version to the relay. They commit a request identity before asking a question; retrying the same identity and exact question returns the original result instead of asking twice. Older app/relay pairs retain their older delivery behaviour. Questions expire after at most three days; answers are retained until acknowledged or for at most three days, and question metadata for thirty days. Relay processing is not end-to-end encryption between Machines.
+Current Machines save returned answers locally before acknowledging the exact answer receipt/version to the relay. They commit a request identity before asking a question; retrying the same identity and exact question returns the original result instead of asking twice. Older app/relay pairs retain their older delivery behavior. Questions expire after at most three days; answers are retained until acknowledged or for at most three days, and question metadata for thirty days. Relay processing is not end-to-end encryption between Machines.
 
 ### A handoff and a newer choice
 

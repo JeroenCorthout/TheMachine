@@ -2,11 +2,11 @@
 sealed Machine to Machine (docs/shared-graph.md). Mixed into fleet.Fleet, next to shared_connectors.SharedConnectors.
 
 What goes, per thread, judged by the review by meaning (share_threads), with the owner's hand choice winning:
-- client (someone outside the company, at an organisation on the Graph or with a work domain): the whole email;
+- client (someone outside the company, at an organization on the Graph or with a work domain): the whole email;
 - sensitive client: only a neutral line that it exists ("Private thread with Lee, 12 Oct");
 - internal (colleagues only): nothing, also not by hand;
 - personal: nothing, not even that it exists. Personal accounts are never read for this.
-Records (people, organisations, projects with their board) go when they are Work, unless Keep private (share_private).
+Records (people, organizations, projects with their board) go when they are Work, unless Keep private (share_private).
 
 How it goes: every blob is encrypted with a fresh key, signed by this Machine, and that key is sealed
 (network_crypto.seal) for each member a confirmed admin vouched for (fleet_trust.members). The records live on the
@@ -320,7 +320,7 @@ class Scope:
         return address in self.private_ids or '@' + address.rsplit('@', 1)[-1] in self.private_ids
 
     def client_address(self, address):
-        """Someone outside the company, with a work domain or at an organisation on the Graph."""
+        """Someone outside the company, with a work domain or at an organization on the Graph."""
         if address in self.mine or not outside(address, self.internal):
             return False
         return address.rsplit('@', 1)[-1] not in graph.FREEMAIL or bool(self.org_of.get(address))
@@ -494,7 +494,7 @@ def collect(db, scope, key, secret, today=None):
         if row['id'] in scope.private:
             continue
         ok, last = work(row['id'])
-        # A project on a board the team sees goes with its board record (stage, why, next, organisation) even before a
+        # A project on a board the team sees goes with its board record (stage, why, next, organization) even before a
         # thread of it is shared; its threads and timeline still only when shared. Never one of the owner's own life.
         on_team_board = bool(row['board']) and row['bid'] in team_boards and not any(
             views.get(r[0]) == 'personal' for r in db.execute('SELECT event_id FROM graph_events WHERE node_id=? AND probable=0', (row['id'],)))
@@ -1286,7 +1286,7 @@ class SharedGraph:
         return [(r['fleet'], r['member'], json.loads(r['body'])) for r in db.execute('SELECT * FROM team_records WHERE kind=?', (kind,))]
 
     def hash_index(self, db):
-        """{hash: local node id} for this Machine's own people (by address) and organisations (by domain), with every
+        """{hash: local node id} for this Machine's own people (by address) and organizations (by domain), with every
         graph key it holds."""
         index = {}
         keys = [k['key'] for ref in self.work_fleets() for k in self.graph_keys(ref).values()]

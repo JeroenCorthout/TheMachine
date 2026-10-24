@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// Every Graph header (person, organisation, project, board), in view and edit mode, on a phone and a desktop: the name
+// Every Graph header (person, organization, project, board), in view and edit mode, on a phone and a desktop: the name
 // stays on one line, never broken mid-word (a long one ends in an ellipsis, the full name on hover); a short one shows
 // whole; the actions never cover it; while editing only Cancel and Save are offered. HEADERS_SHOT=<dir> writes screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
@@ -44,10 +44,10 @@ try{
   // Board header
   await page.evaluate(()=>document.querySelector('[data-graph-sub="projects"]').click());await page.locator('#people-view .proj-board:not([hidden]) .board-title').waitFor();
   let m=await measure(page,'#people-view .board-title');check(m,`board ${tag}`,{whole});await shot(page,`board-${tag}`);
-  // Organisation: view, then edit (New project goes; only Cancel and Save)
+  // Organization: view, then edit (New project goes; only Cancel and Save)
   await page.evaluate(()=>people('org:umicore.example'));await page.locator('#people-view .org-page').waitFor();
   const org='#people-view .org-page>.name-row h3';
-  assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations',`an organisation opened from Projects is under Organisations ${tag}`);
+  assert.equal(await page.locator('#page-head .page-title').textContent(),'Organizations',`an organization opened from Projects is under Organizations ${tag}`);
   m=await measure(page,org);check(m,`org view ${tag}`,{whole});assert.deepEqual(m.acts,['New project','Edit','⋯'],`org view actions ${tag}`);await shot(page,`org-view-${tag}`);
   await page.locator('#people-view [data-org-edit]').click();await page.locator('#people-view .org-editing').waitFor();
   m=await measure(page,org);check(m,`org edit ${tag}`,{whole});assert.deepEqual(m.acts,['Cancel','Save'],`org edit: only Cancel and Save ${tag}`);await shot(page,`org-edit-${tag}`);

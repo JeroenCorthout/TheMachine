@@ -1,6 +1,6 @@
 """Moving The Machine: everything it knows and how it is set up, in one archive, and back again on another computer.
 
-An export holds the databases (signals, suggestions, people and organisations with your own edits, promises),
+An export holds the databases (signals, suggestions, people and organizations with your own edits, promises),
 config.json, connectors you built yourself, your OpenClaw workspace files (AGENTS.md, USER.md, memory and the like)
 and who may talk to your Telegram bot. It is always encrypted as a whole (AES-256, stretched with PBKDF2, through
 openssl, so only `assistant import` or openssl opens it), with a passphrase you pick or, without one, an export code
@@ -190,7 +190,7 @@ def own_connectors():
 
 
 def telegram(openclaw_home=None):
-    """Who may talk to the bot, without the bot's token: enough to recognise you again after a move."""
+    """Who may talk to the bot, without the bot's token: enough to recognize you again after a move."""
     try:
         config = json.loads((_openclaw_home(openclaw_home) / 'openclaw.json').read_text())
     except (OSError, ValueError):
@@ -569,7 +569,7 @@ def _import(archive_path, config_path, passphrase=None, workspace=None, openclaw
             (config.get('credentials') or {}).pop(name, None)
         if (config.get('enrichment') or {}).get('by') == 'hosting':
             config['enrichment'] = {'enabled': False}  # hosting did the look-ups; set up your own service to turn it on
-            notes.append('organisation look-ups were done by the hosting; the profiles found so far are kept')
+            notes.append('organization look-ups were done by the hosting; the profiles found so far are kept')
         for account in config.get('accounts') or []:
             if account.get('transport') == 'broker' and account.get('service') in ('outlook', 'outlook_calendar'):
                 account['transport'] = 'graph'  # Microsoft from here on goes through your own app registration

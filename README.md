@@ -136,9 +136,9 @@ Do it authorizes the offered task end to end; verified written instructions auth
 
 [Embedding setup and search](docs/intelligence.md#related-signals-optional-local-embeddings).
 
-## Organisation data (optional, enrichment)
+## Organization data (optional, enrichment)
 
-[Company enrichment](docs/intelligence.md#organisation-data-optional-enrichment), and [work contacts](docs/intelligence.md#people-data).
+[Company enrichment](docs/intelligence.md#organization-data-optional-enrichment), and [work contacts](docs/intelligence.md#people-data).
 
 ## Security model
 
@@ -176,7 +176,7 @@ Read [SECURITY.md](SECURITY.md), [PREPARATION.md](PREPARATION.md) and [architect
 
 ## Known limitations
 
-Sources and model judgement are not complete or infallible. Phone notifications can be lost during gaps, Slack can take hours, browser query IDs can change, and a bounded successful sync is not complete catch-up. Latest OpenClaw compatibility is tested, not guaranteed for future releases. [Detailed limits](docs/operations.md#known-limitations).
+Sources and model judgment are not complete or infallible. Phone notifications can be lost during gaps, Slack can take hours, browser query IDs can change, and a bounded successful sync is not complete catch-up. Latest OpenClaw compatibility is tested, not guaranteed for future releases. [Detailed limits](docs/operations.md#known-limitations).
 
 ## Tests
 

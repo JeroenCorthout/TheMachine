@@ -6,7 +6,7 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 
 // Card buttons: the main action first, then the two most useful others, the rest under More. A draft's button says it
 // opens the preview ("Review and send to …"), Hand off sits with the other buttons, and Not needed is one compact choice
-// that hides the card's buttons until it is confirmed or cancelled.
+// that hides the card's buttons until it is confirmed or canceled.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const now=new Date().toISOString(),posts=[];
 const cards=[{id:'p1',title:'Reply to Sam about pricing',body:'Sam asked for pricing.',status:'pending',scope:'work',created_at:now,event_ids:[1],source_line:'Source: email from Sam · Mon 19 Oct'},

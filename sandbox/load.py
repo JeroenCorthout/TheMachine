@@ -284,8 +284,8 @@ def load_cards(db, fixture, ids, base):
 
 
 def load_boards(db, fixture, ids, base):
-    """Graph > Projects > Board: each project labelled with its messages and moved through its stages by them, as a review
-    would (graph.set_stage), one dragged by hand; their organisations' names as an enrichment service would give them."""
+    """Graph > Projects > Board: each project labeled with its messages and moved through its stages by them, as a review
+    would (graph.set_stage), one dragged by hand; their organizations' names as an enrichment service would give them."""
     import graph
     for board in fixture.get('boards') or ():
         if board.get('suggestion'):  # projects on no board yet, and a review's suggestion of a board for them

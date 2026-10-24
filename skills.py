@@ -740,7 +740,7 @@ class Catalog:
         self.raw, self.at, self.error, self.searches = None, 0.0, '', {}
 
     def _cli(self, args, timeout=60):
-        # No terminal and no colours: OpenClaw's own notices stay plain, and nothing waits on input
+        # No terminal and no colors: OpenClaw's own notices stay plain, and nothing waits on input
         env = {**os.environ, 'NO_COLOR': '1', 'FORCE_COLOR': '0'}
         try:
             done = self.run([self.binary, *args], capture_output=True, text=True, errors='replace', timeout=timeout,
@@ -1104,7 +1104,7 @@ def tree_digest(files):
 
 
 def keep_text(path):
-    """Files kept in memory after reading: the ones that can become part of the instructions or tell the licence."""
+    """Files kept in memory after reading: the ones that can become part of the instructions or tell the license."""
     name = path.rsplit('/', 1)[-1]
     return name.lower().endswith(('.md', '.txt')) or name.upper().startswith(LICENCE_FILES)
 
@@ -1364,7 +1364,7 @@ class Importer:
                   'source': source, 'url': url if url.startswith('https://') else '', 'group': group, 'files': done['files'],
                   'scripts': done['scripts'][:5], 'script_count': len(done['scripts']), 'depends': done['depends'],
                   'references': done['references'][:5], 'left_out': done['left_out'], 'flags': done['flags'] + done['notes'],
-                  'licence': done['licence'], 'blocked': 'Can\'t import: its licence doesn\'t allow it' if done['closed'] else '',
+                  'licence': done['licence'], 'blocked': 'Can\'t import: its license doesn\'t allow it' if done['closed'] else '',
                   'duplicate': duplicate, 'existing': self.existing(key, name, description, body) if duplicate == 'Already in your skills' else None,
                   'done': '', 'skill_id': '', 'recommended': False, 'why': '', **({'link': link} if link else {})}
         return {'public': public, 'files': files, 'converted': (name, description, body), 'original': done['original'],
@@ -1521,7 +1521,7 @@ class Importer:
 
     def run(self, token, keys, replace=False):
         """Imports the ticked skills as the owner's own (origin mine, with where they came from). Skips one that is
-        here already or whose licence doesn't allow it, and says why. With replace, one that is here already as the
+        here already or whose license doesn't allow it, and says why. With replace, one that is here already as the
         owner's own is updated in place instead (same id, next version)."""
         found = self.scan(token)
         if not isinstance(keys, list) or not keys:
@@ -1575,7 +1575,7 @@ class Importer:
 
     def install(self, token, key, sha):
         """A skill that needs its scripts, installed with them as OpenClaw's own (`openclaw skills install <folder>`),
-        exactly as the owner read it: never forced, never past a policy warning, never one whose licence says no."""
+        exactly as the owner read it: never forced, never past a policy warning, never one whose license says no."""
         found = self.scan(token)['items'].get(str(key))
         if not found:
             raise ValueError('That skill isn\'t in this list')

@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// The inline edit field on a project's page (Rename) has the compact style (people and organisations have one Edit form,
+// The inline edit field on a project's page (Rename) has the compact style (people and organizations have one Edit form,
 // see test_person_page_dashboard.mjs and test_org_page_dashboard.mjs):
 // a single-line field as tall as its Save button (about 40 to 44px), normal padding, one thin focus ring, a Save
 // button that never wraps, and normal room before the next section. Checked at 360 and 390. SHOT_DIR=… saves shots.

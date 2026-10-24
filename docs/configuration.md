@@ -63,7 +63,7 @@
 | `weekly_recap` | `enabled: false` | `enabled`, `weekday` (1–7, default 5), `at` (`16:00`) |
 | `embeddings` | `enabled: false` | Optional [related signals](../README.md#related-signals-optional-local-embeddings): `url`, `model`, `dims` (256), `floor` (0.6), `query_floor` (0.4) |
 | `place_search` | on | The Calendar's **Where** also asks Photon (photon.komoot.io, OpenStreetMap data) for addresses, with only the typed text, at most once a second. `false` keeps it to your own places |
-| `enrichment` | off | Optional [organisation data](../README.md#organisation-data-optional-enrichment): `provider` or `url`, `headers`, `key_file`/`key_env`, `fields`, `per_day` (50); for [work contacts](intelligence.md#people-data) `people_url`, `people_fields`, `people_per_day` (50) |
+| `enrichment` | off | Optional [organization data](../README.md#organization-data-optional-enrichment): `provider` or `url`, `headers`, `key_file`/`key_env`, `fields`, `per_day` (50); for [work contacts](intelligence.md#people-data) `people_url`, `people_fields`, `people_per_day` (50) |
 | `accounts` | `[]` | Sources, below |
 
 Every account has `id`, `service`, `transport` and `boundary` (`work:<Company>` or `personal:<name>`), plus optional `boundary_by` (`owner`: you marked it Work or Personal yourself, in the dashboard or on the setup page; leaving a Work Fleet follows it, see [Fleet](fleet.md#leaving-a-work-fleet-with-your-machine)), `scope` (`work`/`personal`, overrides the label the boundary implies), `poll_seconds` and `exclude` (noise rules, below). `config.example.json` has one complete example per built-in source; each plugin in `connectors/` (GitHub, Stripe, X, LinkedIn, RSS) shows its own at the top of its file.

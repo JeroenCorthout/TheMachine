@@ -32,7 +32,7 @@ try{
  const wrapped=await look('w1'),single=await look('z1');
  assert.ok(wrapped.lines>=2,JSON.stringify(wrapped));
  assert.ok(wrapped.arrowFirstLine,'arrow on the first line: '+JSON.stringify(wrapped));
- assert.ok(wrapped.iconTop>0&&wrapped.iconTop<8,'icon centred on the first line: '+JSON.stringify(wrapped));
+ assert.ok(wrapped.iconTop>0&&wrapped.iconTop<8,'icon centered on the first line: '+JSON.stringify(wrapped));
  for(const s of [wrapped,single]){assert.equal(s.underline,'none');assert.equal(s.bg,'rgba(0, 0, 0, 0)')}
  console.log('Source link: icon and arrow on the first line, no underline or tap background.');
 }finally{await browser?.close();server.close()}

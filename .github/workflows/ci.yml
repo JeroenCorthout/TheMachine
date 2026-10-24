@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 # A new push to a pull request cancels its run still going: only the newest commit can be merged anyway.
-# main, tags, merge queue runs and the weekly run are never cancelled.
+# main, tags, merge queue runs and the weekly run are never canceled.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -79,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runners are scarce (a few at once for the whole organisation): a macOS job per pull request, merge queue
+        # macOS runners are scarce (a few at once for the whole organization): a macOS job per pull request, merge queue
         # entry or main push queued for hours. macOS runs on release tags (what Machines install), the weekly run and on demand.
         os: ${{ fromJSON((startsWith(github.ref, 'refs/tags/release-') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["macos-latest", "windows-latest"]' || '["windows-latest"]') }}
     defaults:

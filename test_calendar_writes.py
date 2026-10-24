@@ -429,7 +429,7 @@ class Suggestions(unittest.TestCase):
             a.places.suggest(db, {}, 'Labath ', fetch)
             self.assertEqual(len(asked), 1, 'cached')
             self.assertEqual([f['value'] for f in a.places.local(db, 'ghent')], ['Acme, Ghent, Belgium'])
-            self.assertEqual([f['source'] for f in a.places.local(db, 'labath')], ['calendar'], 'an organisation only when its name or place matches')
+            self.assertEqual([f['source'] for f in a.places.local(db, 'labath')], ['calendar'], 'an organization only when its name or place matches')
             self.assertEqual(a.places.local(db, 'zoom'), [], 'a link is not a place')
             a.places.suggest(db, {'place_search': False}, 'somewhere', fetch)
             a.places.suggest(db, {}, 'ab', fetch)

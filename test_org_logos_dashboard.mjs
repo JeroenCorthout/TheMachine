@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// Organisations show their logo from enrichment: https only, no referrer, lazy and fixed size, the initial behind it,
+// Organizations show their logo from enrichment: https only, no referrer, lazy and fixed size, the initial behind it,
 // and the initial alone when there is no logo, it isn't https, or it fails to load. SHOT_DIR=… also saves screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const day=new Date(Date.now()-864e5).toISOString();

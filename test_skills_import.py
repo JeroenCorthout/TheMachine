@@ -1,5 +1,5 @@
 """Importing skills from Claude and ChatGPT (skills.py Importer): what is found on this computer and how it is grouped,
-what comes in (only instructions, with the reference files they point to; never scripts), licence limits, dedupe,
+what comes in (only instructions, with the reference files they point to; never scripts), license limits, dedupe,
 uploads read in memory, installing a skill with its scripts as OpenClaw's own only exactly as read, and the Find my
 skills turn's report. A fake home and a fake OpenClaw stand in; nothing runs and nothing is fetched."""
 import base64
@@ -118,7 +118,7 @@ class Import(unittest.TestCase):
         status = {r['name']: (r['status'], r.get('reason', '')) for r in out['results']}
         self.assertEqual(status['customer-answers'], ('imported', ''))
         self.assertEqual(status['weekly-report'], ('imported', ''))
-        self.assertEqual(status['pdf'], ('skipped', "Can't import: its licence doesn't allow it"))
+        self.assertEqual(status['pdf'], ('skipped', "Can't import: its license doesn't allow it"))
         mine = {s['name']: s for s in out['skills']}
         self.assertEqual(mine['weekly-report']['origin'], 'mine')
         self.assertEqual(mine['weekly-report']['imported']['from'], 'chatgpt')
@@ -150,7 +150,7 @@ class Import(unittest.TestCase):
         self.assertEqual(out['installed_skill'], 'weekly-report')
         install = [c for c in self.oc.calls if c[:2] == ['skills', 'install']]
         self.assertEqual(install, [['skills', 'install', str(self.home / '.codex' / 'skills' / 'weekly-report'), '--as', 'weekly-report']])
-        with self.assertRaisesRegex(ValueError, 'licence'):
+        with self.assertRaisesRegex(ValueError, 'license'):
             self.keeper.import_install(view['token'], items['pdf']['key'], self.keeper.import_read(view['token'], items['pdf']['key'])['sha'])
 
     def test_upload_is_read_in_memory_with_limits(self):
@@ -280,7 +280,7 @@ class Import(unittest.TestCase):
         self.assertEqual((after['follow-ups']['source'], after['follow-ups']['url'], after['follow-ups']['why']),
                          ('claude.ai, your account', 'https://claude.ai/customize/skills/abc', 'Many follow-up cards'))
         self.assertTrue(after['customer-answers']['recommended'])
-        self.assertFalse(after['pdf']['recommended'])  # never one its licence keeps out
+        self.assertFalse(after['pdf']['recommended'])  # never one its license keeps out
         self.assertEqual(self.keeper.import_status(token)['browser'], {'claude': 'ok', 'chatgpt': 'signed_out'})
         self.assertEqual(self.keeper.import_status(token)['finding']['status'], 'ok')
         # Signed in to ChatGPT since: the same list, a turn for just that account, which checks it again.

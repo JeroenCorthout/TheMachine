@@ -413,7 +413,7 @@ export default definePluginEntry({
       const result = await call('feedback_reply', { text: event.content || event.body || '', message_id: String(messageId),
         timestamp: event.timestamp, reply_to_id: context.replyToId || event.replyToId });
       if (!result.handled) return;
-      return { handled: true, ...(result.cancelled ? { text: 'Cancelled.' } : {}) };
+      return { handled: true, ...(result.cancelled ? { text: 'Canceled.' } : {}) };
     });
     api.registerCommand({
       name: 'assistant_feedback', channels: ['telegram'], acceptsArgs: true,

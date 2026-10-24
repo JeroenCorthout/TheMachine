@@ -102,7 +102,7 @@ class Source:
 
 def plain(value):
     text = html.unescape(re.sub(r'<[^>]*>', '', str(value)))
-    # Do not collect explicitly labelled passwords or one-time codes in comments.
+    # Do not collect explicitly labeled passwords or one-time codes in comments.
     return re.sub(r'(?i)\b(password|passcode|one[- ]time code|verification code|otp)\s*[:=]\s*\S+',
                   r'\1: [omitted]', text)
 

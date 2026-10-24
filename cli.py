@@ -466,7 +466,7 @@ def save_draft(config, args, path, run):
 
 def follow_roles(config, run_id, quiet=False):
     """Follow a roles turn and list what it named; it runs in the service either way."""
-    if not quiet: print('Now your agent reads the first and latest messages with your closest people and notes what each, and their organisation, is to you.')
+    if not quiet: print('Now your agent reads the first and latest messages with your closest people and notes what each, and their organization, is to you.')
     deadline, tty = time.monotonic() + assistant.PROFILE_SECONDS + 1500, (sys.stdout.isatty() and not quiet)
     try:
         while True:
@@ -489,7 +489,7 @@ def follow_roles(config, run_id, quiet=False):
     if run['status'] != 'ok':
         raise CliError(f"Naming roles didn't finish ({run.get('error') or run['status']}). See openclaw logs, then run assistant roles --again.")
     if not quiet and run.get('roles'):
-        print('What your closest people and organisations are to you (confirm or change them in Who\'s who, in the dashboard\'s Graph tab):')
+        print('What your closest people and organizations are to you (confirm or change them in Who\'s who, in the dashboard\'s Graph tab):')
         print('\n'.join(f"  - {r['name']}: {r['role']}" for r in run['roles']))
     elif not quiet:
         print('Their messages didn\'t make it clear for anyone yet. Reviews keep asking as more comes in.')
@@ -529,11 +529,11 @@ def cmd_enrich(config, args):
     people_line = (f"Work contacts: {people.get('found', 0)} found, {people.get('unknown', 0)} unknown"
                    + ('. Look up work contacts is off in Settings.' if people.get('on') is False else '.'))
     if not state['service']:
-        print('Enrichment is off. Add "enrichment" to the config to look up the organisations you deal with (see README, Enrichment).')
+        print('Enrichment is off. Add "enrichment" to the config to look up the organizations you deal with (see README, Enrichment).')
         if people.get('found') or people.get('unknown'):
             print(people_line)
         return
-    print(f"Organisation data from {state['service']}: {state['found']} found, {state['unknown']} unknown"
+    print(f"Organization data from {state['service']}: {state['found']} found, {state['unknown']} unknown"
           + (f", {state['errors']} errors (last {state['last_error_at'][:16].replace('T', ' ')})" if state['errors'] else '')
           + f". Each is looked up again after {state['refresh_days']} days.")
     if people:
@@ -870,9 +870,9 @@ def parser():
     source.add_argument('--body')
     source.add_argument('--file', help='file with the text, or - for stdin')
     add('preview', f'First run: one review of the last {assistant.PREVIEW_DAYS} days, shown here and on the dashboard; nothing is sent', cmd_preview)
-    c = add('enrich', 'Organisation and work contact data from your enrichment service: status, or look up one domain now', cmd_enrich)
+    c = add('enrich', 'Organization and work contact data from your enrichment service: status, or look up one domain now', cmd_enrich)
     c.add_argument('domain', nargs='?', help='a domain to look up now, like globex.com')
-    c = add('roles', 'Note what your closest people and organisations are to you, from your messages with them (also part of profile)', cmd_roles)
+    c = add('roles', 'Note what your closest people and organizations are to you, from your messages with them (also part of profile)', cmd_roles)
     c.add_argument('--again', action='store_true', help='run again even if it just ran')
     c = add('profile', 'Draft how you write and what matters to you from your own messages, for USER.md (you see it first), then note what your closest people are to you', cmd_profile)
     c.add_argument('--again', action='store_true', help='make a new draft even if one was just made')

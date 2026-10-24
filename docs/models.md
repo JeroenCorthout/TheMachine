@@ -29,7 +29,7 @@ After setup, verify the provider in `openclaw models status` and test one small 
 
 | Job | Needs |
 |---|---|
-| **Reviews** | Long context: up to 120 signals per run, read in pages through the `assistant_signals` tool. Reliable tool calls and judgement: most signals deserve no card. |
+| **Reviews** | Long context: up to 120 signals per run, read in pages through the `assistant_signals` tool. Reliable tool calls and judgment: most signals deserve no card. |
 | **Do it** | Agentic work: many tool calls, the browser, files and commands, then a short result and a correct `next_actions` JSON (for example an email draft with exact recipients). |
 | **Drafts** | Writing in your voice, per channel. The service gives each draft your few lines for that channel (read from your own messages), your own recent messages there and your edits of earlier drafts on it, so drafts improve as you edit them. |
 
@@ -47,7 +47,7 @@ A mixed setup works well: a frontier model as `primary`, a local model as the la
 
 ## Privacy and cost
 
-- Collected content stays in your SQLite database, but reviews and preparations send the signals they read to your model provider. A local reasoning model keeps inference local, but connected services, chosen enrichment (organisation domains; for work contacts their name and company domain, or the address your service asks for), Fleet/Friends summaries and Telegram/push delivery still use the network.
+- Collected content stays in your SQLite database, but reviews and preparations send the signals they read to your model provider. A local reasoning model keeps inference local, but connected services, chosen enrichment (organization domains; for work contacts their name and company domain, or the address your service asks for), Fleet/Friends summaries and Telegram/push delivery still use the network.
 - To have someone forgotten, **Delete permanently** on their page removes them and what is tied to them, and keeps them from being added again ([Deleting someone](intelligence.md#deleting-someone)).
 - Each review reads up to 120 signals; each Do it reads the card's full evidence. The Friday recap reports the week's token usage, so you can see what a setup costs before committing to it.
 - If your provider reports usage limits (a ChatGPT sign-in has a 5-hour and a weekly window, depending on the plan), **Settings → Model** shows the model in use, how much of each window is used and when it resets. It asks OpenClaw's running Gateway (`usage.status`) every five minutes and a minute after a review run ends, and keeps only the percentages and reset times; reading it never costs model usage. `openclaw status --usage` shows the same. When a review run stops on the limit, Connections says so next to the run, with when it lifts.

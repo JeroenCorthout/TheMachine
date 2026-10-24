@@ -54,7 +54,7 @@ def _slot(stamp):
 
 def free_busy(db, config, question):
     """The owner's busy blocks for the days asked, from their own calendars: start and end only. All-day events,
-    cancelled ones, ones they declined, and calendars shared with them by someone else don't count. Overlaps merge."""
+    canceled ones, ones they declined, and calendars shared with them by someone else don't count. Overlaps merge."""
     start = dt.datetime.fromisoformat(question['start']).replace(tzinfo=dt.timezone.utc) - dt.timedelta(hours=14)
     end = start + dt.timedelta(days=question['days'], hours=28)
     own = [a['id'] for a in config.get('accounts', [])]

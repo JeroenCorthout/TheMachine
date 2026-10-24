@@ -1,6 +1,6 @@
 # Shared Graph
 
-A Work Fleet shares its Graph. People, organisations, projects, boards and client email that one Machine knows show
+A Work Fleet shares its Graph. People, organizations, projects, boards and client email that one Machine knows show
 up on every teammate's Machine, sealed Machine to Machine. The Network (the control plane, "CP") carries and keeps
 sealed blobs it can't read. Nothing syncs with an outside CRM: everything lives in The Machine.
 
@@ -12,7 +12,7 @@ Each thread is judged by the review, by what it is about, never by word lists. A
 
 | Thread | Who reads it | What the team sees |
 |---|---|---|
-| **Client**: at least one person outside the company, at an organisation on the Graph or with a work domain | The Fleet | The full email: body, from, to, date, and its attachments (up to 2.5 MB each; bigger ones show as "too large to share") |
+| **Client**: at least one person outside the company, at an organization on the Graph or with a work domain | The Fleet | The full email: body, from, to, date, and its attachments (up to 2.5 MB each; bigger ones show as "too large to share") |
 | **Sensitive client**: a personal matter, health, a dispute about one person, something said to one person in confidence | Only the people on it | That it exists, in one neutral line: "Private thread with Lee, 12 Oct" |
 | **Internal**: colleagues only | Only the people on it | Nothing. Never re-shared, also not by hand |
 | **Personal**: a personal account, or the review says it is personal | The owner | Nothing, not even that it exists |
@@ -34,11 +34,11 @@ Records are shared by default when they are Work:
 | Layer | What | Shared |
 |---|---|---|
 | Exists | "Sam knows Lee at Globex, strong, last contact 3d" | Already, through "who knows someone" |
-| Record | Name, role, company, owner, project stage, next step | Yes, for Work people, organisations and projects |
+| Record | Name, role, company, owner, project stage, next step | Yes, for Work people, organizations and projects |
 | Timeline | One short line per message or meeting, written by the review | Yes, for client threads; the neutral line for sensitive ones |
 | Raw mail | The email itself and its attachments | Client threads (above). Nothing else, ever |
 
-**Keep private** on a person, organisation or project shares nothing about it: no record, no timeline, none of their
+**Keep private** on a person, organization or project shares nothing about it: no record, no timeline, none of their
 threads. It needs nobody's OK. Colleagues (people at the Fleet's own domains) are never shared as records. A person whose reviewed threads
 are all sensitive is held back too.
 
@@ -50,7 +50,7 @@ Only you takes back what was shared at the next publish, as Keep private does. C
 `graph.visible_to_team(db, node_id)` (False for an Only-you project) or `graph.hidden_project_ids(db)` (the set of
 Only-you project ids).
 
-**A project on a Team board** shares its record (name, board, stage, why, next step, organisation, people) even before
+**A project on a Team board** shares its record (name, board, stage, why, next step, organization, people) even before
 a review has judged one of its threads, so the team pipeline shows every project on it. Its threads still go only as
 they are judged.
 
@@ -212,7 +212,7 @@ sequence before continuing. Signed empty mail/file blobs are retained as removal
 content cannot restore a removed copy, and an offline teammate receives the removal during catch-up. Temporary
 attachment-listing failures leave the thread unfinished for retry; files already shared are not downloaded twice.
 
-**Matching and conflicts.** A receiver matches teammates' people by hashed address, organisations by hashed domain,
+**Matching and conflicts.** A receiver matches teammates' people by hashed address, organizations by hashed domain,
 projects by board and name. For each field of a matched record the value set by hand wins; otherwise the value from
 whoever is closest (highest score) wins. Stages are facts with dates: the newest move by hand wins, else the newest
 move a message showed. The Mine view never changes: Team is a view over Mine plus what teammates shared.
@@ -221,7 +221,7 @@ move a message showed. The Mine view never changes: Team is a view over Mine plu
 
 Boards with the same name become one team pipeline. A tile is a project; its stage moves come from anyone's mail (the
 review on each Machine moves its own copy, which it publishes). Each tile has an **owner**: the teammate closest to
-it. **Ask <name>** on a tile, person or organisation starts a handoff to that teammate (the Fleet's handoff,
+it. **Ask <name>** on a tile, person or organization starts a handoff to that teammate (the Fleet's handoff,
 `fleet_requests.py`), never anything to someone outside the Fleet.
 
 ## What members and admins see
@@ -239,7 +239,7 @@ it. **Ask <name>** on a tile, person or organisation starts a handoff to that te
 
 ## Dashboard
 
-- **Mine / Team** on People, Organisations and Projects. Mine is the Graph as before. Team adds teammates' records.
+- **Mine / Team** on People, Organizations and Projects. Mine is the Graph as before. Team adds teammates' records.
 - A quiet **via Sam** under a record a teammate shared ("via Sam and Kim", "via Sam (left)").
 - **Ask Sam** on a teammate's record or tile.
 - **Team / Only you** on each thread on a record's page; **Keep private** on a record.

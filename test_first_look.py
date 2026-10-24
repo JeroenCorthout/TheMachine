@@ -1,7 +1,7 @@
 """The first look: on a new install with reviews off, one preview of the last week starts by itself once a model and a
 source are there and the first import settled. Read-only like any preview; never twice, never after the owner's own
 preview or after reviews were on. Also what the dashboard shows while reviews run, and the graph picking up new
-organisation profiles. No Gateway, no Telegram: the runner is a fake and nothing is sent."""
+organization profiles. No Gateway, no Telegram: the runner is a fake and nothing is sent."""
 import datetime as dt, importlib.util, json, sqlite3, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch

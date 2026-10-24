@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// An organisation's page is built as a person's: logo, name and its fact line in the header with Edit, then one plain
+// An organization's page is built as a person's: logo, name and its fact line in the header with Edit, then one plain
 // line on how you're in touch, Contact (the website as its address, "lumen.example ↗"), About you (what it is to you)
 // and Related (People, Projects) as their own sections. "Ask the Fleet who knows" uses its name. Edit opens one form
 // grouped the same way, What it is to you included, and Save sends only what changed. At 390 and 1440, light and dark.

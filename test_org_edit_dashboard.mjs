@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// Editing an organisation whose looked-up values are longer than the owner may type (About, Size) or not a year
+// Editing an organization whose looked-up values are longer than the owner may type (About, Size) or not a year
 // (Founded): they never block Save. Save and Cancel take Edit's place in the header, which stays in view on a phone
 // while the form scrolls. Only changed fields are sent; a bad one shows its error under the field.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');

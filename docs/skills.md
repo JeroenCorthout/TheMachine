@@ -50,8 +50,8 @@ Both use the same `SKILL.md` form. **Import** under Settings > Skills lists skil
 
 The list starts short: **Recommended**, then **Yours**. The rest waits in closed groups with counts (in your projects,
 from vendors, built in), and a search box finds any of them. Each skill shows where it comes from, its scripts and other
-files, and its licence. What you just imported moves to **Imported**, with **View**. One you have already is under
-**Already in your skills**, with **View** and, for your own, **Replace** to update it. One whose licence doesn't allow
+files, and its license. What you just imported moves to **Imported**, with **View**. One you have already is under
+**Already in your skills**, with **View** and, for your own, **Replace** to update it. One whose license doesn't allow
 copying (some built-in Claude skills), or whose name OpenClaw already uses, is under **Can't import**, with why.
 **Import selected** and **Close** stay at the bottom of the panel.
 

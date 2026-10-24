@@ -48,7 +48,7 @@ def _fetch(url):
 
 
 def unpack(blob, key):
-    """(binary, licence text) from a release archive."""
+    """(binary, license text) from a release archive."""
     name = 'wacli.exe' if key.startswith('windows') else 'wacli'
     if key.startswith('windows'):
         with zipfile.ZipFile(io.BytesIO(blob)) as archive:

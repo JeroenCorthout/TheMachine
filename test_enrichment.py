@@ -254,7 +254,7 @@ class Enrichment(unittest.TestCase):
         self.app.action('graph_org_wrong', {'node_id': 'org:globex.com', 'wrong': False}, owner_dashboard=True)
         with self.store.connect() as db:
             self.assertEqual(enrichment.due(db, now, 10), ['globex.com'])
-        with self.assertRaisesRegex(ValueError, 'organisation'):
+        with self.assertRaisesRegex(ValueError, 'organization'):
             self.app.action('graph_org_wrong', {'node_id': 'email:lee@globex.com', 'wrong': True}, owner_dashboard=True)
 
 
@@ -320,7 +320,7 @@ class Enrichment(unittest.TestCase):
         self.assertEqual(enrichment.people_step(self.store.connect, config, now), 0)  # the others aren't known; done until due again
         with self.store.connect() as db:
             self.assertEqual(enrichment.people_status(db)['found'], 1)
-            self.assertEqual(enrichment.status(db, config)['found'], 0)  # the organisations' budget is untouched
+            self.assertEqual(enrichment.status(db, config)['found'], 0)  # the organizations' budget is untouched
             db.execute('DELETE FROM person_profiles')
             enrichment.save_person(db, 'email:someone@else.example', 'none', None, now)  # today's one look-up
         capped = self.people_config(people_per_day=1)

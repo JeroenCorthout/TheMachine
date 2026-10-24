@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// Adding people, organisations and projects by hand: "+ New person/organisation/project" in the Graph page heads and in
+// Adding people, organizations and projects by hand: "+ New person/organization/project" in the Graph page heads and in
 // the top bar's "+" menu; a short form; ones already in the Graph that look the same are offered first; saving opens the
 // new page. Also: a list as CSV, New card and Same person as… on a page, and ⋯ menus that stay on the screen and close
 // on Escape. On a phone and a desktop. GRAPH_NEW_SHOT=<dir> writes screenshots.
@@ -48,7 +48,7 @@ try{
   assert.equal(await page.locator('#record-form [data-rec-dupes] p').textContent(),'Already in your Graph?');await fits(page,'new person '+tag);await shot(page,`new-person-dupe-${tag}`);
   await click('#record-form [data-rec-open="person:a"]');await page.locator('#record-dialog[open]').waitFor({state:'detached'});
   await page.waitForFunction(()=>graphNode==='person:a');
-  // A new person: name required; then name, email and organisation; it opens their page
+  // A new person: name required; then name, email and organization; it opens their page
   await page.evaluate(()=>recOpen('person'));await page.locator('#record-dialog[open]').waitFor();
   await click('#record-form button.primary');assert.equal(await page.locator('#record-form [data-rec-error]').textContent(),'Give them a name.');
   await page.locator('#record-form [name="name"]').fill('Rae Vos');await page.locator('#record-form [name="email"]').fill('rae@umber.example');await page.locator('#record-form [name="org"]').fill('Umber Labs');
@@ -59,21 +59,21 @@ try{
   await click('#people-view .person-menu summary');await click('#people-view [data-same-as]');await page.locator('#record-dialog[open]').waitFor();
   await page.locator('#record-form [name="name"]').fill('Bo Kent');await click('#record-form button.primary');await page.locator('#record-dialog[open]').waitFor({state:'detached'});
   assert.deepEqual(calls.find(c=>c.action==='graph_same').args,{a:'email:rae@umber.example',b:'person:b',same:true});
-  // The "+" in the top bar: New card, person, organisation, project and event; New organisation opens its form
+  // The "+" in the top bar: New card, person, organization, project and event; New organization opens its form
   // (a desktop has New card in the sidebar and these in the page heads and the command palette)
   if(mobile){await click('#new-card-top');await page.locator('#new-menu:not([hidden])').waitFor();
-   assert.deepEqual(await page.locator('#new-menu button').allTextContents(),['New card','New person','New organisation','New project','New event']);
+   assert.deepEqual(await page.locator('#new-menu button').allTextContents(),['New card','New person','New organization','New project','New event']);
    {const r=await page.locator('#new-menu').boundingBox();assert.ok(r.x>=0&&r.x+r.width<=width,'the + menu fits')}await shot(page,`plus-menu-${tag}`);
    await click('#new-menu [data-new-what="org"]')}
-  else{await page.evaluate(()=>graphBack('orgs'));await click('#page-head [data-graph-new="org"]')}await page.locator('#record-dialog[open]').waitFor();assert.equal(await page.locator('#record-dialog-title').textContent(),'New organisation');
+  else{await page.evaluate(()=>graphBack('orgs'));await click('#page-head [data-graph-new="org"]')}await page.locator('#record-dialog[open]').waitFor();assert.equal(await page.locator('#record-dialog-title').textContent(),'New organization');
   await page.locator('#record-form [name="website"]').fill('umicore');await page.locator('#record-form [data-rec-open="org:umicore.example"]').waitFor();
   await page.locator('#record-form [name="name"]').fill('Corner Bakery');await page.locator('#record-form [name="website"]').fill('');await shot(page,`new-org-${tag}`);
   await click('#record-form button.primary');await page.waitForFunction(()=>graphNode==='org:named:corner-bakery');
-  // An organisation added by hand: ⋯ has New card and Delete…
+  // An organization added by hand: ⋯ has New card and Delete…
   await page.locator('#people-view .org-page').waitFor();await click('#people-view .org-actions .person-menu summary');
   assert.ok(await page.locator('#people-view [data-org-delete]').isVisible());await click('#people-view [data-card-here]');await page.locator('#new-card').waitFor();
   assert.deepEqual(await page.evaluate(()=>nc.about),[{id:'org:named:corner-bakery',name:'Corner Bakery'}]);await page.keyboard.press('Escape');
-  // Organisations and projects heads; New project opens the project dialog
+  // Organizations and projects heads; New project opens the project dialog
   await page.evaluate(()=>{graphBack('orgs')});await page.locator('#page-head [data-graph-new="org"]').waitFor();
   await page.evaluate(()=>{sideStore.set('projects-view','list');document.querySelector('[data-graph-sub="projects"]').click()});
   await click('#page-head [data-graph-new="project"]');await page.locator('#project-dialog[open]').waitFor();await fits(page,'new project '+tag);await shot(page,`new-project-${tag}`);
@@ -86,7 +86,7 @@ try{
   // People as CSV
   await page.evaluate(()=>document.querySelector('[data-graph-sub="people"]').click());await click('#people-view .graph-sort summary');
   const [dl]=await Promise.all([page.waitForEvent('download'),click('#people-view [data-graph-csv]')]);
-  const csv=await readFile(await dl.path(),'utf8');assert.ok(csv.startsWith('﻿Name,Email,Phone,Title,Organisation,To you,Type,Last contact\r\nAda Lovelace,ada@umicore.example,'),csv);
+  const csv=await readFile(await dl.path(),'utf8');assert.ok(csv.startsWith('﻿Name,Email,Phone,Title,Organization,To you,Type,Last contact\r\nAda Lovelace,ada@umicore.example,'),csv);
   await context.close()}
  assert.deepEqual(errors,[]);
  console.log('graph new dashboard ok');

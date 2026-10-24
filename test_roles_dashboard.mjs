@@ -5,7 +5,7 @@ import {OPENCLAW} from './openclaw-root.mjs';
 import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
-// Who's who: a review's roles with the line they came from, ✓ to confirm, Edit to change; relations and organisation roles;
+// Who's who: a review's roles with the line they came from, ✓ to confirm, Edit to change; relations and organization roles;
 // open cards ranked by who they're about.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const made=new Date(Date.now()-3600e3).toISOString(),older=new Date(Date.now()-7200e3).toISOString();
@@ -54,7 +54,7 @@ try{
  await list.locator('.whos').first().waitFor();
  let text=await list.textContent();
  assert.ok(text.includes('Who’s who')&&text.includes('“As the CFO at Client Ltd I look after the renewal”'));
- assert.ok(text.includes('Customer · Logistics · 3 people'));  // the organisation's role and industry in its list  // the organisation's role in its list
+ assert.ok(text.includes('Customer · Logistics · 3 people'));  // the organization's role and industry in its list  // the organization's role in its list
  const widths=[];
  for(const width of [320,390,768]){
   await page.setViewportSize({width,height:844});
@@ -86,11 +86,11 @@ try{
  assert.deepEqual(calls[2],{action:'graph_relation',args:{node_id:'email:ann@client.example',related_to:'email:pat@client.example',relation:''}});
  for(let i=0;i<100&&await page.locator('.relation').count();i++)await page.waitForTimeout(20);
  assert.equal(await page.locator('.relation').count(),0);
- // An organisation has a role row too.
+ // An organization has a role row too.
  await page.evaluate(()=>people('org:client.example'));
  await page.locator('.graph-detail h3',{hasText:'Client Ltd'}).waitFor();
  assert.ok((await page.locator('.person-about .kv-role').textContent()).includes('Customer'));
- // Who's who Edit on an organisation opens it in Edit, on What it is to you.
+ // Who's who Edit on an organization opens it in Edit, on What it is to you.
  await page.evaluate(()=>{editRole='org:client.example';return people('org:client.example')});
  await page.locator('.org-form:not([hidden]) [name=role]').waitFor();assert.equal(await page.evaluate(()=>document.activeElement?.name),'role');
  await page.locator('[data-org-cancel]').click();
@@ -99,7 +99,7 @@ try{
  assert.ok(detail.includes('Logistics, 51-200 people, Ghent')&&detail.includes('Client Ltd moves boxes.'));
  assert.equal(await page.locator('.graph-detail a[href^="https://www.linkedin.com"]').count(),1);
  assert.equal(await page.locator('.graph-detail a[href^="javascript"]').count(),0);
- // One Edit for an organisation: only the changed fields become the owner's; Wrong company clears a bad match.
+ // One Edit for an organization: only the changed fields become the owner's; Wrong company clears a bad match.
  assert.equal(await page.locator('.graph-detail [data-name-edit]').count(),0);
  await page.locator('[data-org-edit]').click();
  await page.locator('.org-form input[name="industry"]').fill('Freight');
@@ -152,7 +152,7 @@ try{
   {action:'graph_role',args:{node_id:'email:b@y.example',role:'partner at Y'}}]);
  for(let i=0;i<100&&await list.locator('.whos').count();i++)await page.waitForTimeout(20);
  assert.equal(await list.locator('.whos').count(),0);
- // Warm-up domains a review hid: their own tab on Organisations, with its count, each with Undo; the tab goes when empty.
+ // Warm-up domains a review hid: their own tab on Organizations, with its count, each with Undo; the tab goes when empty.
  await navClick(page.locator('.side-sub a[data-graph-sub="orgs"]'));
  const warm=list.locator('[data-graph-panel="orgs"] [data-graph-list="warmup"]');
  assert.equal((await warm.textContent()).replace(/\s+/g,' ').trim(),'Warm up 1');

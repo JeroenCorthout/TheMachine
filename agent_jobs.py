@@ -339,7 +339,7 @@ class Local:
                 procs.pop(job['id'], None)
                 proc.stdout.close()
         if getattr(proc, 'cancelled', False):
-            raise Stopped('cancelled', 'Cancelled')
+            raise Stopped('cancelled', 'Canceled')
         if getattr(proc, 'timed_out', False):
             raise Stopped('timeout', f'It ran longer than its {round(timeout / 60)}-minute limit, so it was stopped')
         if state['error'] or proc.returncode:
@@ -534,7 +534,7 @@ class BackgroundClaude:
         try:
             while True:
                 if handle.cancelled:
-                    raise Stopped('cancelled', 'Cancelled')
+                    raise Stopped('cancelled', 'Canceled')
                 if time.time() - started > timeout:
                     handle.timed_out = True
                     stop_proc(handle)
@@ -859,7 +859,7 @@ class AppServerCodex:
                         pass
 
     def attached(self, job, live, transcript, timeout, procs, work):
-        """`work(chan, flags, log, state)` with the job's detached app server. When it is done (or cancelled, or timed
+        """`work(chan, flags, log, state)` with the job's detached app server. When it is done (or canceled, or timed
         out) the unit stops; when The Machine itself stops first, the unit runs on and recover() rejoins it."""
         folder = Path(transcript).parent
         try:
@@ -921,7 +921,7 @@ class AppServerCodex:
 
         def stopped():
             if getattr(flags, 'cancelled', False):
-                return Stopped('cancelled', 'Cancelled')
+                return Stopped('cancelled', 'Canceled')
             if getattr(flags, 'timed_out', False):
                 return Stopped('timeout', f'It ran longer than its {round(timeout / 60)}-minute limit, so it was stopped')
             return None
@@ -1175,7 +1175,7 @@ def card_work(rows, folder=None, when=None, chars=700):
             head = f"{name} stopped {when(job.get('finished_at') or job.get('updated_at'))} without finishing" + (
                 f" ({gist(job['error'], 160)})" if str(job.get('error') or '').strip() else '')
         elif status == 'cancelled':
-            head = f"{name} was cancelled {when(job.get('updated_at'))}"
+            head = f"{name} was canceled {when(job.get('updated_at'))}"
         else:
             head = f"{name}: {status}"
         parts = [head]
@@ -1429,7 +1429,7 @@ class AgentJobs:
                 proc.cancelled = True
         if proc:
             stop_proc(proc)
-        self.finish(row['id'], 'cancelled', error='Cancelled', error_kind='cancelled', only_if=ACTIVE)
+        self.finish(row['id'], 'cancelled', error='Canceled', error_kind='cancelled', only_if=ACTIVE)
         return self.get(row['id'])
 
     def set_outcome(self, job_id, outcome):
@@ -1539,7 +1539,7 @@ class AgentJobs:
             with self.connect() as db:
                 row = db.execute('SELECT * FROM agent_jobs WHERE id=?', (job_id,)).fetchone()
             if not row or row['status'] != 'sent':
-                return  # cancelled while it waited for a free slot
+                return  # canceled while it waited for a free slot
             try:
                 runner = self.runner(row)
                 with self.connect() as db:

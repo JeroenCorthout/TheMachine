@@ -448,11 +448,11 @@ class Graph(unittest.TestCase):
             db.execute("UPDATE graph_nodes SET strength=1 WHERE kind='org'")
         with self.store.connect() as db:
             warm_id = db.execute("SELECT g.event_id FROM graph_events g WHERE g.node_id='email:ana@warmup-pool.example' LIMIT 1").fetchone()[0]
-        # A roles turn sees the organisation's own messages, to judge what the exchanges are.
+        # A roles turn sees the organization's own messages, to judge what the exchanges are.
         _, orgs = self.store.role_evidence()
         warm = next(o for o in orgs if o['node_id'] == 'org:warmup-pool.example')
         self.assertTrue(warm['messages'])
-        with self.assertRaisesRegex(ValueError, 'organisation node_id'):
+        with self.assertRaisesRegex(ValueError, 'organization node_id'):
             self.app.graph_action({'node_id': 'email:ana@warmup-pool.example', 'warmup': True})
         self.app.graph_action({'node_id': 'org:warmup-pool.example', 'warmup': True, 'event_id': warm_id})
         self.assertIsNone(self.node('org:warmup-pool.example'))
@@ -506,7 +506,7 @@ class Graph(unittest.TestCase):
             db.execute("UPDATE graph_nodes SET strength=1 WHERE kind IN ('person','org')")
         asked = self.store.role_text('run1', limit=10)
         self.assertIn('means by a role:\n- Lee: a review said "intern"', asked)
-        self.assertIn('Organisations with no role yet', asked)
+        self.assertIn('Organizations with no role yet', asked)
         self.assertIn('node_id org:client.com', asked)
         self.assertIn('Pat Doe (CFO at Client Ltd)', asked)  # its people with what they are to the owner
         self.assertNotIn('org:client.com', self.store.role_text('org-run2', limit=10))
@@ -515,13 +515,13 @@ class Graph(unittest.TestCase):
             db.execute("UPDATE graph_role_asks SET people_shown=0 WHERE identifier='org:client.com'")
         self.assertIn('node_id org:client.com', self.store.role_text('org-run2b', limit=10))
         self.assertNotIn('org:client.com', self.store.role_text('org-run2c', limit=10))
-        # One of its people getting a role after the ask makes the organisation worth reading again.
+        # One of its people getting a role after the ask makes the organization worth reading again.
         a.now = lambda: (NOW + dt.timedelta(minutes=5)).isoformat()
         self.app.action('graph_role', {'node_id': 'email:ann@client.com', 'role': 'office manager'}, owner_dashboard=True)
         a.now = lambda: NOW.isoformat()
         self.assertIn('node_id org:client.com', self.store.role_text('org-run3', limit=10))
         self.app.action('graph_role', {'node_id': 'email:ann@client.com', 'role': ''}, owner_dashboard=True)
-        # Organisations get a role, and their people carry it as context.
+        # Organizations get a role, and their people carry it as context.
         self.app.graph_action({'node_id': 'org:client.com', 'role': 'customer', 'event_id': pat_id, 'quote': 'look after the renewal'})
         self.assertEqual(self.node('org:client.com')['role'], 'customer')
         with self.store.connect() as db:
@@ -605,7 +605,7 @@ class Graph(unittest.TestCase):
         mine = self.app.action('remember_fact', {'text': 'The owner does not use capitals in chat.', 'decision_id': 'note-1'})
         hers = self.app.action('remember_fact', {'text': 'Ann prefers calls before 10.', 'decision_id': 'note-1', 'about': ['email:ann@client.com']})
         self.assertEqual(hers['about'], ['email:ann@client.com'])
-        with self.assertRaisesRegex(ValueError, 'not a person, organisation or project'):
+        with self.assertRaisesRegex(ValueError, 'not a person, organization or project'):
             self.app.action('remember_fact', {'text': 'Someone else entirely.', 'decision_id': 'note-1', 'about': ['email:nobody@x.com']})
         known = lambda node: [f['text'] for f in self.app.graph_action({'node_id': node})['open'].get('known', [])]
         self.assertEqual(known('email:ann@client.com'), ['Ann prefers calls before 10.'])  # the owner's own habit is not on her page
@@ -1056,7 +1056,7 @@ class Boards(unittest.TestCase):
                 db.execute('INSERT OR REPLACE INTO graph_events(node_id,event_id,at,probable) VALUES(?,?,?,0)', (f'email:p{n}@x.example', event, NOW.isoformat()))
         text = self.store.boards_text('run1')
         self.assertIn(f'Company sale (project:{oldest})', text)  # older than the newest 60 too
-        self.assertIn('its messages are with 3 organisations: ', text)
+        self.assertIn('its messages are with 3 organizations: ', text)
         self.assertIn(f'Northwind (messages {events[0]})', text)
         prompt = a.review_prompt('run1', ['work'], boards=text)
         self.assertIn('one project per counterpart', prompt)
@@ -1224,7 +1224,7 @@ class Boards(unittest.TestCase):
         with self.store.connect() as db:
             board = graph.boards(db, NOW.isoformat())[0]
             tile = next(p for p in board['projects'] if p['id'] == added['node_id'])
-            self.assertEqual((tile['name'], tile['sorting']), ('Bramble', True))  # named after the organisation; the next review sorts it
+            self.assertEqual((tile['name'], tile['sorting']), ('Bramble', True))  # named after the organization; the next review sorts it
             self.assertEqual(db.execute('SELECT org FROM projects WHERE id=?', (added['node_id'][8:],)).fetchone()[0], 'bramble.example')
             self.assertEqual(board['maybes'], [])
             self.assertEqual(board['backfill'], {'state': 'done', 'added': 2, 'review': 0})

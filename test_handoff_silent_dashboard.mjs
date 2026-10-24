@@ -52,7 +52,7 @@ try{
   await s.locator('a.card-chat-link').click();if(!(await page.locator('#chat-log').count()))await page.evaluate(id=>chatGo(id),theirs.id);  // after an element screenshot the tap can miss
   const ev=page.locator('#chat-log .chat-event',{hasText:'is on it'});await ev.waitFor();
   assert.match(await ev.textContent(),/Pat is on it · talked to Sam on Slack, Fri\u00a010:12/);
-  // Every event line is centred the same way, also the owner's own (Handed off to Pat)
+  // Every event line is centered the same way, also the owner's own (Handed off to Pat)
   for(const e of await page.locator('#chat-log .chat-event').all())assert.equal(await e.evaluate(x=>getComputedStyle(x).textAlign+' '+getComputedStyle(x).alignSelf),'center center',await e.textContent());
   if(dir)await page.screenshot({path:`${dir}/chat-event-${width}.png`});
   if(width===1440){  // Not mine: undone, and the card leaves the list

@@ -6,7 +6,7 @@ import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Settings > Skills > Import: Find my skills shows a short list first (Recommended with the reason, then Yours), the
-// rest in closed groups with counts, and what can't come in (a licence that says no, already here) last; a search box
+// rest in closed groups with counts, and what can't come in (a license that says no, already here) last; a search box
 // finds any of them. Import selected and Close stay on screen at the bottom of a panel that scrolls inside. The
 // accounts turn runs on; a signed-out ChatGPT gets a Sign in step with the sign-in dialog, and once in, the list looks
 // there by itself. The owner ticks and imports; Read shows what would come in and, for a skill that needs its scripts,
@@ -22,7 +22,7 @@ const items=[
  item({key:'claude:'+LONG,name:'answer-customer-questions-from-the-knowledge-base',description:'When a customer asks how something works.',source:LONG,group:'project',references:['FAQ.md']}),
  item({key:'claude:~/.claude/skills/omarchy',name:'omarchy',description:'Desktop settings on Omarchy.',group:'vendor',link:'/usr/share/omarchy/skills/omarchy',flags:['Renamed tools to OpenClaw\'s: Bash → exec']}),
  item({key:'chatgpt:~/.codex/skills/report',name:'weekly-report',description:'Weekly KPI report.',from:'chatgpt',from_label:'ChatGPT',source:'~/.codex/skills/report',scripts:['scripts/build.py'],script_count:1,depends:true,left_out:['1 script (scripts/build.py)']}),
- item({key:'claude:pdf',name:'pdf',description:'PDF files.',group:'builtin',source:'claude.ai, built in (pdf)',licence:'Proprietary. LICENSE.txt has complete terms',blocked:'Can\'t import: its licence doesn\'t allow it',script_count:8,scripts:['scripts/a.py']}),
+ item({key:'claude:pdf',name:'pdf',description:'PDF files.',group:'builtin',source:'claude.ai, built in (pdf)',licence:'Proprietary. LICENSE.txt has complete terms',blocked:'Can\'t import: its license doesn\'t allow it',script_count:8,scripts:['scripts/a.py']}),
 ];
 // Many more, like a computer with lots of projects and vendor plugins: these must not crowd the first view.
 for(let n=0;n<51;n++)items.push(item({key:'claude:proj'+n,name:'project-skill-'+n,description:'A project skill.',group:'project',source:'~/work/p'+n+'/.claude/skills/s'}));
@@ -95,7 +95,7 @@ try{
   assert.match(await page.locator('[data-import="claude:~/.claude/skills/meeting-prep"]').textContent(),/Recommended: Your cards are mostly meeting preparations/);
   const pdf=page.locator('[data-import="claude:pdf"]');
   assert.equal(await pdf.locator('input').isDisabled(),true);
-  assert.match(await pdf.textContent(),/Can't import: its licence doesn't allow it/);
+  assert.match(await pdf.textContent(),/Can't import: its license doesn't allow it/);
   assert.match(await page.locator('[data-import="chatgpt:~/.codex/skills/report"]').textContent(),/Needs its 1 script/);
   // Each place it looks has its own state, a spinner only on the ones still being read, and the list says it is
   // what has come in so far.
