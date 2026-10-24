@@ -126,8 +126,9 @@ try{
   // New project on a phone: the sheet fits
   await page.locator('.board-head [data-proj-new]').click();await dialog(page).waitFor();await fits(page,w+' dialog');await shot(page,`crm-new-${w}-${scheme}`,false);
   await page.locator('#project-form [data-pj-close]').first().click();
-  // The list has its own New project in the page head on a phone
-  await page.evaluate(()=>projectsViewSet('list'));assert.ok(await page.locator('.head-new[data-graph-new="project"]').isVisible());
+  // On a phone New project is in the top bar's + menu, not in the list's page head
+  await page.evaluate(()=>projectsViewSet('list'));assert.ok(await page.locator('.head-new[data-graph-new="project"]').isHidden());
+  await page.locator('#new-card-top').click();assert.ok(await page.locator('#new-menu [data-new-what="project"]').isVisible());await page.keyboard.press('Escape');
   await context.close()}}
  assert.deepEqual(errors,[]);
  console.log('projects crm dashboard ok');

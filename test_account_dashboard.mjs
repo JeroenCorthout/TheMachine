@@ -60,7 +60,7 @@ try{
   assert.equal(await page.locator('#settings-tabs a').count(),0);  // no link out any more
   assert.equal(await text(page,'#acct-email'),'alex@example.org');
   const list=await text(page,'#acct-list');
-  for(const bit of ['Standard','Active','€25 a month, excl. VAT','Next invoice','Fri 20 Nov','€25, excl. VAT','8 GB memory · Europe, the Netherlands','Google: alex@example.org','Microsoft: alex@work.example','Example Co','Owner · 4 people · 3 seats'])
+  for(const bit of ['Standard','Active','€25 a month, excl. VAT','Next invoice','Fri, Nov 20','€25, excl. VAT','8 GB memory · Europe, the Netherlands','Google: alex@example.org','Microsoft: alex@work.example','Example Co','Owner · 4 people · 3 seats'])
    assert.ok(list.includes(bit),bit);
   assert.ok(!/—/.test(list));
   // Buttons are POSTs to the hop, each in a new tab; Sign out stays

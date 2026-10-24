@@ -488,6 +488,10 @@ button.node:hover{text-decoration:underline;background:none}
 .view-mode button:hover{color:var(--text)}
 /* The Shared Graph: Mine or Team, a quiet "via <name>", a thread's Team or Only you, what the team shared about someone */
 .head-modes{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}.head-modes .view-mode{margin-left:0}
+/* A phone or tablet: New person, organization or project is in the top bar's + menu, so a Graph head is the title, its
+   count and the switches on one line (the switches drop under the title only when they can't fit) */
+@media(max-width:1023px){.head-modes .head-new{display:none}.page-head:has(.head-modes){flex-wrap:wrap;row-gap:10px}.page-head .page-sub{white-space:nowrap}}
+@media(max-width:560px){.head-modes{flex-wrap:nowrap;gap:6px}.head-modes .view-mode button{padding:0 10px}}
 .via{color:var(--c-text-3);font-weight:400}
 .share-chip{flex:none;margin:0 0 0 auto;min-height:0;padding:1px 8px;border:1px solid var(--c-line);border-radius:999px;background:none;box-shadow:none;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.5 var(--sans);white-space:nowrap;cursor:pointer}
 span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:color-mix(in srgb,var(--mint) 45%,transparent);background:color-mix(in srgb,var(--mint) 12%,transparent)}
@@ -1767,6 +1771,8 @@ body:has(#calendar:not([hidden])) #page-head{position:sticky;top:0;z-index:30;ma
 .cal-block.cal-empty{margin-bottom:14px}.cal-empty .cal-day{margin:0}.cal-none{margin-left:auto;color:var(--c-text-3);font:400 var(--fs-sm)/1 var(--sans)}
 .cal-wk{margin:4px 0 14px;color:var(--c-text-3);font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans);letter-spacing:.04em;text-transform:uppercase}
 .cal-more{display:flex;justify-content:center;margin:-8px 0 12px}.cal-more button{min-height:34px;color:var(--c-text-2)}
+.cal-more[data-cal-more="up"]{justify-content:flex-start;margin:-10px 0 6px}.cal-more[data-cal-more="up"] button{min-height:28px;margin:0;padding:0;background:none;color:var(--c-text-3);font-size:var(--fs-sm);font-weight:400}
+@media(hover:hover){.cal-more[data-cal-more="up"] button:hover{background:none;color:var(--text);text-decoration:underline}}
 @media(max-width:560px){.cal-item{grid-template-columns:50px 8px minmax(0,1fr) auto;column-gap:10px}.cal-end .chip{display:none}.cal-prep{display:inline;color:var(--c-text-2)}}
 /* The view switch, Agenda | Week | Month */
 .cal-mode{display:inline-flex;align-self:center;margin-left:auto;padding:3px;gap:2px;border-radius:var(--r-sm);background:var(--c-sunken)}
@@ -1775,13 +1781,13 @@ body:has(#calendar:not([hidden])) #page-head{position:sticky;top:0;z-index:30;ma
 .cal-mode button[aria-pressed="true"]{background:var(--c-raised);color:var(--text);box-shadow:var(--shadow-sm),0 0 0 1px var(--c-line)}
 @media(max-width:1023px){.cal-head{gap:8px 12px}.cal-head .page-title{flex:1 1 auto}.cal-nav{order:3;flex:1 1 100%}.cal-nav .cal-range{margin-left:auto}}
 /* New event, and the form that adds or changes one on a calendar the owner can write */
-.cal-new{min-height:34px;margin:0;padding:0 14px;border:0;border-radius:var(--r-sm);background:var(--c-accent);color:var(--c-accent-ink);font:var(--fw-medium) var(--fs-sm)/1 var(--sans);cursor:pointer;white-space:nowrap}
-.cal-new .cal-new-plus{display:none}
-/* A phone: New event is a round + at the end of the Today ‹ › row, so the range keeps its room */
-@media(max-width:560px){.cal-new{flex:none;width:36px;min-height:36px;padding:0 0 2px;border-radius:50%;font-size:24px;font-weight:400;line-height:1}.cal-new .cal-new-plus{display:inline}.cal-new .cal-new-text{display:none}
- .cal-head:has(.cal-new){column-gap:10px}.cal-head:has(.cal-new) .cal-nav{flex:1 1 0}.cal-nav button{padding:0 10px}.cal-nav .cal-today{margin-right:2px}}
-@media(min-width:1024px){.cal-head{column-gap:12px}.cal-new{order:5}}
-@media(max-width:1023px){.cal-new{order:4}.cal-head:has(.cal-new) .cal-nav{flex:1 1 200px}}
+.cal-new{min-height:34px;margin:0;padding:0 12px}
+@media(min-width:1024px){.cal-head{column-gap:12px}.cal-new{order:5;margin-left:-4px}}
+/* A phone or tablet: New event is in the top bar's + menu. Two quiet rows: Calendar and the view; then ‹ › and the
+   range, with Today at the end */
+@media(max-width:1023px){.cal-new{display:none}}
+@media(max-width:560px){.cal-head{row-gap:6px}.cal-nav{gap:0}.cal-nav .cal-step{order:1;width:32px}.cal-nav .cal-range{order:2;margin:0 auto 0 4px}.cal-nav .cal-today{order:3;min-height:30px;margin:0;padding:0 10px}
+ .cal-mode button{padding:0 10px}}
 [data-cal-edit]{cursor:pointer}
 #cal-dialog{width:min(480px,calc(100vw - 24px))}#cal-dialog [hidden]{display:none}
 #cal-dialog .snooze-heading{margin-bottom:12px}#cal-dialog h2{margin:0;font-size:1.2rem}
@@ -2047,7 +2053,10 @@ article.kb-on,article.kb-on:focus{outline:2px solid color-mix(in srgb,var(--c-ac
   .side-search .kb-open{display:none}
 }
 @media(max-width:560px){
-  #palette,#palette[open]{width:100%;max-width:100%;max-height:calc(100dvh - 24px);margin:0 auto auto;border-radius:0 0 var(--r-xl,20px) var(--r-xl,20px)}
+  /* Under the top bar, which stays in sight, and no taller than what the keyboard leaves (--vv-top and --vv-h follow
+     the visual viewport, so it holds also where the keyboard doesn't resize the page) */
+  #palette,#palette[open]{width:100%;max-width:100%;max-height:calc(var(--vv-h,100dvh) - 52px - env(safe-area-inset-top) - 12px);margin:calc(var(--vv-top,0px) + 52px + env(safe-area-inset-top)) auto auto;border-radius:0 0 var(--r-xl,20px) var(--r-xl,20px)}
+  #palette::backdrop{background:linear-gradient(transparent calc(var(--vv-top,0px) + 52px + env(safe-area-inset-top)),color-mix(in srgb,var(--c-bg) 55%,transparent) 0);-webkit-backdrop-filter:none;backdrop-filter:none}
   .pal-field input,.pal-field input:focus{font-size:16px}  /* no zoom on focus on an iPhone */
   .pal-item{min-height:44px}.pal-keys,.pal-foot{display:none}
 }
@@ -2082,12 +2091,14 @@ try{const n=+localStorage.getItem('skeleton-cards'),k=document.querySelector('#s
 <dialog id="project-dialog" aria-labelledby="project-dialog-title"><form id="project-form" novalidate></form></dialog><dialog id="record-dialog" aria-labelledby="record-dialog-title"><form id="record-form" novalidate></form></dialog><dialog id="crm-dialog" aria-labelledby="crm-dialog-title"><form id="crm-form" novalidate></form></dialog><datalist id="crm-tag-list"></datalist>
 <dialog id="game-dialog" aria-labelledby="game-title"><form method="dialog"><div class="snooze-heading"><h2 id="game-title">Catch the Zzz</h2><button aria-label="Close game">×</button></div></form><p class="game-score"><b id="game-score">0</b> caught · <b id="game-time">20</b>s left · best <b id="game-best">0</b></p><div id="game-field" class="game-field"><img id="game-bot" src="brand/sleepy.webp" alt=""></div><div class="game-foot"><p id="game-msg"></p><button id="game-start" type="button">Start</button></div></dialog><dialog id="email-dialog" aria-labelledby="email-title"><form method="dialog"><div class="snooze-heading"><h2 id="email-title">Email</h2><button aria-label="Close email">×</button></div></form><div id="email-content"></div></dialog><dialog id="result-dialog" aria-labelledby="result-title"><form method="dialog"><div class="snooze-heading"><h2 id="result-title">Result</h2><button aria-label="Close result">×</button></div></form><div id="result-files"></div><div id="result-content"></div><div class="actions"><button id="result-copy" class="primary">Copy draft</button></div></dialog><dialog id="signin-dialog" aria-labelledby="signin-title"><form method="dialog"><div class="snooze-heading"><h2 id="signin-title">Sign in</h2><button aria-label="Close sign-in">×</button></div></form><form id="signin-form" autocomplete="off"><label id="signin-pick" hidden>Page<select id="signin-page"></select></label><p id="signin-saved" hidden><button type="button" id="signin-use-saved" class="primary"></button></p><label id="signin-user-row">Username or email<input id="signin-user" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1000"></label><label id="signin-pass-row">Password<input id="signin-pass" type="password" autocomplete="new-password" maxlength="1000"></label><div id="signin-code-row"><p id="signin-code-help" class="signin-help" hidden></p><p id="signin-code-ask" class="signin-ask" hidden></p><label><span id="signin-code-label">One-time code</span><input id="signin-code" inputmode="numeric" autocomplete="one-time-code" maxlength="100"></label><div id="signin-others" class="signin-others" hidden></div></div><label id="signin-save-row" class="signin-check"><input type="checkbox" id="signin-save"> Save for next time</label><p id="signin-status" class="signin-status" role="status" hidden><span class="spin" aria-hidden="true"></span><span id="signin-status-text"></span></p><div id="signin-view" class="signin-view" hidden><iframe id="signin-frame" title="The browser"></iframe></div><p id="signin-error" role="alert"></p><div class="actions"><button id="signin-go" class="primary">Sign in</button><button type="button" id="signin-browser" class="ghost">Open the browser</button><button type="button" id="signin-retry" class="ghost" hidden>Try again</button><button type="button" id="signin-continue" class="ghost" hidden>Continue</button></div><p class="fine" id="signin-fine">This goes straight into the page in your server’s browser. The assistant never sees it. For anything else, open the browser.</p></form></dialog>
 <script>
+// Dates are US English everywhere (Sat, Oct 24); times follow CHAT_LOCALE (24-hour outside the Americas)
+const DL='en-US';
 let snoozeId=null,snoozeDay=null,snoozeMonth=null,lastOk=0,refreshFailed=false;
 const localDay=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
 const csrf='__CSRF__',UI_VERSION='__UI_VERSION__';let state={};let trendView=localStorage.getItem('trend-view')||'daily';
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const date=v=>v?new Date(v).toLocaleString():'Not yet';
+const date=v=>v?new Date(v).toLocaleString(DL,{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}):'Not yet';
 // The page stays where the reader is. A refresh that draws a list anew, a late picture, a banner or a fitted header
 // above the part on screen would push it down or pull it up (also in browsers without scroll anchoring, and where a
 // list drawn anew takes the browser's anchor away): what sits under the top bar is noted while the page is still and
@@ -2152,7 +2163,7 @@ function foldsKeep(box){const key=d=>{const a=d.parentElement?.closest('[id]');r
 // The model in Settings: which one, the plan's windows with when each starts over, a reached limit, and the
 // usage limit resets (ChatGPT). Readings are cached on the server, never a model call by themselves.
 const untilText=t=>{let s=Math.max(60,t-Date.now()/1000|0),d=s/86400|0,h=s%86400/3600|0,m=s%3600/60|0;return d?`${d}d${h?` ${h}h`:''}`:h?`${h}h${m?` ${m}m`:''}`:`${m}m`};
-const clockAt=t=>{const r=new Date(t*1000),c=r.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});return t-Date.now()/1000>86400?`${r.toLocaleDateString(undefined,{weekday:'short'})} ${c}`:c};
+const clockAt=t=>{const r=new Date(t*1000),c=r.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});return t-Date.now()/1000>86400?`${r.toLocaleDateString(DL,{weekday:'short'})} ${c}`:c};
 const windowLabel=l=>['Week','168h','7d'].includes(l)?'Weekly limit':['Day','24h'].includes(l)?'Daily limit':/^\d+h$/.test(l)?`${parseInt(l)}-hour limit`:l;
 function resetAction(m){if(!m)return '';if(m.can_reset)return `<button type="button" class="ghost" data-model-reset>Use a reset</button>`;
  return m.usage_page?`<a class="head-link" href="${esc(m.usage_page)}" target="_blank" rel="noopener">${m.resets?'Open ChatGPT':'See resets in ChatGPT'}</a>`:''}
@@ -2166,7 +2177,7 @@ function renderModelPanel(){const m=state.model_status,box=$('#settings-model');
  const r=m.resets,expiry=r?.credits?.find(c=>c.expires)?.expires;
  // Resets this computer can't count (no Codex CLI signed in to the same account, as on a hosted Machine): no
  // "unknown" count, only the way to ChatGPT's usage page; a team plan's resets are under its workspace there.
- const team=/team|business|enterprise|edu/i.test(m.plan||''),resets=r?`<div class="list settings-list"><div><span class="grow"><strong>Resets available: ${r.available}</strong><small>${r.available?`A reset starts your ChatGPT usage limits over.${expiry?` The first one expires ${esc(new Date(expiry*1000).toLocaleDateString())}.`:''}`:'Your plan has no usage limit resets right now.'}</small></span>${resetAction(m)}</div></div>`
+ const team=/team|business|enterprise|edu/i.test(m.plan||''),resets=r?`<div class="list settings-list"><div><span class="grow"><strong>Resets available: ${r.available}</strong><small>${r.available?`A reset starts your ChatGPT usage limits over.${expiry?` The first one expires ${esc(new Date(expiry*1000).toLocaleDateString(DL,{month:'short',day:'numeric',year:'numeric'}))}.`:''}`:'Your plan has no usage limit resets right now.'}</small></span>${resetAction(m)}</div></div>`
   :m.usage_page?`<div class="list settings-list"><div><span class="grow"><strong>Usage limit resets</strong><small>ChatGPT shows them${team?' under your team workspace':''}.</small></span>${resetAction(m)}</div></div>`:'';
  $('#model-panel').innerHTML=head+limitNote(m)+(m.claude_plan?(m.windows||[]).length?bars:'':bars+resets)}
 async function modelAction(action,args){try{const d=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,args:args||{}})});
@@ -2177,14 +2188,14 @@ document.addEventListener('click',async e=>{
  const d=await modelAction('model_reset',{key:crypto.randomUUID()});b.disabled=false;if(!d)return;
  notice(({reset:'Usage reset. Your limits start over now.',nothingToReset:'Nothing to reset right now; no reset was used.',noCredit:'No reset was available.',alreadyRedeemed:'That reset was already used.'})[d.outcome]||'Done.')});
 function renderModelUsage(){const now=Date.now()/1000,label=l=>['Week','168h','7d'].includes(l)?'Weekly':['Day','24h'].includes(l)?'Daily':/^\d+h$/.test(l)?`${parseInt(l)}-hour limit`:l,clock={hour:'2-digit',minute:'2-digit'};
-renderModelPanel();$('#model-usage').innerHTML=limitNote(state.model_status)+(state.model_usage||[]).map(p=>p.windows.filter(w=>!(w.reset<now)).map(w=>{const r=w.reset?new Date(w.reset*1000):null,when=r?`, resets ${w.reset-now>86400?r.toLocaleDateString(undefined,{weekday:'short'})+' ':''}${r.toLocaleTimeString(undefined,clock)}`:'';
+renderModelPanel();$('#model-usage').innerHTML=limitNote(state.model_status)+(state.model_usage||[]).map(p=>p.windows.filter(w=>!(w.reset<now)).map(w=>{const r=w.reset?new Date(w.reset*1000):null,when=r?`, resets ${w.reset-now>86400?r.toLocaleDateString(DL,{weekday:'short'})+' ':''}${r.toLocaleTimeString(undefined,clock)}`:'';
 return `<div class="usage"><span>${esc(p.name)} ${esc(label(w.label))}: ${+w.used|0}% used${esc(when)}</span><progress max="100" value="${+w.used|0}">${+w.used|0}%</progress></div>`}).join('')).join('')}
 const ago=v=>{if(!v)return 'Not yet';const s=(new Date(v)-Date.now())/1000,a=Math.abs(s),f=new Intl.RelativeTimeFormat(undefined,{numeric:'auto'});for(const[u,n]of[['day',86400],['hour',3600],['minute',60]])if(a>=n)return f.format(Math.round(s/n),u);return a<45?'just now':f.format(Math.round(s/60),'minute')};
 const time=(v,plain)=>`<time class="${plain?'':'mono '}muted" datetime="${esc(v||'')}" title="${esc(date(v))}">${esc(ago(v))}</time>`;
-const calendarDate=v=>new Date(v+'T12:00:00').toLocaleDateString();
-// A signal's time as people say it: Today 08:46, Yesterday 17:20, Wed 21 Oct 09:00 (the year only when it isn't this
+const calendarDate=v=>new Date(v+'T12:00:00').toLocaleDateString(DL,{month:'short',day:'numeric',year:'numeric'});
+// A signal's time as people say it: Today 08:46, Yesterday 17:20, Wed, Oct 21 09:00 (the year only when it isn't this
 // one), no seconds; a meeting as a range, Tomorrow 10:46 to 11:46
-const humanDay=d=>{const t=new Date(),k=localDay(d),off=n=>{const x=new Date(t);x.setDate(t.getDate()+n);return localDay(x)};return k===off(0)?'Today':k===off(-1)?'Yesterday':k===off(1)?'Tomorrow':d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})}).replace(/,/g,'')};
+const humanDay=d=>{const t=new Date(),k=localDay(d),off=n=>{const x=new Date(t);x.setDate(t.getDate()+n);return localDay(x)};return k===off(0)?'Today':k===off(-1)?'Yesterday':k===off(1)?'Tomorrow':d.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})})};
 const humanHM=d=>d.toLocaleTimeString(CHAT_LOCALE,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 const humanTime=v=>{const d=new Date(v);return !v||isNaN(d)?'':humanDay(d)+' '+humanHM(d)};
 const when=e=>{if(e.kind!=='calendar.event')return humanTime(e.occurred_at);if(e.metadata.all_day)return humanDay(new Date(e.metadata.start.date+'T12:00:00'))+' · All day';const a=new Date(e.occurred_at),b=new Date(e.metadata.end_at);return humanTime(e.occurred_at)+(isNaN(b)?'':' to '+(localDay(a)===localDay(b)?humanHM(b):humanTime(e.metadata.end_at)))};
@@ -2214,10 +2225,10 @@ const proposal=s.skill_proposal?`<details class="skill-notes"><summary>Read skil
 const lines=closed(s)?2:3,rows=text.split('\n').reduce((n,l)=>n+(l.trim()?Math.ceil(l.length/62):.6),0);
 if(rows<=lines+1.5)return `<div class="body">${html}</div>${proposal}`;const open=expandedBodies.has(s.id);
 return `<div class="body${open?'':' clamp'}" style="--lines:${lines}">${html}</div><button type="button" class="more" data-more="${s.id}" aria-expanded="${open}">${open?'Show less':'Show more'}</button>${proposal}`}
-const snoozedUntil=v=>new Date(v).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short'})+', '+new Date(v).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+const snoozedUntil=v=>new Date(v).toLocaleString(DL,{weekday:'short',day:'numeric',month:'short'})+' at '+new Date(v).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 // With a teammate who hasn't answered a handoff: Later is when it comes back to check in with them, not a snooze.
 const checkinLabel=s=>'Check in with '+s.handoff_wait.name+' '+chatUntil(s.snoozed_until)+' if no answer';
-const backLabel=v=>'Back '+new Date(v).toLocaleString([],{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})+' · '+ago(v);
+const backLabel=v=>'Back '+new Date(v).toLocaleString(DL,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})+' · '+ago(v);
 const sourceText=v=>{const t=String(v||'').replace(/^Source:\s*/i,'');return t.charAt(0).toUpperCase()+t.slice(1)};
 const sourceHtml=v=>{const t=sourceText(v),i=t.lastIndexOf(' · ');return`<span class="src">${i<0?esc(t):`${esc(t.slice(0,i+3))}<span class="src-date">${esc(t.slice(i+3))}</span>`}</span>`};  // the date never splits over two lines
 const syncError=v=>v==='android_feed_unavailable'?'Notification bridge unavailable':v==='android_offline'?'Phone disconnected':v==='android_notifications_unavailable'?'Phone notifications unavailable':v==='android_gateway_unavailable'?'OpenClaw connection unavailable':v?.startsWith('network')?'Connection problem':v==='timeout'?'Connection timed out':['slack:HTTP_429','slack_ratelimited'].includes(v)?'Slack rate limit':readableError(v);
@@ -2244,8 +2255,8 @@ const pageNotice=(text,button,data={},cls='')=>`<div class="notice-card${cls?' '
 const chip=(text,t)=>`<span class="chip t-${t}"><span class="ct">${esc(text)}</span></span>`;
 // Deadlines in local days: overdue and today stand out; the rest read as a weekday or date.
 function dueChip(s){if(!s.due||closed(s))return '';const today=new Date(localDay(new Date())+'T12:00'),due=new Date(s.due+'T12:00'),days=Math.round((due-today)/864e5);
-const text=days<0?'Overdue':days===0?'Due today':days===1?'Due tomorrow':'Due '+due.toLocaleDateString(undefined,days<7?{weekday:'long'}:{day:'numeric',month:'short'});
-return `<span class="chip t-${days<=0?'orange':days===1?'amber':'muted'}" title="Due ${esc(due.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'}))}">${esc(text)}</span>`}
+const text=days<0?'Overdue':days===0?'Due today':days===1?'Due tomorrow':'Due '+due.toLocaleDateString(DL,days<7?{weekday:'long'}:{day:'numeric',month:'short'});
+return `<span class="chip t-${days<=0?'orange':days===1?'amber':'muted'}" title="Due ${esc(due.toLocaleDateString(DL,{weekday:'long',day:'numeric',month:'long'}))}">${esc(text)}</span>`}
 const closed=s=>['completed','rejected'].includes(s.status);
 const ICONS={x:'<path d="M4 4l16 16M20 4L4 20"/>',plugin:'<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>',gateway:'<rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M8 7h.01M8 17h.01"/>',gmail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>',calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',slack:'<path d="M10 3 8 21M16 3l-2 18M4 9h16M3.5 15h16"/>',salesflare:'<path d="M4 20V8l8-4 8 4v12"/><path d="M9 20v-5h6v5M9 11h.01M15 11h.01"/>',android:'<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18h2"/>',whatsapp:'<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1.2-4.2A8 8 0 1 1 20 12z"/>',linkedin:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 10v7M8 7h.01M12 17v-7M12 13a3 3 0 0 1 6 0v4"/>',github:'<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 8.2v7.6M18 10.2c0 4-6 3-10.5 6.3"/>',stripe:'<rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>'};
 ICONS.outlook=ICONS.gmail;ICONS.outlook_calendar=ICONS.calendar;ICONS.zoom='<rect x="3" y="6.5" width="12.5" height="11" rx="2"/><path d="m15.5 10.5 5-3v9l-5-3"/>';
@@ -2258,7 +2269,7 @@ const handedNote=s=>{let w={};try{w=JSON.parse(s.awaiting||'{}')}catch{}if(!w.de
 // Under way or done, so no Send. An unconfirmed send checked long enough (retry_ok) may be sent again by the owner.
 const sendBusy=a=>['queued','sending','sent','uncertain','local_preparation','paused','undoing','undone'].includes(a?.status)&&!a?.retry_ok;
 const sentAt=a=>a?.sent_at?' at '+new Date(a.sent_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:state?.hours?.timezone||undefined}):'';
-const actionNote=(a,kind,action)=>kind==='calendar'?({queued:'Changing the calendar…',sending:'Changing the calendar…',sent:action?calDoneText(action)+sentAt(a)+'.':'Done.',blocked:a?.error,uncertain:a?.error,failed:a?.error})[a?.status]||'':kind==='merge'?({queued:a?.auto?'Testing the fix. It merges by itself if every check passes.':'Testing and merging the fix…',sending:'Testing and merging the fix…',sent:(a?.auto?'Merged by itself and restarted. You can undo it for 24 hours; it undoes itself if the error comes back.':'Merged. The Machine restarts with the fix.')+(a?.error?' '+a.error:''),blocked:(a?.error||'')+(a?.auto?' Tap Merge fix to merge it anyway.':''),uncertain:a?.error,failed:a?.error,undoing:'Undoing the merge…',undone:a?.error||'Merge undone.'})[a?.status]||'':({queued:'Sending your approved draft…',sending:'Sending your approved draft…',sent:/^(urn:li:|linkedin:)/.test(a?.message_id||'')?'LinkedIn message sent'+sentAt(a)+'.':/^slack:/.test(a?.message_id||'')?'Slack message sent'+sentAt(a)+'.':/^x:/.test(a?.message_id||'')?'Reply posted on X'+sentAt(a)+'.':/^xdm:/.test(a?.message_id||'')?'X message sent'+sentAt(a)+'.':/^whatsapp:/.test(a?.message_id||'')?'WhatsApp message sent'+sentAt(a)+'.':/^intercom:/.test(a?.message_id||'')?'Sent as '+(a?.as_name||'your Intercom admin')+' in Intercom'+sentAt(a)+'.':'Email sent'+sentAt(a)+'.'+(['queued','snoozed'].includes(a?.snooze_status)&&a?.snooze_until?' Thread out of your inbox until '+new Date(a.snooze_until).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:state?.hours?.timezone||undefined})+'.':a?.snooze_status==='failed'?' '+(a.snooze_error||'I couldn’t snooze the thread in Gmail.'):''),blocked:a?.error,uncertain:a?.error,failed:a?.error})[a?.status]||'';
+const actionNote=(a,kind,action)=>kind==='calendar'?({queued:'Changing the calendar…',sending:'Changing the calendar…',sent:action?calDoneText(action)+sentAt(a)+'.':'Done.',blocked:a?.error,uncertain:a?.error,failed:a?.error})[a?.status]||'':kind==='merge'?({queued:a?.auto?'Testing the fix. It merges by itself if every check passes.':'Testing and merging the fix…',sending:'Testing and merging the fix…',sent:(a?.auto?'Merged by itself and restarted. You can undo it for 24 hours; it undoes itself if the error comes back.':'Merged. The Machine restarts with the fix.')+(a?.error?' '+a.error:''),blocked:(a?.error||'')+(a?.auto?' Tap Merge fix to merge it anyway.':''),uncertain:a?.error,failed:a?.error,undoing:'Undoing the merge…',undone:a?.error||'Merge undone.'})[a?.status]||'':({queued:'Sending your approved draft…',sending:'Sending your approved draft…',sent:/^(urn:li:|linkedin:)/.test(a?.message_id||'')?'LinkedIn message sent'+sentAt(a)+'.':/^slack:/.test(a?.message_id||'')?'Slack message sent'+sentAt(a)+'.':/^x:/.test(a?.message_id||'')?'Reply posted on X'+sentAt(a)+'.':/^xdm:/.test(a?.message_id||'')?'X message sent'+sentAt(a)+'.':/^whatsapp:/.test(a?.message_id||'')?'WhatsApp message sent'+sentAt(a)+'.':/^intercom:/.test(a?.message_id||'')?'Sent as '+(a?.as_name||'your Intercom admin')+' in Intercom'+sentAt(a)+'.':'Email sent'+sentAt(a)+'.'+(['queued','snoozed'].includes(a?.snooze_status)&&a?.snooze_until?' Thread out of your inbox until '+new Date(a.snooze_until).toLocaleString(DL,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:state?.hours?.timezone||undefined})+'.':a?.snooze_status==='failed'?' '+(a.snooze_error||'I couldn’t snooze the thread in Gmail.'):''),blocked:a?.error,uncertain:a?.error,failed:a?.error})[a?.status]||'';
 const safeURL=u=>{try{return ['https:','http:'].includes(new URL(u).protocol)?u:''}catch{return ''}};
 const resultLink=/\[[^\]]*\]\((?:\/[^\s<>"\)]*\/workspace\/)?memory\/assistant\/[^\s\)]+\)|(?:\/[^\s<>"\)]*\/workspace\/)?memory\/assistant\/[^\s<>"\)]+/g;
 // Result links become the Read result button; drop the lines they leave empty and the gaps after them (same rule as Telegram).
@@ -2266,7 +2277,7 @@ const resultBody=s=>s.body.split('\n').flatMap(line=>{const kept=line.replace(re
 const needsDecision=s=>s.status==='pending'||(!closed(s)&&s.status!=='snoozed'&&s.preparation_status==='blocked');
 function deliveryLabel(value){
 const target=new Date(value),today=localDay(new Date()),tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);
-const day=localDay(target)===today?'Today':localDay(target)===localDay(tomorrow)?'Tomorrow':target.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
+const day=localDay(target)===today?'Today':localDay(target)===localDay(tomorrow)?'Tomorrow':target.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'});
 return 'Telegram '+day+' · '+target.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 }
 const DRAFT_KINDS=['email','email_demo','linkedin','slack','x','whatsapp','intercom','handoff','finish','calendar'];
@@ -3154,7 +3165,7 @@ return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-
 function messageHTML(o,id,i){
 // Details holds the headers, or a signal's technical part (an error's code locations); no toggle when there is neither.
 const meta=[['From',o.from],['To',o.to],['Cc',o.cc]].filter(([,v])=>v).map(([k,v])=>`<div><span>${k}</span> ${esc(v)}</div>`).join('')+(o.details?`<pre class="email-tech">${esc(o.details)}</pre>`:'');
-return `<div class="email-meta"><div class="email-from"><strong>${esc(sender(o.from)||o.kind)}</strong><time>${esc(new Date(o.occurred_at).toLocaleString([],{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</time></div>${o.title?`<div class="email-subject">${esc(o.title)}</div>`:''}${meta?`<details class="email-headers"><summary>Details</summary>${meta}</details>`:''}</div>${(o.attachments||[]).length?`<div class="attachments">${o.attachments.map(a=>`<a class="attachment" href="api/attachment?id=${id}&event=${encodeURIComponent(o.event_id)}&part=${encodeURIComponent(a.part)}" target="_blank" rel="noreferrer">📎 ${esc(a.name)}<small>${esc(fileSize(a.size))}</small></a>`).join('')}</div>`:''}<div class="email-body" data-email-body="${i}"><p class="muted">Loading…</p></div>${o.url&&safeURL(o.url)?`<p class="email-open"><a href="${esc(o.url)}" target="_blank" rel="noreferrer">Open in ${o.kind==='email'?(/^https:\/\/outlook\./.test(o.url||'')?'Outlook':'Gmail'):['phone','signal'].includes(o.kind)?'app':esc(o.kind)} ↗</a></p>`:''}`}
+return `<div class="email-meta"><div class="email-from"><strong>${esc(sender(o.from)||o.kind)}</strong><time>${esc(new Date(o.occurred_at).toLocaleString(DL,{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</time></div>${o.title?`<div class="email-subject">${esc(o.title)}</div>`:''}${meta?`<details class="email-headers"><summary>Details</summary>${meta}</details>`:''}</div>${(o.attachments||[]).length?`<div class="attachments">${o.attachments.map(a=>`<a class="attachment" href="api/attachment?id=${id}&event=${encodeURIComponent(o.event_id)}&part=${encodeURIComponent(a.part)}" target="_blank" rel="noreferrer">📎 ${esc(a.name)}<small>${esc(fileSize(a.size))}</small></a>`).join('')}</div>`:''}<div class="email-body" data-email-body="${i}"><p class="muted">Loading…</p></div>${o.url&&safeURL(o.url)?`<p class="email-open"><a href="${esc(o.url)}" target="_blank" rel="noreferrer">Open in ${o.kind==='email'?(/^https:\/\/outlook\./.test(o.url||'')?'Outlook':'Gmail'):['phone','signal'].includes(o.kind)?'app':esc(o.kind)} ↗</a></p>`:''}`}
 async function fillMessage(container,o,id){
 const box=container.querySelector('.email-body');if(!box||box.dataset.filled)return;box.dataset.filled='1';
 const text=()=>{box.innerHTML=`<div class="email-text">${linkify(String(o.body||'').replace(/\r\n/g,'\n').trim())}</div>`};
@@ -3183,7 +3194,7 @@ async function openEmail(id){const s=state.suggestions.find(s=>s.id===id);const 
 let list;try{list=await originalsFor(id)}catch(e){$('#email-content').innerHTML=`<p class="muted">${esc(e.message)}</p>`;return}
 if(!list.length){$('#email-content').innerHTML=draftFilesBlock(s)+'<p class="muted">The original is no longer available.</p>';return}
 const [first,...rest]=list;
-$('#email-content').innerHTML=draftFilesBlock(s)+`<div class="email" data-msg="0">${messageHTML(first,id,0)}</div>`+(rest.length?`<h3 class="email-earlier">${rest.length} related message${rest.length>1?'s':''}</h3>`+rest.map((o,i)=>`<details class="email" data-msg="${i+1}"><summary>${esc(sender(o.from)||o.kind)} · ${esc(new Date(o.occurred_at).toLocaleDateString([],{day:'numeric',month:'short'}))}</summary>${messageHTML(o,id,i+1)}</details>`).join(''):'');
+$('#email-content').innerHTML=draftFilesBlock(s)+`<div class="email" data-msg="0">${messageHTML(first,id,0)}</div>`+(rest.length?`<h3 class="email-earlier">${rest.length} related message${rest.length>1?'s':''}</h3>`+rest.map((o,i)=>`<details class="email" data-msg="${i+1}"><summary>${esc(sender(o.from)||o.kind)} · ${esc(new Date(o.occurred_at).toLocaleDateString(DL,{day:'numeric',month:'short'}))}</summary>${messageHTML(o,id,i+1)}</details>`).join(''):'');
 fillMessage($('#email-content [data-msg="0"]'),first,id);
 $('#email-content').querySelectorAll('details.email').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)fillMessage(d,list[+d.dataset.msg],id)}))}
 // Inbox zero: poke the sleeping robot a few times, or play a 20-second round of Catch the Zzz.
@@ -3252,7 +3263,7 @@ const f=(state.facts||[]).find(x=>x.id===id);
  if(edit&&f){learnEdit=id;learnEditText=null}const group=f?(f.kind==='draft'?'rules':'facts'):null;if(group)learnAll.add(group);
  $('#facts').innerHTML=learnedList();const row=f?document.getElementById('learned-'+id):null;
  requestAnimationFrame(()=>{(row||$('#facts')).scrollIntoView({block:row?'center':'start'});if(row){row.classList.remove('flash');void row.offsetWidth;row.classList.add('flash')}const t=row?.querySelector('textarea');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}})}
-const learnDay=d=>d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})}).replace(/,/g,'');  // Tue 20 Oct, as elsewhere
+const learnDay=d=>d.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})});  // Tue, Oct 20, as elsewhere
 const VOICE_ICON={linkedin:'linkedin',whatsapp:'whatsapp',slack:'slack',email:'gmail',gmail:'gmail',outlook:'gmail',x:'x','x dm':'x',twitter:'x',github:'github'};
 function learnedList(){
  const facts=state.facts||[],at=x=>x.updated_at||x.created_at||'',newest=(a,b)=>at(b).localeCompare(at(a));
@@ -3328,7 +3339,7 @@ $('#suggestion-stats').addEventListener('click',e=>{const t=e.target.closest('[d
 $('#suggestion-summary').addEventListener('click',e=>{const b=e.target.closest('[data-scope]');if(!b)return;linkedCardId=null;scopeFilter=b.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render()});
 // Promises from your messages, both ways. A still-open one becomes a card when it's due.
 function promisesList(open){const items=(state.promises||[]).filter(p=>['open','card'].includes(p.state));if(!items.length)return '';
-const row=p=>`<div class="promise"><span class="grow">${p.together?'With':p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: <a class="promise-link" href="${promiseHref(p)}">${esc(p.what)}</a><small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
+const row=p=>`<div class="promise"><span class="grow">${p.together?'With':p.direction==='mine'?'To':'From'} <b>${esc(p.who)}</b>: <a class="promise-link" href="${promiseHref(p)}">${esc(p.what)}</a><small>${esc(p.direction==='mine'?'You said it':'Said')} ${esc(new Date(p.made_at).toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'}))}${p.state==='card'?' · on a card now':p.due?'':' · no date, checked '+esc(new Date(p.check_at).toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'}))}</small></span>${dueChip(p)}${p.state==='open'?`<button type="button" class="quiet" data-promise="${p.id}" data-close="kept" aria-label="Done: ${esc(p.what)}">Done</button><button type="button" class="quiet" data-promise="${p.id}" data-close="dropped" aria-label="Not needed: ${esc(p.what)}">Drop</button>`:''}</div>`;
 const group=(direction,title)=>{const rows=items.filter(p=>p.direction===direction);return rows.length?`<h3 class="promise-head">${title}<span class="count">${rows.length}</span></h3>`+rows.map(row).join(''):''};
 return `<details id="promises-list" ${open?'open':''}><summary><span>Promises</span><span class="count">${items.length}</span></summary>${group('mine','You promised')}${group('theirs','Promised to you')}</details>`}
 // Reviews off (a new install, before --activate or the hosted "Turn it on" step): said on every tab, with the way to turn them on; with cards already there, that they came from the one-time first look.
@@ -3393,7 +3404,7 @@ later.sort((a,b)=>(a.snoozed_until||'').localeCompare(b.snoozed_until||''));
 
 const recent=finished.sort((a,b)=>closedAt(b).localeCompare(closedAt(a))),doneTotal=state.done_counts?.[scopeFilter]??recent.length;
 {const seen=doneTotal+':'+recent.slice(0,30).map(s=>s.id).join(',');if(seen!==doneSeen){doneSeen=seen;pagerDrop('done')}}donePager();
-const backDay=s=>{const d=new Date(s.snoozed_until),t=new Date();t.setDate(t.getDate()+1);return localDay(d)===localDay(new Date())?'Today':localDay(d)===localDay(t)?'Tomorrow':d.toLocaleDateString([],{weekday:'long',day:'numeric',month:'short'})};
+const backDay=s=>{const d=new Date(s.snoozed_until),t=new Date();t.setDate(t.getDate()+1);return localDay(d)===localDay(new Date())?'Today':localDay(d)===localDay(t)?'Tomorrow':d.toLocaleDateString(DL,{weekday:'long',day:'numeric',month:'short'})};
 const laterCards=items=>items.map((s,i)=>(i===0||backDay(s)!==backDay(items[i-1])?`<h3 class="day-head">${esc(backDay(s))}</h3>`:'')+suggestionCard(s,'Later')).join('');
 $('#suggestion-summary').innerHTML=`<div class="summary-row"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div></div>`;
 $('#suggestion-stats').innerHTML=`<div class="stats">${[[ready,'Ready','mint','ready'],[needs,'To decide','amber','needs'],[preparing,'Preparing','lavender','preparing'],[later,'Later','lavender','later']].map(([items,title,t,key])=>`<button type="button" class="stat t-${t}${items.length?'':' zero'}" data-fold-tile="${key}" aria-expanded="${!!items.length&&(key==='later'?laterOpen:!folded.has(key))}" aria-label="${items.length} ${title}${items.length?', tap to show or hide':''}" ${items.length?'':'disabled'}><b>${items.length}</b><span>${title}</span></button>`).join('')}</div>`;
@@ -3436,7 +3447,7 @@ return `<div>${chip(label,saved?'mint':active?'amber':r.pending_count?'orange':'
 
 renderReviewLive();$('#analyses').innerHTML=clipList('analyses',state.analyses.filter(a=>a.status!=='running'||!(state.review_live?.runs||[]).length).map(a=>{const id='review-'+esc(a.started_at),complete=a.status==='complete',running=a.status==='running',recovered=!complete&&a.remaining_count===0;const count=complete?(a.checked_count??JSON.parse(a.items||'[]').length):JSON.parse(a.items||'[]').length;const status=complete?'Reviewed':running?'Reviewing':recovered?'Recovered':'Retry needed';const detail=complete?(a.summary||'Review saved.'):`${a.last_error?reviewError(a.last_error):running?'Review in progress.':reviewError(null)} ${recovered?'These signals were reviewed in a later run.':!running?`${a.remaining_count??count} still waiting; the review worker will retry them.`:''}`;return `<div>${chip(status,complete||recovered?'mint':running?'amber':'orange')}<span class="grow">${count} signals ${complete?'checked':running?'being reviewed':'in the original review'}</span>${time(a.started_at)}${a.attempts>1?`<small>Resumed ${a.attempts-1} time${a.attempts>2?'s':''}</small>`:''}${complete&&a.last_error?`<small>${esc(reviewError(a.last_error))} Review recovered and saved.</small>`:''}<details id="${id}" ${expandedReview.has(id)?'open':''}><summary>Review notes</summary><p>${esc(detail)}</p></details></div>`}),$('#review-live').innerHTML?'':'<div class="muted no-reviews">No reviews yet.</div>');
 const deliveryTone=s=>({sent:'mint',delivered:'mint',queued:'lavender',pending:'lavender',uncertain:'amber',failed:'orange'}[s]||'muted');
-$('#deliveries').innerHTML=clipList('deliveries',state.deliveries.map(d=>`<div>${chip(({sent:'Sent',queued:'Waiting to send',uncertain:'Checking delivery',cancelled:'Canceled',previewed:'Preview, not sent'})[d.status]||d.status,deliveryTone(d.status))}<span class="grow">${esc(state.suggestions.find(s=>s.id===d.suggestion_id)?.title||d.suggestion_id)}</span>${time(d.updated_at)}${d.error?`<small class="error">${esc(({gateway_preflight_failed:'OpenClaw unavailable — will retry',delivery_not_admitted:'OpenClaw blocked this send — will retry',delivery_outcome_unknown:'Not sure it arrived — checking before resending',interrupted_delivery:'Send interrupted — checking before resending'})[d.error]||d.error)}</small>`:''}${d.needs_edit?'<small>Telegram update pending</small>':''}</div>`),'<div class="muted">No deliveries yet.</div>');renderHours();renderAgents();renderSignatures();renderLookups();renderAddresses();renderSecurity();renderShareOffer();renderVoices();renderSkills();
+$('#deliveries').innerHTML=clipList('deliveries',state.deliveries.map(d=>`<div>${chip(({sent:'Sent',queued:'Waiting to send',uncertain:'Checking delivery',cancelled:'Canceled',previewed:'Preview, not sent'})[d.status]||d.status,deliveryTone(d.status))}<span class="grow">${esc(state.suggestions.find(s=>s.id===d.suggestion_id)?.title||d.suggestion_id)}</span>${time(d.updated_at)}${d.error?`<small class="error">${esc(({gateway_preflight_failed:'OpenClaw unavailable. It retries.',delivery_not_admitted:'OpenClaw blocked this send. It retries.',delivery_outcome_unknown:'Not sure it arrived. Checking before it resends.',interrupted_delivery:'Send interrupted. Checking before it resends.'})[d.error]||d.error)}</small>`:''}${d.needs_edit?'<small>Telegram update pending</small>':''}</div>`),'<div class="muted">No deliveries yet.</div>');renderHours();renderAgents();renderSignatures();renderLookups();renderAddresses();renderSecurity();renderShareOffer();renderVoices();renderSkills();
 if(!shownCached){lastOk=Date.now();$('#live').classList.remove('stale');$('#stale-note').hidden=true}$('#updated').innerHTML='<span class="lbl">Updated </span>'+esc(hhmm(shownAt||Date.now()));
 for(const c of state.connectors.filter(c=>![...$('#account').options].some(o=>o.value===c.id))){let o=new Option((c.display_name||c.email)+' · '+service(c.service),c.id);$('#account').add(o)}
 }
@@ -3648,11 +3659,11 @@ c.scrollIntoView({block:'center',behavior:'smooth'});c.classList.remove('flash')
 // second while the card's run is going.
 let chatId=null,chat=null,chatTimer=null,chatDrawer=false;
 const chatOpen=()=>chatId&&state.suggestions?.find(s=>s.id===chatId)||null;
-// The browser's own locale, except an English browser outside the US reads dates the British way (24 h, "Thu 22 Oct").
+// The browser's own locale for times, except an English browser outside the US reads them the 24-hour way.
 const CHAT_LOCALE=(()=>{try{const l=navigator.language||'en',tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'';return /^en(-US)?$/i.test(l)&&!/^America\//.test(tz)?'en-GB':l}catch{return undefined}})();
 const chatHM=at=>new Date(at).toLocaleTimeString(CHAT_LOCALE,{hour:'2-digit',minute:'2-digit'});
 const chatDayOf=at=>{const d=new Date(at),t=new Date();t.setHours(0,0,0,0);const n=Math.round((t-new Date(d).setHours(0,0,0,0))/864e5);
- return n===0?'Today':n===1?'Yesterday':d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})})};
+ return n===0?'Today':n===1?'Yesterday':d.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})})};
 // Light markdown for a reply: paragraphs, lists, headings as bold lines, **bold**, *italic* and links.
 // Slack-style emoji shortcodes (":tada:") as emoji; an unknown code, or one with a skin tone suffix, stays as typed
 const EMOJI={"smile":"😄","smiley":"😃","grinning":"😀","grin":"😁","joy":"😂","rofl":"🤣","sweat_smile":"😅","laughing":"😆","wink":"😉","blush":"😊","slightly_smiling_face":"🙂","upside_down_face":"🙃","heart_eyes":"😍","kissing_heart":"😘","thinking_face":"🤔","thinking":"🤔","face_with_hand_over_mouth":"🤭","shushing_face":"🤫","neutral_face":"😐","expressionless":"😑","no_mouth":"😶","smirk":"😏","unamused":"😒","roll_eyes":"🙄","face_with_rolling_eyes":"🙄","grimacing":"😬","relieved":"😌","pensive":"😔","sleepy":"😪","sleeping":"😴","mask":"😷","nerd_face":"🤓","sunglasses":"😎","confused":"😕","worried":"😟","open_mouth":"😮","astonished":"😲","flushed":"😳","pleading_face":"🥺","cry":"😢","sob":"😭","scream":"😱","sweat":"😓","weary":"😩","tired_face":"😫","yawning_face":"🥱","triumph":"😤","rage":"😡","angry":"😠","exploding_head":"🤯","partying_face":"🥳","star_struck":"🤩","zany_face":"🤪","money_mouth_face":"🤑","hugging_face":"🤗","hugs":"🤗","saluting_face":"🫡","melting_face":"🫠","skull":"💀","ghost":"👻","robot_face":"🤖","see_no_evil":"🙈","hear_no_evil":"🙉","speak_no_evil":"🙊","heart":"❤️","orange_heart":"🧡","yellow_heart":"💛","green_heart":"💚","blue_heart":"💙","purple_heart":"💜","black_heart":"🖤","white_heart":"🤍","broken_heart":"💔","sparkling_heart":"💖","100":"💯","fire":"🔥","sparkles":"✨","star":"⭐","tada":"🎉","confetti_ball":"🎊","balloon":"🎈","gift":"🎁","trophy":"🏆","rocket":"🚀","zap":"⚡","boom":"💥","bulb":"💡","eyes":"👀","wave":"👋","raised_hands":"🙌","clap":"👏","pray":"🙏","muscle":"💪","ok_hand":"👌","+1":"👍","thumbsup":"👍","-1":"👎","thumbsdown":"👎","point_up":"☝️","point_right":"👉","point_left":"👈","point_down":"👇","v":"✌️","crossed_fingers":"🤞","handshake":"🤝","facepalm":"🤦","face_palm":"🤦","shrug":"🤷","man_shrugging":"🤷‍♂️","woman_shrugging":"🤷‍♀️","white_check_mark":"✅","heavy_check_mark":"✔️","x":"❌","warning":"⚠️","no_entry":"⛔","question":"❓","exclamation":"❗","bangbang":"‼️","heavy_plus_sign":"➕","arrow_right":"➡️","arrow_left":"⬅️","arrow_up":"⬆️","arrow_down":"⬇️","repeat":"🔁","hourglass":"⌛","hourglass_flowing_sand":"⏳","alarm_clock":"⏰","calendar":"📆","date":"📅","memo":"📝","pencil":"📝","pencil2":"✏️","email":"📧","envelope":"✉️","phone":"☎️","iphone":"📱","computer":"💻","link":"🔗","lock":"🔒","unlock":"🔓","key":"🔑","mag":"🔍","chart_with_upwards_trend":"📈","chart_with_downwards_trend":"📉","moneybag":"💰","dollar":"💵","euro":"💶","coffee":"☕","beer":"🍺","beers":"🍻","champagne":"🍾","pizza":"🍕","cake":"🍰","sunny":"☀️","cloud":"☁️","rain_cloud":"🌧️","snowflake":"❄️","rainbow":"🌈","earth_africa":"🌍","car":"🚗","airplane":"✈️","house":"🏠","office":"🏢","dog":"🐶","cat":"🐱","unicorn_face":"🦄","raised_hand":"✋","writing_hand":"✍️","brain":"🧠","money_with_wings":"💸","pushpin":"📌","paperclip":"📎","package":"📦","construction":"🚧","sos":"🆘","ok":"🆗","new":"🆕","cool":"🆒","free":"🆓","heavy_minus_sign":"➖","slightly_frowning_face":"🙁","frowning":"😦","disappointed":"😞","hushed":"😯","innocent":"😇","yum":"😋","stuck_out_tongue":"😛","stuck_out_tongue_winking_eye":"😜","kissing":"😗","relaxed":"☺️","star2":"🌟","dizzy":"💫","sweat_drops":"💦","dash":"💨","zzz":"💤"};
@@ -3746,7 +3757,7 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  // The same tap again and again (five snoozes in a row) is one line with a count, unfolded for the times
  const rows=[];for(const i of items){const l=rows.at(-1);if(i.kind==='event'&&l?.kind==='event'&&l.text===i.text&&!!l.mine===!!i.mine)l.times.push(i.at),l.at=i.at;else rows.push(i.kind==='event'?{...i,times:[i.at]}:i)}
  const stamp=at=>{if(!at)return;const d=chatDayOf(at);if(d!==day){day=d;side='';out.push(`<div class="chat-day">${esc(d)}</div>`)}};
- const tm=at=>at?`<time class="chat-time" datetime="${new Date(at).toISOString()}" title="${esc(new Date(at).toLocaleString(CHAT_LOCALE))}">${chatHM(at)}</time>`:'';
+ const tm=at=>at?`<time class="chat-time" datetime="${new Date(at).toISOString()}" title="${esc(new Date(at).toLocaleDateString(DL,{weekday:'short',month:'short',day:'numeric',year:'numeric'})+' '+chatHM(at))}">${chatHM(at)}</time>`:'';
  const push=(i,html)=>{const sd=chatSide(i);out.push(html.replace('class="chat-','class="'+(sd===side?'cont ':'')+'chat-'));side=sd};
  const sent=new Set(items.filter(i=>i.kind==='event'&&i.sent).map(i=>i.sent.trim()));
  // Each send or cancel belongs to the latest draft before it (by its text for a send): only that one says Sent or Not sent
@@ -3843,7 +3854,7 @@ const BACK='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke
 const NC_PLUS='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 const SEND='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 4.5l7 7-1.4 1.4-4.6-4.6V20h-2V8.3l-4.6 4.6L5 11.5z"/></svg>';
 const DOTS='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/></svg>';
-const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}):d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
+const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(DL,{weekday:'short'}):d.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
 // One small line over the message box: where the card stands, with its one way back (Unsnooze, Reopen) as a text button
 function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…':s.status==='snoozed'?(s.snoozed_until?(s.handoff_wait?checkinLabel(s):'Snoozed until '+chatUntil(s.snoozed_until)):'Snoozed')
   :closed(s)?(s.status==='completed'?'Done':'Not needed'):s.preparation_status==='blocked'?p.status||cardState(s):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':'';
@@ -3983,11 +3994,11 @@ function noteSplit(n){if(!n)return'';const parts=[['style','style'],['fact','mis
 return parts.length?`<div class="notes-split"><span>Your Change notes</span><div>${parts.map(([k,t])=>`<span class="chip t-${{style:'lavender',fact:'amber',continue:'orange',new_ask:'mint',unsorted:'muted'}[k]}">${n[k]} ${t}</span>`).join('')}</div></div>`:''}
 function trendChart(trend){let rows=trend?.[trendView];if(!rows)return'';const first=rows.findIndex(r=>r.worth_it+r.dismissed+r.open);rows=first<0?rows.slice(-1):rows.slice(first);const daily=trendView==='daily';
 const max=Math.max(1,...rows.map(r=>r.worth_it+r.dismissed));const day=r=>new Date(r.start+'T12:00');
-const name=r=>daily?day(r).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'}):'Week of '+day(r).toLocaleDateString(undefined,{day:'numeric',month:'short'});
+const name=r=>daily?day(r).toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'}):'Week of '+day(r).toLocaleDateString(DL,{day:'numeric',month:'short'});
 const tip=r=>{const n=r.worth_it+r.dismissed;return `${name(r)}: ${n?`${r.worth_it} of ${n} worth it`:'nothing decided'}${r.open?`, ${r.open} open`:''}${r.do_it?`. Do it right the first time: ${r.first_time_rate}%`:''}`};
 return `<div class="trend"><div class="trend-head"><span>% worth it per ${daily?'day':'week'}</span><div class="scope-filter" role="group" aria-label="Period">${[['daily','Daily'],['weekly','Weekly']].map(([v,t])=>`<button type="button" data-trend="${v}" aria-pressed="${trendView===v}">${t}</button>`).join('')}</div></div>
 <div class="bars">${rows.map(r=>{const n=r.worth_it+r.dismissed;return `<div title="${esc(tip(r))}" aria-label="${esc(tip(r))}"><small>${n?r.hit_rate+(daily?'':'%'):''}</small>${n?`<em style="height:${Math.max(4,Math.round(86*n/max))}%"><i class="no" style="flex:${r.dismissed}"></i><i class="yes" style="flex:${r.worth_it}"></i></em>`:'<em class="none"></em>'}</div>`}).join('')}</div>
-<div class="bar-labels">${rows.map(r=>`<span>${daily?day(r).getDate():day(r).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</span>`).join('')}</div>
+<div class="bar-labels">${rows.map(r=>`<span>${daily?day(r).getDate():day(r).toLocaleDateString(DL,{day:'numeric',month:'short'})}</span>`).join('')}</div>
 <div class="bar-marks">${rows.map(r=>r.changes?.length?`<span title="${esc(r.changes.join('\n'))}" aria-label="${esc(r.changes.length+' rule changes: '+r.changes.join('; '))}">◆${r.changes.length>1?r.changes.length:''}</span>`:'<span></span>').join('')}</div>
 <div class="trend-legend"><span><b></b>Worth it</span><span><b class="no"></b>Not needed</span><span>Height: cards decided</span>${rows.some(r=>r.changes?.length)?'<span><i class="mark">◆</i>Rules changed</span>':''}</div></div>`}
 $('#quality').addEventListener('click',e=>{const b=e.target.closest('[data-trend]');if(!b)return;trendView=b.dataset.trend;localStorage.setItem('trend-view',trendView);render()});
@@ -4220,7 +4231,7 @@ function calWith(p,m){const who=calWords(p.who);if(!who.length)return false;cons
  return [m.title,...(m.people||[])].some(t=>{const w=calWords(t);return w.join(' ').includes(full)||w.includes(who[0])&&who[0].length>2})}
 const calSaid=p=>p.together?'With '+p.who:p.direction==='mine'?'Promised to '+p.who:p.who+' promised';
 const CAL_CARD={prepared:['Prep ready','mint'],accepted:['Preparing','lavender'],instructions:['Preparing','lavender'],pending:['Card','amber'],snoozed:['Card','muted']};
-const calShort=k=>new Date(k+'T12:00').toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric'}).replace(/,/g,'');
+const calShort=k=>{const d=new Date(k+'T12:00');return d.toLocaleDateString(DL,{weekday:'short'})+' '+d.getDate()};  // Sat 24
 function calParts(it){const hm=v=>humanHM(new Date(v)),late=it.day==='overdue';
  if(it.kind==='meeting'){const m=it.m,c=it.s&&CAL_CARD[it.s.status],a=new Date(m.start),b=new Date(m.end),
    when=it.allDay?(it.span?calShort(it.span[0])+' to '+calShort(it.span[1]):''):!(b>a)?'':hm(a)+' to '+(localDay(b)!==localDay(a)?calShort(localDay(b))+' ':'')+hm(b);
@@ -4238,13 +4249,13 @@ function calRow(it){const x=calParts(it),tag=x.href||x.url||x.edit?'a':'div',att
  return `<${tag} class="cal-item k-${x.tone}${it.past?' past':''}"${attrs}><span class="cal-time">${esc(x.time)}</span><span class="cal-dot" aria-hidden="true"></span><span class="cal-main"><span class="cal-title">${x.owner?`<span class="cal-owner">${esc(x.owner)}</span> `:''}${esc(x.title)}</span>${x.sub||x.prep?`<span class="cal-sub">${x.prep?`<span class="cal-prep">${esc(x.prep)}${x.sub?' · ':''}</span>`:''}${esc(x.sub)}</span>`:''}${(x.said||[]).map(t=>`<span class="cal-sub cal-said">${esc(t)}</span>`).join('')}</span><span class="cal-end">${x.badge||''}${x.url?'<span class="cal-go" aria-label="Opens in its calendar">↗</span>':x.href||x.edit?'<span class="cal-go" aria-hidden="true">›</span>':''}</span></${tag}>`}
 function calChip(it){const x=calParts(it),tag=x.href||x.url||x.edit?'a':'div',attrs=x.href?` href="${esc(x.href)}"`:x.url?` href="${esc(x.url)}" target="_blank" rel="noopener"`:x.edit?` role="button" tabindex="0" data-cal-edit="${esc(x.edit)}"`:'';
  return `<${tag} class="cal-chip k-${x.tone}${it.past?' past':''}"${attrs} title="${esc([x.owner,x.title].filter(Boolean).join(' ')+(x.sub?' · '+x.sub:'')+(x.said||[]).map(t=>' · '+t).join(''))}"><span class="t">${esc(x.owner||x.time)}</span><span class="n">${esc(x.title)}</span></${tag}>`}
-const calDate=k=>calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}).replace(/,/g,'');
-const calMon=d=>d.toLocaleDateString(CHAT_LOCALE,{month:'short'}).replace(/\.$/,'');
-// A run of days as "26 Oct – 1 Nov 2026" (the year once, or on both sides when it changes)
-function calSpan(a,n=7){const b=calAdd(a,n-1);
- return a.getFullYear()!==b.getFullYear()?`${a.getDate()} ${calMon(a)} ${a.getFullYear()} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`:
-  a.getMonth()!==b.getMonth()?`${a.getDate()} ${calMon(a)} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`:`${a.getDate()} – ${b.getDate()} ${calMon(b)} ${b.getFullYear()}`}
-const calMonthName=m=>m.toLocaleDateString(CHAT_LOCALE,{month:'long',year:'numeric'});
+const calDate=k=>calOf(k).toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'});  // Sat, Oct 24
+const calMon=d=>d.toLocaleDateString(DL,{month:'short'}).replace(/\.$/,'');
+// A run of days as "Oct 26 – Nov 1, 2026" (the year once, or on both sides when it changes)
+function calSpan(a,n=7){const b=calAdd(a,n-1),y=', '+b.getFullYear();
+ return a.getFullYear()!==b.getFullYear()?`${calMon(a)} ${a.getDate()}, ${a.getFullYear()} – ${calMon(b)} ${b.getDate()}, ${b.getFullYear()}`:
+  a.getMonth()!==b.getMonth()?`${calMon(a)} ${a.getDate()} – ${calMon(b)} ${b.getDate()}${y}`:`${calMon(b)} ${a.getDate()} – ${b.getDate()}${y}`}
+const calMonthName=m=>m.toLocaleDateString(DL,{month:'long',year:'numeric'});
 const calLabel=()=>calMode==='month'?calMonthName(calMonth):calThree()?calSpan(calStart,3):calSpan(calAt);
 const calStepName=()=>calMode==='month'?'month':calThree()?'days':'week';
 // On the current period: this week, this month, or three days that hold today
@@ -4253,16 +4264,16 @@ const CAL_VIEWS=[['agenda','Agenda','a'],['week','Week','w'],['month','Month','m
 function calHead(){const step=calStepName();
  return `<div class="cal-head"><h2 class="page-title">Calendar</h2><div class="cal-nav"><button type="button" class="cal-today${calOnNow()?' now':''}" data-cal-go="0" title="Today (t)">Today</button>`+
   `<button type="button" class="cal-step" data-cal-go="-1" aria-label="Previous ${step}" title="Previous ${step} (←)">‹</button><button type="button" class="cal-step" data-cal-go="1" aria-label="Next ${step}" title="Next ${step} (→)">›</button>`+
-  `<span class="cal-range">${esc(calLabel())}</span></div><div class="cal-mode" role="group" aria-label="View">${CAL_VIEWS.map(([v,t,k])=>`<button type="button" data-cal-mode="${v}" aria-pressed="${calMode===v}" title="${t} (${k})">${t}</button>`).join('')}</div>${calCals.length?'<button type="button" class="cal-new" data-cal-new title="New event" aria-label="New event"><span class="cal-new-plus" aria-hidden="true">+</span><span class="cal-new-text">New event</span></button>':''}</div>`}
+  `<span class="cal-range">${esc(calLabel())}</span></div><div class="cal-mode" role="group" aria-label="View">${CAL_VIEWS.map(([v,t,k])=>`<button type="button" data-cal-mode="${v}" aria-pressed="${calMode===v}" title="${t} (${k})">${t}</button>`).join('')}</div>${calCals.length?'<button type="button" class="ghost head-new cal-new" data-cal-new title="New event">+ New event</button>':''}</div>`}
 const calHash=()=>'#calendar?view='+calMode+'&date='+localDay(calMode==='month'?calMonth:calThree()?calStart:calAt);
 function calPush(replace){const h=calHash();if(location.hash===h)return;history[replace?'replaceState':'pushState'](null,'',location.pathname+location.search+h)}
-const calName=k=>{const t=localDay(new Date());return k===t?'Today':k===localDay(calDay(1))?'Tomorrow':k===localDay(calDay(-1))?'Yesterday':calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'long'})};
+const calName=k=>{const t=localDay(new Date());return k===t?'Today':k===localDay(calDay(1))?'Tomorrow':k===localDay(calDay(-1))?'Yesterday':calOf(k).toLocaleDateString(DL,{weekday:'long'})};
 const calMoreRow=dir=>{const end=dir==='up'?calFrom<=calAdd(calMonday(new Date()),-7*CAL_BACK):calTo>=calAdd(calMonday(new Date()),7*CAL_AHEAD);if(end)return '';
- return `<div class="cal-more" data-cal-more="${dir}"><button type="button" class="quiet">${calMoreFailed[dir]?'Couldn’t load. Try again':dir==='up'?'Earlier days':'Later days'}</button></div>`};
+ return `<div class="cal-more" data-cal-more="${dir}"><button type="button" class="quiet">${calMoreFailed[dir]?'Couldn’t load. Try again':dir==='up'?'Show earlier days':'Later days'}</button></div>`};
 // The sticky header's bottom edge: rows under it are out of sight
 const calEdge=()=>{const h=$('#page-head');return h&&!h.hidden?Math.max(0,h.getBoundingClientRect().bottom):0};
 function calAnchor(box){const edge=calEdge();for(const el of box.querySelectorAll('.cal-block[data-day]')){const r=el.getBoundingClientRect();if(r.bottom>edge)return {day:el.dataset.day,top:r.top}}return null}
-const calWeekday=k=>calOf(k).toLocaleDateString(CHAT_LOCALE,{weekday:'short'}).replace(/[,.]/g,'');
+const calWeekday=k=>calOf(k).toLocaleDateString(DL,{weekday:'short'}).replace(/[,.]/g,'');
 function calDayBlock(k,list,late,today){const name=calName(k),date=calDate(k);
  return (k===today?late:'')+`<section class="cal-block${list.length?'':' cal-empty'}" data-day="${k}" aria-label="${esc(name+' '+date)}"><h3 class="cal-day"><span>${esc(name)}</span><small>${esc(/^(Today|Tomorrow|Yesterday)$/.test(name)?date:date.replace(/^\S+\s/,''))}</small>${list.length?`<span class="count">${list.length}</span>`:'<span class="cal-none">Nothing planned</span>'}</h3>${list.map(calRow).join('')}</section>`}
 // Week as a time grid: hours down the side, a column per day, each meeting a block as long as it lasts; ones that
@@ -4598,7 +4609,7 @@ function fleetRule(work,f,m,k,r,wide){const id=`${work.id}-${m.member_id}-${k}`.
 const fleetRules=(work,f,several,whom)=>`<div class="fleet-rules-head"><h3>What your Machine answers${whom?' '+esc(whom):several?' in '+esc(work.name):''}</h3><p class="muted">One rule per kind of question, for ${whom?'all '+esc(whom):'everyone in '+(several?esc(work.name):'your Fleet')}.</p>${work.security==='careful'?`<p class="fleet-careful">${esc(work.name||'This Fleet')} is Careful: answers wait for you and leave out names. <a class="learn" href="https://themachine.computer/help/security-levels" target="_blank" rel="noopener">Learn more</a></p>`:''}</div><div class="fleet-rules fleet-mate">${Object.entries(work.rules||{}).map(([k,r])=>fleetRule(work,f,{member_id:'*',name:'everyone'},k,r,true)).join('')}</div>`;
 const fleetScopeOf=b=>({only:b.querySelector('[data-scope="only"]').value,never:b.querySelector('[data-scope="never"]').value,work_only:b.querySelector('[data-scope="work_only"]').checked});
 // The team brief (what the Fleet saw) and free questions, per Work Fleet. A teammate's free question and answers are their own words: shown as text, never acted on.
-const fleetDay=at=>esc(new Date(at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}));
+const fleetDay=at=>esc(new Date(at).toLocaleString(DL,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}));
 // Shared connectors (shared_connectors.py): what this Fleet shares, OKs this Machine's owner gives, and sharing one.
 function fleetShared(f,work){const v=f.shared||{},mine=(v.prompts||[]).filter(p=>p.fleet===work.id),shares=(v.shares||[]).filter(s=>s.fleet===work.id);
  const can=(v.can_share||[]).find(c=>c.fleet===work.id),own=(v.accounts||[]).filter(a=>!shares.some(s=>s.service===a.service&&s.label));
@@ -4645,7 +4656,7 @@ function handoffLine(h,s){const n=h.note?`: ${esc(h.note)}`:'',first=esc([String
 // Fleet items that need you are cards under Suggestions (tagged Fleet, Work), built from api/fleet: a teammate's
 // question or request (their words, shown quoted, never acted on), a meeting's follow-ups to split, and confirmations
 // the relay asks for. The Fleet tab keeps people, rules, briefs, your own asks and the log.
-const splitDay=v=>{const d=new Date(String(v).length<=10?v+'T12:00':v);if(isNaN(d))return String(v);const p=Object.fromEntries(new Intl.DateTimeFormat([],{weekday:'short',day:'numeric',month:'short'}).formatToParts(d).map(x=>[x.type,x.value]));return `${p.weekday} ${p.day} ${p.month}`};
+const splitDay=v=>{const d=new Date(String(v).length<=10?v+'T12:00':v);if(isNaN(d))return String(v);const p=Object.fromEntries(new Intl.DateTimeFormat(DL,{weekday:'short',day:'numeric',month:'short'}).formatToParts(d).map(x=>[x.type,x.value]));return `${p.weekday}, ${p.month} ${p.day}`};
 const splitWho=p=>{if(p.mine)return 'You';const m=/^(.*?) \(([^()]+@[^()]+)\)$/.exec(p.name||'');return m?`${esc(m[1])} <small class="muted">${esc(m[2])}</small>`:esc(p.name||'')};
 // Waiting asks from the same teammate, of the same kind, in the same Fleet: one Always or Never settles them all (fleet.py settle_waiting).
 const fleetAlike=(f,w)=>(f?.waiting||[]).filter(x=>x.fleet===w.fleet&&x.member_id===w.member_id&&x.kind===w.kind&&x.status!=='answered'&&x.status!=='declined');
@@ -4682,7 +4693,7 @@ function fleetCardsOf(f){if(!f?.on)return[];const works=(f.fleets||[]).filter(x=
  return out}
 // Finding people you know on the Network (discovery.py): a permission card once, then a card per person only with a concrete reason
 const netBtn=(label,d,email='',rel='',cls='ghost',confirmText='')=>`<button type="button" class="${cls}" data-net-do="${d}"${email?` data-net-email="${esc(email)}"`:''}${rel?` data-net-rel="${rel}"`:''}${confirmText?` data-confirm-text="${esc(confirmText)}"`:''}>${esc(label)}</button>`;
-const netDay=at=>{const d=new Date(at);return isNaN(d)?'':d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})};
+const netDay=at=>{const d=new Date(at);return isNaN(d)?'':d.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'})};
 const netReason=r=>r.kind==='card'?`Open: ${esc(r.title)}`:r.kind==='meeting'?`You meet ${esc(netDay(r.at))}${r.title?` · ${esc(r.title)}`:''}`:'';
 function networkCards(f){const net=f.network;if(!net||!f.friends?.id)return[];const out=[];
  const card=(id,title,body,actions)=>`<article id="net-${esc(id)}" class="card t-amber fleet-card net-card"><div class="meta"><div class="card-badges">${chip('Network','lavender')}</div></div><h3>${title}</h3>${body}${actions}</article>`;
@@ -4721,7 +4732,7 @@ const SHARE_ON_POINTS=name=>[`Each member's Machine shares Work contacts, projec
  'Personal, sensitive and automated mail never goes. Each person looks it over before their first share and can keep anything private.',
  'Teammates keep what they got. Unshare and Turn off can remove it from their Machines.'];
 const sharedFleetName=fleet=>(fleetData?.fleets||[]).find(x=>x.id===fleet)?.name||'this Fleet';
-const sharedWhen=at=>{if(!at)return 'soon';const d=new Date(at);return isNaN(d)||d<=new Date()?'soon':'from '+d.toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})};
+const sharedWhen=at=>{if(!at)return 'soon';const d=new Date(at);return isNaN(d)||d<=new Date()?'soon':'from '+d.toLocaleString(DL,{weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})};
 let sharedData={},sharedShown={};
 const SHARED_TILES=[['client','Client','goes to the team'],['sensitive','Sensitive','never'],['unsure','Not sure','you choose'],['personal','Personal','never'],['internal','Only colleagues','never'],['other','Not client','never']];
 function sharedStatus(g,d){
@@ -5029,7 +5040,7 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
  // One view at a time: each Work Fleet, Friends, Family, Sharing (every rule in one place) and Activity, as pills.
  const panes=[];
  const notices=f.notices||[],asking=notices.filter(n=>n.buttons.length),told=notices.filter(n=>!n.buttons.length&&!/^friend_/.test(n.kind));
- const noticeCard=n=>`<article id="fleet-${esc(n.id)}"><p>${esc(n.text)}</p>${n.detail?`<p class="muted">${esc(n.detail)}</p>`:''}${n.outcome?`<p class="muted">→ ${esc(n.outcome)}</p>`:''}${n.reason?`<p class="note">${esc(n.reason)}</p>`:''}${n.buttons.length?`<div class="actions">${n.buttons.map(b=>`<button${b.choice==='confirm'?' class="primary"':''} data-fleet-notice="${esc(n.id)}" data-choice-n="${b.choice}" data-key="${esc(n.key)}">${esc(b.label)}</button>`).join('')}</div>`:''}<p><small class="mono">${esc(new Date(n.at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small></p></article>`;
+ const noticeCard=n=>`<article id="fleet-${esc(n.id)}"><p>${esc(n.text)}</p>${n.detail?`<p class="muted">${esc(n.detail)}</p>`:''}${n.outcome?`<p class="muted">→ ${esc(n.outcome)}</p>`:''}${n.reason?`<p class="note">${esc(n.reason)}</p>`:''}${n.buttons.length?`<div class="actions">${n.buttons.map(b=>`<button${b.choice==='confirm'?' class="primary"':''} data-fleet-notice="${esc(n.id)}" data-choice-n="${b.choice}" data-key="${esc(n.key)}">${esc(b.label)}</button>`).join('')}</div>`:''}<p><small class="mono">${esc(new Date(n.at).toLocaleString(DL,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small></p></article>`;
  for(const work of works){const asked=f.asked.filter(a=>inFleet(a,work)&&a.kind!=='handoff');  // handoffs have their own box
   let h=`<div id="fleet-${esc(work.id)}">`+head(work,(work.people||[]).length)+people(work)+fleetShared(f,work);
   if(work.members.length){
@@ -5057,7 +5068,7 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
   h+=box('Meetings and brief','',`<label class="fleet-option"><input type="checkbox" id="fleet-meetings"${f.ask_meetings?' checked':''}><span>${rulesOf.length?`Ask my Work ${several?'Fleets':'Fleet'}${friendsToo?', and a friend who is in the meeting,':''} about the outside people in my meetings this week`:'Ask a friend who is in one of my meetings this week about the other people in it'}<small class="muted">They see those email addresses.</small></span></label>${rulesOf.length?fleetBriefSettings(f):''}`,'fleet-settings');
   panes.push({id:'sharing',label:'Sharing',html:h})}
  panes.push({id:'activity',label:'Activity',html:(told.length?box('Lately','Who joined, asked for a server, had one started, or left.',`<div class="list">${told.map(noticeCard).join('')}</div>`):'')
-  +box('Log','Every question asked or answered, both ways.',`<ul class="fleet-log list">${f.log.map(l=>`<li><small class="mono">${esc(new Date(l.at).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small> ${l.direction==='in'?'From':'To'} ${esc(l.name||'')}: ${esc(l.what)} · <span class="muted">${esc(l.outcome)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul>`)});
+  +box('Log','Every question asked or answered, both ways.',`<ul class="fleet-log list">${f.log.map(l=>`<li><small class="mono">${esc(new Date(l.at).toLocaleString(DL,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))}</small> ${l.direction==='in'?'From':'To'} ${esc(l.name||'')}: ${esc(l.what)} · <span class="muted">${esc(l.outcome)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul>`)});
  const current=panes.some(p=>p.id===fleetPane)?fleetPane:panes[0].id;
  let html=f.off?pageNotice('The Network is off for now. Nothing is asked or answered.'):'';
  {const todo=fleetCardsOf(f).length;if(todo)html+=pageNotice(`${todo===1?'One Fleet item waits':todo+' Fleet items wait'} for you under Suggestions.`,'Show',{'tab-go':'inbox'},'fleet-todo')}
@@ -5075,7 +5086,7 @@ async function fleetView(refresh=false,cached=false){const view=$('#fleet-view')
 // Family (family.py): when everyone is free, to-dos for one another and plans to say yes or no to. Self-contained:
 // its forms post family_free, family_todo and family_event; what waits for you is a card under Suggestions.
 const FAMILY_REQ=['todo','event'];
-const familyWhen=v=>{const d=new Date(String(v).length<=10?v+'T12:00':v);if(isNaN(d))return esc(v);return esc(d.toLocaleString([],String(v).length<=10?{weekday:'short',day:'numeric',month:'short'}:{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))};
+const familyWhen=v=>{const d=new Date(String(v).length<=10?v+'T12:00':v);if(isNaN(d))return esc(v);return esc(d.toLocaleString(DL,String(v).length<=10?{weekday:'short',day:'numeric',month:'short'}:{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}))};
 // A datetime-local value with this browser's offset, so every Machine reads the same moment.
 const familyMoment=v=>{if(!v)return '';const off=-new Date(v).getTimezoneOffset(),a=Math.abs(off);return `${v.slice(0,16)}${off<0?'-':'+'}${String(Math.floor(a/60)).padStart(2,'0')}:${String(a%60).padStart(2,'0')}`};
 function familySection(f,family){const fam=f.family||{free:[],todos:[],plans:[],mine:[]},people=(family.people||[]).filter(p=>!p.me),today=new Date().toISOString().slice(0,10);
@@ -5098,7 +5109,7 @@ fleetOn('submit',async e=>{const t=e.target,act=t.classList.contains('family-fre
 // Friends (friends.py): add by username, requests both ways, your friends with the Machine they answer with, asking them,
 // and your rules per friend (the same rule component as teammates). Friends see nothing of your Fleets.
 const friendBtn=(label,attrs,cls='ghost',confirmText='')=>`<button type="button" class="${cls}" ${attrs}${confirmText?` data-confirm-text="${esc(confirmText)}"`:''}>${esc(label)}</button>`;
-const friendBusy=a=>(a.busy||[]).length?a.busy.slice(0,12).map(([s,e])=>{const o={weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'};return `${new Date(s.replace('Z',':00Z')).toLocaleString([],o)}–${new Date(e.replace('Z',':00Z')).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}`}).join(' · ')+(a.busy.length>12?' · …':''):'free the whole time';
+const friendBusy=a=>(a.busy||[]).length?a.busy.slice(0,12).map(([s,e])=>{const o={weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'};return `${new Date(s.replace('Z',':00Z')).toLocaleString(DL,o)}–${new Date(e.replace('Z',':00Z')).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}`}).join(' · ')+(a.busy.length>12?' · …':''):'free the whole time';
 // Your rules for friends: under Sharing with the Fleets' rules, the same component: one rule for all, exceptions per friend.
 function friendRules(f){const fr=f.friends,group=fr&&f.fleets.find(x=>x.id===fr.id);if(!group||!(group.members||[]).length)return'';
  return fleetRules(group,f,true,'your friends')}
@@ -5210,7 +5221,7 @@ $('#suggestions').addEventListener('submit',async e=>{const t=e.target;if(!t.cla
 // Task pages (task_pages.py): offered after a handoff by email, approved here with a preview of exactly what the page
 // shows, then one line in the draft. Answers from the page show quoted: their words, never instructions.
 const pageApprove=new Map(),TP_SAID={on:'I’m on it',done:'Done',cant:'Can’t do this'};
-const tpDay=d=>/^\d{4}-\d{2}-\d{2}/.test(d||'')?new Date(d.slice(0,10)+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'}):'';
+const tpDay=d=>/^\d{4}-\d{2}-\d{2}/.test(d||'')?new Date(d.slice(0,10)+'T12:00:00Z').toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'}):'';
 const TP_LOCK='<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
 function taskPageBlock(s){const p=s.task_page,id=esc(s.id);if(!p)return'';
  if(p.state==='offered'){const a=pageApprove.get(s.id);
@@ -5256,7 +5267,7 @@ $('#fleet-view').addEventListener('click',e=>{const b=e.target.closest('[data-gr
 // A name or address cut off with an ellipsis shows in full on hover or long-press.
 document.addEventListener('pointerover',e=>{const el=e.target.closest?.('.ct,.ell,.fleet-people strong,.fleet-people small');if(el&&!el.title&&el.scrollWidth>el.clientWidth)el.title=el.textContent.trim()});
 // Graph tab: projects heating up or cooling, who's closest, who has gone quiet; tap one for its links and events.
-const day=v=>v?new Date(String(v).length<=10?v+'T12:00':v).toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'}):'never';
+const day=v=>v?new Date(String(v).length<=10?v+'T12:00':v).toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'}):'never';
 // An organization's logo from enrichment (https only, no referrer, lazy, fixed size); its initial shows until it loads and when it can't.
 const LOGO_URL=/^https:\/\/[^\s"'<>\\]+$/;
 const orgPic=(n,big)=>{const u=LOGO_URL.test(n.profile?.logo||'')?n.profile.logo:'',px=big?36:22;return `<span class="org-pic${big?' big':''}" aria-hidden="true">${esc((String(n.name||'').trim()[0]||'?').toUpperCase())}${u?`<img src="${esc(u)}" alt="" width="${px}" height="${px}" loading="lazy" decoding="async" referrerpolicy="no-referrer">`:''}</span>`};
@@ -5331,7 +5342,7 @@ const graphSection=(title,note,items)=>items?.length?`<div class="section-head">
 // drags a tile (or picks a stage from its menu) and that stands until a newer message moves it. Nothing here sends anything.
 let graphBoards=[],boardShown=sideStore.get('board-shown')||'',boardStage={},boardOpen=new Set(),fitsOpen=new Set(),fitsPicked=new Map(),boardMine=sideStore.get('board-mine')==='1';
 const projView=()=>graphBoards.length?(sideStore.get('projects-view')==='list'?'list':'board'):'list';
-const shortDay=v=>{if(!v)return '';const d=new Date(String(v).length<=10?v+'T12:00':v),p=k=>d.toLocaleDateString('en-US',{[k]:k==='day'?'numeric':'short'});return `${p('weekday')} ${p('day')} ${p('month')}`};  /* Fri 23 Oct */
+const shortDay=v=>{if(!v)return '';const d=new Date(String(v).length<=10?v+'T12:00':v),p=k=>d.toLocaleDateString(DL,{[k]:k==='day'?'numeric':'short'});return `${p('weekday')}, ${p('month')} ${p('day')}`};  /* Fri, Oct 23 */
 const boardNow=()=>graphBoards.find(b=>b.name===boardShown)||graphBoards[0];
 const tileWhy=(p,side)=>{const last=p.last_at?' · '+(p.last_event_id?`<button type="button" class="link" data-quote-event="${p.last_event_id}" title="Read its latest message">${esc(shortDay(p.last_at))}</button>`:esc(shortDay(p.last_at))):'';
  if(p.sort_failed)return `<p class="tile-why failed">${esc(p.sort_failed)}${last}</p>`;
@@ -5348,7 +5359,7 @@ const tile=(p,b)=>{const stuck=stuckDays(p),age=p.days+'d';  /* under a day the 
  return `<article class="tile" data-node="${esc(p.id)}" data-stage="${esc(p.stage)}" draggable="true" tabindex="0" aria-label="${esc(p.name)}, ${esc(p.stage)}"><div class="tile-row">${orgPic({name:p.org?.name||p.name,profile:{logo:p.org?.logo}})}<span class="tile-name" title="${esc(p.name)}">${esc(p.name).replace(/([a-z])([A-Z])/g,'$1<wbr>$2')}</span>${stuck||!p.days?'':`<span class="tile-age" title="In this stage for ${p.days===0?'less than a day':p.days+(p.days===1?' day':' days')}">${age}</span>`}${menu}</div>`
   +(p.value!=null||p.close_date?`<p class="tile-val">${p.value!=null?`<span title="Value">${esc(money(p.value))}</span>`:''}${p.value!=null&&p.close_date?' · ':''}${p.close_date?`<span title="Expected close">closes ${esc(closeDay(p.close_date))}</span>`:''}</p>`:'')+(p.next?`<p class="tile-next">${esc(p.next)}</p>`:'')+tileWhy(p)
   +(stuck?`<div class="tile-chips"><span class="chip">No reply in ${stuck} days</span>${p.card?`<a class="tile-card" href="#card=${esc(p.card.id)}" title="${esc(p.card.title)}">Card: ${esc(p.card.title)}</a>`:''}</div>`:'')+(p.owner_name?`<p class="tile-owner" title="Owner">${esc(p.owner_name)}</p>`:'')+'</article>'};
-const closeDay=v=>{const d=new Date(v+'T12:00');return isNaN(d)?v:d.toLocaleDateString([],{day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})})};
+const closeDay=v=>{const d=new Date(v+'T12:00');return isNaN(d)?v:d.toLocaleDateString(DL,{day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})})};
 // Project values in the owner's currency (config "currency", EUR when not set): short on tiles, in full where there is room.
 var graphCurrency='EUR';
 const moneyFormat=(v,o)=>{try{return new Intl.NumberFormat(undefined,{style:'currency',currency:graphCurrency,...o}).format(v)}catch{return new Intl.NumberFormat(undefined,o).format(v)}};
@@ -5770,7 +5781,7 @@ const graphSource=k=>k==='salesflare.email'?'gmail':k==='salesflare.meeting'?'ca
 const sourceIcon=(k,type)=>{const s=type&&type!=='event'?type:graphSource(k);return GRAPH_SOURCE[s]?`<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24">${GRAPH_SOURCE[s]}</svg></span>`:icon(s)};
 const SOURCE_NAME={gmail:'Email',salesflare:'Email',calendar:'Calendar',whatsapp:'WhatsApp',slack:'Slack',intercom:'Intercom',linkedin:'LinkedIn',android:'Phone',x:'X',github:'GitHub',stripe:'Stripe',zoom:'Zoom',telegram:'Telegram'};
 const TL_SOURCES={email:'Email',meetings:'Meetings',intercom:'Intercom',chats:'Chats',cards:'Cards',projects:'Projects',other:'Other'};
-const dayLabel=d=>{const t=new Date(),y=new Date(t),m=new Date(t);y.setDate(t.getDate()-1);m.setDate(t.getDate()+1);const same=(a,b)=>a.toDateString()===b.toDateString();return same(d,t)?'Today':same(d,y)?'Yesterday':same(d,m)?'Tomorrow':d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})})};
+const dayLabel=d=>{const t=new Date(),y=new Date(t),m=new Date(t);y.setDate(t.getDate()-1);m.setDate(t.getDate()+1);const same=(a,b)=>a.toDateString()===b.toDateString();return same(d,t)?'Today':same(d,y)?'Yesterday':same(d,m)?'Tomorrow':d.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})})};
 // A run of chat messages in one conversation (same thread, same day, under half an hour apart) is one row.
 const GRAPH_GAP=30*6e4,GRAPH_ROWS=15;
 const graphRuns=rows=>{const out=[];for(const e of rows){const run=out[out.length-1],prev=run?.at(-1);
@@ -6082,7 +6093,7 @@ document.addEventListener('change',async e=>{const t=e.target.closest?.('[data-o
 // Pipeline on a board: what is open per stage and what is expected to close per month, from each project's value and
 // expected close date (the projects on the board as shown, so Mine counts only the owner's own). One series, so one
 // color; every bar carries its label and value as text.
-const pipeMonth=k=>{const d=new Date(Math.floor(k/12),k%12,1),y=d.getFullYear()!==new Date().getFullYear();return d.toLocaleDateString('en-US',{month:'short',...(y?{year:'numeric'}:{})})};
+const pipeMonth=k=>{const d=new Date(Math.floor(k/12),k%12,1),y=d.getFullYear()!==new Date().getFullYear();return d.toLocaleDateString(DL,{month:'short',...(y?{year:'numeric'}:{})})};
 const pipeRow=(label,value,n,max,cls='')=>`<div class="pipe-row${cls}" title="${esc(label)}: ${esc(moneyFull(value))} in ${n} project${n===1?'':'s'}"><span class="pipe-k ell">${esc(label)}</span><span class="pipe-bar" aria-hidden="true">${value>0?`<i style="width:${Math.max(2,Math.round(value/max*100))}%"></i>`:''}</span><span class="pipe-v">${esc(money(value))} <small>${n}</small></span></div>`;
 function pipeline(b){if(!b.projects.some(p=>p.value!=null))return '';
  // Open is what can still close: not won or lost, not in the last stage (where Won puts it) nor Stalled or declined
@@ -6198,14 +6209,14 @@ async function openConversation(row){const dialog=$('#email-dialog'),group='grou
 let list;try{list=(await request('api/originals?events='+encodeURIComponent(row.dataset.events))).originals}catch(e){$('#email-content').innerHTML=`<p class="muted">${esc(e.message)}</p>`;return}
 if(!list.length){$('#email-content').innerHTML='<p class="muted">The messages are no longer available.</p>';return}
 /* A transcript: the date once, then turns; a turn is one sender's messages minutes apart, its time said once */
-let h=`<p class="convo-day">${esc(new Date(list[0].occurred_at).toLocaleDateString([],{weekday:'long',day:'numeric',month:'long'}))}</p>`,prev=null;
+let h=`<p class="convo-day">${esc(new Date(list[0].occurred_at).toLocaleDateString(DL,{weekday:'long',day:'numeric',month:'long'}))}</p>`,prev=null;
 for(const o of list){const me=o.from==='You',at=Date.parse(o.occurred_at),same=prev&&prev.from===o.from&&at-Date.parse(prev.occurred_at)<5*6e4;
  if(!same)h+=(prev?'</div>':'')+`<div class="convo-turn${me?' me':''}"><p class="convo-meta">${!me&&group?`<b>${esc(sender(o.from)||'')}</b> · `:''}${esc(graphTime(new Date(at)))}</p>`;
  h+=`<div class="convo-say">${linkify(String(o.body||'').replace(/\r\n/g,'\n').trim())}</div>`;prev=o}
 const url=[...list].reverse().find(o=>o.url)?.url;
 $('#email-content').innerHTML=`<div class="convo">${h}</div>${url?`<a class="convo-source" href="${esc(url)}" target="_blank" rel="noreferrer">Open in ${esc(row.dataset.src||'the source')}</a>`:''}</div>`}
 $('#query').onkeydown=e=>{if(e.key==='Enter')search()};
-function renderMonth(){const y=snoozeMonth.getFullYear(),m=snoozeMonth.getMonth(),today=localDay(new Date()),start=(new Date(y,m,1).getDay()+6)%7,count=new Date(y,m+1,0).getDate();$('#snooze-month').textContent=snoozeMonth.toLocaleDateString(undefined,{month:'long',year:'numeric'});$('#snooze-days').innerHTML=['Mo','Tu','We','Th','Fr','Sa','Su'].map(d=>`<span>${d}</span>`).join('')+'<span aria-hidden="true"></span>'.repeat(start)+Array.from({length:count},(_,i)=>{const d=new Date(y,m,i+1,12),value=localDay(d);return `<button type="button" data-day="${value}" aria-label="${esc(d.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}" aria-pressed="${value===snoozeDay}" class="${value===today?'today':''}" ${value<today?'disabled':''}>${i+1}</button>`}).join('');const earliest=new Date();$('#month-prev').disabled=y===earliest.getFullYear()&&m===earliest.getMonth();}
+function renderMonth(){const y=snoozeMonth.getFullYear(),m=snoozeMonth.getMonth(),today=localDay(new Date()),start=(new Date(y,m,1).getDay()+6)%7,count=new Date(y,m+1,0).getDate();$('#snooze-month').textContent=snoozeMonth.toLocaleDateString(DL,{month:'long',year:'numeric'});$('#snooze-days').innerHTML=['Mo','Tu','We','Th','Fr','Sa','Su'].map(d=>`<span>${d}</span>`).join('')+'<span aria-hidden="true"></span>'.repeat(start)+Array.from({length:count},(_,i)=>{const d=new Date(y,m,i+1,12),value=localDay(d);return `<button type="button" data-day="${value}" aria-label="${esc(d.toLocaleDateString(DL,{weekday:'long',day:'numeric',month:'long',year:'numeric'}))}" aria-pressed="${value===snoozeDay}" class="${value===today?'today':''}" ${value<today?'disabled':''}>${i+1}</button>`}).join('');const earliest=new Date();$('#month-prev').disabled=y===earliest.getFullYear()&&m===earliest.getMonth();}
 function snoozeStep(custom){$('#snooze-quick').hidden=custom;$('#snooze-calendar').hidden=!custom;$('#snooze-title').textContent=custom?'Choose date':'Remind me later';$('#snooze-error').textContent=''}
 function openSnooze(id,custom=false){snoozeId=id;const item=state.suggestions.find(s=>s.id===id);if(!item||closed(item))return;if(item.snooze_choices)$('.snooze-presets').innerHTML=item.snooze_choices.map(([o,t])=>`<button type="button" data-snooze="${esc(o)}">${esc(t)}</button>`).join('');const due=new Date(item.snoozed_until||Date.now()+86400000);snoozeDay=localDay(due);snoozeMonth=new Date(due.getFullYear(),due.getMonth(),1);$('#snooze-time').value=state.hours?.morning||'09:00';$('#snooze-zone').textContent='Your time zone: '+Intl.DateTimeFormat().resolvedOptions().timeZone;$('#snooze-error').textContent='';renderMonth();snoozeStep(custom);$('#snooze-dialog').showModal()}
 // How a snooze comes back, said honestly: the server's channels (state.reminders: Telegram, devices with notifications)
@@ -6214,7 +6225,7 @@ function openSnooze(id,custom=false){snoozeId=id;const item=state.suggestions.fi
 function remindBack(until){const r=state.reminders||{},tg=!!r.telegram,push=(r.push||0)>0||pushOn();
  if(tg&&push)return {line:'I’ll remind you on Telegram and as a notification.'};if(tg)return {line:'I’ll remind you on Telegram.'};if(push)return {line:'I’ll send you a notification.'};
  const at=until?new Date(until):null,hm=at&&at.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),days=at&&Math.round((new Date(at).setHours(0,0,0,0)-new Date().setHours(0,0,0,0))/864e5);
- const when=!at||isNaN(at)?'then':days===0?'today at '+hm:days===1?'tomorrow at '+hm:days<7?'on '+at.toLocaleDateString([],{weekday:'long'})+' at '+hm:'on '+at.toLocaleDateString([],{day:'numeric',month:'short'})+' at '+hm;
+ const when=!at||isNaN(at)?'then':days===0?'today at '+hm:days===1?'tomorrow at '+hm:days<7?'on '+at.toLocaleDateString(DL,{weekday:'long'})+' at '+hm:'on '+at.toLocaleDateString(DL,{day:'numeric',month:'short'})+' at '+hm;
  const act=pushOK&&devicePush.perm!=='denied'?{label:'Turn on notifications',id:'push-on'}:DEV.ios&&!inApp()?{label:'Add to Home Screen',id:'install-app'}:null;
  return {line:'It’ll be back here '+when+'.',act}}
 // A toast with one device action (Turn on notifications), kept up long enough to tap.
@@ -6234,7 +6245,7 @@ const TAGLINES=[["I read your email so you don’t have to.",["gmail","outlook"]
 // Generic taglines plus those about a connected source, minus those meant for another day. Until the connections are loaded, generic only.
 const taglinePool=(list,connectors,now=new Date())=>{const on=new Set(Array.isArray(connectors)?connectors.map(c=>c.service):[]),day=now.getDay()||7;return list.filter(([,src,when])=>(!src||src.some(s=>on.has(s)))&&(!when?.days||when.days.includes(day))).map(([text])=>text)};
 // taglines:end
-{const since=()=>{const d=state.started_at?new Date(state.started_at):null;if(!d||isNaN(d))return [];const sameYear=d.getFullYear()===new Date().getFullYear(),day=Math.max(1,Math.floor((Date.now()-d)/864e5)+1);return [`Professionally nosy since ${d.toLocaleDateString(undefined,sameYear?{month:'long',day:'numeric'}:{month:'long',day:'numeric',year:'numeric'})}.`,...(day>1?[`Day ${day} of reading everything. Still not bored.`]:[])]};
+{const since=()=>{const d=state.started_at?new Date(state.started_at):null;if(!d||isNaN(d))return [];const sameYear=d.getFullYear()===new Date().getFullYear(),day=Math.max(1,Math.floor((Date.now()-d)/864e5)+1);return [`Professionally nosy since ${d.toLocaleDateString(DL,sameYear?{month:'long',day:'numeric'}:{month:'long',day:'numeric',year:'numeric'})}.`,...(day>1?[`Day ${day} of reading everything. Still not bored.`]:[])]};
 window.newTagline=()=>{const now=$('#tagline').textContent,rest=[...taglinePool(TAGLINES,state.connectors),...since()].filter(x=>x!==now);$('#tagline').textContent=rest[Math.floor(Math.random()*rest.length)]}}
 let toastTimer,manualBusy=false;
 function toastUnmerge(text,batch){toast(text);if(batch){$('#toast').insertAdjacentHTML('beforeend',` <button data-unmerge="${esc(batch)}">Undo</button>`);clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),15000)}}  // one Undo for Merge all
@@ -6364,7 +6375,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-signin]');
 // Saved sign-ins: one row per site with its username and whether a password is kept. The password itself never
 // reaches the page (the list has none), so a row only ever says "Password saved".
 const LOCK='<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.25" y="7" width="9.5" height="6.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
-const savedOn=v=>{const d=v&&new Date(v);if(!d||isNaN(d))return '';return d.toLocaleDateString(undefined,d.getFullYear()===new Date().getFullYear()?{day:'numeric',month:'short'}:{month:'short',year:'numeric'})};
+const savedOn=v=>{const d=v&&new Date(v);if(!d||isNaN(d))return '';return d.toLocaleDateString(DL,d.getFullYear()===new Date().getFullYear()?{day:'numeric',month:'short'}:{month:'short',year:'numeric'})};
 function savedLoginRow(l){const site=String(l.site||''),user=String(l.username||''),on=savedOn(l.saved_at);
  return `<div class="saved-login"><span class="login-mark" aria-hidden="true">${esc((site.replace(/^www\./,'')[0]||'?').toUpperCase())}</span><span class="grow"><strong title="${esc(site)}">${esc(site)}</strong>${user?`<span class="login-user" title="${esc(user)}">${esc(user)}</span>`:''}<small class="login-pass">${l.password_saved?LOCK:''}<span>${l.password_saved?'Password saved':'No password saved'}${on?` · ${esc(on)}`:''}</span></small></span><button type="button" class="quiet" data-forget-login="${esc(site)}" aria-label="Forget ${esc(site)}">Forget</button></div>`}
 async function savedLogins(){try{const r=await signinPost('browser_logins',{}),logins=Array.isArray(r.logins)?r.logins:[];if(savedLoginCount!==logins.length){savedLoginCount=logins.length;renderHealthTabs()}
@@ -6449,7 +6460,7 @@ function ncDue(text,today=new Date()){const t=String(text||'').trim().toLowerCas
  m=/^(\d{1,2})[/.](\d{1,2})$/.exec(t);if(m)return dm(+m[1],+m[2]-1);
  return null}
 const ncISO=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-const ncRead=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}).replace(',','');
+const ncRead=d=>d.toLocaleDateString(DL,{weekday:'short',day:'numeric',month:'short'});
 function ncDialog(){let d=$('#new-card');if(d)return d;d=document.createElement('dialog');d.id='new-card';d.setAttribute('aria-labelledby','new-card-title');
  d.innerHTML=`<form method="dialog"><div class="snooze-heading"><h2 id="new-card-title">New card</h2><button aria-label="Close">×</button></div></form><div class="chat-box"><textarea id="nc-text" rows="2" aria-label="What needs doing?" placeholder="What needs doing?" maxlength="2000" enterkeyhint="done"></textarea><div class="chat-tools"><button type="button" class="chat-send" id="nc-add" aria-label="Add the card" title="Add the card" disabled>${SEND}</button></div></div><div class="nc-chips" id="nc-chips" role="group" aria-label="Optional"></div><div class="nc-pick" id="nc-pick" hidden></div><p class="nc-error" id="nc-error" role="alert"></p><p class="nc-foot"><span>Nothing is sent. I’ll fill in the rest.</span><span class="nc-keys">Enter adds it</span></p>`;
  document.body.append(d);
@@ -6467,7 +6478,7 @@ function ncChips(){const due=nc.due?`<button type="button" class="set" data-nc="
  $('#nc-chips').innerHTML=[['work','Work'],['personal','Personal']].map(([k,t])=>`<button type="button" data-nc="${k}" aria-pressed="${nc.scope===k}">${t}</button>`).join('')+due
   +set('about',nc.about,x=>x.name)+(nc.about.length<5?`<button type="button" data-nc="about" aria-expanded="${nc.pick==='about'}">Person</button>`:'')
   +set('attach',nc.attach,x=>x.title||'Email')+(nc.attach.length<5?`<button type="button" data-nc="attach" aria-expanded="${nc.pick==='attach'}">Email</button>`:'')}
-const NC_PICK={due:['When is it due?','Friday, in 2 weeks, 24 Oct'],about:['Link a person','A name or a company'],attach:['Attach an email','Search your emails']};
+const NC_PICK={due:['When is it due?','Friday, in 2 weeks, Oct 24'],about:['Link a person','A name or a company'],attach:['Attach an email','Search your emails']};
 function ncPick(k){nc.pick=k;nc.hits=[];const box=$('#nc-pick');if(!box)return;ncChips();if(!k){box.hidden=true;box.innerHTML='';return}
  box.hidden=false;box.innerHTML=`<input id="nc-find" type="search" autocomplete="off" aria-label="${NC_PICK[k][0]}" placeholder="${NC_PICK[k][1]}"><p class="nc-read" id="nc-read" aria-live="polite"></p><ul class="nc-hits" id="nc-hits"></ul>`;
  const f=$('#nc-find');f.focus();

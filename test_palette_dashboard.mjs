@@ -162,6 +162,14 @@ try{
   assert.equal(await page.locator('#pal-q').getAttribute('placeholder'),'Search or type a command');
   const all=await labels(page);for(const l of ['New card','Calendar','People','Settings','Keyboard shortcuts'])assert.ok(all.includes(l),'reachable from the palette: '+l);
   const b=await pal(page).boundingBox();assert.ok(b.x>=0&&b.x+b.width<=390.5,'fits');
+  // The sheet sits under the top bar, which stays in sight; with the keyboard open (a shorter window, as Android
+  // Chrome makes it) it shrinks to what is left and the field stays at the top, under the bar
+  const under=()=>page.evaluate(()=>{const t=document.querySelector('#topbar').getBoundingClientRect(),p=document.querySelector('#palette').getBoundingClientRect(),q=document.querySelector('#pal-q').getBoundingClientRect();
+   return {bar:[t.top,t.bottom],top:p.top,bottom:p.bottom,field:q.top,h:innerHeight}});
+  {const u=await under();assert.ok(u.bar[0]===0&&u.top>=u.bar[1]-1&&u.top<=u.bar[1]+2,'the sheet starts under the top bar '+JSON.stringify(u));assert.ok(u.bottom<=u.h,'and ends on the screen '+JSON.stringify(u))}
+  await page.setViewportSize({width:390,height:430});await page.waitForTimeout(300);
+  {const u=await under();assert.ok(u.bar[0]===0&&u.top>=u.bar[1]-1,'the top bar stays with the keyboard open '+JSON.stringify(u));assert.ok(u.bottom<=u.h,'the sheet fits above the keyboard '+JSON.stringify(u));assert.ok(u.field>=u.bar[1]&&u.field<u.bar[1]+60,'the field right under the bar '+JSON.stringify(u))}
+  await page.setViewportSize({width:390,height:844});
   await page.locator('#pal-q').fill('cal');assert.equal((await labels(page))[0],'Calendar');await page.locator('#pal-list .pal-item').first().tap();assert.equal(await tab(page),'calendar');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await context.close()}

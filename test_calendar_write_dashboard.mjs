@@ -55,6 +55,8 @@ const open=async(width,height,scheme='dark')=>{const mobile=width<600;
  const page=await context.newPage();page.on('pageerror',e=>errors.push(width+': '+e.message));
  await page.goto(base);await page.locator('#task-'+sid).waitFor();return {context,page}};
 const showCal=async page=>{await page.evaluate(()=>showTab('calendar'));await page.locator('#calendar-view .cal-item').first().waitFor();await page.waitForFunction(()=>!document.querySelector('#calendar-view').textContent.includes('Loading'))};
+// New event: the header's button on a computer, the top bar's + menu on a phone or tablet
+const newEvent=async page=>{if(await page.locator('[data-cal-new]').isVisible())await page.locator('[data-cal-new]').click();else{await page.locator('#new-card-top').click();await page.locator('#new-menu [data-new-what="event"]').click()}};
 const wait=async(page,f)=>{for(let i=0;i<150&&!f();i++)await page.waitForTimeout(20)};
 const fits=page=>page.evaluate(()=>[...document.querySelectorAll('#cal-dialog *')].filter(e=>e.getBoundingClientRect().right>innerWidth+.5).length+(document.documentElement.scrollWidth>innerWidth?1:0)).then(n=>assert.equal(n,0,'the form fits'));
 try{
@@ -79,14 +81,15 @@ try{
   assert.equal(writes().length,0,'a card change runs through its approval, not the form');
   // The Calendar: New event with a picker of the calendars that can be changed
   await showCal(page);calls=[];
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.querySelector('[data-cal-new]').getBoundingClientRect().right<=innerWidth),'the Calendar fits at '+width);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.querySelector('#page-head').getBoundingClientRect().right<=innerWidth),'the Calendar fits at '+width);
+  assert.equal(await page.locator('[data-cal-new]').isVisible(),width>=1024,'New event in the header only on a computer; the top bar has it on a phone');
   // The header "+" menu has New event too, first on the Calendar, and it opens the same form
   if(await page.locator('#new-card-top').isVisible()){await page.locator('#new-card-top').click();await page.locator('#new-menu:not([hidden])').waitFor();
    assert.equal(await page.locator('#new-menu button').first().textContent(),'New event');
    if(shots)await page.screenshot({path:`${shots}/calendar-plus-menu-${width}-${scheme}.png`});
    await page.locator('#new-menu [data-new-what="event"]').click();await page.locator('#cal-dialog').waitFor({state:'visible'});
    assert.equal(await page.locator('#cal-dlg-title').textContent(),'New event');await page.locator('#cal-dialog [data-cal-close]').first().click()}
-  await page.locator('[data-cal-new]').click();await page.locator('#cal-dialog').waitFor({state:'visible'});
+  await newEvent(page);await page.locator('#cal-dialog').waitFor({state:'visible'});
   assert.equal(await page.locator('#cal-dlg-title').textContent(),'New event');
   assert.deepEqual(await page.locator('#cal-f-cal option').allTextContents(),['owner@example.com','Kid’s calendar']);
   await page.locator('#cal-f-cal').selectOption('kid');
@@ -100,7 +103,7 @@ try{
   assert.deepEqual({...made,request_id:0},{request_id:0,op:'create',calendar:'kid',title:'Pick-up from daycare',location:'Daycare',notes:'',all_day:false,start:local(at(3,16)),end:local(at(3,16,30))});
   assert.match(await page.locator('#toast').textContent(),/^Added to Kid’s calendar\.$/);
   // Next time the picker starts on the same calendar
-  await page.locator('[data-cal-new]').click();assert.equal(await page.locator('#cal-f-cal').inputValue(),'kid');await page.locator('#cal-dialog [data-cal-close]').first().click();
+  await newEvent(page);assert.equal(await page.locator('#cal-f-cal').inputValue(),'kid');await page.locator('#cal-dialog [data-cal-close]').first().click();
   // An event there without guests opens the editor; Save sends only what changed
   calls=[];const swim=page.locator('#calendar-view [data-cal-edit="201"]').first();assert.match(await swim.textContent(),/Swimming/);
   await swim.click();await page.locator('#cal-dialog').waitFor({state:'visible'});
@@ -130,7 +133,7 @@ try{
   await page.locator('#cal-dialog [type="submit"]').click();await page.locator('#cal-dialog').waitFor({state:'hidden'});
   assert.deepEqual({...writes()[0].args,request_id:0},{request_id:0,op:'update',event:206,title:'Overnight visit confirmed'});
   // Where: suggestions a moment after typing (one lookup for the whole word), picking one fills the address
-  calls=[];lookups=[];await page.locator('[data-cal-new]').click();await page.locator('#cal-dialog').waitFor({state:'visible'});
+  calls=[];lookups=[];await newEvent(page);await page.locator('#cal-dialog').waitFor({state:'visible'});
   await page.locator('#cal-f-cal').selectOption('kid');assert.ok(await page.locator('#cal-f-invite-wrap').isHidden(),'no invites from a shared calendar');
   await page.locator('#cal-f-cal').selectOption('cal');assert.ok(await page.locator('#cal-f-invite-wrap').isVisible());
   assert.equal(await page.locator('#cal-f-fine').textContent(),'Nobody is invited.');assert.equal(await page.locator('#cal-f-save').textContent(),'Add');
@@ -173,7 +176,7 @@ try{
   await page.locator('#cal-dialog [type="submit"]').click();await wait(page,()=>writes().length);await page.locator('#cal-dialog').waitFor({state:'hidden'});
   const invited=writes()[0].args;assert.deepEqual([invited.calendar,invited.location,invited.guests,invited.invite],['cal','At the office',['sam@acme.example','kim@example.org'],2]);
   // A fresh form starts with nobody invited
-  await page.locator('[data-cal-new]').click();assert.equal(await page.locator('#cal-f-guests .cal-chip').count(),0);assert.equal(await page.locator('#cal-f-save').textContent(),'Add');
+  await newEvent(page);assert.equal(await page.locator('#cal-f-guests .cal-chip').count(),0);assert.equal(await page.locator('#cal-f-save').textContent(),'Add');
   await page.locator('#cal-dialog [data-cal-close]').first().click();
   // Editing an event on the owner's calendar can invite people; one on a shared calendar can't
   calls=[];await page.locator('#calendar-view [data-cal-edit="205"]').first().click();await page.locator('#cal-dialog').waitFor({state:'visible'});
@@ -186,10 +189,13 @@ try{
   await page.locator('#cal-dialog').waitFor({state:'hidden'});
   await page.locator('#calendar-view [data-cal-edit="201"]').first().click();assert.ok(await page.locator('#cal-f-invite-wrap').isHidden(),'Kid’s calendar: no invites');
   await page.locator('#cal-dialog [data-cal-close]').first().click();
-  // The header: on a phone New event is a round + on the Today row, and nothing there overlaps
-  const top=await page.evaluate(()=>{const r=s=>document.querySelector(s).getBoundingClientRect();const n=r('[data-cal-new]'),g=r('.cal-range'),t=r('.cal-today');
-   return {w:n.width,gap:n.left-g.right,row:Math.abs((n.top+n.height/2)-(g.top+g.height/2)),today:Math.abs((t.top+t.height/2)-(g.top+g.height/2)),edge:getComputedStyle(document.querySelector('#page-head')).boxShadow}});
-  if(width<600){assert.ok(top.w<=40,"a round +");assert.ok(top.gap>=8,"room between the range and +: "+top.gap);assert.ok(top.row<4&&top.today<4,"one row "+JSON.stringify(top))}
+  // The header: on a computer New event is a quiet button at the end; on a phone two short rows (Calendar and the
+  // view; ‹ › the range and Today), nothing overlapping, no big round +
+  const top=await page.evaluate(()=>{const r=s=>document.querySelector(s).getBoundingClientRect(),mid=x=>x.top+x.height/2;const t=r('#page-head .page-title'),m=r('.cal-mode'),g=r('.cal-range'),d=r('.cal-today'),p=r('.cal-step');
+   return {title:Math.abs(mid(t)-mid(m)),nav:Math.max(Math.abs(mid(g)-mid(d)),Math.abs(mid(g)-mid(p))),order:[p.left<g.left,g.right<=d.left],head:document.querySelector('#page-head').offsetHeight,
+    newBg:getComputedStyle(document.querySelector('[data-cal-new]')).backgroundColor,edge:getComputedStyle(document.querySelector('#page-head')).boxShadow}});
+  if(width<600){assert.ok(top.title<4&&top.nav<4,'two rows '+JSON.stringify(top));assert.deepEqual(top.order,[true,true],'‹ › then the range, Today at the end');assert.ok(top.head<=110,'a compact header: '+top.head)}
+  else assert.equal(top.newBg,'rgba(0, 0, 0, 0)','New event is a quiet button, not a filled one');
   assert.notEqual(top.edge,'none','the sticky header has an edge');
   // Meetings with guests and read-only shared calendars: no editor, they open in their calendar
   for(const t of ['Quarterly planning','Away']){const row=page.locator('#calendar-view .cal-item',{hasText:t}).first();assert.equal(await row.getAttribute('data-cal-edit'),null,t);assert.equal(await row.getAttribute('target'),'_blank',t)}

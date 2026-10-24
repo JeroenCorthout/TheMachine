@@ -70,7 +70,7 @@ try{
   const rows=await page.locator('nav button[data-tab]').evaluateAll(b=>b.map(x=>x.dataset.tab));assert.equal(rows[1],'calendar');
   await page.locator('nav [data-tab="calendar"]').click();await showCal(page);
   assert.equal(await page.locator('#page-head .page-title').textContent(),'Calendar');
-  assert.match(await page.locator('#page-head .cal-range').textContent(),/^\d{1,2}( \w{3})? – \d{1,2} \w{3} \d{4}$/);
+  assert.match(await page.locator('#page-head .cal-range').textContent(),/^\w{3} \d{1,2} – (\w{3} )?\d{1,2}, \d{4}$/,'US English: Oct 19 – 25, 2026');
   // Meetings come a calendar week per ask, Monday midnight to Monday midnight with time zones, this week and the next
   const monday=n=>{const d=at(0,0);d.setDate(d.getDate()-(d.getDay()+6)%7+7*n);return d.getTime()};
   for(const ask of calendarAsks){const a=new Date(ask.from),b=new Date(ask.to);assert.equal(a.getHours()+a.getMinutes()+b.getHours()+b.getMinutes(),0);assert.equal(a.getDay(),1);assert.equal(b.getDay(),1)}
@@ -134,6 +134,10 @@ try{
   await row.click();await showCal(page);assert.equal(await page.evaluate(()=>document.documentElement.dataset.drawer||''),'','picking it closes the drawer');
   assert.equal(await page.locator('.cal-mode [aria-pressed="true"]').textContent(),'Agenda','the agenda by default at '+width);
   assert.equal(await page.locator('.cal-tg').count(),0);await fits(page,'agenda '+width);
+  // A phone's header: two short rows (Calendar and the view; ‹ › the range and Today), Earlier days a quiet line
+  if(width<600){const h=await page.evaluate(()=>{const r=s=>document.querySelector(s).getBoundingClientRect(),mid=x=>x.top+x.height/2,t=r('#page-head .page-title'),m=r('.cal-mode'),g=r('.cal-range'),d=r('.cal-today'),p=r('.cal-step'),up=document.querySelector('[data-cal-more="up"] button');
+    return {title:Math.abs(mid(t)-mid(m)),nav:Math.max(Math.abs(mid(g)-mid(d)),Math.abs(mid(g)-mid(p))),head:document.querySelector('#page-head').offsetHeight,up:up&&[getComputedStyle(up).backgroundColor,up.getBoundingClientRect().height]}});
+   assert.ok(h.title<4&&h.nav<4&&h.head<=110,'a compact two-row header '+JSON.stringify(h));if(h.up)assert.ok(h.up[0]==='rgba(0, 0, 0, 0)'&&h.up[1]<=30,'Earlier days is a quiet line '+JSON.stringify(h))}
   if(width<=390){const t=await page.locator('.cal-item .cal-title').first().evaluate(e=>getComputedStyle(e).textOverflow);assert.equal(t,'ellipsis')}
   // On a phone the meeting's card says so in its line
   if(width<=560)assert.match(await page.locator('a.cal-item',{hasText:'Pilot review'}).locator('.cal-sub').textContent(),/^Prep ready · /);

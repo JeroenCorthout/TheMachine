@@ -75,7 +75,7 @@ try{
  assert.deepEqual(calls.at(-1),{action:'fleet_split_adjust',args:{id:'q_'+'2'.repeat(16),text:'Send pricing on Friday'}});
  // A follow-up split to send: the meeting and its day, one row per person, Send the split first.
  const proposal=page.locator('#suggestions .fleet-split-form');
- assert.match(await page.locator('#fleet-split-out\\:'+'k'.repeat(64)+' h3').innerText(),/Deal review Tue 20 Oct/);
+ assert.match(await page.locator('#fleet-split-out\\:'+'k'.repeat(64)+' h3').innerText(),/Deal review Tue, Oct 20/);
  assert.deepEqual(await proposal.locator('.split-who').allInnerTexts(),['You','Pat']);
  assert.deepEqual(await proposal.locator('.actions>button').allInnerTexts(),['Send the split','Not needed']);
  // Filled in from the meeting's Zoom notes: a suggestion to check, the suggested part marked, still sent only by the owner

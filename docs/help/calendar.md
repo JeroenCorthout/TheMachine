@@ -31,7 +31,7 @@ Click a row to open its card's chat, the promise, or the meeting in its own cale
 
 ## Add or change an event
 
-When a calendar can be changed from here, **New event** adds one (on a phone it's the round **+**): pick the calendar, a title and the time. Click an event without guests on that calendar to change it, or **Delete** it (tap twice).
+When a calendar can be changed from here, **New event** adds one (on a phone it's under **+** in the top bar): pick the calendar, a title and the time. Click an event without guests on that calendar to change it, or **Delete** it (tap twice).
 
 **Where** suggests places as you type: ones you used before and your organizations first, then addresses from [OpenStreetMap](https://www.openstreetmap.org) through Photon, a free map search. Your Machine asks it, with only the words you typed. Pick one or keep your own text.
 

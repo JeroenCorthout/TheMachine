@@ -66,7 +66,7 @@ They're listed under **Websites**, each with **Split off** to undo it. Later edi
 
 ## Add someone or an organization
 
-**New person** at the top of People, **New organization** at the top of Organizations, or **+** in the top bar on a phone. Give a name, and for a person an email and organization if you have them; for an organization, its website. When someone like it is already in your Graph, the form shows them first, so you can open that one instead. **Add** opens the new page.
+**New person** at the top of People, **New organization** at the top of Organizations, or, on a phone, **+** in the top bar. Give a name, and for a person an email and organization if you have them; for an organization, its website. When someone like it is already in your Graph, the form shows them first, so you can open that one instead. **Add** opens the new page.
 
 Someone you add stays, also with no messages yet. Their first message joins them. An organization you added can be deleted from its **⋯** menu while nobody is in it.
 

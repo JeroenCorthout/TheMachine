@@ -41,9 +41,16 @@ try{
   const click=sel=>mobile?page.locator(sel).first().tap():page.locator(sel).first().click();
   await page.evaluate(()=>document.querySelector('nav [data-tab="people"]').click());await page.locator('#people-view').waitFor({state:'attached'});
   await page.evaluate(()=>document.querySelector('[data-graph-sub="people"]').click());
-  // People: + New person in the head; a look-alike first; clicking it opens that person instead
-  const head='#page-head [data-graph-new="person"]';await page.locator(head).waitFor();await fits(page,'people '+tag);await shot(page,`people-head-${tag}`);
-  await click(head);await page.locator('#record-dialog[open]').waitFor();assert.equal(await page.locator('#record-dialog-title').textContent(),'New person');
+  // People: + New person in the head on a computer (a phone has it in the top bar's +); a look-alike first; clicking
+  // it opens that person instead
+  const plus=async what=>{await click('#new-card-top');await page.locator('#new-menu:not([hidden])').waitFor();await click(`#new-menu [data-new-what="${what}"]`)};
+  const head='#page-head [data-graph-new="person"]';await page.locator(head).waitFor({state:'attached'});await fits(page,'people '+tag);await shot(page,`people-head-${tag}`);
+  assert.equal(await page.locator(head).isVisible(),!mobile,'the head has New person only on a computer');
+  // A phone's Graph head: the title and its count on the left, any switches beside it on the same line, nothing wrapped
+  if(mobile){const h=await page.evaluate(()=>{const r=s=>document.querySelector(s)?.getBoundingClientRect(),t=r('#page-head .page-title'),m=r('#page-head .head-modes'),c=document.querySelector('#page-head .page-sub');
+   return {row:m&&m.height?Math.abs((m.top+m.height/2)-(t.top+t.height/2)):0,sub:c?c.getBoundingClientRect().height:0,line:c?parseFloat(getComputedStyle(c).lineHeight)||20:20}});
+   assert.ok(h.row<24,'switches beside the title '+JSON.stringify(h));assert.ok(h.sub<=h.line*1.5,'the count on one line '+JSON.stringify(h))}
+  if(mobile)await plus('person');else await click(head);await page.locator('#record-dialog[open]').waitFor();assert.equal(await page.locator('#record-dialog-title').textContent(),'New person');
   await page.locator('#record-form [name="name"]').fill('Ada');await page.locator('#record-form [data-rec-open="person:a"]').waitFor();
   assert.equal(await page.locator('#record-form [data-rec-dupes] p').textContent(),'Already in your Graph?');await fits(page,'new person '+tag);await shot(page,`new-person-dupe-${tag}`);
   await click('#record-form [data-rec-open="person:a"]');await page.locator('#record-dialog[open]').waitFor({state:'detached'});
@@ -75,9 +82,9 @@ try{
   assert.ok(await page.locator('#people-view [data-org-delete]').isVisible());await click('#people-view [data-card-here]');await page.locator('#new-card').waitFor();
   assert.deepEqual(await page.evaluate(()=>nc.about),[{id:'org:named:corner-bakery',name:'Corner Bakery'}]);await page.keyboard.press('Escape');
   // Organizations and projects heads; New project opens the project dialog
-  await page.evaluate(()=>{graphBack('orgs')});await page.locator('#page-head [data-graph-new="org"]').waitFor();
+  await page.evaluate(()=>{graphBack('orgs')});await page.locator('#page-head [data-graph-new="org"]').waitFor({state:'attached'});
   await page.evaluate(()=>{sideStore.set('projects-view','list');document.querySelector('[data-graph-sub="projects"]').click()});
-  await click('#page-head [data-graph-new="project"]');await page.locator('#project-dialog[open]').waitFor();await fits(page,'new project '+tag);await shot(page,`new-project-${tag}`);
+  if(mobile)await plus('project');else await click('#page-head [data-graph-new="project"]');await page.locator('#project-dialog[open]').waitFor();await fits(page,'new project '+tag);await shot(page,`new-project-${tag}`);
   await page.keyboard.press('Escape');await page.locator('#project-dialog[open]').waitFor({state:'detached'});
   // A board shows its own New project, not a second one in the head
   await page.evaluate(()=>projectsViewSet('board'));assert.equal(await page.locator('#page-head [data-graph-new]').count(),0);

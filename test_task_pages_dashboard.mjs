@@ -38,7 +38,7 @@ try{
  await c.locator('[data-tp-add]').click();
  // The approve step: exactly what the page shows, the never-shared line, the days, Add to email / Cancel
  const a=c.locator('.tp-approve');await a.waitFor();
- assert.match(await a.locator('.tp-mini').innerText(),/Sam shared a task with you[\s\S]*Send the signed venue contract[\s\S]*Due Sat 31 Oct[\s\S]*back by Friday/);
+ assert.match(await a.locator('.tp-mini').innerText(),/Sam shared a task with you[\s\S]*Send the signed venue contract[\s\S]*Due Sat, Oct 31[\s\S]*back by Friday/);
  assert.match(await a.innerText(),/Never shared: the email thread, your notes or other cards\./);
  assert.equal(await a.locator('[role=radio][aria-checked=true]').innerText(),'14');
  assert.equal(await c.locator('[data-choice="send"],.actions>button.primary:not([data-tp-share])').count(),0);  // no Send while approving
@@ -49,7 +49,7 @@ try{
  await c.locator('[data-tp-share]').click();
  await c.locator('.tp-shared').waitFor();
  assert.deepEqual(calls.at(-1),{action:'task_page_share',args:{suggestion_id:'c1',leave_out:['due'],days:7}});
- assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri 30 Oct\s*·\s*Stop sharing$/);  // one quiet row, no Mark done of its own
+ assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri, Oct 30\s*·\s*Stop sharing$/);  // one quiet row, no Mark done of its own
  assert.equal(await c.locator('[data-tp-done]').count(),0);
  assert.match(await c.locator('.draft').first().innerText(),/Status and replies: https:\/\/app\.example\.test\/t\//);
  // An answer from the page: quoted, as text, never markup
@@ -67,12 +67,12 @@ try{
  assert.equal(await c.locator('.tp-lead').innerText(),'alex@other.example is on it: “Signing tomorrow.”');
  assert.doesNotMatch(await c.innerText(),/Read it, change it|Email sent/);
  const sent=c.locator('details.tp-sent');
- assert.match(await sent.locator('summary').innerText(),/^Sent to alex@other\.example · Fri 23 Oct\s*›$/);
+ assert.match(await sent.locator('summary').innerText(),/^Sent to alex@other\.example · Fri, Oct 23\s*›$/);
  assert.equal(await sent.evaluate(x=>x.open),false);
  assert.equal(await c.locator('.tp-reply').count(),0);  // the latest answer leads the card, not repeated below
  await sent.locator('summary').click();
  assert.match(await sent.innerText(),/Could you take this on\?/);
- assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri 30 Oct\s*·\s*Stop sharing$/);
+ assert.match(await c.locator('.tp-shared').innerText(),/^Task page until Fri, Oct 30\s*·\s*Stop sharing$/);
  // Back in Ready after Can't do this: same calm card, with its Ready buttons
  card.task_page.answers.push({answer:'cant',note:'Out until Monday.',at:'2026-10-25'});card.task_page.lead='alex@other.example can’t do this: “Out until Monday.”';
  Object.assign(card,{status:'prepared'});state.suggestion_counts={prepared:1};
