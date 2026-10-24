@@ -3,7 +3,7 @@ title: The Graph
 area: graph
 summary: The people, organizations and projects in your messages, kept up to date by themselves.
 covers: tab:people
-code: graph.py, crm.py, crm_import.py, crm_fields.py, enrichment.py, dashboard.html
+code: graph.py, crm.py, crm_import.py, crm_fixes.py, crm_fields.py, enrichment.py, dashboard.html
 order: 1
 ---
 Your Machine builds a map of who you deal with and what's going on, from your messages, meetings and decisions. Nothing to set up, and it stays on your Machine.
@@ -44,7 +44,13 @@ In a Work Fleet, each person, organization and project has an owner: **Owner** u
 
 ## Import a spreadsheet
 
-**Import CSV…**, under the order menu of People, Organizations or Projects, adds a spreadsheet saved as CSV. Your Machine guesses which column is which; change any of them.
+**Import CSV…**, under the order menu of People, Organizations or Projects, adds a spreadsheet saved as CSV. Your Machine guesses which column is which from the headers and what is in them; change any of them.
+
+When your model can run, it checks the columns too, in any language and however the headers are spelled, with a short reason where it isn't sure. It sees only the headers, a few values per column and the cells the rules couldn't read, on your Machine like a review. Without it, the guess from the headers stands.
+
+**Review**, next to the fixes suggested, lists easy fixes as before and after: extra spaces, names in capitals, phone numbers in international form, email typos (gmial.com), websites as their domain, dates and values in any format ("€12k" is 12000), several tags in one cell, a stage spelled differently from the board's, and the same row twice.
+
+Untick a kind or a single row to leave it as it is. Nothing is fixed unless it's ticked.
 
 The preview shows each row as new, matching one already in your Graph, or skipped, with why. A match is the same email for a person (else the same name at the same organization), the same website or name for an organization, and the same name for a project.
 

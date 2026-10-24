@@ -651,6 +651,14 @@ span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:col
 .crm-count{margin:0;font-size:var(--fs-sm);color:var(--c-text-2)}.crm-count b{color:var(--text)}
 .crm-cols{display:grid;gap:8px;max-height:38vh;overflow:auto}.crm-col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--c-line);border-radius:var(--r-sm)}.crm-col b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.crm-col small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-3)}.crm-col select{width:100%;margin:0}
 .crm-rows{margin:0;padding:0;list-style:none;display:grid;gap:4px;max-height:30vh;overflow:auto;font-size:var(--fs-sm)}.crm-rows li{display:flex;gap:8px;align-items:baseline;min-width:0}.crm-rows li span.n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.crm-rows .st{flex:none;color:var(--c-text-3)}.crm-rows .st.new{color:var(--c-green,#2e7d32)}.crm-rows .st.skip{color:var(--c-orange)}
+.crm-col .crm-why{grid-column:1/-1;white-space:normal;color:var(--c-text-2)}
+.crm-ai{display:flex;align-items:center;gap:8px;margin:0;font-size:var(--fs-sm);color:var(--c-text-2)}.crm-ai.run::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--mint);animation:backfill-pulse 1.6s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.crm-ai.run::before{animation:none}}
+.crm-problem{margin:0;font-size:var(--fs-sm);color:var(--c-orange)}
+.crm-fixline{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:0;font-size:var(--fs-sm);color:var(--c-text-2)}.crm-fixline b{color:var(--text)}.crm-fixline button.link{min-height:0;padding:0 2px;border:0;background:none;box-shadow:none;color:var(--text);text-decoration:underline;font:inherit}
+.crm-fixes{display:grid;gap:6px;max-height:40vh;overflow:auto;font-size:var(--fs-sm)}.crm-fixtype{border:1px solid var(--c-line);border-radius:var(--r-sm);padding:6px 10px}.crm-fixtype>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;min-height:32px}.crm-fixtype>summary::-webkit-details-marker{display:none}
+.crm-fixtype>summary span{flex:1;min-width:0;font-weight:600}.crm-fixtype>summary small{color:var(--c-text-3);font-weight:400}
+.crm-fixtype ul{margin:4px 0 2px;padding:0;list-style:none;display:grid;gap:4px}.crm-fixtype li label{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px;align-items:baseline}.crm-fixtype li input{margin:0}.crm-fixtype .ba{overflow-wrap:anywhere}.crm-fixtype .ba s{color:var(--c-text-3)}.crm-fixtype li small{grid-column:2;color:var(--c-text-3)}
+.crm-fixtype input[type=checkbox]{width:16px;height:16px;flex:none}
 .owner-pick select{max-width:100%;margin:0}.tile-owner.mine-hide{display:none}
 .org-sites li{display:flex;align-items:center;gap:8px;min-height:34px}.org-sites ul{margin:4px 0 0;padding:0;list-style:none}.org-sites li span{flex:1;min-width:0;overflow-wrap:anywhere}
 .ge-change .ge-dot{flex:none;width:28px;display:grid;place-items:center;color:var(--c-text-3)}
@@ -5937,19 +5945,35 @@ function crmFilterOpen(pane){const f=crmF(pane);crm={mode:'filter',pane};const b
   +(by?'<p class="ed-note">Board, stage, value and close date go by their open projects.</p>':'')
   +crmFoot('Show results','<button type="button" class="ghost" data-crm-clear-all>Clear all</button>');
  crmShow()}
-async function crmImportOpen(pane){crm={mode:'import',kind:pane==='projects'?'project':pane==='orgs'?'org':'person',text:'',name:'',mapping:null,seen:null};crmImportDraw()}
-function crmImportDraw(){const c=crm,s=c.seen,n=s?s.counts.new+s.counts.match:0,STATUS={new:'New',match:'Matches',skip:'Skipped'};
+async function crmImportOpen(pane){crm={mode:'import',kind:pane==='projects'?'project':pane==='orgs'?'org':'person',text:'',name:'',mapping:null,seen:null,check:null,own:false,typeOff:new Set(),fixOff:new Set(),fixOpen:false};crmImportDraw()}
+const CRM_FIX_TYPES=['spaces','case','split','email','phone','website','date','value','tags','stage','merge'];
+const crmFixArgs=c=>({fixes:{types:c.typeOff.size?CRM_FIX_TYPES.filter(t=>!c.typeOff.has(t)):'all',off:[...c.fixOff]},...(c.check?.state==='done'?{ai_run:c.check.id}:{})});
+function crmKept(s,c){const on=(s.fix_types||[]).filter(t=>!c.typeOff.has(t.type));return on.reduce((n,t)=>n+t.count,0)-(s.fixes||[]).filter(f=>c.fixOff.has(f.id)&&!c.typeOff.has(f.type)).length}
+function crmFixesHtml(s,c){const by={};for(const f of s.fixes||[])(by[f.type]=by[f.type]||[]).push(f);
+ return `<fieldset><legend>Fixes</legend><div class="crm-fixes">${(s.fix_types||[]).map(t=>`<details class="crm-fixtype"${c.fixOpen===t.type?' open':''} data-type="${t.type}"><summary><input type="checkbox" data-crm-fixtype="${t.type}" aria-label="${esc(t.name)}"${c.typeOff.has(t.type)?'':' checked'}><span>${esc(t.name)} <small>${t.count}</small></span></summary><ul>${(by[t.type]||[]).map(f=>`<li><label><input type="checkbox" data-crm-fix="${esc(f.id)}"${c.typeOff.has(t.type)?' disabled':''}${c.fixOff.has(f.id)?'':' checked'}><span class="ba"><s>${esc(f.before)}</s> → ${esc(f.after)}</span><small>Line ${f.line}${f.field==='row'?'':' · '+esc(f.field_name)}${f.ai?' · your model':''}${f.why?': '+esc(f.why):''}</small></label></li>`).join('')}${(by[t.type]||[]).length<t.count?`<li><small>and ${t.count-(by[t.type]||[]).length} more like these</small></li>`:''}</ul></details>`).join('')}</div></fieldset>`}
+function crmImportDraw(){const c=crm,s=c.seen,n=s?s.counts.new+s.counts.match:0,STATUS={new:'New',match:'Matches',skip:'Skipped'},kept=s?crmKept(s,c):0,ck=c.check?.state;
  $('#crm-form').innerHTML=crmHead('Import CSV')
   +`<div class="ed-row3"><label class="ed-field">What is in it<select name="kind">${opt('person','People',c.kind==='person')}${opt('org','Organizations',c.kind==='org')}${opt('project','Projects',c.kind==='project')}</select></label><label class="ed-field">File<input name="file" type="file" accept=".csv,.tsv,.txt,text/csv"></label></div>`
   +(c.name?`<p class="ed-note">${esc(c.name)}</p>`:'<p class="ed-note">A spreadsheet saved as CSV, with a row of headers. It stays on your Machine.</p>')
-  +(s?`<p class="crm-count"><b>${s.counts.new}</b> new · <b>${s.counts.match}</b> match existing · <b>${s.counts.skip}</b> skipped</p>`
-   +`<fieldset><legend>Columns</legend><div class="crm-cols">${s.columns.map(col=>`<div class="crm-col"><span><b title="${esc(col.header)}">${esc(col.header)}</b><small>${esc(col.samples.join(' · ')||'empty')}</small></span><select data-crm-col="${col.index}" aria-label="${esc(col.header)} goes to">${opt('','Skip',!col.field)}${s.fields.map(f=>opt(f.id,f.name,col.field===f.id)).join('')}</select></div>`).join('')}</div></fieldset>`
-   +`<fieldset><legend>Rows${s.total>s.rows.length?` (first ${s.rows.length} of ${s.total})`:''}</legend><ul class="crm-rows">${s.rows.map(r=>`<li><span class="n">${esc(r.record.name||r.record.email||'(no name)')}</span><span class="st ${r.status}">${STATUS[r.status]}${r.status==='match'&&r.match_name?' '+esc(r.match_name):''}${r.status==='skip'?': '+esc(r.why||''):''}</span></li>`).join('')}</ul></fieldset>`
+  +(ck==='checking'?'<p class="crm-ai run" role="status">Your model is checking the columns…</p>':ck==='done'&&s?.ai?'<p class="crm-ai" role="status">Checked by your model. Change anything below.</p>':ck==='failed'?'<p class="crm-ai" role="status">Your model couldn’t check it this time; the columns are guessed from their headers.</p>':'')
+  +(s?(s.problem?`<p class="crm-problem">${esc(s.problem)}.</p>`:`<p class="crm-count"><b>${s.counts.new}</b> new · <b>${s.counts.match}</b> match existing · <b>${s.counts.skip}</b> skipped</p>`)
+   +(s.fix_total?`<p class="crm-fixline"><span><b>${s.fix_total} ${s.fix_total===1?'fix':'fixes'} suggested</b>${kept!==s.fix_total?`, ${kept} kept`:''}</span>·<button type="button" class="link" data-crm-fixes aria-expanded="${!!c.fixOpen}">${c.fixOpen?'Hide':'Review'}</button></p>`+(c.fixOpen?crmFixesHtml(s,c):''):'')
+   +`<fieldset><legend>Columns</legend><div class="crm-cols">${s.columns.map(col=>`<div class="crm-col"><span><b title="${esc(col.header)}">${esc(col.header)}</b><small>${esc(col.samples.join(' · ')||'empty')}</small></span><select data-crm-col="${col.index}" aria-label="${esc(col.header)} goes to">${opt('','Skip',!col.field)}${s.fields.map(f=>opt(f.id,f.name,col.field===f.id)).join('')}</select>${col.reason?`<small class="crm-why">${esc(col.reason)}</small>`:''}</div>`).join('')}</div></fieldset>`
+   +(s.problem?'':`<fieldset><legend>Rows${s.total>s.rows.length?` (first ${s.rows.length} of ${s.total})`:''}</legend><ul class="crm-rows">${s.rows.map(r=>`<li><span class="n">${esc(r.record.name||r.record.email||'(no name)')}</span><span class="st ${r.status}">${STATUS[r.status]}${r.status==='match'&&r.match_name?' '+esc(r.match_name):''}${r.status==='skip'?': '+esc(r.why||''):''}</span></li>`).join('')}</ul></fieldset>`)
    +'<p class="ed-note">Matches get what the file says; empty cells change nothing. You can undo the last import.</p>':'')
-  +crmFoot(s?(n?`Import ${n}`:'Nothing to import'):'Import');
+  +crmFoot(s?(n?`Import ${n}${kept?` with ${kept} ${kept===1?'fix':'fixes'}`:''}`:'Nothing to import'):'Import');
  const ok=$('#crm-form button.primary');ok.disabled=!n;crmShow(!!s)}
 const crmUpload=(action,args)=>request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf,'X-Upload':'graph-import'},body:JSON.stringify({action,args})});
-async function crmPreview(){const c=crm;if(!c?.text)return;crmSay('');try{c.seen=await crmUpload('graph_import_preview',{kind:c.kind,text:c.text,...(c.mapping?{mapping:c.mapping}:{})});if(crm===c)crmImportDraw()}catch(x){c.seen=null;crmImportDraw();crmSay(x.message)}}
+async function crmPreview(){const c=crm;if(!c?.text)return;crmSay('');const seq=c.seq=(c.seq||0)+1;
+ try{const s=await crmUpload('graph_import_preview',{kind:c.kind,text:c.text,...(c.mapping?{mapping:c.mapping}:{}),...crmFixArgs(c)});if(crm===c&&seq===c.seq){c.seen=s;crmImportDraw()}}catch(x){if(seq!==c.seq)return;c.seen=null;crmImportDraw();crmSay(x.message)}}
+// The owner's own model looks at the columns and the cells the rules can't read (headers and a few values, on their
+// Machine); the rules' guess shows meanwhile, and stays when the model can't run now.
+async function crmCheck(){const c=crm;if(!c?.text)return;c.check=null;const key=c.kind+c.text;
+ try{const r=await crmUpload('graph_import_ai',{kind:c.kind,text:c.text});if(crm!==c||c.kind+c.text!==key||!r.ai)return;c.check={id:r.run_id,state:'checking'};crmImportDraw();
+  for(let i=0;i<120&&crm===c&&c.check?.id===r.run_id;i++){await new Promise(ok=>setTimeout(ok,i<10?1500:3000));if(crm!==c||c.check?.id!==r.run_id)return;
+   const st=await graphPost('graph_import_ai_status',{run_id:r.run_id});if(st.status==='starting'||st.status==='running')continue;
+   c.check.state=st.status==='ok'?'done':'failed';if(c.check.state==='done'&&!c.own)c.mapping=null;return c.check.state==='done'?crmPreview():crmImportDraw()}
+  if(crm===c&&c.check?.id===r.run_id){c.check.state='failed';crmImportDraw()}}catch{if(crm===c&&c.check?.state==='checking'){c.check.state='failed';crmImportDraw()}}}
 function crmOrgOpen(mode){const name=$('#people-view .graph-detail>.name-row h3')?.textContent||'';crm={mode,id:graphNode,name,found:new Map()};
  $('#crm-form').innerHTML=mode==='org-same'?crmHead('Same organization as…')+`<p class="ed-note">${esc(name)} and the one you pick become one organization, with their people, projects and notes. Split off undoes it.</p><label class="ed-field">Which organization?<input name="q" list="crm-orgs" placeholder="A name from your Graph" autocomplete="off" maxlength="100"></label><datalist id="crm-orgs"></datalist>`+crmFoot('Merge')
   :crmHead('Add a website')+`<p class="ed-note">One more website of ${esc(name)}, like its .io next to its .com. People with an address there join it.</p><label class="ed-field">Website<input name="website" inputmode="url" placeholder="acme.io" autocomplete="off" maxlength="200"></label>`+crmFoot('Add');
@@ -5958,14 +5982,19 @@ async function crmOrgSearch(q){const seq=crmOrgSearch.seq=(crmOrgSearch.seq||0)+
  const orgs=(r.found||[]).filter(n=>n.kind==='org'&&n.id!==crm.id);for(const o of orgs)crm.found.set(o.name.toLowerCase(),o.id);$('#crm-orgs').innerHTML=orgs.map(o=>`<option value="${esc(o.name)}">${esc(o.domain||'')}</option>`).join('')}catch{}}
 const crmAfter=async(id)=>{graphMineBoards=null;pagerDrop('graph');if(id&&graphNode&&id!==graphNode)return graphOpen(id);await people(graphNode,true)};
 $('#crm-form').addEventListener('click',e=>{if(e.target.closest('[data-crm-close]'))$('#crm-dialog').close();
+ if(e.target.closest('[data-crm-fixes]')&&crm?.mode==='import'){crm.fixOpen=!crm.fixOpen;crmImportDraw()}
+ const sum=e.target.closest('.crm-fixtype>summary');if(sum&&crm?.mode==='import'&&!e.target.closest('input')){e.preventDefault();const t=sum.parentElement.dataset.type;crm.fixOpen=crm.fixOpen===t?true:t;crmImportDraw()}
  if(e.target.closest('[data-crm-clear-all]')&&crm?.mode==='filter'){crmSet(crm.pane,{});$('#crm-dialog').close()}});
 $('#crm-form').addEventListener('change',e=>{const c=crm;if(!c)return;
  if(c.mode==='filter'&&e.target.name==='board'){const st=$('#crm-form select[name=stage]');if(st)st.innerHTML=crmStages(e.target.value,'')}
  if(c.mode!=='import')return;
- if(e.target.name==='kind'){c.kind=e.target.value;c.mapping=null;return crmPreview()}
+ const fresh=()=>{c.mapping=null;c.own=false;c.check=null;c.typeOff.clear();c.fixOff.clear();crmPreview();crmCheck()};
+ if(e.target.name==='kind'){c.kind=e.target.value;return fresh()}
  if(e.target.name==='file'){const file=e.target.files?.[0];if(!file)return;if(file.size>8*1024*1024)return crmSay('That file is too big: up to 8 MB.');
-  const r=new FileReader();r.onload=()=>{c.text=String(r.result||'');c.name=file.name;c.mapping=null;crmPreview()};r.onerror=()=>crmSay('Couldn’t read that file.');r.readAsText(file);return}
- if(e.target.dataset.crmCol!=null){c.mapping=Object.fromEntries([...$('#crm-form').querySelectorAll('[data-crm-col]')].map(s=>[s.dataset.crmCol,s.value]).filter(([,v])=>v));crmPreview()}});
+  const r=new FileReader();r.onload=()=>{c.text=String(r.result||'');c.name=file.name;fresh()};r.onerror=()=>crmSay('Couldn’t read that file.');r.readAsText(file);return}
+ if(e.target.dataset.crmFixtype){c.typeOff[e.target.checked?'delete':'add'](e.target.dataset.crmFixtype);return crmPreview()}
+ if(e.target.dataset.crmFix){c.fixOff[e.target.checked?'delete':'add'](e.target.dataset.crmFix);return crmPreview()}
+ if(e.target.dataset.crmCol!=null){c.own=true;c.mapping=Object.fromEntries([...$('#crm-form').querySelectorAll('[data-crm-col]')].map(s=>[s.dataset.crmCol,s.value]).filter(([,v])=>v));crmPreview()}});
 $('#crm-form').addEventListener('input',e=>{if(crm?.mode==='org-same'&&e.target.name==='q')crmOrgSearch(e.target.value.trim())});
 $('#crm-form').addEventListener('submit',async e=>{e.preventDefault();const c=crm,f=e.target;if(!c)return;const v=k=>String(f.elements[k]?.value||'').trim(),btn=f.querySelector('button.primary');crmSay('');
  if(c.mode==='fields'){btn.disabled=true;try{await crmFieldsSave(c)}catch(x){crmSay(x.message)}finally{btn.disabled=false}return}
@@ -5973,7 +6002,7 @@ $('#crm-form').addEventListener('submit',async e=>{e.preventDefault();const c=cr
   for(const k of ['value_min','value_max'])if(next[k]&&!/^\d+([.,]\d+)?$/.test(next[k].replace(/[\s€$£]/g,'')))return crmSay('Value: a number, like 12000.');
   crmSet(c.pane,next);$('#crm-dialog').close();return}
  btn.disabled=true;
- try{if(c.mode==='import'){const r=await crmUpload('graph_import_run',{kind:c.kind,text:c.text,name:c.name,...(c.mapping?{mapping:c.mapping}:{})});$('#crm-dialog').close();
+ try{if(c.mode==='import'){const r=await crmUpload('graph_import_run',{kind:c.kind,text:c.text,name:c.name,...(c.mapping?{mapping:c.mapping}:{...(c.seen?{mapping:Object.fromEntries(c.seen.columns.filter(x=>x.field).map(x=>[x.index,x.field]))}:{})}),...crmFixArgs(c)});$('#crm-dialog').close();
    toast(`Imported: ${r.new} new, ${r.updated} updated${r.skipped?`, ${r.skipped} skipped`:''}.`);$('#toast').insertAdjacentHTML('beforeend',` <button data-crm-undo-import="${r.import_id}" data-now>Undo</button>`);clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),15000);
    return crmAfter()}
   if(c.mode==='org-same'){const id=c.found.get(v('q').toLowerCase());if(!id)return crmSay('Pick an organization from the list.');

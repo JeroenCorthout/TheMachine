@@ -191,6 +191,8 @@ class Crm(unittest.TestCase):
             self.assertEqual(crm_import.guess('person', ['Full name', 'E-mail', header, 'Job title']), {0: 'name', 1: 'email', 2: 'org', 3: 'title'})
             self.assertEqual(crm_import.guess('project', ['Deal', header, 'Value'])[1], 'org')
             self.assertEqual(crm_import.guess('org', [header, 'Website'])[0], 'name')
+        rows = [['Ann', 'ann@x.example', '+32 470 12 34 56'], ['Bo', 'Bo <bo@y.example>', '0470 123 456']]
+        self.assertEqual(crm_import.guess('person', ['Wie', 'Adres', 'Nummer'], rows), {1: 'email', 2: 'phone'})  # by the values
 
     def test_import_previews_new_matches_and_skips_then_imports_and_undoes(self):
         self.mails()
@@ -249,9 +251,95 @@ class Crm(unittest.TestCase):
         self.act('graph_import_undo', import_id=second['import_id'])
         with self.store.connect() as db:
             self.assertFalse(db.execute("SELECT 1 FROM projects WHERE name='Teal rollout'").fetchone())
+        with self.store.connect() as db:
+            self.assertEqual(crm_import.preview(db, 'org', 'Industry\nRetail\n')['problem'], 'Pick the column with the name')
         with self.assertRaisesRegex(ValueError, 'name'):
-            with self.store.connect() as db:
-                crm_import.preview(db, 'org', 'Industry\nRetail\n')
+            self.act('graph_import_run', kind='org', text='Industry\nRetail\n')
+
+    def test_import_suggests_easy_fixes_and_applies_only_the_ones_kept(self):
+        self.mails()
+        self.app.config['country'] = 'BE'
+        text = ('Name,Email,Company,Phone,Tags\n'
+                '"JANE  VAN DAM",jane@gmial.com,acme robotics bv,0475 12 34 56,"Partner; Pilot"\n'
+                ',Bo Lund <bo@lund.example>,Lund,+46 70 123 45 67,\n'
+                'Jane van Dam,jane@gmail.com,,,Board\n')
+        with self.store.connect() as db:
+            plain = crm_import.preview(db, 'person', text, region='BE')
+            seen = crm_import.preview(db, 'person', text, fixes={'types': 'all'}, region='BE')
+        self.assertEqual(plain['columns'][4]['field'], 'tags')
+        self.assertEqual([r['status'] for r in plain['rows']], ['new', 'skip', 'new'])  # nothing fixed unless kept
+        self.assertEqual({t['type']: t['count'] for t in seen['fix_types']}, {'case': 2, 'split': 1, 'email': 1, 'phone': 2, 'tags': 1, 'merge': 1})
+        fixes = {f['id']: (f['before'], f['after']) for f in seen['fixes']}
+        self.assertEqual(fixes['2:name'], ('JANE  VAN DAM', 'Jane van Dam'))
+        self.assertEqual(fixes['2:email'], ('jane@gmial.com', 'jane@gmail.com'))
+        self.assertEqual(fixes['2:org'], ('acme robotics bv', 'Acme Robotics BV'))
+        self.assertEqual(fixes['2:phone'], ('0475 12 34 56', '+32475123456'))  # the country from the Machine
+        self.assertEqual(fixes['3:email'], ('Bo Lund <bo@lund.example>', 'bo@lund.example'))
+        self.assertEqual(fixes['4:merge'][1], 'Merged into line 2 (adds tags)')
+        self.assertEqual([(r['status'], r.get('why')) for r in seen['rows']], [('new', None), ('new', None), ('skip', 'Merged into line 2')])
+        self.assertEqual(seen['rows'][1]['record']['name'], 'Bo Lund')
+        done = self.act('graph_import_run', kind='person', text=text, fixes={'types': 'all', 'off': ['2:org']})
+        self.assertEqual((done['new'], done['skipped']), (2, 1))
+        with self.store.connect() as db:
+            jane = graph.detail(db, 'email:jane@gmail.com')
+            self.assertEqual((jane['name'], jane['org_name']), ('Jane van Dam', 'acme robotics bv'))  # the one left out
+            self.assertEqual(jane.get('tags'), ['Partner', 'Pilot', 'Board'])
+            self.assertEqual(graph.person_edits_for(db, ['email:jane@gmail.com']).get('phones'), {'added': ['+32475123456'], 'removed': []})
+        self.act('graph_import_undo', import_id=done['import_id'])
+        with self.store.connect() as db:
+            self.assertFalse(db.execute('SELECT 1 FROM crm_tags').fetchone())
+
+    def test_import_fixes_dates_values_and_stages_by_rules(self):
+        self.act('board_save', name='Sales', stages=['Lead', 'Proposal', 'Negotiation', 'Won'])
+        text = ('Deal,Pipeline,Stage,Amount,Close date\n'
+                'A,Sales,proposal sent,€12k,25/12/2026\n'
+                'B,Sales,Negotation,"12.500,50 EUR",03/04/2027\n'
+                'C,Sales,Verbal yes,about five,Dec 1 2026\n')
+        with self.store.connect() as db:
+            seen = crm_import.preview(db, 'project', text, fixes={'types': 'all'}, region='US')
+        fixes = {f['id']: f['after'] for f in seen['fixes']}
+        self.assertEqual(fixes, {'2:stage': 'Proposal', '2:value': '12000', '2:close_date': '2026-12-25', '3:stage': 'Negotiation',
+                                 '3:value': '12500.5', '3:close_date': '2027-04-03', '4:close_date': '2026-12-01'})  # 25/12 says day first
+        with self.store.connect() as db:
+            self.assertEqual([(c['line'], c['field']) for c in crm_import.ai_evidence(db, 'project', text, 'US')['cells']], [(4, 'stage'), (4, 'value')])
+
+    def test_import_check_by_the_owners_own_model(self):
+        self.act('board_save', name='Sales', stages=['Lead', 'Proposal', 'Won'])
+        self.app.config['country'] = 'BE'
+        text = 'Klant,Bedrag,Fase,Wie\nTeal,ongeveer vijf,Mondeling ja,Ann\nUmber,8000,Lead,Bo\n'
+        self.app.model_room = lambda most=80: True
+        ready = a.model_ready
+        try:
+            a.model_ready = lambda config=None, run=None: False
+            self.assertEqual(self.act('graph_import_ai', kind='project', text=text), {'ai': False, 'why': 'model'})
+            a.model_ready = lambda config=None, run=None: True
+            started = self.act('graph_import_ai', kind='project', text=text)
+        finally:
+            a.model_ready = ready
+        self.assertTrue(started['ai'])
+        session = a.PROFILE_SESSION_PREFIX + started['run_id']
+        sent = []
+        self.app.profile_step(lambda request: sent.append(request) or {'status': 'admitted'})
+        self.assertIn('CSV import check', sent[0]['message'])
+        evidence = self.store.profile_evidence(1, session)  # headers, a few values and the unclear cells: not the file
+        self.assertEqual([c['header'] for c in evidence['columns']], ['Klant', 'Bedrag', 'Fase', 'Wie'])
+        self.assertEqual(evidence['stages'], ['Lead', 'Proposal', 'Won', 'Stalled or declined'])
+        self.store.save_profile({'mapping': {'0': 'name', '1': 'value', '2': 'stage', '3': 'nope'},
+                                 'reasons': {'0': 'Klant is Dutch for client: the deal is named after them', '1': 'Bedrag means amount'},
+                                 'fixes': [{'line': 2, 'field': 'value', 'after': '5000', 'why': 'vijf is five, about 5k'},
+                                           {'line': 2, 'field': 'stage', 'after': 'Signed', 'why': 'not a stage'},
+                                           {'line': 9, 'field': 'value', 'after': '9000', 'why': 'not shown'}]}, session)
+        self.app.profile_step(lambda request: {'status': 'ok'})
+        self.assertEqual(self.act('graph_import_ai_status', run_id=started['run_id']), {'status': 'ok', 'columns': 3, 'fixes': 1})
+        with self.store.connect() as db:
+            rules = crm_import.preview(db, 'project', text)  # Klant is no header the rules know
+        self.assertEqual((rules['columns'][0]['field'], rules['problem'], rules['total']), (None, 'Pick the column with the name', 0))
+        seen = self.act('graph_import_preview', kind='project', text=text, ai_run=started['run_id'], fixes={'types': 'all'})
+        self.assertEqual([c['field'] for c in seen['columns']], ['name', 'value', 'stage', None])
+        self.assertEqual(seen['columns'][0]['reason'], 'Klant is Dutch for client: the deal is named after them')
+        self.assertEqual([(f['id'], f['after'], f.get('ai')) for f in seen['fixes']], [('2:value', '5000', True)])
+        other = self.act('graph_import_preview', kind='project', text=text + 'Ash,1,Lead,Cy\n', ai_run=started['run_id'])
+        self.assertIsNone(other['columns'][0]['field'])  # a different file: the check isn't for it
 
     def test_only_the_owner_on_the_dashboard(self):
         with self.assertRaisesRegex(ValueError, 'Only the owner'):

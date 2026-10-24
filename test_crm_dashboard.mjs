@@ -118,7 +118,7 @@ try{
   await page.evaluate(()=>document.querySelector('[data-graph-panel="people"] [data-crm-import]').click());await page.locator('#crm-dialog[open]').waitFor();
   await page.locator('#crm-form [name=file]').setInputFiles({name:'contacts.csv',mimeType:'text/csv',buffer:Buffer.from('Full name,E-mail,Company\nAda Lovelace,ada@globex.example,Globex\nNia Holm,,Newco\n,,\n')});
   await page.locator('#crm-form .crm-count').waitFor();assert.equal(await page.locator('#crm-form .crm-count').textContent(),'1 new · 1 match existing · 1 skipped');
-  assert.deepEqual(uploads,['graph_import_preview:graph-import']);assert.equal(calls.find(c=>c.action==='graph_import_preview').args.kind,'person');
+  await until(()=>uploads.length===2,'checked');assert.deepEqual(uploads.sort(),['graph_import_ai:graph-import','graph_import_preview:graph-import']);assert.equal(calls.find(c=>c.action==='graph_import_preview').args.kind,'person');
   assert.equal(await page.locator('#crm-form [data-crm-col="2"]').inputValue(),'org');await fits(page,'import '+tag);await shot(page,`import-preview-${tag}`);  // Company: Organization
   await page.locator('#crm-form [data-crm-col="2"]').selectOption('title');await until(()=>calls.filter(c=>c.action==='graph_import_preview').length===2,'previewed again');
   assert.deepEqual(calls.filter(c=>c.action==='graph_import_preview').at(-1).args.mapping,{0:'name',1:'email',2:'title'});

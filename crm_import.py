@@ -6,22 +6,32 @@ skipped with why: no name, an address that isn't one, the same row twice in the 
 person (else the same name at the same organization), the same website for an organization (any of its websites, else
 the same name), and the same name for a project.
 
+Easy fixes (crm_fixes.py) show in the preview as before and after, and only the ones left ticked are applied. The
+owner's own model may look at the columns and the cells the rules can't read (ai_evidence): only the headers, a few
+values per column and those cells go to it, on the Machine like a review does, and what it says is checked (ai_draft)
+before the preview shows it.
+
 Import makes the new ones as if added by hand and fills in what the file says for the ones that match (an empty cell
 leaves a field as it is). The last import can be undone: what it made goes again and what it changed goes back to how
 it was (graph_imports keeps that, sealed like the projects' notes it can hold)."""
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import re
 
 import crm
+import crm_fields
+import crm_fixes
 import graph
 
 MAX_ROWS = 5000
 MAX_COLUMNS = 60
 SAMPLES = 3
+AI_SAMPLES = 5      # values per column the model sees
+AI_CELLS = 60       # ambiguous cells it may look at in one go
 
 # field: (shown name, header words that point to it)
 FIELDS = {
@@ -34,7 +44,8 @@ FIELDS = {
                'title': ('Title', ('title', 'job title', 'position', 'role', 'function')),
                'location': ('Location', ('location', 'city', 'country', 'address')),
                'linkedin_url': ('LinkedIn', ('linkedin', 'linkedin url', 'linkedin profile')),
-               'notes': ('Notes', ('notes', 'note', 'description', 'comments', 'comment'))},
+               'notes': ('Notes', ('notes', 'note', 'description', 'comments', 'comment')),
+               'tags': ('Tags', ('tags', 'tag', 'labels', 'label', 'segment'))},
     'org': {'name': ('Name', ('name', 'organisation', 'organization', 'company', 'firm', 'company name', 'account', 'account name')),
             'website': ('Website', ('website', 'domain', 'url', 'web', 'site', 'homepage', 'company website')),
             'linkedin_url': ('LinkedIn', ('linkedin', 'linkedin url', 'linkedin page')),
@@ -43,14 +54,16 @@ FIELDS = {
             'location': ('Location', ('location', 'city', 'country', 'address', 'hq')),
             'founded': ('Founded', ('founded', 'year founded', 'founded year')),
             'about': ('About', ('about', 'description', 'summary')),
-            'notes': ('Notes', ('notes', 'note', 'comments', 'comment'))},
+            'notes': ('Notes', ('notes', 'note', 'comments', 'comment')),
+            'tags': ('Tags', ('tags', 'tag', 'labels', 'label', 'segment'))},
     'project': {'name': ('Name', ('name', 'project', 'deal', 'opportunity', 'deal name', 'project name', 'title')),
                 'org': ('Organization', ('organisation', 'organization', 'company', 'account', 'firm', 'website', 'domain')),
                 'board': ('Board', ('board', 'pipeline')),
                 'stage': ('Stage', ('stage', 'status', 'deal stage', 'phase')),
                 'value': ('Value', ('value', 'amount', 'deal value', 'revenue', 'price', 'size')),
                 'close_date': ('Expected close', ('close date', 'expected close', 'closing date', 'close', 'expected close date', 'due date')),
-                'notes': ('Notes', ('notes', 'note', 'description', 'comments', 'comment'))}}
+                'notes': ('Notes', ('notes', 'note', 'description', 'comments', 'comment')),
+                'tags': ('Tags', ('tags', 'tag', 'labels', 'label'))}}
 KINDS = {'person': 'people', 'org': 'organisations', 'project': 'projects'}
 
 
@@ -79,8 +92,28 @@ def read(text):
     return headers, [[c.strip() for c in r[:len(headers)]] + [''] * (len(headers) - len(r)) for r in rows[1:]]
 
 
-def guess(kind, headers):
-    """{column index: field} from the headers: the exact words first, then a header that contains them."""
+def _looks(kind, values):
+    """The field a column's values look like, whatever its header says: addresses, websites, phone numbers, dates."""
+    values = [v for v in values if v][:20]
+    if len(values) < 1:
+        return None
+    share = lambda test: sum(1 for v in values if test(v)) / len(values) >= 0.6
+    if share(lambda v: 'linkedin.com/' in v.lower()):
+        return 'linkedin_url'
+    if kind == 'person' and share(lambda v: graph.EMAIL.fullmatch(v.strip()) or crm_fixes.split(v)):
+        return 'email'
+    if kind == 'org' and share(lambda v: re.match(r'(https?://|www\.)', v.strip().lower()) or graph.ORG_DOMAIN.fullmatch(v.strip().lower())):
+        return 'website'
+    if kind == 'person' and share(lambda v: re.fullmatch(r'\+?[\d\s().-]{7,20}', v.strip()) and sum(c.isdigit() for c in v) >= 7):
+        return 'phone'
+    if kind == 'project' and share(lambda v: re.fullmatch(r'\d{4}-\d{2}-\d{2}', v.strip()) or crm_fixes.date(v, 'dmy')):
+        return 'close_date'
+    return None
+
+
+def guess(kind, headers, rows=()):
+    """{column index: field} from the headers: the exact words first, then a header that contains them, then what the
+    values of a column with an unknown header look like."""
     fields, out, taken = FIELDS[kind], {}, set()
     keys = [_key(h) for h in headers]
     for exact in (True, False):
@@ -94,12 +127,17 @@ def guess(kind, headers):
                     out[i] = field
                     taken.add(field)
                     break
+    for i in range(len(headers)):
+        field = None if i in out else _looks(kind, [r[i] for r in rows])
+        if field and field in fields and field not in taken:
+            out[i] = field
+            taken.add(field)
     return out
 
 
-def clean_mapping(kind, headers, mapping):
+def clean_mapping(kind, headers, mapping, rows=()):
     if mapping is None:
-        return guess(kind, headers)
+        return guess(kind, headers, rows)
     out, seen = {}, set()
     for i, field in (mapping.items() if isinstance(mapping, dict) else enumerate(mapping or ())):
         i = int(i)
@@ -114,9 +152,17 @@ def clean_mapping(kind, headers, mapping):
     return out
 
 
-def record(kind, row, mapping):
-    """One row as {field: value}: names put together, a website as its domain."""
+def record(kind, row, mapping, fixes=None):
+    """One row as {field: value}, with the fixes the owner kept for it ({field: fix}): names put together, tags as a
+    list."""
     out = {field: row[i] for i, field in mapping.items() if row[i]}
+    for field, fix in (fixes or {}).items():
+        out[field] = fix['after']
+        for k, v in (fix.get('extra') or {}).items():
+            if k in ('name', 'email') and not out.get(k):
+                out[k] = v
+    if 'tags' in out:
+        out['tags'] = [t.strip() for t in out['tags'].split(',')] if 'tags' in (fixes or {}) else [out['tags']]
     if kind == 'person':
         if not out.get('name') and (out.get('first_name') or out.get('last_name')):
             out['name'] = ' '.join(filter(None, (out.get('first_name'), out.get('last_name'))))
@@ -125,7 +171,7 @@ def record(kind, row, mapping):
         if out.get('email'):
             out['email'] = out['email'].strip().lower().removeprefix('mailto:')
     if out.get('name'):
-        out['name'] = ' '.join(out['name'].split())
+        out['name'] = out['name'].strip()
     return out
 
 
@@ -187,17 +233,108 @@ def _same_key(kind, rec):
     return (rec.get('name') or '').casefold()
 
 
-def plan(db, kind, text, mapping=None):
-    """Each row with what Import would do: new, match (with the record it updates) or skip (with why)."""
+def context(db, kind, headers, rows, mapping, region=None, currency=None):
+    """What the fixes go by: the owner's country and currency, and for projects the boards' stages (per row when the
+    file names a board)."""
+    ctx = {'region': region, 'currency': currency, 'stages': [], 'stages_by_line': {}}
+    if kind != 'project' or not db.execute("SELECT 1 FROM sqlite_master WHERE name='boards'").fetchone():
+        return ctx
+    boards = {r['name'].casefold(): graph.stage_names(r) for r in db.execute('SELECT * FROM boards')}
+    ctx['stages'] = list(dict.fromkeys(s for stages in boards.values() for s in stages))
+    col = next((i for i, f in mapping.items() if f == 'board'), None)
+    if col is not None:
+        ctx['stages_by_line'] = {n: boards[r[col].casefold()] for n, r in enumerate(rows, start=2) if r[col].casefold() in boards}
+    return ctx
+
+
+def digest(kind, text):
+    return hashlib.sha256(f'{kind}\n{text}'.encode()).hexdigest()
+
+
+def ai_evidence(db, kind, text, region=None, currency=None):
+    """What the owner's model gets to look at for this file: the headers with a few values each and the rules' guess,
+    the fields to map to, the boards' stages, and up to AI_CELLS cells the rules can't read. Never the whole file."""
     if kind not in FIELDS:
         raise ValueError('Import people, organizations or projects')
     headers, rows = read(text)
-    mapping = clean_mapping(kind, headers, mapping)
-    if 'name' not in mapping.values() and not (kind == 'person' and ({'email', 'first_name', 'last_name'} & set(mapping.values()))):
-        raise ValueError('Pick the column with the name')
-    out, seen = [], set()
+    mapping = guess(kind, headers, rows)
+    ctx = context(db, kind, headers, rows, mapping, region, currency)
+    _, ambiguous = crm_fixes.suggest(kind, rows, mapping, ctx)
+    return {'kind': KINDS[kind], 'rows': len(rows), 'region': region, 'currency': currency,
+            'fields': [{'id': f, 'name': v[0]} for f, v in FIELDS[kind].items()],
+            'columns': [{'index': i, 'header': h, 'guess': mapping.get(i),
+                         'values': [{'line': n, 'value': r[i][:60]} for n, r in enumerate(rows, start=2) if r[i]][:AI_SAMPLES]}
+                        for i, h in enumerate(headers)],
+            'stages': ctx['stages'], 'cells': ambiguous[:AI_CELLS]}
+
+
+def ai_draft(kind, evidence, said):
+    """What the model said, kept only where it fits: a field per column (each field once), a short reason per column,
+    and for the cells it was given a value the import takes. Raises ValueError for the shape."""
+    if not isinstance(said, dict):
+        raise ValueError('profile is {"mapping": {"<column index>": "<field id or empty>"}, "reasons": {…}, "fixes": [{"line", "field", "after", "why"}]}')
+    columns = len(evidence.get('columns') or ())
+    mapping, used = {}, set()
+    for i, field in (said.get('mapping') or {}).items() if isinstance(said.get('mapping'), dict) else ():
+        if str(i).isdigit() and int(i) < columns and field in FIELDS[kind] and field not in used:
+            mapping[int(i)] = field
+            used.add(field)
+    reasons = {int(i): ' '.join(str(r).split())[:120] for i, r in (said.get('reasons') or {}).items()
+               if str(i).isdigit() and int(i) < columns and str(r).strip()} if isinstance(said.get('reasons'), dict) else {}
+    given = {(c['line'], c['field']) for c in evidence.get('cells') or ()}
+    given |= {(v['line'], mapping[c['index']]) for c in evidence.get('columns') or () if c['index'] in mapping for v in c['values']}
+    ctx = {'stages': evidence.get('stages') or []}
+    fixes = []
+    for f in said.get('fixes') or () if isinstance(said.get('fixes'), list) else ():
+        if not isinstance(f, dict) or not str(f.get('line', '')).isdigit():
+            continue
+        key = (int(f['line']), str(f.get('field') or ''))
+        after = ' '.join(str(f.get('after') or '').split())
+        if key in given and crm_fixes.valid(key[1], after, ctx):
+            fixes.append({'line': key[0], 'field': key[1], 'after': after, 'why': ' '.join(str(f.get('why') or '').split())[:100]})
+    if not mapping and not fixes:
+        raise ValueError('Nothing to save: map at least one column or fix a cell')
+    return {'mapping': {str(k): v for k, v in mapping.items()}, 'reasons': {str(k): v for k, v in reasons.items()}, 'fixes': fixes}
+
+
+NO_NAME = 'Pick the column with the name'
+
+
+def _named(kind, mapping):
+    return 'name' in mapping.values() or (kind == 'person' and bool({'email', 'first_name', 'last_name'} & set(mapping.values())))
+
+
+def plan(db, kind, text, mapping=None, fixes=None, ai=None, region=None, currency=None):
+    """Each row with what Import would do: new, match (with the record it updates) or skip (with why), and the fixes
+    suggested (those the owner kept, `fixes`, applied). `ai` is the owner's model's draft for this file."""
+    if kind not in FIELDS:
+        raise ValueError('Import people, organizations or projects')
+    headers, rows = read(text)
+    if mapping is None and ai and ai.get('mapping'):
+        mapping = ai['mapping']
+    mapping = clean_mapping(kind, headers, mapping, rows)
+    if not _named(kind, mapping):
+        raise ValueError(NO_NAME)
+    ctx = context(db, kind, headers, rows, mapping, region, currency)
+    suggested, _ = crm_fixes.suggest(kind, rows, mapping, ctx)
+    fields = set(mapping.values())
+    have = {(f['line'], f['field']) for f in suggested}
+    for f in (ai or {}).get('fixes') or ():  # the model's, for cells the rules left
+        if f['field'] in fields and (f['line'], f['field']) not in have:
+            row = rows[f['line'] - 2] if 2 <= f['line'] < len(rows) + 2 else None
+            col = next(i for i, x in mapping.items() if x == f['field'])
+            if row and row[col]:
+                suggested.append({'id': f"{f['line']}:{f['field']}", 'line': f['line'], 'field': f['field'], 'type': crm_fixes.FIELD_TYPE[f['field']],
+                                  'before': row[col], 'after': f['after'], 'why': f.get('why') or '', 'ai': True})
+    suggested.sort(key=lambda f: (f['line'], f['field']))
+    kept = {}
+    for f in crm_fixes.chosen(suggested, fixes):
+        kept.setdefault(f['line'], {})[f['field']] = f
+    merge = isinstance(fixes, dict) and (fixes.get('types') == 'all' or 'merge' in (fixes.get('types') or ()))
+    off = {str(i) for i in (fixes or {}).get('off') or ()} if isinstance(fixes, dict) else set()
+    out, seen = [], {}
     for n, row in enumerate(rows, start=2):
-        rec = record(kind, row, mapping)
+        rec = record(kind, row, mapping, kept.get(n))
         why = check(kind, rec)
         if why:
             out.append({'line': n, 'status': 'skip', 'why': why, 'record': rec})
@@ -206,25 +343,56 @@ def plan(db, kind, text, mapping=None):
             rec['name'] = rec['email'].split('@', 1)[0].replace('.', ' ').title()
         key = _same_key(kind, rec)
         if key in seen:
-            out.append({'line': n, 'status': 'skip', 'why': 'Twice in the file', 'record': rec})
+            first = seen[key]
+            filled = {k: v for k, v in rec.items() if v and not first['record'].get(k)}
+            more = [t for t in rec.get('tags') or () if t.casefold() not in {x.casefold() for x in first['record'].get('tags') or ()}]
+            if more and first['record'].get('tags'):
+                filled['tags'] = first['record']['tags'] + more
+            fix = {'id': f'{n}:merge', 'line': n, 'field': 'row', 'type': 'merge', 'before': f'Line {n}: {rec.get("name") or rec.get("email")}',
+                   'after': f'Merged into line {first["line"]}' + (f' (adds {", ".join(FIELDS[kind].get(k, (k,))[0].lower() for k in filled)})' if filled else '')}
+            suggested.append(fix)
+            if merge and fix['id'] not in off:
+                first['record'].update(filled)
+                out.append({'line': n, 'status': 'skip', 'why': f'Merged into line {first["line"]}', 'record': rec})
+            else:
+                out.append({'line': n, 'status': 'skip', 'why': 'Twice in the file', 'record': rec})
             continue
-        seen.add(key)
         node_id, how = match(db, kind, rec)
-        out.append({'line': n, 'status': 'match' if node_id else 'new', 'node_id': node_id, 'why': how, 'record': rec})
-    return headers, rows, mapping, out
+        item = {'line': n, 'status': 'match' if node_id else 'new', 'node_id': node_id, 'why': how, 'record': rec}
+        seen[key] = item
+        out.append(item)
+    return headers, rows, mapping, out, suggested
 
 
-def preview(db, kind, text, mapping=None, limit=200):
+def preview(db, kind, text, mapping=None, limit=200, fixes=None, ai=None, region=None, currency=None):
     """What the dashboard shows before Import: the columns with the field each goes to and a few values, the counts,
-    and the first rows with what happens to each."""
-    headers, rows, mapping, planned = plan(db, kind, text, mapping)
+    the first rows with what happens to each, and the fixes suggested (with the model's reasons when it looked)."""
+    try:
+        headers, rows, mapping, planned, suggested = plan(db, kind, text, mapping, fixes, ai, region, currency)
+        problem = None
+    except ValueError as error:  # no name column yet: the columns still show, to pick it
+        if str(error) != NO_NAME:
+            raise
+        headers, rows = read(text)
+        mapping = clean_mapping(kind, headers, ai['mapping'] if mapping is None and ai and ai.get('mapping') else mapping, rows)
+        planned, suggested, problem = [], [], NO_NAME
     ids = sorted({p['node_id'] for p in planned[:limit] if p.get('node_id')})
-    names = dict(db.execute(f"SELECT id,name FROM graph_nodes WHERE id IN ({','.join('?' * len(ids))})", ids).fetchall()) if ids else {}
-    columns = [{'index': i, 'header': h, 'field': mapping.get(i), 'samples': [r[i] for r in rows if r[i]][:SAMPLES]} for i, h in enumerate(headers)]
+    names = dict(db.execute("SELECT id,name FROM graph_nodes WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(ids),)).fetchall()) if ids else {}
+    reasons = (ai or {}).get('reasons') or {}
+    columns = [{'index': i, 'header': h, 'field': mapping.get(i), 'samples': [r[i] for r in rows if r[i]][:SAMPLES],
+                **({'reason': reasons[str(i)]} if reasons.get(str(i)) else {})} for i, h in enumerate(headers)]
     counts = {s: sum(1 for p in planned if p['status'] == s) for s in ('new', 'match', 'skip')}
     shown = [{**p, 'match_name': names.get(p.get('node_id'))} for p in planned[:limit]]
+    names_ = {f: v[0] for f, v in FIELDS[kind].items()} | {'row': 'Row'}
+    by_type = {}
+    for f in suggested:
+        by_type[f['type']] = by_type.get(f['type'], 0) + 1
     return {'kind': kind, 'columns': columns, 'fields': [{'id': f, 'name': v[0]} for f, v in FIELDS[kind].items()],
-            'counts': counts, 'rows': shown, 'total': len(planned)}
+            'counts': counts, 'rows': shown, 'total': len(planned),
+            'fixes': [{k: f[k] for k in ('id', 'line', 'field', 'type', 'before', 'after', 'why', 'ai') if f.get(k)} | {'field_name': names_.get(f['field'], f['field'])}
+                      for f in suggested[:crm_fixes.SHOWN]],
+            'fix_types': [{'type': t, 'name': crm_fixes.TYPES[t], 'count': by_type[t]} for t in crm_fixes.TYPES if by_type.get(t)],
+            'fix_total': len(suggested), 'ai': bool(ai), **({'problem': problem} if problem else {})}
 
 
 # ------------------------------------------------------------------ import and undo
@@ -364,11 +532,31 @@ def _project(db, rec, node_id, now, undo):
     return made['node_id'], True
 
 
-def run(db, kind, text, mapping, now, name=None):
-    """Import the file: new rows made, matching ones updated. One transaction; the caller rebuilds the graph."""
+def _tags(db, node_id, labels, made, now):
+    for label in labels:
+        try:
+            label = crm_fields.clean_tag(label)
+        except ValueError:
+            continue  # a tag with a comma in it (its fix left out) or too long
+        if not made:
+            try:
+                crm_fields.tag(db, node_id, label, True, now)
+            except ValueError:
+                pass
+            continue
+        same = db.execute('SELECT tag FROM crm_tags WHERE tag=? LIMIT 1', (label,)).fetchone()  # the spelling in use
+        if db.execute('SELECT count(*) FROM crm_tags WHERE node_id=?', (node_id,)).fetchone()[0] < crm_fields.MAX_TAGS:
+            db.execute('INSERT OR IGNORE INTO crm_tags(node_id,tag,at) VALUES(?,?,?)', (node_id, same[0] if same else label, now))
+
+
+def run(db, kind, text, mapping, now, name=None, fixes=None, ai=None, region=None, currency=None):
+    """Import the file: new rows made, matching ones updated, with the fixes the owner kept. One transaction; the
+    caller rebuilds the graph."""
     if not db.in_transaction:
         db.execute('BEGIN IMMEDIATE')
-    _, _, _, planned = plan(db, kind, text, mapping)
+    _, _, _, planned, _ = plan(db, kind, text, mapping, fixes, ai, region, currency)
+    crm_fields.ensure(db)
+    tags_before = {tuple(r) for r in db.execute('SELECT node_id,tag FROM crm_tags')}
     undo = {'made': [], 'changed': []}
     counts = {'new': 0, 'updated': 0, 'skipped': 0}
     step = {'person': _person, 'org': _org, 'project': _project}[kind]
@@ -377,11 +565,14 @@ def run(db, kind, text, mapping, now, name=None):
             counts['skipped'] += 1
             continue
         try:
-            _, made = step(db, p['record'], p.get('node_id'), now, undo)
+            node_id, made = step(db, p['record'], p.get('node_id'), now, undo)
         except ValueError:
             counts['skipped'] += 1
             continue
+        if p['record'].get('tags'):
+            _tags(db, node_id, p['record']['tags'], made, now)
         counts['new' if made else 'updated'] += 1
+    undo['tags'] = sorted({tuple(r) for r in db.execute('SELECT node_id,tag FROM crm_tags')} - tags_before)
     found = db.execute('INSERT INTO graph_imports(kind,name,counts,undo,at) VALUES(?,?,?,?,?)',
                        (kind, str(name or '')[:120] or None, json.dumps(counts), json.dumps(undo), now)).lastrowid
     db.execute('UPDATE graph_imports SET undo=NULL WHERE id<?', (found,))  # only the last import can be undone
@@ -404,6 +595,8 @@ def undo(db, import_id, now):
     if not row:
         raise ValueError('Only the last import can be undone')
     plan_ = json.loads(row['undo'])
+    for node_id, label in plan_.get('tags') or ():
+        db.execute('DELETE FROM crm_tags WHERE node_id=? AND tag=?', (node_id, label))
     for item in reversed(plan_['changed']):
         if item['kind'] == 'person':
             for table, key in (('person_edits', 'edits'), ('person_orgs', 'orgs'), ('graph_names', 'name')):

@@ -41,7 +41,7 @@ Do it → isolated preparation turn of the same agent → result, draft + Send, 
 | `config.example.json` | Every configuration key with example values |
 | `embeddings.py` | Optional related signals by meaning, through a local embedding server |
 | `graph.py` | People and projects: a living graph rebuilt from signals, card decisions, project labels and merges |
-| `crm.py`, `crm_import.py` | The Graph as a CRM: owners, change history, filters and sorts done on the Machine, merged organizations with several websites, and CSV import with undo |
+| `crm.py`, `crm_import.py`, `crm_fixes.py` | The Graph as a CRM: owners, change history, filters and sorts done on the Machine, merged organizations with several websites, and CSV import with undo, easy fixes shown before and after, and a check by the owner's model (an `import` agent run that sees headers, a few values and unclear cells) |
 | `crm_fields.py` | Custom fields per record type (text, number, date, choice; values sealed at rest) and tags, kept through rebuilds and merges |
 | `deploy/` | Example systemd units (the service, an optional local embedding server) and Caddyfile |
 | `test_*.py`, `test_*.mjs` | Offline tests |
