@@ -12,7 +12,7 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const now=new Date().toISOString(),t0=Date.now()-60000;
 const card={id:'d1d1d1d1d1d1d1d1',title:'NDA signed, awaiting Sam',body:'Signed it; the confirmation page said it went through.',status:'prepared',scope:'work',created_at:now,event_ids:[1]};
-const rule='After signing or submitting in the browser, leave the confirmation page open for the owner to check.';
+const rule='Browser tasks: after signing, submitting, paying or booking something, leave the confirmation page open in its tab so the owner can check it; do not close that tab.';
 let facts,removed;
 const reset=()=>{removed=new Set();facts=[{id:31,kind:'draft',text:rule,created_at:now,merged:0},
  ...[1,2,3,4,5,6].map(n=>({id:n,kind:'draft',text:`Older rule number ${n} about some other kind of task.`,created_at:new Date(Date.parse(now)-n*86400000).toISOString(),merged:0})),
@@ -56,7 +56,10 @@ try{
   assert.ok(Math.abs((lb.x+lb.width/2)-(cb.x+cb.width/2))<12,'centred');
   assert.ok(await line.evaluate(e=>parseFloat(getComputedStyle(e).fontSize)<15),'quiet, small');
   for(const t of await log.locator('.chat-event').evaluateAll(es=>es.map(e=>e.firstElementChild?.innerText??e.innerText)))assert.doesNotMatch(t,/^You\b/,'no line starts with You: '+t);
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal scroll at '+width);
+  // A long rule makes the line nearly as wide as the chat: nothing beside it sticks out sideways (a hover time did once).
+  await line.hover();
+  assert.ok(await page.evaluate(()=>document.scrollingElement.scrollWidth<=document.scrollingElement.clientWidth),'no horizontal scroll at '+width);
+  assert.ok(await log.evaluate(e=>e.scrollWidth<=e.clientWidth),'chat log does not overflow sideways at '+width);
   if(shots){await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:`${shots}/chat-learned-${width}-${scheme}.png`})}
   if(scheme==='dark'){
    // Undo removes it; the line then says so, with no buttons.

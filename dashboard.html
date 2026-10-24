@@ -3445,7 +3445,7 @@ const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||s.status==
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
   else if(i.kind==='event'){const c=i.times.length,t=chatEventText(i),line=(c>1?`${esc(t)} ${c} times<span class="chev" aria-hidden="true">›</span>`:esc(t))+(i.voice&&c===1?` · <a class="learn-link" href="#settings/writing" data-voice-edit="${esc(i.voice)}">Edit</a>`:'');
    push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+tm(i.at)}</div>`)}
-  else if(i.kind==='learned')push(i,chatLearned(i).replace(/<\/div>$/,tm(i.at)+'</div>'));
+  else if(i.kind==='learned')push(i,chatLearned(i));  // no time of its own: it sits under its reply, and beside a wide centred line it would stick out sideways
   else if(i.kind==='you'){const to=i.to||'',show=to&&to!==lastTo;lastTo=to;
    push(i,`<div class="chat-msg you">${show?`<div class="chat-to">to ${esc(to)}</div>`:''}<div class="bubble">${chatMarkdown(i.text)}</div>${tm(i.at)}</div>`)}
   else if(i.kind==='reply'){const ds=i.drafts||[],h=headline(i.text);
