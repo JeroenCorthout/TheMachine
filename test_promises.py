@@ -179,7 +179,9 @@ class Promises(unittest.TestCase):
         self.app().promise_step()
         card = self.store.snapshot([])['suggestions'][0]
         self.assertEqual((card['title'], card['due'], card['dedupe_key']), ('Send the Q3 deck for Alex', '2026-10-21', f'promise:{mine}'))
-        self.assertIn('You told Alex on Monday 19 Oct you’d send the Q3 deck by **Wednesday 21 Oct**', card['body'])
+        # The title says what; the one line adds only who and when, never the title again
+        self.assertEqual(card['body'], 'Promised Alex on Mon 19 Oct for Wed 21 Oct. Nothing shows it done yet.')
+        self.assertEqual(card['owner_step'], 0)
         self.assertEqual((card['status'], card['early']), ('accepted', 1))  # prepared ahead
         self.assertEqual(self.row(mine)['suggestion_id'], card['id'])
         self.at('2026-10-24T07:00:00+00:00')
@@ -190,6 +192,41 @@ class Promises(unittest.TestCase):
         self.app().promise_step()
         with self.store.connect() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM suggestions').fetchone()[0], 2)
+
+    def test_a_step_only_the_owner_can_do_leads_with_done_never_do_it(self):
+        """Told the paint shop "we'll come by tomorrow afternoon": the review marks it as the owner's own step. The card
+        leads with Done and offers Plan it (help around it), never Do it; its run is told it can't do the step itself."""
+        mine = self.app().action('promise', {'direction': 'mine', 'event_id': self.mine, 'who': 'Sam at the paint shop',
+                                             'what': 'come by in the afternoon for the paint order', 'due': '2026-10-20', 'owner_step': True})['id']
+        self.assertEqual(self.row(mine)['owner_step'], 1)
+        self.at('2026-10-20T07:00:00+00:00')
+        app = self.app()
+        app.config['prepare_ahead'] = False
+        app.promise_step()
+        card = self.store.snapshot([])['suggestions'][0]
+        self.assertEqual(card['title'], 'Come by in the afternoon for the paint order for Sam at the paint shop')
+        self.assertEqual(card['body'], 'Promised Sam at the paint shop on Mon 19 Oct for Tue 20 Oct. Nothing shows it done yet.')
+        self.assertEqual((card['status'], card['owner_step']), ('pending', 1))
+        labels = [b['label'] for block in a.controls(card)['blocks'] for b in block['buttons']]
+        self.assertEqual(labels[:2], ['Done', 'Plan it'])
+        self.assertNotIn('Do it', labels)
+        prompt = a.preparation_prompt({'job_id': 'j' * 32, 'suggestion_id': card['id'], 'owner_step': True})
+        self.assertIn('only the owner can do themselves', prompt)
+        self.assertNotIn('only the owner can do themselves', a.preparation_prompt({'job_id': 'j' * 32, 'suggestion_id': card['id']}))
+        # Someone else's promise is never the owner's own step, whatever the review says
+        theirs = self.record(owner_step=True)['id']
+        self.assertEqual(self.row(theirs)['owner_step'], 0)
+
+    def test_the_review_marks_a_card_step_as_the_owners_and_can_take_it_back(self):
+        app = self.app()
+        made = app.action('suggest', {'dedupe_key': 'pickup', 'title': 'Pick up the parcel at the post office', 'body': 'It waits until Friday.',
+                                      'event_ids': [self.theirs], 'owner_step': True})
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT owner_step FROM suggestions WHERE id=?', (made['id'],)).fetchone()[0], 1)
+        app.action('suggest', {'dedupe_key': 'pickup-2', 'title': 'Have the parcel redelivered', 'body': 'Book a new delivery online.',
+                               'event_ids': [self.theirs, self.mine], 'card_id': made['id'], 'owner_step': False})
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT owner_step FROM suggestions WHERE id=?', (made['id'],)).fetchone()[0], 0)
 
     def test_reviews_off_a_due_promise_waits_without_a_card(self):
         # A new install's first look records promises; with reviews off none becomes a card or gets prepared.

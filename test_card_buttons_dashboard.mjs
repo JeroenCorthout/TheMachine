@@ -12,7 +12,11 @@ const now=new Date().toISOString(),posts=[];
 const cards=[{id:'p1',title:'Reply to Sam about pricing',body:'Sam asked for pricing.',status:'pending',scope:'work',created_at:now,event_ids:[1],source_line:'Source: email from Sam · Mon 19 Oct'},
  {id:'r1',title:'Send Noor the contract',body:'Draft ready.',status:'prepared',scope:'work',created_at:now,preparation_status:'done',event_ids:[2],
   next_actions:[{kind:'email',revision:'v1',label:'Send to Noor',to:['noor@example.com'],to_name:'Noor',subject:'Contract',body:'Hi Noor'}]},
- {id:'h1',title:'Personal errand',body:'Buy a gift.',status:'pending',scope:'personal',created_at:now,event_ids:[3]}];
+ {id:'h1',title:'Personal errand',body:'Buy a gift.',status:'pending',scope:'personal',created_at:now,event_ids:[3]},
+ // A step only the owner can do (the review's owner_step): a visit
+ {id:'v1',title:'Come by the paint shop this afternoon for the order',body:'Promised Sam on Fri 23 Oct. Nothing shows it done yet.',status:'pending',scope:'personal',owner_step:1,due:now.slice(0,10),created_at:now,event_ids:[4]},
+ {id:'v2',title:'Come by the paint shop this afternoon',body:'Added a calendar slot at 15:00.',status:'prepared',scope:'personal',owner_step:1,created_at:now,preparation_status:'done',event_ids:[5],
+  outcome:JSON.stringify({state:'needs_you',needs:'go to the shop this afternoon'}),next_actions:[{kind:'open',revision:'o1',label:'Open in Maps',url:'https://www.google.com/maps/search/?api=1&query=paint+shop'}]}];
 const state=()=>({suggestions:cards,promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]},connectors:[],fleet:{on:true,fleets:[]}});
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
@@ -39,6 +43,14 @@ try{
   // A ready draft: the button says it opens the preview first
   assert.deepEqual(await shown('r1'),['Review and send to Noor','Mark done','Snooze','More']);
   assert.deepEqual(await menu('r1'),['Change','Not needed','Hand off','Rename']);
+  // A step only the owner can do: Done leads, Plan it is the help around it, Snooze and Not needed stay in sight; never Do it
+  assert.deepEqual(await shown('v1'),['Done','Plan it','Snooze','Not needed','More']);
+  assert.deepEqual(await menu('v1'),['Change','Rename']);
+  assert.equal(await page.locator('#task-v1 .actions>button.primary').innerText(),'Done');
+  assert.equal(await page.locator('#task-v1 [data-choice="complete"]').getAttribute('data-choice'),'complete');
+  assert.ok(!(await shown('v2')).includes('Do it'));
+  assert.equal(await page.locator('#task-v2 .actions>button.primary').innerText(),'Done');
+  assert.ok((await shown('v2')).includes('Open in Maps ↗'));
   // A personal card has no Hand off
   assert.ok(!(await menu('h1')).includes('Hand off'));
   // The buttons line up: one row height on a wide screen

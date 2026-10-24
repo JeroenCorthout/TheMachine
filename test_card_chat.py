@@ -107,6 +107,27 @@ class CardChat(unittest.TestCase):
         self.assertEqual(result['text'], 'Drafted it. See notes.')
         self.assertEqual([(d['to'], d['body'], d['reply']) for d in result['drafts']], [(['Alex'], 'Hi Alex, done.', True)])
 
+    def test_a_chat_answer_is_the_reply_and_the_card_keeps_its_status(self):
+        """Card chat: "I hope it went well". The answer ("Yes, it went through") shows in the chat; the card's own text
+        stays its status, never the last chat message, also while the next note is being prepared."""
+        self.store.decide(self.sid, 'other', 'I hope it went well', 'chat-1', 'dashboard')
+        with self.store.connect() as db:
+            db.execute("UPDATE preparations SET status='running'")
+            job = db.execute('SELECT job_id FROM preparations').fetchone()[0]
+        self.app.action('prepare', {'suggestion_id': self.sid, 'job_id': job, 'reply': 'Yes, the venue confirmed it went through.',
+                                    'outcome': 'answered', 'note_kind': 'continue'})
+        with self.store.connect() as db:
+            card = db.execute('SELECT status,body FROM suggestions WHERE id=?', (self.sid,)).fetchone()
+            db.execute("INSERT INTO preparation_runs(job_id,suggestion_id,session_job_id,status,started_at) VALUES(?,?,?,'ok',?)", (job, self.sid, job, a.now()))
+            db.execute('INSERT INTO preparation_calls(job_id,call_id,tool,params,started_at) VALUES(?,?,?,?,?)', (job, 'c1', 'assistant_signals', json.dumps(
+                {'action': 'prepare', 'args': {'suggestion_id': self.sid, 'reply': 'Yes, the venue confirmed it went through.', 'body': 'I can draft this.'}}), a.now()))
+            owner, results = self.app.card_chat_service(db, self.sid)
+        self.assertEqual((card['status'], card['body']), ('prepared', 'I can draft this.'))
+        self.assertEqual(results[job][0]['text'], 'Yes, the venue confirmed it went through.')
+        self.assertIn('reply=<your answer to their message', a.chat_prompt({'job_id': job, 'suggestion_id': self.sid}))
+        with self.assertRaises(ValueError):
+            self.app.action('prepare', {'suggestion_id': self.sid, 'job_id': job, 'reply': 'x' * 1001})
+
     def test_what_a_note_taught_shows_from_the_database_never_from_the_reply(self):
         """Card chat on a signing card: "next time keep it open in the browser for me". The reply alone claiming it noted
         something shows nothing; a rule remember_fact saved from that note shows as a learned line under the reply, which

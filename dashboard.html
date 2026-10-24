@@ -2102,13 +2102,15 @@ function cardActions(s,choices,smartButtons,unmerge,hint,smart){const copy=copyL
  if(copy)smartButtons=`<button class="primary" data-id="${s.id}" data-result="copy">Copy draft</button>`+smartButtons;
  const answered=s.status==='prepared'&&(()=>{try{return JSON.parse(s.outcome||'{}').state==='answered'}catch{return false}})();
  const ask=askQuestion(s,smart,hint);
- const isPrimary=c=>c==='send'||(c==='retry'&&!ask)||c==='answer'||(c==='complete'&&!copy&&(hint||(s.status==='prepared'&&!answered&&!ask&&!finalStep(s)&&!smart.some(a=>a.kind!=='open'))))||(c==='accept'&&(s.status==='pending'||answered)&&!hint);
+ const mine=ownerStep(s)&&!ask;
+ const isPrimary=c=>c==='send'||(c==='retry'&&!ask)||c==='answer'||(c==='complete'&&mine)||(c==='complete'&&!copy&&(hint||(s.status==='prepared'&&!answered&&!ask&&!finalStep(s)&&!smart.some(a=>a.kind!=='open'))))||(c==='accept'&&(s.status==='pending'||answered)&&!hint&&!mine);
  const btn=([c,t])=>c==='change'&&agentAsk(s)?`<button class="ghost" data-agent-ask="${esc(s.id)}">Ask ${esc(s.agent_job.name)} for changes</button>`:c==='handoff'?`<button class="ghost" data-fleet-handoff="${esc(s.id)}">${t}</button>`:c.startsWith('agent:')?`<button class="ghost" data-agent-hand="${esc(c.slice(6))}" data-card="${esc(s.id)}">${esc(t)}</button>`:`<button class="${isPrimary(c)?'primary':c==='reject'?'quiet':'ghost'}" data-id="${s.id}" data-choice="${c}">${t}</button>`;
  const all=[...choices,...(canHandoff(s)&&s.status!=='snoozed'&&!smart.some(a=>a.kind==='handoff')?[['handoff',s.fleet_handoff?.back?'Hand to someone else':'Hand off']]:[]),...(canAgent(s)?agentTools().map(t=>['agent:'+t.id,'Hand to '+t.name]):[]),...(agentAsk(s)&&!choices.some(([c])=>c==='change')?[['change','']]:[])];
- const head=all.filter(([c])=>isPrimary(c)),order=(ask?['handoff','complete','retry','snooze','reject']:answered?['snooze','change','complete','reject','handoff']:SECONDARY[s.status])||['complete','snooze','change','reject','handoff'];
+ const head=all.filter(([c])=>isPrimary(c)),order=(mine&&s.status==='pending'?['accept','snooze','reject','change','handoff']:ask?['handoff','complete','retry','snooze','reject']:answered?['snooze','change','complete','reject','handoff']:SECONDARY[s.status])||['complete','snooze','change','reject','handoff'];
  const rank=c=>c.startsWith('agent:')?99:c==='change'&&agentAsk(s)?-1:order.indexOf(c),rest=all.filter(([c])=>!isPrimary(c)).sort((a,b)=>rank(a[0])-rank(b[0]));
- const leads=(smartButtons.match(/<(button|a) /g)||[]).length+head.length,room=Math.max(1,3-leads);
- let shown=rest.slice(0,room),more=rest.slice(room);if(more.length===1&&!unmerge){shown=rest;more=[]}
+ // An owner's own step keeps Plan it, Snooze and Not needed in sight beside Done.
+ const leads=(smartButtons.match(/<(button|a) /g)||[]).length+head.length,room=mine&&s.status==='pending'?3:Math.max(1,3-leads);
+ let shown=rest.slice(0,room),more=rest.slice(room);if(more.length===1&&!unmerge&&!(mine&&s.status==='pending')){shown=rest;more=[]}
  // Rename sits in More on every card (and so in the chat's menu): the owner's title wins over the generated one.
  const rename=`<button type="button" class="ghost" data-rename="${esc(s.id)}">Rename</button>`;
  const menu=`<details class="more-actions"><summary aria-label="More actions">More</summary><div class="more-menu" role="group" aria-label="More actions">${more.map(btn).join('')}${rename}${unmerge}</div></details>`;
@@ -2132,6 +2134,10 @@ const askQuestion=(s,smart,hint)=>{if(closed(s)||s.status==='snoozed'||hint)retu
  try{const o=JSON.parse(s.outcome||'{}'),q=String(o.needs||'').trim();return o.state==='needs_you'&&/\?$/.test(q)?q:''}catch{return ''}};
 // A draft's Send opens the preview first: the button says so.
 const sendLabel=a=>a.kind==='calendar'?CAL_LABEL[a.op]:['email','email_demo','linkedin','slack','x','whatsapp','intercom'].includes(a.kind)&&/^Send\b/.test(a.label||'')?a.label.replace(/^Send\b/,'Review and send'):a.label;
+// A step only the owner can do (a visit, a pickup; the review's owner_step): Done leads, and Plan it is what The Machine
+// can do around it (a calendar slot, directions, a message if plans change). Never Do it. Same rule as controls() in assistant.py.
+const ownerStep=s=>!!s.owner_step&&!closed(s)&&s.status!=='snoozed';
+const ownerStepChoices=choices=>[['complete','Done'],...choices.filter(([c])=>c!=='complete').map(([c,t])=>c==='accept'?[c,'Plan it']:[c,t])];
 function suggestionCard(s,section){
 // A result that only answered, explained or planned leaves the task itself to do: Do it leads again.
 const answered=s.status==='prepared'&&(()=>{try{return JSON.parse(s.outcome||'{}').state==='answered'}catch{return false}})();
@@ -2140,7 +2146,8 @@ const handled=!closed(s)&&s.handled_hint?(()=>{try{return JSON.parse(s.handled_h
 const ask=askQuestion(s,smart,hint);
 // Try again already ran without anything new and stopped asking again: retrying alone won't help, so it isn't offered.
 const retryPointless=s.preparation_cause==='retry'&&askBlocked(s);
-const choices=ask?[['answer','Answer'],...(s.preparation_status==='blocked'&&!retryPointless?[['retry',retryLabel(s.preparation_reason)]]:[]),['complete','Mark done'],['snooze','Snooze'],['reject','Not needed']]:s.status==='pending'?[['accept',s.labels?.accept||'Do it'],['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject',s.labels?.reject||'Not needed']]:s.status==='snoozed'?[['accept',s.handoff_wait?'Check in now':'Unsnooze'],['snooze','Change time'],['reject','Not needed']]:[...(s.preparation_status==='blocked'?[['retry',retryLabel(s.preparation_reason)]]:answered?[['accept','Do it']]:[]),['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']];
+const asked=ask?[['answer','Answer'],...(s.preparation_status==='blocked'&&!retryPointless?[['retry',retryLabel(s.preparation_reason)]]:[]),['complete','Mark done'],['snooze','Snooze'],['reject','Not needed']]:s.status==='pending'?[['accept',s.labels?.accept||'Do it'],['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject',s.labels?.reject||'Not needed']]:s.status==='snoozed'?[['accept',s.handoff_wait?'Check in now':'Unsnooze'],['snooze','Change time'],['reject','Not needed']]:[...(s.preparation_status==='blocked'?[['retry',retryLabel(s.preparation_reason)]]:answered?[['accept','Do it']]:[]),['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']];
+const choices=ownerStep(s)&&!ask?ownerStepChoices(asked):asked;
 const notes=smart.map(a=>({action:a,state:a.state||s.action_status})).filter(x=>x.action!==tpSent&&actionNote(x.action.kind==='intercom'?{...x.state,as_name:x.action.as_name}:x.state,x.action.kind));
 const undo=closed(s)&&s.undo_until&&Date.parse(s.undo_until)>Date.now();
 const status=cardState(s);
@@ -3401,7 +3408,7 @@ const chatViaIcon=(v,note)=>note?'note':/^(email|gmail|outlook|mail)/i.test(v||'
 const CHAT_VIA={email:'Email',gmail:'Email',slack:'Slack',linkedin:'LinkedIn',whatsapp:'WhatsApp',telegram:'Telegram',x:'X',calendar:'Calendar',intercom:'Intercom',github:'GitHub',android:'Phone'};
 // The owner's own taps read as what they did, not a bare button name
 // (said without "You": the side already says who)
-const CHAT_TAPS={'Do it':'Chose Do it','Reopened':'Reopened it','Snoozed':'Snoozed it','Unsnoozed':'Unsnoozed it','Back for a check-in':'Brought it back for a check-in','Check-in moved':'Moved the check-in','Marked done':'Marked it done'};
+const CHAT_TAPS={'Do it':'Chose Do it','Plan it':'Chose Plan it','Reopened':'Reopened it','Snoozed':'Snoozed it','Unsnoozed':'Unsnoozed it','Back for a check-in':'Brought it back for a check-in','Check-in moved':'Moved the check-in','Marked done':'Marked it done'};
 const chatEventText=i=>String(i.mine&&CHAT_TAPS[i.text]||i.text||'').replace(/^You\s+(\S)/,(m,c)=>c.toUpperCase());
 const chatVia=v=>CHAT_VIA[v]||(v&&v!=='signal'?v[0].toUpperCase()+v.slice(1):'');
 // Whose side an item is on: the owner's messages and taps on the right, the Machine and the people it is about on the left.

@@ -2664,6 +2664,8 @@ class Store:
             db.execute('CREATE INDEX IF NOT EXISTS promise_log_promise ON promise_log(promise_id)')
             if 'together' not in {r['name'] for r in db.execute('PRAGMA table_info(promises)')}:
                 db.execute('ALTER TABLE promises ADD COLUMN together INTEGER NOT NULL DEFAULT 0')  # a plan made with them: theirs and the owner's
+            if 'owner_step' not in {r['name'] for r in db.execute('PRAGMA table_info(promises)')}:
+                db.execute('ALTER TABLE promises ADD COLUMN owner_step INTEGER NOT NULL DEFAULT 0')  # only the owner can do it (go there, pick it up)
             preparation_columns = {r['name'] for r in db.execute('PRAGMA table_info(preparations)')}
             if 'action_id' not in preparation_columns:
                 db.execute('ALTER TABLE preparations ADD COLUMN action_id TEXT')
@@ -2693,6 +2695,10 @@ class Store:
             graph.ensure(db)
             if 'project' not in {r[1] for r in db.execute('PRAGMA table_info(suggestions)')}:
                 db.execute('ALTER TABLE suggestions ADD COLUMN project TEXT')
+            # A step only the owner can do themselves, in person or offline (a visit, a pickup, attending): the review's
+            # judgement. The card offers Done and help around it (Plan it), never Do it.
+            if 'owner_step' not in {r[1] for r in db.execute('PRAGMA table_info(suggestions)')}:
+                db.execute('ALTER TABLE suggestions ADD COLUMN owner_step INTEGER NOT NULL DEFAULT 0')
         self.clean_protection_leftovers()
         try:
             self.message_protection(True if protect is None and os.environ.get('MESSAGE_PROTECTION_TEST') else protect)
@@ -3824,15 +3830,16 @@ class Store:
         return {'status': 'complete', **({'stages': moved} if moved else {})}
 
     def suggest(self, dedupe_key, title, body, event_ids, when='now', digest_at='08:30', work=False, urgent=False, due=None, ahead=False, awaiting=None, project=None,
-                card_id=None, separate=False, reopen=False, match=False, _db=None, suggestion_id=None):
+                card_id=None, separate=False, reopen=False, match=False, _db=None, suggestion_id=None, owner_step=None):
         """A new card, or with match (the review) the existing card about the same matter brought up to date:
         card_id names the card the reviewer judged to be the same matter, separate says it is a different one.
-        suggestion_id: the new card's id, when the caller made its evidence first (owner_card)."""
+        suggestion_id: the new card's id, when the caller made its evidence first (owner_card). owner_step: the step is
+        one only the owner can do (True), one The Machine can do (False), or unchanged on an update (None)."""
         if _db is None:
             with self.connect() as db:
                 db.execute('BEGIN IMMEDIATE')
                 return self.suggest(dedupe_key, title, body, event_ids, when, digest_at, work, urgent, due, ahead, awaiting, project,
-                                    card_id, separate, reopen, match, _db=db, suggestion_id=suggestion_id)
+                                    card_id, separate, reopen, match, _db=db, suggestion_id=suggestion_id, owner_step=owner_step)
         if not dedupe_key or not title or not body or not event_ids:
             raise ValueError('Evidence, title, body and stable dedupe_key are required')
         if due is not None:
@@ -3885,7 +3892,10 @@ class Store:
                                            'card_id set to that card: it gets the new evidence, title and body and comes back if it was waiting. '
                                            'If it is a different matter, call suggest again with separate:true.')
             if target:
-                return self.update_card(db, target, dedupe_key, title, body, rows, event_ids, when, digest_at, work, urgent, due, ahead, project, reopen)
+                saved = self.update_card(db, target, dedupe_key, title, body, rows, event_ids, when, digest_at, work, urgent, due, ahead, project, reopen)
+                if owner_step is not None and not saved.get('attached'):
+                    db.execute('UPDATE suggestions SET owner_step=? WHERE id=?', (int(bool(owner_step)), target['id']))
+                return saved
             if due:
                 # A deadline within three days goes out now; one that the
                 # weekend hold would reach too late counts as urgent.
@@ -3907,9 +3917,10 @@ class Store:
                 wanted = ahead and first_look_running(db)
                 ahead, deliver_after = False, None
             suggestion_id = suggestion_id or uuid.uuid4().hex[:16]
-            db.execute('INSERT INTO suggestions(id,dedupe_key,title,body,event_ids,account_ids,created_at,deliver_after,source_line,urgent,due) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO suggestions(id,dedupe_key,title,body,event_ids,account_ids,created_at,deliver_after,source_line,urgent,due,owner_step) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
                        (suggestion_id, dedupe_key[:240], title[:300], body[:5000], encoded(event_ids),
-                        encoded(sorted({r['account_id'] for r in rows})), now(), deliver_after, source_line(sorted([dict(r) for r in rows],key=lambda r:event_ids.index(r['id']))), int(urgent), due))
+                        encoded(sorted({r['account_id'] for r in rows})), now(), deliver_after, source_line(sorted([dict(r) for r in rows],key=lambda r:event_ids.index(r['id']))), int(urgent), due,
+                        int(bool(owner_step))))
             db.execute('INSERT INTO deliveries(suggestion_id,status,updated_at) VALUES(?,?,?)',
                        (suggestion_id, 'previewed' if preview else 'queued', now()))
             if preview and wanted:
@@ -4225,7 +4236,7 @@ class Store:
             raise ValueError("direction is 'mine' (the owner promised) or 'theirs' (someone promised the owner)")
         who, what = ' '.join(str(args.get('who') or '').split()), ' '.join(str(args.get('what') or '').split())
         if not 2 <= len(who) <= 80 or not 3 <= len(what) <= 140:
-            raise ValueError('who is the other person (2-80 characters); what is the promised action starting with a verb, as it follows "they’d": "send the signed contract" (3-140 characters)')
+            raise ValueError('who is the other person (2-80 characters); what is the promised action alone, starting with a verb, as it follows "they’d": "send the signed contract" (3-140 characters)')
         due = args.get('due')
         if due is not None:
             try:
@@ -4262,9 +4273,10 @@ class Store:
                                (promise_check_at('mine', row['due'], row['made_at'], digest_at), stamp, row['id']))
                     promise_logged(db, row['id'], 'together', event['id'])
                 return {'id': row['id'], 'status': row['status'], 'duplicate': True}
-            cursor = db.execute('INSERT INTO promises(direction,who,what,due,check_at,event_id,account_id,watch,status,created_at,updated_at) '
-                                "VALUES(?,?,?,?,?,?,?,?,'open',?,?) ON CONFLICT(event_id,direction,who,what) DO NOTHING",
-                                (direction, who, what, due, check_at, event['id'], event['account_id'], encoded({**watch, 'promise': True}) if watch else None, stamp, stamp))
+            cursor = db.execute('INSERT INTO promises(direction,who,what,due,check_at,event_id,account_id,watch,status,created_at,updated_at,owner_step) '
+                                "VALUES(?,?,?,?,?,?,?,?,'open',?,?,?) ON CONFLICT(event_id,direction,who,what) DO NOTHING",
+                                (direction, who, what, due, check_at, event['id'], event['account_id'], encoded({**watch, 'promise': True}) if watch else None, stamp, stamp,
+                                 int(direction == 'mine' and args.get('owner_step') is True)))
         return {'id': cursor.lastrowid, 'status': 'open', 'check_at': check_at,
                 'note': 'Recorded, no card. It is checked when due; if still open then, a card comes.'}
 
@@ -8346,7 +8358,7 @@ def chat_prompt(job, config=None):
     return f'''The owner wrote to you in the chat of suggestion {sid}. Their message is the latest Change note (latest_feedback, source dashboard), and it is their authorization as before. This is a preparation task: answer it, or do what it asks, under the preparation rules and the instructions earlier in this session (if they are no longer in context, read tools/personal-assistant/PREPARATION.md). A question about the thread, the people or the context is answered from the evidence (events, preparation_history, memory), and the card's current draft and next_actions stay as they are unless the message asks to change them. When you change a draft, the body says concretely what changed. Use send_now only when this message approves sending a draft they already saw on the card, unchanged; a draft you write or change now is saved without it, for them to read and Send. Preparation job ID: {j}.
 - Browser lease owner: assistant-{j[:8]} (python3 {browser_lease_script(config)} claim --owner assistant-{j[:8]} --minutes 30 --wait 10).
 - Attachments folder: {WORKSPACE}/data/assistant-attachments/{j}/{calendar_prompt(config)}
-- Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<your reply or result, short>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it. When they say they talk to this person on another channel (WhatsApp), switch the draft to it as PREPARATION.md says; a limit of The Machine is never a question for them. When they say the person doesn't know about it yet, the message first says what it is about.'''
+- Save with assistant_signals prepare args suggestion_id={sid}, job_id={j}, reply=<your answer to their message, short; the chat shows it>, body=<the card's status after this: where the task stands and what is ready, about the task, never a reply to them; leave it out when only answered and the status didn't change>, next_actions=[...] (the current ones again when you only answered), outcome and note_kind as the earlier instructions say (outcome answered when you only answered and no draft is waiting); or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason, details, and questions when only the owner can unblock it. When they say they talk to this person on another channel (WhatsApp), switch the draft to it as PREPARATION.md says; a limit of The Machine is never a question for them. When they say the person doesn't know about it yet, the message first says what it is about.'''
 
 
 # What a review's own tool calls say it is doing, in the owner's words. Only names and card titles (what a card already
@@ -9017,6 +9029,9 @@ def controls(row, root=''):
         elif answered_only(row):choices=[('Do it','accept'),('Snooze','snooze'),('Change','other'),('Mark done','complete'),('Not needed','reject')]
     else:
         choices = [('Do it','accept'),('Mark done','complete'),('Snooze','snooze'),('Change','other'),('Not needed','reject')]
+    if row.get('owner_step') and row['status'] not in ('completed','rejected','snoozed'):
+        # Only the owner can do this step (a visit, a pickup): Done leads; Plan it is what The Machine can do around it.
+        choices = [('Done','complete')] + [('Plan it' if choice == 'accept' else label, choice) for label, choice in choices if choice != 'complete']
     actions=next_actions.visible_actions({'kind':'menu','actions':row['next_actions']}) if row.get('next_actions') is not None else next_actions.visible_actions(row.get('next_action'))
     if ask_question(row,actions):choices=[('Answer','other'),*([(retry_label(row.get('preparation_reason')),'retry')] if row.get('preparation_status')=='blocked' and not retry_pointless(row) else []),('Mark done','complete'),('Snooze','snooze'),('Not needed','reject')]
     if row['status'] == 'pending' and row.get('labels'):
@@ -9758,6 +9773,16 @@ def finish_files(step):
             '\nIf the page already holds files from an earlier draft, keep a file only when it is one of these; remove the rest. Before you submit, check the page shows each by name; after, check that what went out carries them, and say so in the result.')
 
 
+# A card whose step only the owner can do (the review's owner_step): the run helps around it and never does it.
+OWNER_STEP_PREPARATION = ('''
+This step is one only the owner can do themselves, in person or offline (going somewhere, picking something up, attending): you can't do it, '''
+    '''and the result never says it is done or about to be. This wins over the lines above. Prepare only what helps them do it, when it fits: '''
+    '''a calendar event at a sensible time, checked against that day (a calendar next action they add with a tap); a link to the place with '''
+    '''its directions and opening hours ({kind:open,label:'Open in Maps',url:<a Google Maps link to the place>}); a short draft to the other '''
+    '''person only when it helps (a time to confirm, plans that changed), which they send themselves. No next actions when nothing helps. '''
+    '''Save with outcome:'needs_you' and needs:<the step itself, in a few words>, and a body of one or two short lines about what you prepared.''')
+
+
 def preparation_prompt(job, facts='', config=None, edits='', rules='', style=''):
     # The standing rules live in PREPARATION.md, which the plugin prepends to every preparation
     # session (outside the runner's message limit); this message carries only the job itself.
@@ -9768,6 +9793,8 @@ Prepared ahead, so these limits win over the preparation rules: take the task as
 What the owner reviewed and confirmed: {job['finish']['preview']}{(chr(10)+'Page: '+job['finish']['url']) if job['finish'].get('url') else ''}{finish_text(job['finish'])}{finish_files(job['finish'])}
 If what you are about to submit differs from what they reviewed (another amount, date, recipient or text), or the step already happened, do not go ahead: record a blocker that says what changed. Otherwise do it, check that it went through (a confirmation, receipt or the new state) and save outcome:'done' with what happened and any reference. Preparation job ID: {j}.''' if job.get('finish') else
                f'''The owner accepted suggestion {sid}. This is a preparation task, not a signal-review task: the owner tapped Do it, so carry out the task itself. Owner-selected next step: {job.get('next_step') or 'the original offered preparation'}. Preparation job ID: {j}.''')
+    if job.get('owner_step') and not job.get('finish'):
+        opening+=OWNER_STEP_PREPARATION
     if job.get('finish'):
         prior=job['finish'].get('finish_result')
         if prior and prior.get('state')=='uncertain':
@@ -10377,6 +10404,24 @@ def account_services(config, account_ids=None):
     return [a.get('service', 'gmail') for a in config.get('accounts', []) if wanted is None or a.get('id') in wanted]
 
 
+def promise_text(p):
+    """A promise card's title and body. The title says what was promised; the body adds only who and when, in one
+    short line, so the card never says the same thing twice."""
+    made = dt.datetime.fromisoformat(p['made_at']).astimezone(local_tz())
+    said = f"{made:%a} {made.day} {made:%b}"
+    due = dt.date.fromisoformat(p['due']) if p.get('due') else None
+    # The due chip says when it is due; the line adds it only when it isn't the day it was said
+    by = f" for {due:%a} {due.day} {due:%b}" if due and due != made.date() else ''
+    if p['direction'] == 'mine':
+        title = p['what'][:1].upper() + p['what'][1:]
+        title = title if p['who'].lower() in title.lower() or len(title) + len(p['who']) > 84 else f"{title} for {p['who']}"
+        body = f"Promised {p['who']} on {said}{by}. Nothing shows it done yet."
+    else:
+        title = f"Waiting on {p['who']}: {p['what']}"
+        body = f"Promised on {said}{by}. Nothing has come in yet, so a short nudge may help."
+    return title, body
+
+
 def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting='', sources=''):
     return f'''This is a signal review started by the personal-assistant service (review run {run_id}). It is not a chat with the owner and not a preparation task.
 ''' + (f'''Boards to sort, before anything else (separate from the batch: these projects need no new message). The owner put these projects on a board and their tiles say "Sorting" until you place them. For each, read its messages with events (its event_ids below, all accounts) and judge where it stands now from what they mean between these people, never their wording. Place it with graph {{"project": its node_id, "board", "stage", "event_id": the message that shows it, "reason": one short clause that reads after "Moved to <stage>:" (like "Demo held on Thu, they asked for pricing"), "next": the owner's next step in a few words}}. When nothing has moved it past the first stage, place it in the first stage the same way, with the message and why. Only when none of its messages shows where it stands, add it to finish_analysis sorted ([{{"project": its node_id, "why": a few words}}]). finish_analysis refuses until each one is placed or in sorted.
@@ -10392,10 +10437,11 @@ Save only genuinely useful, distinct suggestions with suggest; the service deliv
 Name the ongoing work: finish_analysis projects ({{"Project name": [event_ids from this batch]}}) for signals that clearly belong to a deal, hire, launch, renovation or other piece of work, and project on a suggest that belongs to one. Reuse begin_analysis's projects names when they fit; a signal's probably_project is the graph's guess from meaning and people, so add it to projects when it's right. graph tells who someone is to the owner (role, closeness, rhythm, gone quiet, their projects, what's open between them); when a message shows what someone is to them (their title, "our accountant", an introduction) and graph has no role or a wrong one, set it with graph node_id, role, event_id and quote (a short line copied from that message).
 Boards: projects of one kind (partner listings, hires, onboardings), one project per counterpart, stand in stages on boards the owner saved; begin_analysis boards lists them with each project's stage and the board's about (which projects belong). When a message in this batch moves one (they agreed, sent their edits, went live, declined, the address bounced), add it to finish_analysis stages ({{"project", "board", "stage", "reason", "event_id", "next"}}): judge what the message means between these people in its conversation, never its wording, and never move a project only because time passed. reason is a short clause that reads after "Moved to <stage>:" ("Sam signed the order form"); next is the owner's next step in a few words; org the counterpart's web domain when it isn't clear from the people. A new project that fits a board's about goes on it the same way. Projects the owner put on a board come as "Boards to sort" at the top. Only the owner makes boards; a review suggests them, each once, from the boards to suggest at the top with graph suggest_board {{"name", "stages", "about", "projects", "reason", "visibility"}}: stages that fit how that kind of work goes, in order, ending at the good outcome (partner listings: Contacted, Agreed, In review, Live; hiring: Sourced, Screening, Interviews, Offer, Hired); every board has its own Stalled or declined row, so an ending where it didn't happen (lost, declined, dropped) is never a stage. about one sentence on which projects belong. Judge the kind from what the projects are, not from words in their names. The owner's own move stands until a newer message changes things.
 Team: when begin_analysis lists team (Work messages, shared with the owner's Work Fleet by default), add finish_analysis team ([{{"event_id", "share", "line"}}]) for each of those threads, judged by what the conversation is, never by words in it: client (someone outside the company, about work with them: the whole thread goes to the teammates), sensitive (about a client but private to the people on it: a personal matter, health, a dispute about one person, something confidential to one person; teammates see only that it exists), internal (only colleagues) or personal (the owner's own life, not work; never shared). line is one short line of what happened, in your own words ("Lee asked for the renewal quote"), never quoted text. When unsure between client and sensitive, choose sensitive. The owner's own Team or Only you always wins.
+Who does the step: when the step on a card is one only the owner can do themselves, in person or offline (go somewhere, pick something up, attend, meet, hand something over, sign on paper), add owner_step:true to suggest, and to promise for the owner's own; judge it by what the step is, not its words. The card then offers Done, and help around it on the owner's tap (a calendar slot, directions, a message if plans change), never Do it. Leave it out when you can do the step with your tools (write, send, look up, book or order online, fill in a form).
 Before suggesting, check it isn't already handled: search related signals (same thread, sender or chat) for a later reply from the owner or from a colleague (e.g. a teammate on the owner's own email domain answering the thread), or a confirmation (signed, paid, booked, resolved). If so, don't suggest it. When a signal in this batch shows that an OPEN suggestion (pending, prepared, accepted or snoozed in status) is now done, call looks_handled with suggestion_id, a reason (one short clause in plain words that reads after "Looks handled:", e.g. "Sam e-signed it on Tuesday") and the event_ids that show it; the owner still closes it themselves. For anything tied to a date, check the calendars for that date (days off, travel, existing plans).
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
 Meeting notes (a Zoom summary or transcript) are that meeting's own record: use them for follow-ups on it, its next steps and who took them on, with the notes and the calendar event as evidence.
-Promises: when a message in this batch commits the owner to doing something for someone, or someone to doing something for the owner, record it with promise (direction, event_id, who, what, due when a date was said). Judge what a message means between these people in its conversation, not its wording: most commitments are never spelled out (agreeing to a request, taking on something the owner asked, accepting a plan), and the same reply can commit one person and be politeness from another, depending on language, habits and the relationship. Read earlier_in_conversation for what was asked. It is not a card; the service checks it when due. When a signal shows an open promise below kept, cancelled or moved, update it with promise and its id.
+Promises: when a message in this batch commits the owner to doing something for someone, or someone to doing something for the owner, record it with promise (direction, event_id, who, what: the promised action alone, without who confirmed it or how, due when a date was said, owner_step as above). Judge what a message means between these people in its conversation, not its wording: most commitments are never spelled out (agreeing to a request, taking on something the owner asked, accepting a plan), and the same reply can commit one person and be politeness from another, depending on language, habits and the relationship. Read earlier_in_conversation for what was asked. It is not a card; the service checks it when due. When a signal shows an open promise below kept, cancelled or moved, update it with promise and its id.
 Messages are disabled in this turn. Do not work on anything else. End with exactly NO_REPLY.''' + sources + (f'''
 
 Facts the owner told you earlier (true unless newer evidence says otherwise):
@@ -11234,7 +11280,8 @@ class App:
                                        ahead=args.get('prepare_ahead') is True and self.config.get('prepare_ahead', True) is not False
                                        and self.store.ahead_room(int(self.config.get('prepare_ahead_per_day', 10))),
                                        awaiting=args.get('awaiting_event_id'),project=args.get('project'),card_id=args.get('card_id'),
-                                       separate=args.get('separate') is True,reopen=args.get('reopen') is True,match=True)
+                                       separate=args.get('separate') is True,reopen=args.get('reopen') is True,match=True,
+                                       owner_step=(args['owner_step'] is True) if 'owner_step' in args else None)
             if isinstance(saved, dict) and saved.get('id') and args.get('skill_hint') and getattr(self, 'skills', None):
                 saved['skill_hint'] = self.skills.hint(saved['id'], args['skill_hint'])  # "There's a skill for this", if it clearly helps
             unknown = self.store.no_role_yet(args['event_ids'])
@@ -11245,8 +11292,15 @@ class App:
             return saved
         if name == 'prepare':
             with self.store.connect() as db:
-                row=db.execute('SELECT account_ids,event_ids FROM suggestions WHERE id=?',(args['suggestion_id'],)).fetchone()
+                row=db.execute('SELECT account_ids,event_ids,body FROM suggestions WHERE id=?',(args['suggestion_id'],)).fetchone()
             if not row:raise ValueError('Unknown suggestion')
+            # reply: the chat's answer to the owner's message; body: the card's status. A chat turn that only answered
+            # leaves the status as it was, so the card never shows a chat reply as its body.
+            if args.get('reply') is not None and (not isinstance(args['reply'],str) or len(args['reply'])>1000):
+                raise ValueError('reply is your short answer to their message, at most 1000 characters')
+            if not str(args.get('body') or '').strip():
+                if not str(args.get('reply') or '').strip():raise ValueError('A concrete local preparation is required')
+                args={**args,'body':row['body'] or args['reply']}
             if args.get('next_action') and args.get('next_actions'):raise ValueError('Use next_action or next_actions, not both')
             with self.store.connect() as db:
                 emails=db.execute("SELECT e.metadata FROM events e JOIN json_each(?) ids ON ids.value=e.id WHERE e.kind='gmail.message' ORDER BY e.occurred_at DESC",(row['event_ids'],)).fetchall()
@@ -12662,19 +12716,10 @@ class App:
                 if not current:
                     return None  # closed or rescheduled since the worker selected it
                 return self.promise_card(dict(current), _db=db)
-        made = dt.datetime.fromisoformat(p['made_at']).astimezone(local_tz())
-        said = f"{made:%A} {made.day} {made:%b}"
-        by = f" by **{dt.date.fromisoformat(p['due']):%A %-d %b}**" if p['due'] else ''
-        if p['direction'] == 'mine':
-            title = p['what'][:1].upper() + p['what'][1:]
-            title = title if p['who'].lower() in title.lower() or len(title) + len(p['who']) > 84 else f"{title} for {p['who']}"
-            body = f"You told {p['who']} on {said} you’d {p['what']}{by}. Nothing shows it done yet."
-        else:
-            title = f"Waiting on {p['who']}: {p['what']}"
-            body = f"{p['who']} said on {said} they’d {p['what']}{by}. Nothing has come in yet, so a short nudge may help."
+        title, body = promise_text(p)
         ahead = self.config.get('prepare_ahead', True) is not False and self.store.ahead_room(int(self.config.get('prepare_ahead_per_day', 10)))
         saved = self.store.suggest('promise:%d' % p['id'], title[:90], body[:700], [p['event_id']], 'now', self.config.get('digest_at', '08:30'),
-                                   work=self.is_work([p['account_id']]), due=p['due'], ahead=ahead, _db=_db)
+                                   work=self.is_work([p['account_id']]), due=p['due'], ahead=ahead, _db=_db, owner_step=bool(p.get('owner_step')))
         with contextlib.nullcontext(_db) as db:
             if db.execute("UPDATE promises SET status='carded',suggestion_id=?,updated_at=? WHERE id=? AND status='open'", (saved['id'], now(), p['id'])).rowcount:
                 promise_logged(db, p['id'], 'carded')
@@ -12811,7 +12856,8 @@ class App:
                         try:job['finish']={**step,'staged':stage_finish_files(step,job['job_id'],self.config)}
                         except (ValueError,OSError) as error:job['finish']={**step,'files_error':str(error) if isinstance(error,ValueError) else 'a file is missing'}
             with self.store.connect() as db:
-                job['ahead']=bool(db.execute('SELECT early FROM suggestions WHERE id=?',(job['suggestion_id'],)).fetchone()[0])
+                card=db.execute('SELECT early,owner_step FROM suggestions WHERE id=?',(job['suggestion_id'],)).fetchone()
+                job['ahead'],job['owner_step']=bool(card['early']),bool(card['owner_step'])
             # A chat message (dashboard chat, decision chat-…) in a session that already has the card's context: a short
             # follow-up turn instead of the full card context again, so long chats stay cheap.
             if str(job.get('decision_id') or '').startswith('chat-') and request['session_job_id']!=job['job_id'] and not job.get('finish') and not job['ahead']:
@@ -13115,7 +13161,8 @@ class App:
         except (ValueError, TypeError):
             ids = []
         names, owner, kinds, metas = {}, [], {}, {}
-        title = (db.execute('SELECT title FROM suggestions WHERE id=?', (suggestion_id,)).fetchone() or {'title': ''})['title'] or ''
+        card = db.execute('SELECT title,owner_step FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
+        title, planned = (card['title'] or '', bool(card['owner_step'])) if card else ('', False)  # planned: only the owner can do its step
         for r in db.execute('SELECT id,kind,metadata FROM events WHERE id IN (' + ','.join('?' * len(ids)) + ')', ids) if ids else []:
             m = json.loads(r['metadata'])
             kinds[r['id']], metas[r['id']] = r['kind'], m
@@ -13180,7 +13227,8 @@ class App:
                 if taps and (choice == 'undo' or (taps[-1]['choice'], choice) in CHAT_UNDONE and at - taps[-1]['at'] < 60000):
                     owner.remove(taps[-1])
                     continue
-                owner.append({'kind': 'event', 'text': ('Unsnoozed' if choice == 'unsnooze' else CHAT_OWNER_WORDS[choice]) + via + why,
+                said = 'Unsnoozed' if choice == 'unsnooze' else 'Plan it' if choice == 'accept' and planned else CHAT_OWNER_WORDS[choice]
+                owner.append({'kind': 'event', 'text': said + via + why,
                               'choice': choice, 'mine': True, 'at': at})
         owner.extend(self.card_chat_learned(db, suggestion_id))
         for r in db.execute('SELECT payload,status,source,created_at FROM action_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)):
@@ -13222,7 +13270,7 @@ class App:
             if r['error'] or params.get('action') != 'prepare' or args.get('suggestion_id') != suggestion_id:
                 continue
             actions = args.get('next_actions') if isinstance(args.get('next_actions'), list) else [args.get('next_action')]
-            body, files = chat_result_files(args.get('body'))
+            body, files = chat_result_files(args.get('reply') if str(args.get('reply') or '').strip() else args.get('body'))
             text = chat_reply(re.sub(r'\[([^\]\n]{1,200})\]\((?!https?:)[^)\s]{1,500}\)', r'\1', chat_text(body)))[0]
             drafts = [d for d in map(chat_draft, actions) if d][:3]
             for d in drafts:
