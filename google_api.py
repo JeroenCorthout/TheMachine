@@ -34,11 +34,17 @@ READ = {
     'gmail.users.settings.sendAs.get': ('GET', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/settings/sendAs/{sendAsEmail}'),
     'calendar.calendars.get': ('GET', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}'),
     'calendar.events.list': ('GET', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events'),
+    'calendar.events.get': ('GET', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}'),
+    'calendar.calendarList.get': ('GET', 'https://www.googleapis.com/calendar/v3/users/me/calendarList/{calendarId}'),
 }
 WRITE = {
     'gmail.users.messages.send': ('POST', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/messages/send'),
     'gmail.users.labels.create': ('POST', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/labels'),
     'gmail.users.threads.modify': ('POST', 'https://gmail.googleapis.com/gmail/v1/users/{userId}/threads/{id}/modify'),
+    # Owner-approved calendar changes (calendar_writes.py); a sign-in without calendar write access is refused by Google.
+    'calendar.events.insert': ('POST', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events'),
+    'calendar.events.patch': ('PATCH', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}'),
+    'calendar.events.delete': ('DELETE', 'https://www.googleapis.com/calendar/v3/calendars/{calendarId}/events/{eventId}'),
 }
 _tokens: dict = {}
 _lock = threading.Lock()

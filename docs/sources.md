@@ -13,7 +13,7 @@ Collectors read existing source content. The optional Salesflare `join_pipelines
 | `service` | Needs | Account keys |
 |---|---|---|
 | `gmail` | `gog` OAuth for the account, or a token broker | `email`, `client` (gog OAuth client), `excluded_terms` (text that drops a message, e.g. a warmup tag) |
-| `calendar` | `gog` OAuth, or a token broker | `email`, `client`, `calendar_id`, `excluded_title_terms` |
+| `calendar` | `gog` OAuth, or a token broker | `email`, `client`, `calendar_id`, `excluded_title_terms`, `writable` (a shared calendar you may change events on) |
 | `outlook` | Your own Entra app (`graph`), or a token broker | `transport`, `email`, `credential` (with `graph`), `connected_at` (with `broker`, set when connected), `excluded_terms` |
 | `outlook_calendar` | The same sign-in as `outlook` | `transport`, `email`, `credential`, `calendar_id` (`primary`), `excluded_title_terms` |
 | `slack` | A [Maton](https://maton.ai) Slack connection | `credential` + `credential_variable` (file with `MATON_API_KEY=`), `connection_id` (found in Maton during setup), `team_id`, `user_id`, `email`, `slack_host`, `fair_incremental` |

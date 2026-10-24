@@ -1,7 +1,7 @@
 ---
 title: Google Calendar
 area: connections
-summary: Your meetings, so you go in prepared and follow up. It only reads.
+summary: Your meetings, so you go in prepared and follow up. It changes nothing unless you tap.
 covers: connector:calendar
 code: onboarding.py, google_api.py
 site: Connect Google, Mail and Calendar, Disconnect, Sign in with Google
@@ -13,7 +13,9 @@ Your events from 7 days back to 30 days ahead, with repeating events filled in. 
 
 ## What it can do
 
-Nothing in your calendar. It never creates, changes or answers an event.
+Nothing on its own. It never invites anyone or answers an invitation.
+
+If the sign-in may write calendars, you can add, change or delete an event without guests, on your own calendar or a shared one you may edit. Every change is your tap: in the [Calendar](calendar.md), or on a card that offers it. A sign-in from **Connect Google** only reads.
 
 ## Connect it
 

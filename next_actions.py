@@ -1,5 +1,6 @@
 """Explicit, revision-bound next actions. No model or arbitrary command execution."""
 import base64
+import calendar_writes
 from contextlib import contextmanager
 import email.policy
 import portable
@@ -127,7 +128,7 @@ def attachment_bytes(record, config):
 # Owner-approved sends: each needs the Send review and Send now (Telegram) or the dashboard dialog.
 SEND_KINDS = ('email', 'email_demo', 'linkedin', 'slack', 'x', 'whatsapp', 'intercom')
 # Owner-approved changes to The Machine's own code: Merge reviews the fix, Merge now applies it.
-APPROVE_KINDS = SEND_KINDS + ('merge',)
+APPROVE_KINDS = SEND_KINDS + ('merge', 'calendar')
 # The last step of a task taken up to it (a filled-in form, a cart, a payment): the owner reviews
 # what will be submitted, and their confirm runs only that step.
 FINISH_KINDS = ('finish',)
@@ -185,6 +186,8 @@ def visible_actions(value):
 def label(value):
     if value['kind'] == 'x' and not value.get('label'):
         return 'Reply on X' if value.get('reply_to') else 'Send'
+    if value['kind'] == 'calendar':
+        return calendar_writes.label(value)
     return value.get('label') or {'email':'Send','email_demo':'Send','linkedin':'Send','slack':'Send','whatsapp':'Send','intercom':'Send reply','merge':'Merge fix','prepare':'Prepare next step','open':'Open original','handoff':'Hand off'}.get(value['kind'],'Continue')
 
 
@@ -195,6 +198,8 @@ def preview(value):
         return x_preview(value)
     if value['kind'] == 'merge':
         return merge_preview(value)
+    if value['kind'] == 'calendar':
+        return calendar_writes.preview(value)
     if value['kind'] == 'finish':
         message = ('\n\n' + ('To ' + value['to_name'] + ':\n' if value.get('to_name') else '') + value['message']) if value.get('message') else ''
         files = '\n\nAttachments: ' + attachment_list(value) if value.get('attachments') else ''
@@ -247,13 +252,13 @@ def delegation(value, result, name=None):
 
 
 def validate(value, config, allowed_accounts, recipient_options=None, linkedin_threads=None, x_threads=None, whatsapp_chats=None,
-             intercom_conversations=None):
+             intercom_conversations=None, calendar_events=None):
     if value is None:
         return None
     if isinstance(value,list):
         if not 1<=len(value)<=3:raise ValueError('Offer one to three useful next actions, not a menu of everything')
         if any(not isinstance(item,dict) for item in value):raise ValueError('Each next action must be one concrete choice')
-        choices=[validate(item,config,allowed_accounts,recipient_options,linkedin_threads,x_threads,whatsapp_chats,intercom_conversations) for item in value]
+        choices=[validate(item,config,allowed_accounts,recipient_options,linkedin_threads,x_threads,whatsapp_chats,intercom_conversations,calendar_events) for item in value]
         if len({item['revision'] for item in choices})!=len(choices) or len({label(item).lower() for item in choices})!=len(choices):
             raise ValueError('Next actions must be distinct concrete choices')
         return {'kind':'menu','actions':choices}
@@ -265,7 +270,10 @@ def validate(value, config, allowed_accounts, recipient_options=None, linkedin_t
         raise ValueError('Use a short specific action label, not a generic or owner-status button')
     if value.get('kind') in PLAIN_LINKS and isinstance(value.get('body'), str):
         value = {**value, 'body': body_text(value['body'])}  # they arrive as plain text: a Markdown link would show raw
-    if value.get('kind') == 'open':
+    if value.get('kind') == 'calendar':
+        # An event added, changed or deleted on a calendar the owner can write: shown on the card, done on their tap.
+        result = calendar_writes.validate(value, config, calendar_events)
+    elif value.get('kind') == 'open':
         if set(value) - {'kind', 'url', 'label'} or urlsplit(str(value.get('url', ''))).scheme != 'https':
             raise ValueError('Use an HTTPS original-page link, not executable instructions')
         if not value.get('label','').startswith(('Open ','View ','Read ')):
@@ -1643,13 +1651,18 @@ print('MACHINE_PROOF='+json.dumps({'ran':result.testsRun,'failed':result.failed,
 
 
 class ActionTransport:
-    """Routes an approved send to Gmail, LinkedIn, Slack, X, WhatsApp or Intercom, or a fix to The Machine itself, by its kind."""
+    """Routes an approved send to Gmail, LinkedIn, Slack, X, WhatsApp or Intercom, a calendar change to Google Calendar,
+    or a fix to The Machine itself, by its kind."""
 
-    def __init__(self, email, linkedin, slack=None, x=None, merge=None, whatsapp=None, intercom=None):
+    def __init__(self, email, linkedin, slack=None, x=None, merge=None, whatsapp=None, intercom=None, calendar=None):
         self.email, self.linkedin, self.slack, self.x, self.merge, self.whatsapp = email, linkedin, slack, x, merge, whatsapp
-        self.intercom = intercom
+        self.intercom, self.calendar = intercom, calendar
 
     def pick(self, action):
+        if action['kind'] == 'calendar':
+            if not self.calendar:
+                raise ValueError('Calendar changes aren’t set up. Nothing was changed.')
+            return self.calendar
         if action['kind'] == 'merge':
             if not self.merge:
                 raise ValueError('Merging fixes isn’t set up. Nothing was merged.')
