@@ -10,6 +10,7 @@ import contextlib
 import datetime as dt
 import difflib
 import functools
+import gzip
 import hashlib
 import hmac
 import importlib.util
@@ -9174,10 +9175,89 @@ def dashboard_cache_scope(token, owner):
 
 
 def dashboard_page(token, owner, base):
-    """dashboard.html as served: the CSRF token, the release, the base path and the device cache's scope filled in."""
-    return ((ROOT / 'dashboard.html').read_text().replace('__CSRF__', dashboard_csrf(token, owner))
+    """dashboard.html as served: the release, the base path and the device cache's scope filled in. Never the CSRF
+    token: the page asks api/session for it (as a page opened from the app's on-device copy always did), so the page
+    holds no secret and can go compressed (compressible below)."""
+    return ((ROOT / 'dashboard.html').read_text().replace('__CSRF__', '')
             .replace('__UI_VERSION__', dashboard_version()).replace('__BASE__', base)
             .replace('__CACHE_SCOPE__', dashboard_cache_scope(token, owner)))
+
+
+# Compressed answers for the dashboard (the page is about 1 MB and api/status close to that; on a phone over 4G that
+# was most of the start). Only the answers in COMPRESSIBLE, and only because none of them holds a secret: compressing a
+# secret next to text an outsider can influence (an email's words in a card) would let them guess the secret from the
+# compressed size (BREACH). The CSRF token is only in api/session, which is never compressed, nor is anything else not
+# listed here (file downloads, the browser view, streams). Brotli when the module is there, else zstd (Python 3.14),
+# else gzip; the client's Accept-Encoding decides, q=0 refuses one.
+COMPRESSIBLE = frozenset({'/', '/sw.js', '/manifest.webmanifest', '/api/status', '/api/events', '/api/calendar', '/api/graph',
+                          '/api/graph/list', '/api/cards/done', '/api/promise'})
+COMPRESS_MIN = 1024  # smaller answers fit a packet or two anyway
+try:
+    import brotli as _brotli
+except ImportError:
+    _brotli = None
+try:
+    from compression import zstd as _zstd
+except ImportError:
+    _zstd = None
+
+
+def content_codings(accept):
+    """The codings this server can send, best first, that the client's Accept-Encoding takes (q > 0)."""
+    taken, star = {}, None
+    for part in str(accept or '').split(','):
+        name, _, params = part.strip().partition(';')
+        name, q = name.strip().lower(), 1.0
+        for param in params.split(';'):
+            key, _, value = param.strip().partition('=')
+            if key.strip().lower() == 'q':
+                try:
+                    q = float(value)
+                except ValueError:
+                    q = 0.0
+        if name == '*':
+            star = q
+        elif name:
+            taken[name] = q
+    own = (['br'] if _brotli else []) + (['zstd'] if _zstd else []) + ['gzip']
+    return [c for c in own if taken.get(c, star or 0) > 0]
+
+
+def compress_body(data, coding, best=False):
+    """`data` in `coding`; `best` for answers kept and sent many times (the page), else fast enough for every request."""
+    if coding == 'br':
+        return _brotli.compress(data, quality=9 if best else 5)
+    if coding == 'zstd':
+        return _zstd.compress(data, 12 if best else 3)
+    return gzip.compress(data, 9 if best else 6, mtime=0)
+
+
+def etag_base(tag):
+    """An ETag without the coding it was sent in ("abc-gzip" is "abc"): the page is the same, only its transfer differs."""
+    tag = tag.strip()
+    tag = tag[2:] if tag.startswith('W/') else tag
+    return re.sub(r'-(br|zstd|gzip)"$', '"', tag)
+
+
+def etag_matches(if_none_match, etag):
+    return any(etag_base(t) == etag for t in str(if_none_match or '').split(',') if t.strip())
+
+
+def dashboard_status(status):
+    """api/status as the dashboard needs it: without what it never reads. A finished review's signal list (only its
+    count shows, and checked_count has it), its session names, a card's dedupe key and saved pre-close state, and a
+    delivery's message bookkeeping. The status action itself (CLI, plugin) keeps everything; copies, never its rows."""
+    def without(rows, keys, when=lambda row: True):
+        return [{k: v for k, v in row.items() if k not in keys} if isinstance(row, dict) and when(row) else row for row in rows or []]
+    status, drop = dict(status), {'analyses': {'owner_session', 'owner_run'}, 'suggestions': {'dedupe_key', 'closed_state'},
+                                  'deliveries': {'previous_message_ids', 'notification_message_id', 'last_notified_at',
+                                                 'edit_retry_at', 'edit_failures'}}
+    for name, keys in drop.items():
+        if isinstance(status.get(name), list):
+            status[name] = without(status[name], keys)
+    if isinstance(status.get('analyses'), list):
+        status['analyses'] = without(status['analyses'], {'items'}, lambda r: r.get('status') == 'complete' and r.get('checked_count') is not None)
+    return status
 
 
 def dashboard_base(config, host):
@@ -14974,8 +15054,23 @@ class App:
                     LOG.info('idle: message protection applies at the next start')
                 return
 
+    def packed_page(self, etag, coding, page):
+        """The dashboard page compressed in `coding`, made once per page (its ETag) and coding: the best compression,
+        since it goes to every device opening the app. A few kept (one owner, a host or two, a coding or two)."""
+        key = (etag, coding)
+        with self._packed_lock:
+            if key in self._packed:
+                return coding, self._packed[key]
+        data = compress_body(page.encode(), coding, best=True)
+        with self._packed_lock:
+            self._packed[key] = data
+            while len(self._packed) > 6:
+                self._packed.pop(next(iter(self._packed)))
+        return coding, data
+
     def serve(self):
         app = self
+        self._packed, self._packed_lock = {}, threading.Lock()
         try:  # saved sign-ins kept with a key of their own (or opened by an import) go over to the message key
             if browser_login.LoginStore(Path(self.config['database']).expanduser().parent).migrate():
                 LOG.info('saved sign-ins are now encrypted with the message key')
@@ -14986,13 +15081,31 @@ class App:
             def log_message(self, *_):
                 pass  # Access URLs/searches can contain private information.
 
-            def output(self, status, value, content_type='application/json'):
+            def coding(self, data, content_type, status=200):
+                """The coding for this answer (compressed answers, COMPRESSIBLE): None when it goes as it is."""
+                if (status != 200 or self.command != 'GET' or urllib.parse.urlsplit(self.path).path not in COMPRESSIBLE or
+                        len(data) < COMPRESS_MIN or not (content_type.startswith('text/') or content_type.endswith('json') or
+                                                         content_type.endswith('javascript'))):
+                    return None
+                return next(iter(content_codings(self.headers.get('Accept-Encoding'))), None)
+
+            def output(self, status, value, content_type='application/json', packed=None):
+                """`packed`: the answer already compressed, as (coding, bytes), for the page (kept per release)."""
                 data = value if isinstance(value, bytes) else encoded(value).encode() if content_type == 'application/json' else value.encode()
+                coding = packed[0] if packed else self.coding(data, content_type, status)
+                if coding:
+                    data = packed[1] if packed else compress_body(data, coding)
                 self.send_response(status)
                 self.send_header('Content-Type', content_type if content_type.startswith('image/') or content_type=='application/pdf' else content_type + '; charset=utf-8')
                 self.send_header('Cache-Control', 'no-store')
+                if urllib.parse.urlsplit(self.path).path in COMPRESSIBLE:
+                    self.send_header('Vary', 'Accept-Encoding')
+                if coding:
+                    self.send_header('Content-Encoding', coding)
+                self.send_header('Content-Length', str(len(data)))
                 if getattr(self, 'etag', None):
-                    self.send_header('ETag', self.etag)
+                    # One ETag per coding (a strong ETag names the bytes sent); If-None-Match matches any of them
+                    self.send_header('ETag', self.etag[:-1] + '-' + coding + '"' if coding else self.etag)
                     self.etag = None
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Referrer-Policy', 'no-referrer')
@@ -15038,14 +15151,16 @@ class App:
                     # The installed app's service worker keeps a copy of this page and asks again with its ETag: an
                     # unchanged page is a short 304 instead of the whole page over a phone's connection.
                     etag = '"' + hashlib.sha256(page.encode()).hexdigest()[:24] + '"'
-                    if self.headers.get('If-None-Match') == etag:
+                    coding = self.coding(page.encode(), 'text/html')
+                    if etag_matches(self.headers.get('If-None-Match'), etag):
                         self.send_response(304)
-                        self.send_header('ETag', etag)
+                        self.send_header('ETag', etag[:-1] + '-' + coding + '"' if coding else etag)
+                        self.send_header('Vary', 'Accept-Encoding')
                         self.send_header('Cache-Control', 'no-store')
                         self.end_headers()
                         return
                     self.etag = etag
-                    self.output(200, page, 'text/html')
+                    self.output(200, page, 'text/html', packed=coding and app.packed_page(etag, coding, page))
                 elif path.path == '/manifest.webmanifest':
                     self.output(200, (ROOT / 'manifest.webmanifest').read_text(), 'application/manifest+json')
                 elif path.path == '/sw.js':
@@ -15061,7 +15176,7 @@ class App:
                     self.output(200, {'csrf': dashboard_csrf(app.token, app.config['tailscale_owner']),
                                       'cache_scope': dashboard_cache_scope(app.token, app.config['tailscale_owner'])})
                 elif path.path == '/api/status':
-                    self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'source_url': source_url(), 'browser_link': browser_link(app.config),
+                    self.output(200, {**dashboard_status(app.action('status', {'full': True})), 'ui_version': dashboard_version(), 'source_url': source_url(), 'browser_link': browser_link(app.config),
                                       'browser_embed': browser_embed(app.config, self.headers.get('Host', ''))})
                     try:
                         app.store.note_card_shown()

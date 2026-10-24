@@ -9,13 +9,14 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 // cards, the open card's chat and the Graph's lists stay on the device so the app opens with them at once: encrypted
 // (AES-GCM, a non-extractable key in IndexedDB), only for the owner the page was served for, without tokens, and wiped
 // on Sign out, when the session is gone and for another owner. A copy shown while the Machine can't be reached says so
-// ("Offline · updated 10:42"). The page copy never keeps the CSRF token: a change waits for the status, which has it.
+// ("Offline · updated 10:42"). The page never carries the CSRF token (served without it, so it may go compressed): a
+// change waits for api/session, which has it.
 const raw=await readFile(new URL('./dashboard.html',import.meta.url),'utf8'),sw=await readFile(new URL('./sw.js',import.meta.url),'utf8');
 const CSRF='c'.repeat(64),S1='a1'.repeat(16),S2='b2'.repeat(16),now=new Date().toISOString();
 let scope=S1,mode='ok',cards=null,holdStatus=null;
 const card=(n,title)=>({id:String(n).repeat(16),title,body:'Robin asked for the numbers.',status:'pending',scope:'work',created_at:now,event_ids:[n]});
 const full=[card(1,'Reply to Robin about the plan'),card(2,'Book the venue')];
-const page=()=>raw.replace('__CSRF__',CSRF).replace('__UI_VERSION__','v1').replace('__BASE__','/').replace('__CACHE_SCOPE__',scope);
+const page=()=>raw.replace('__CSRF__','').replace('__UI_VERSION__','v1').replace('__BASE__','/').replace('__CACHE_SCOPE__',scope);
 const status=()=>({suggestions:cards??full,promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],review_live:{runs:[]},
  connectors:[],fleet:{on:false},ui_version:'v1',csrf:CSRF,agents_settings:{session_token:'tok-never-kept',device:'Desk'}});
 const hits={page:0,notModified:0,status:0,session:0},posts=[];let graphDown=false;

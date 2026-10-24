@@ -240,8 +240,8 @@ class OwnerBoundary(unittest.TestCase):
             self.assertEqual(self.post(port, {'action': action, 'args': {}}, {'Authorization': 'Bearer ' + TOKEN})[0], 403)
 
     def test_dashboard_page_session_and_etag(self):
-        # The page carries its CSRF token and the device-cache scope; a repeat with its ETag is a 304; api/session gives
-        # the same token and scope to a page opened from the device copy (which holds no token), and only to the owner.
+        # The page carries the device-cache scope but never the CSRF token (so it may go compressed); a repeat with its
+        # ETag is a 304; api/session gives the token and scope to the page, and only to the owner.
         port = self.serve()
         owner = {'Host': 'machine.example:8443', 'Tailscale-User-Login': 'owner@example.com'}
         def get(path, headers):
@@ -250,7 +250,7 @@ class OwnerBoundary(unittest.TestCase):
         r, page = get('/', owner)
         self.assertEqual(r.status, 200)
         csrf = a.dashboard_csrf(self.app.token, 'owner@example.com'); scope = a.dashboard_cache_scope(self.app.token, 'owner@example.com')
-        self.assertIn(("const csrf='" + csrf + "'").encode(), page)
+        self.assertIn(b"const csrf=''", page); self.assertNotIn(csrf.encode(), page); self.assertNotIn(b'__CSRF__', page)
         self.assertIn(("CACHE_SCOPE='" + scope + "'").encode(), page)
         self.assertNotIn(b'__CACHE_SCOPE__', page)
         self.assertRegex(scope, '^[0-9a-f]{32}$'); self.assertNotIn(scope, csrf)
@@ -261,6 +261,68 @@ class OwnerBoundary(unittest.TestCase):
         r, body = get('/api/session', owner)
         self.assertEqual(r.status, 200); self.assertEqual(json.loads(body), {'csrf': csrf, 'cache_scope': scope})
         self.assertEqual(get('/api/session', {'Authorization': 'Bearer ' + TOKEN})[0].status, 403)
+
+    def test_compressed_answers(self):
+        # The page and the other secret-free answers go compressed when the client takes it (best coding it accepts,
+        # q=0 refused), with Vary and an ETag per coding that still gives a 304; api/session (the CSRF token) never.
+        import gzip
+        port = self.serve()
+        owner = {'Host': 'machine.example:8443', 'Tailscale-User-Login': 'owner@example.com'}
+        def get(path, headers):
+            conn = http.client.HTTPConnection('127.0.0.1', port)
+            conn.request('GET', path, headers={**owner, **headers}); r = conn.getresponse(); body = r.read(); conn.close(); return r, body
+        plain_r, plain = get('/', {})
+        self.assertIsNone(plain_r.getheader('Content-Encoding')); self.assertEqual(plain_r.getheader('Vary'), 'Accept-Encoding')
+        self.assertEqual(int(plain_r.getheader('Content-Length')), len(plain))
+        with patch.object(a, '_brotli', None), patch.object(a, '_zstd', None):
+            r, body = get('/', {'Accept-Encoding': 'gzip, deflate, br'})
+            self.assertEqual((r.status, r.getheader('Content-Encoding'), r.getheader('Vary')), (200, 'gzip', 'Accept-Encoding'))
+            self.assertEqual(gzip.decompress(body), plain); self.assertLess(len(body), len(plain) / 3)
+            self.assertEqual(r.getheader('ETag'), plain_r.getheader('ETag')[:-1] + '-gzip"')
+            # The coded ETag (as a service worker keeps it) and the plain one both give a 304
+            for tag in (r.getheader('ETag'), plain_r.getheader('ETag'), 'W/' + r.getheader('ETag') + ', "other"'):
+                r304, empty = get('/', {'Accept-Encoding': 'gzip', 'If-None-Match': tag})
+                self.assertEqual((r304.status, empty), (304, b''))
+            self.assertEqual(get('/', {'Accept-Encoding': 'gzip;q=0, identity'})[0].getheader('Content-Encoding'), None)
+            self.assertEqual(get('/', {'Accept-Encoding': '*'})[0].getheader('Content-Encoding'), 'gzip')
+            r, body = get('/sw.js', {'Accept-Encoding': 'gzip'})
+            self.assertEqual(r.getheader('Content-Encoding'), 'gzip'); self.assertIn(b'self.addEventListener', gzip.decompress(body))
+            # The token's own answer, a refusal and a small answer go as they are
+            r, body = get('/api/session', {'Accept-Encoding': 'gzip, br, zstd'})
+            self.assertEqual(r.status, 200); self.assertIsNone(r.getheader('Content-Encoding')); self.assertIsNone(r.getheader('Vary'))
+            self.assertEqual(json.loads(body)['csrf'], a.dashboard_csrf(self.app.token, 'owner@example.com'))
+            conn = http.client.HTTPConnection('127.0.0.1', port)
+            conn.request('GET', '/', headers={'Host': 'machine.example:8443', 'Accept-Encoding': 'gzip'}); r = conn.getresponse(); r.read(); conn.close()
+            self.assertEqual((r.status, r.getheader('Content-Encoding')), (403, None))
+        if a._zstd:
+            r, body = get('/', {'Accept-Encoding': 'gzip, zstd'})
+            self.assertEqual(r.getheader('Content-Encoding'), 'zstd'); self.assertEqual(a._zstd.decompress(body), plain)
+            self.assertTrue(r.getheader('ETag').endswith('-zstd"'))
+
+    def test_content_codings(self):
+        with patch.object(a, '_brotli', object()), patch.object(a, '_zstd', object()):
+            self.assertEqual(a.content_codings('gzip, deflate, br, zstd'), ['br', 'zstd', 'gzip'])
+            self.assertEqual(a.content_codings('gzip;q=0.5, br;q=0'), ['gzip'])
+            self.assertEqual(a.content_codings('*;q=0.1, zstd;q=0'), ['br', 'gzip'])
+            self.assertEqual(a.content_codings(''), []); self.assertEqual(a.content_codings('identity'), [])
+            self.assertEqual(a.content_codings('GZIP;Q=1'), ['gzip']); self.assertEqual(a.content_codings('gzip;q=x'), [])
+
+    def test_dashboard_status_leaves_out_what_the_cards_never_read(self):
+        status = {'analyses': [{'status': 'complete', 'checked_count': 3, 'items': '[1,2,3]', 'owner_session': 's', 'owner_run': 'r', 'summary': 'ok'},
+                               {'status': 'running', 'items': '[1]', 'owner_run': 'r'},
+                               {'status': 'complete', 'checked_count': None, 'items': '[1,2]'}],
+                  'suggestions': [{'id': 'x', 'title': 'T', 'dedupe_key': 'k', 'closed_state': '{}', 'next_actions': []}],
+                  'deliveries': [{'status': 'sent', 'suggestion_id': 'x', 'needs_edit': False, 'previous_message_ids': ['1'],
+                                  'notification_message_id': '2', 'last_notified_at': 't', 'edit_retry_at': None, 'edit_failures': 0}],
+                  'promises': [{'id': 1}]}
+        view = a.dashboard_status(status)
+        self.assertEqual(view['analyses'], [{'status': 'complete', 'checked_count': 3, 'summary': 'ok'}, {'status': 'running', 'items': '[1]'},
+                                            {'status': 'complete', 'checked_count': None, 'items': '[1,2]'}])
+        self.assertEqual(view['suggestions'], [{'id': 'x', 'title': 'T', 'next_actions': []}])
+        self.assertEqual(view['deliveries'], [{'status': 'sent', 'suggestion_id': 'x', 'needs_edit': False}])
+        self.assertIs(view['promises'], status['promises'])
+        self.assertIn('dedupe_key', status['suggestions'][0]); self.assertIn('items', status['analyses'][0])  # the action's own rows stay whole
+        self.assertNotIn('analyses', a.dashboard_status({'suggestions': []}))
 
     def test_owner_key_is_created_private(self):
         config = {'credentials': {}, 'database': str(Path(self.temp.name) / 'events.sqlite')}

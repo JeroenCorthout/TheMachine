@@ -2,7 +2,8 @@
 // once. The shell holds no data and never its CSRF token; the last cards, chats and Graph lists are kept by the page,
 // encrypted (docs/architecture.md, "On the device"). Brand images are kept too. Nothing else is cached.
 const SHELL = 'tm-shell-1', ASSETS = 'tm-assets-1', SHELL_AGE = 7 * 864e5;
-const CSRF = /(\bconst csrf=')[0-9a-f]{64}(')/;
+// The server no longer puts the token in the page (api/session has it); an older page still may, and it is taken out.
+const CSRF = /(\bconst csrf=')(?:[0-9a-f]{64})?(')/;
 const scopeUrl = () => new URL(self.registration.scope);
 
 self.addEventListener('install', () => self.skipWaiting());
