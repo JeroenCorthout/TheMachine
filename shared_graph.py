@@ -471,7 +471,7 @@ def collect(db, scope, key, secret, today=None):
                       'role_hand': info.get('role_by') == 'owner', 'd': every('domain:' + domain), 'score': round(row['strength'], 3),
                       'last': (row['last_at'] or '')[:10]}
     tiles = {t['id']: t for b in graph.boards(db, today.isoformat()) for t in b['projects']}
-    for row in db.execute("SELECT n.*,p.id pid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages "
+    for row in db.execute("SELECT n.*,p.id pid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages,b.side side "
                           "FROM graph_nodes n JOIN projects p ON 'project:'||p.id=n.id LEFT JOIN boards b ON b.id=p.board_id "
                           "WHERE n.kind='project' AND p.closed_at IS NULL"):
         if row['id'] in scope.private:
@@ -488,7 +488,7 @@ def collect(db, scope, key, secret, today=None):
         domain = row['porg'] or (str((tile.get('org') or {}).get('node_id') or '')[4:] or None)
         org = graph.org_card(db, domain) if domain else None
         records[r] = {'r': r, 't': 'project', 'name': row['name'], 'score': round(row['strength'], 3), 'last': (last or '')[:10],
-                      'board': row['board'], 'stages': graph.stage_names({'stages': row['stages']}) if row['board'] else None,
+                      'board': row['board'], 'stages': graph.stage_names(row) if row['board'] else None,
                       'stage': row['stage'] if row['board'] else None, 'stage_hand': row['stage_by'] == 'owner', 'stage_at': row['stage_at'],
                       'why': row['stage_reason'], 'next': row['next_step'],
                       'org': {'name': org['name'], 'd': keyed(key, 'domain:' + domain)} if org else None,
