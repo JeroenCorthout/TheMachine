@@ -375,7 +375,7 @@ try{
  for(const bad of [{status:200,body:'{"suggestions":[{"id',contentType:'application/json'},{status:502,body:'<html>Bad gateway</html>',contentType:'text/html'},{status:502,body:''},
   {status:503,body:'{"error":"The Machine is restarting…","restarting":true}',contentType:'application/json',headers:{'Retry-After':'5'},pill:/Restarting · retrying/}]){
   await page.route('**/api/status',r=>r.fulfill(bad));await page.evaluate(()=>refresh());
-  assert.equal(await page.locator('#notice').textContent(),'');assert.match(await page.locator('#updated').textContent(),bad.pill||/Offline · retrying/);
+  assert.equal(await page.locator('#notice').textContent(),'');assert.match(await page.locator('#updated').textContent(),bad.pill||/^Offline · updated \d\d:\d\d$/);
   if(bad.headers)assert.equal(await page.evaluate(()=>retryIn),5000);
   await page.unroute('**/api/status')}
  await page.evaluate(()=>refresh());assert.match(await page.locator('#updated').textContent(),/Updated/);
