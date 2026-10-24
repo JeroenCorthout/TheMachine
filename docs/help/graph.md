@@ -10,11 +10,19 @@ Your Machine builds a map of who you deal with and what's going on, from your me
 
 ## People
 
-Everyone you're in touch with, closest first. A person's page shows how often you talk, their organisation and projects, **Open between you** (promises both ways, with **Done** and **Drop**), and their recent messages.
+Everyone you're in touch with, closest first. A person's page starts with their photo, name, title, organisation and place, and one line on how you're in touch ("Talk daily · last Fri, Oct 23 · next meeting Tue, Oct 27"). Below that:
 
-- **Edit**: say what they are to you, like "accountant".
-- **Rename**: give them the name you use. An empty name brings back the one from their messages.
-- Someone's addresses and chats are joined by themselves when it's clear they're one person, like a work email with their own address in CC.
+- **Contact**: their phones and emails. Tap one to call or write, or **Copy** it.
+- **About you**: what they are to you, Work or Personal contact, and your Family or Fleet, with **See in Fleet**.
+- **People** and **Projects** they're part of, **Open between you** (promises both ways, with **Done** and **Drop**), and their recent messages.
+
+Someone's addresses and chats are joined by themselves when it's clear they're one person, like a work email with their own address in CC.
+
+## Edit someone
+
+**Edit**, at the top of their page, changes their name, title, organisation, location, LinkedIn, phones and emails, what they are to you, and Work or Personal. **Save** keeps it, **Cancel** leaves it as it was.
+
+Your edits stay, also when their details are looked up again or a review reads something else, and through **Merge** and **Undo**. Empty a field to use the looked-up value again. An empty name brings back the one from their messages.
 
 ## Same person?
 
@@ -36,11 +44,13 @@ On their page, open the ⋯ menu and pick **Delete permanently…**, then **Dele
 
 ## Who's who
 
-Roles your Machine read in your messages, waiting for your word. **✓ Right** confirms one; **Edit** changes it. It learns from your edits. This shows only when roles are waiting.
+Roles your Machine read in your messages, waiting for your word. **✓ Right** confirms one; **Edit** opens their page in Edit. It learns from your edits. This shows only when roles are waiting.
 
 ## Organisations
 
 Companies, from the addresses and names in your messages. See [Organisation details](organisation-data.md).
+
+An organisation's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you) and the people and projects there. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
 
 Mail from email warm-up tools is kept out, under "Hidden as warm-up", with **Undo** per domain.
 

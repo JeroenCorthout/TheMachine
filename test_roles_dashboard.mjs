@@ -28,6 +28,7 @@ const server=createServer(async(req,res)=>{
  if(url.pathname==='/api/event'||url.pathname==='/api/events'){opened.push(url.search);res.end(JSON.stringify([]));return}
  if(url.pathname==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
   if(call.action==='graph_role'){whos=whos.filter(w=>w.id!==call.args.node_id);if(call.args.node_id===pat.id)pat={...pat,role:call.args.role,role_by:'owner'}}
+  if(call.action==='graph_person_edit'&&call.args.fields.role){whos=whos.filter(w=>w.id!==call.args.node_id);pat={...pat,role:call.args.fields.role,role_by:'owner'}}
   if(call.action==='graph_relation')pat={...pat,relations:[]};
   if(call.action==='graph_org_edit')await new Promise(r=>setTimeout(r,150));  // the owner can tap before a save replies
   if(call.action==='graph_warmup')warmup=warmup.filter(w=>w.domain!==call.args.domain);
@@ -67,17 +68,18 @@ try{
  assert.deepEqual(calls[0],{action:'graph_role',args:{node_id:'org:client.example',role:'customer'}});
  for(let i=0;i<100&&await list.locator('.whos').count()!==1;i++)await page.waitForTimeout(20);
  assert.equal(await list.locator('.whos').count(),1);
- // Edit opens the person with the role form ready.
+ // Edit opens the person in Edit, with the role field ready.
  await list.locator('[data-role-edit-for="email:pat@client.example"]').click();
- await page.locator('.role-form:not([hidden]) input').waitFor();
- assert.equal(await page.locator('.role-form input').inputValue(),'CFO at Client Ltd');
+ await page.locator('.person-form:not([hidden]) [name=role]').waitFor();
+ assert.equal(await page.locator('.person-form [name=role]').inputValue(),'CFO at Client Ltd');
+ assert.equal(await page.evaluate(()=>document.activeElement?.name),'role');
  text=await list.textContent();
  assert.ok(text.includes('“As the CFO at Client Ltd I look after the renewal”')&&text.includes('Ann Assist is assistant of Pat Doe'));
- await page.locator('.role-form input').fill('finance lead at Client Ltd');
- await page.locator('.role-form button').click();
+ await page.locator('.person-form [name=role]').fill('finance lead at Client Ltd');
+ await page.locator('[data-org-save]').click();
  for(let i=0;i<100&&calls.length<2;i++)await page.waitForTimeout(20);
- assert.deepEqual(calls[1],{action:'graph_role',args:{node_id:'email:pat@client.example',role:'finance lead at Client Ltd'}});
- await page.locator('.role-row b',{hasText:'finance lead'}).waitFor();
+ assert.deepEqual(calls[1],{action:'graph_person_edit',args:{node_id:'email:pat@client.example',fields:{role:'finance lead at Client Ltd'}}});
+ await page.locator('.person-about b',{hasText:'Finance lead'}).waitFor();
  assert.equal(await page.locator('[data-role-confirm]').count(),0);  // the owner's word: nothing to confirm
  await page.locator('[data-unrelate]').click();
  for(let i=0;i<100&&calls.length<3;i++)await page.waitForTimeout(20);
@@ -87,7 +89,11 @@ try{
  // An organisation has a role row too.
  await page.evaluate(()=>people('org:client.example'));
  await page.locator('.graph-detail h3',{hasText:'Client Ltd'}).waitFor();
- assert.ok((await page.locator('.role-row').first().textContent()).includes('To you: customer'));
+ assert.ok((await page.locator('.person-about .kv-role').textContent()).includes('Customer'));
+ // Who's who Edit on an organisation opens it in Edit, on What it is to you.
+ await page.evaluate(()=>{editRole='org:client.example';return people('org:client.example')});
+ await page.locator('.org-form:not([hidden]) [name=role]').waitFor();assert.equal(await page.evaluate(()=>document.activeElement?.name),'role');
+ await page.locator('[data-org-cancel]').click();
  // What the enrichment service says about it, with only real links.
  const detail=await page.locator('.graph-detail').textContent();
  assert.ok(detail.includes('Logistics, 51-200 people, Ghent')&&detail.includes('Client Ltd moves boxes.'));
@@ -113,24 +119,24 @@ try{
  // The shown form is Pat's even when a slow navigation has selected another node.
  await page.evaluate(()=>people('email:pat@client.example'));
  await page.locator('.graph-detail h3',{hasText:'Pat Doe'}).waitFor();
- await page.locator('[data-role-edit]').click();
- await page.locator('.role-form input').fill('trusted colleague');
+ await page.locator('[data-org-edit]').click();
+ await page.locator('.person-form [name=role]').fill('trusted colleague');
  let release;holdOrg=new Promise(r=>release=r);
  await page.evaluate(()=>{void people('org:client.example')});
- await page.locator('.role-form button').click();
- for(let i=0;i<100&&!calls.some(c=>c.args.role==='trusted colleague');i++)await page.waitForTimeout(20);
- assert.deepEqual(calls.find(c=>c.args.role==='trusted colleague'),{action:'graph_role',args:{node_id:pat.id,role:'trusted colleague'}});
+ await page.locator('[data-org-save]').click();
+ for(let i=0;i<100&&!calls.some(c=>c.args.fields?.role==='trusted colleague');i++)await page.waitForTimeout(20);
+ assert.deepEqual(calls.find(c=>c.args.fields?.role==='trusted colleague'),{action:'graph_person_edit',args:{node_id:pat.id,fields:{role:'trusted colleague'}}});
  holdOrg=null;release();
  await page.waitForTimeout(100);
  await page.evaluate(()=>people('email:pat@client.example'));
  await page.locator('.graph-detail h3',{hasText:'Pat Doe'}).waitFor();
- await page.locator('.person-menu summary').click();await page.locator('[data-name-edit]').click();
- await page.locator('.name-form input').fill('Pat Owner Name');
+ await page.locator('[data-org-edit]').click();
+ await page.locator('.person-form [name=name]').fill('Pat Owner Name');
  holdOrg=new Promise(r=>release=r);
  await page.evaluate(()=>{void people('org:client.example')});
- await page.locator('.name-form button').click();
- for(let i=0;i<100&&!calls.some(c=>c.action==='graph_rename');i++)await page.waitForTimeout(20);
- assert.deepEqual(calls.find(c=>c.action==='graph_rename'),{action:'graph_rename',args:{node_id:pat.id,name:'Pat Owner Name'}});
+ await page.locator('[data-org-save]').click();
+ for(let i=0;i<100&&!calls.some(c=>c.args.fields?.name);i++)await page.waitForTimeout(20);
+ assert.deepEqual(calls.find(c=>c.args.fields?.name),{action:'graph_person_edit',args:{node_id:pat.id,fields:{name:'Pat Owner Name'}}});
  holdOrg=null;release();
  // All at once: one button above the list confirms every role a review read, after asking.
  whos=[{id:'email:a@x.example',kind:'person',name:'A',role:'buyer at X',quote:null,event_id:null},

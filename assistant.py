@@ -443,7 +443,7 @@ class SourceError(Exception):
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
                    'connect_signin', 'connect_signin_state')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -3453,14 +3453,14 @@ class Store:
 
     def boards_text(self, run_id, every_hours=24, limit=60):
         """Open projects on no board, for one review a day to look over for a board suggestion: only when no
-        suggestion is open and three or more are on no board. A review that didn't finish gets them again."""
+        suggestion is open and three or more are on no board. Until a review answers it (finish_analysis boards),
+        the next one gets it again."""
         with self.connect() as db:
             if db.execute("SELECT 1 FROM board_suggestions WHERE state='open'").fetchone():
                 return ''
-            last = db.execute('SELECT run_id,offered_at FROM board_offers WHERE id=1').fetchone()
+            last = db.execute('SELECT run_id,offered_at,answer FROM board_offers WHERE id=1').fetchone()
             since = (dt.datetime.fromisoformat(now()) - dt.timedelta(hours=every_hours)).isoformat()
-            if last and last['run_id'] != run_id and last['offered_at'] > since and not db.execute(
-                    "SELECT 1 FROM review_runs WHERE run_id=? AND finished_at IS NOT NULL AND status<>'ok'", (last['run_id'],)).fetchone():
+            if last and last['answer'] and last['offered_at'] > since:
                 return ''
             rows = db.execute('SELECT id,name FROM projects WHERE board_id IS NULL AND closed_at IS NULL ORDER BY created_at DESC LIMIT ?', (limit,)).fetchall()
             if len(rows) < 3:
@@ -10139,7 +10139,7 @@ Follow-up splits waiting for the owner to send, with the notes of their meeting.
 Possibly one piece of work nobody named: threads that read alike and share people. If one is a deal, hire, launch, case or other ongoing work, name it with graph (project and its event_ids); if not, skip it without comment.
 {unnamed}''' if unnamed else '') + (f'''
 
-Boards to suggest, once a day: the open projects on no board, with the people they're with. Look them over before finish_analysis. When three or more are the same kind of work, each with its own counterpart (partner listings, hires, customer onboardings, evaluations), suggest one board for them with graph suggest_board, as in Boards above. Judge the kind from what the projects are, not the words in their names. If no group fits, skip it without comment.
+Boards to suggest, once a day: the open projects on no board, with the people they're with. When three or more are the same kind of work, each with its own counterpart (partner listings, hires, customer onboardings, evaluations), suggest one board for them with graph suggest_board, as in Boards above. Judge the kind from what the projects are, not the words in their names. Then answer in finish_analysis: boards "suggested", or "none: <why, in a few words>" when no group fits.
 {boards}''' if boards else '') + (f'''
 
 Who they are to the owner: people with no role yet (those on open cards matter now). For each, open graph with its node_id and read enough of their messages (events, search) to see what they are to the owner, in a few words from the owner's side ("cofounder", "accountant", "investor", "customer at Globex", "sister"; "automated sender" only for a tool or newsletter with no person behind it, not for someone whose software sends their mail). Be as specific as the messages allow: their job or title, not just "colleague", and leave out the owner's own company name. Set it with graph node_id, role, event_id (the message that shows it) and quote (a short line copied from it) when the messages show it: a title or signature, an introduction, how they talk about each other, what they do together. Hints say where someone appears, not what they are: use them only together with what the messages show. When the messages don't make it clear, leave it; a wrong role is worse than none. Organisations get a role the same way (node_id org:…); when an organisation's mail is only an email warm-up tool's traffic (templated exchanges with no real conversation behind them), set graph node_id org:… with warmup true and an event_id instead. When messages show how two people are related, add it with graph node_id, related_to and relation ("assistant of", "introduced by"). {ORG_STEP}
@@ -10843,6 +10843,9 @@ class App:
                                                                    f"({','.join('?' * len(team))}) ORDER BY id", (*ids, *team))] if ids else []
             return result
         if name == 'finish_analysis':
+            if args.get('_review_run'):  # a review that got "Boards to suggest" answers it before it finishes
+                with self.store.connect() as db:
+                    graph.board_check_answer(db, args['_review_run'], args.get('boards'))
             return self.store.finish_analysis(args['analysis_id'], args.get('summary', ''), args.get('_review_session'), args.get('_review_run'), args.get('reviewed_ids'), args.get('projects'),
                                              args.get('stages'), args.get('team'))
         if name == 'graph':
@@ -11104,6 +11107,23 @@ class App:
                     done = graph.org_edit(db, args.get('node_id'), args.get('fields'), now())
                     if 'name' in args:
                         graph.rename(db, args.get('node_id'), args.get('name'), now())
+            self.graph_build()
+            return done
+        if name == 'graph_person_edit':
+            # One Save for a person's page: their name, what they are to the owner and where they work go where those
+            # live (graph_names, person_roles, person_orgs, as the owner's word); the rest is person_edits.
+            if not owner_dashboard:
+                raise ValueError("Only the owner edits a person's details, on the dashboard")
+            node_id, fields = str(args.get('node_id') or ''), args.get('fields') if isinstance(args.get('fields'), dict) else {}
+            with self.store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                done = graph.person_edit(db, node_id, {k: v for k, v in fields.items() if k not in ('name', 'role', 'org')}, now())
+                if 'role' in fields:
+                    graph.set_role(db, node_id, str(fields['role'] or ''), 'owner', now())
+                if 'org' in fields:
+                    graph.set_org(db, node_id, str(fields['org'] or ''), 'owner', now())
+                if 'name' in fields:
+                    graph.rename(db, node_id, fields['name'], now())
             self.graph_build()
             return done
         if name == 'graph_role':
@@ -14713,7 +14733,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
