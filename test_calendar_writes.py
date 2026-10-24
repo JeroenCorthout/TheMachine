@@ -422,20 +422,20 @@ class Suggestions(unittest.TestCase):
                                                             'postcode': '9000', 'city': 'Gent', 'country': 'Belgium'}},
                                             {'properties': {'name': 'Gent', 'city': 'Gent', 'country': 'Belgium'}}]}).encode()
         with self.store.connect() as db:
-            found = a.places.suggest(db, {}, 'labath', 'en', fetch)
+            found = a.places.suggest(db, {}, 'labath', fetch)
             self.assertEqual([(f['value'], f['source']) for f in found],
                              [('Café Labath, Oude Houtlei 1, Gent', 'calendar'), ('Café Labath, Oude Houtlei 1, 9000 Gent, Belgium', 'map'), ('Gent, Belgium', 'map')])
-            self.assertEqual(asked, ['https://photon.komoot.io/api/?q=labath&limit=6&lang=en'])
-            a.places.suggest(db, {}, 'Labath ', 'en', fetch)
+            self.assertEqual(asked, ['https://photon.komoot.io/api/?q=labath&limit=6'])
+            a.places.suggest(db, {}, 'Labath ', fetch)
             self.assertEqual(len(asked), 1, 'cached')
             self.assertEqual([f['value'] for f in a.places.local(db, 'ghent')], ['Acme, Ghent, Belgium'])
             self.assertEqual(a.places.local(db, 'zoom'), [], 'a link is not a place')
-            a.places.suggest(db, {'place_search': False}, 'somewhere', 'en', fetch)
-            a.places.suggest(db, {}, 'ab', 'en', fetch)
+            a.places.suggest(db, {'place_search': False}, 'somewhere', fetch)
+            a.places.suggest(db, {}, 'ab', fetch)
             self.assertEqual(len(asked), 1, 'off in the config, or too short: nothing goes out')
             def down(url, timeout):
                 raise a.urllib.error.URLError('offline')
-            self.assertEqual([f['source'] for f in a.places.suggest(db, {}, 'labath gent', 'en', down)], ['calendar'])
+            self.assertEqual([f['source'] for f in a.places.suggest(db, {}, 'labath gent', down)], ['calendar'])
 
     def test_one_outside_request_a_second(self):
         t, slept = [10.0], []

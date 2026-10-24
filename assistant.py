@@ -15326,7 +15326,7 @@ class App:
                 elif path.path == '/api/places':  # the Calendar form's Where: the owner's places first, then the map
                     args = urllib.parse.parse_qs(path.query)
                     with app.store.connect() as db:
-                        self.output(200, {'places': places.suggest(db, app.config, args.get('q', [''])[0][:200], args.get('lang', ['en'])[0][:5])})
+                        self.output(200, {'places': places.suggest(db, app.config, args.get('q', [''])[0][:200])})
                 elif path.path == '/api/invitees':  # the Calendar form's Invite: people from the owner's Graph
                     with app.store.connect() as db:
                         self.output(200, {'people': invite_people(db, urllib.parse.parse_qs(path.query).get('q', [''])[0][:200], app.owner_emails())})

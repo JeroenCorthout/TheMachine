@@ -82,15 +82,16 @@ def address(properties):
     return {'value': ', '.join(parts)[:300], 'label': label[:120], 'detail': ', '.join(x for x in parts if x != label)[:160], 'source': 'map'}
 
 
-def photon(query, lang='en', fetch=None, clock=time.monotonic, sleep=time.sleep, timeout=6):
-    """Addresses for the typed text from Photon. Only the text (and a language for the names) goes out."""
+def photon(query, fetch=None, clock=time.monotonic, sleep=time.sleep, timeout=6):
+    """Addresses for the typed text from Photon, with names as they are on the spot (Grote Markt, not Great Market
+    Square). Only the text goes out."""
     q = clean(query)[:MAX_QUERY]
     if len(q) < MIN_REMOTE:
         return []
-    key = lang + '|' + q.casefold()
+    key = q.casefold()
     if key in _cache:
         return _cache[key]
-    url = PHOTON + '?' + urllib.parse.urlencode({'q': q, 'limit': LIMIT, 'lang': lang if lang in ('en', 'de', 'fr', 'it') else 'en'})
+    url = PHOTON + '?' + urllib.parse.urlencode({'q': q, 'limit': LIMIT})
     with _lock:  # one at a time, a second apart
         wait = GAP - (clock() - _last[0])
         if wait > 0:
@@ -121,13 +122,13 @@ def _get(url, timeout):
         return response.read(500_000)
 
 
-def suggest(db, config, query, lang='en', fetch=None):
+def suggest(db, config, query, fetch=None):
     """Local places first, then addresses from the map when there are few. A failing map search keeps the local ones."""
     found = local(db, query)
     if len(found) < 3 and (config or {}).get('place_search', True) is not False:
         try:
             seen = {f['value'].casefold() for f in found}
-            found += [p for p in photon(query, lang, fetch) if p['value'].casefold() not in seen]
+            found += [p for p in photon(query, fetch) if p['value'].casefold() not in seen]
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             pass
     return found[:LIMIT + 2]

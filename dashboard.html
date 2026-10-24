@@ -4297,7 +4297,7 @@ function calSuggest(input,list,ask,render,pick,foot=()=>''){let timer=0,seq=0,it
 // Where: places the owner used before and organisations in their Graph first, then addresses from OpenStreetMap
 // (Photon). The Machine looks those up itself with only the typed text; the page never talks to the map service.
 const calWhere=calSuggest($('#cal-f-where'),$('#cal-f-where-sug'),
- async q=>(await request('api/places?q='+encodeURIComponent(q)+'&lang='+encodeURIComponent((navigator.language||'en').slice(0,2)))).places||[],
+ async q=>(await request('api/places?q='+encodeURIComponent(q))).places||[],
  p=>`<span>${esc(p.label)}</span>${p.detail?`<small>${esc(p.detail)}</small>`:''}`,p=>{$('#cal-f-where').value=p.value},
  items=>items.some(p=>p.source==='map')?'<li class="cal-sug-osm" role="presentation">Addresses © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" tabindex="-1">OpenStreetMap</a></li>':'');
 const calInvite=calSuggest($('#cal-f-invite'),$('#cal-f-invite-sug'),
