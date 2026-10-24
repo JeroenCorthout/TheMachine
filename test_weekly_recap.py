@@ -96,7 +96,7 @@ class WeeklyRecap(unittest.TestCase):
         with self.store.connect() as db:  # a promise links to its own page, never to its card (the page links the card)
             page = {(r[0], r[1]): f'https://m.example/assistant/#promise/{r[2]}' for r in db.execute('SELECT who,direction,id FROM promises')}
         self.assertEqual(lines[3], f"• Waiting on Sam Lee: [send the signed contract]({page['Sam Lee', 'theirs']}), due Tue 20 Oct")
-        self.assertNotIn('#card=' + card, text)
+        self.assertNotIn('#chat=' + card, text)
         self.assertEqual(lines[4], f"• Waiting on Kim: [review the deck]({page['Kim', 'theirs']}), since Wed 14 Oct")
         self.assertEqual(lines[5], f"• Promised Alex: [send the Q3 deck]({page['Alex', 'mine']}), due Mon 26 Oct")
         self.assertIn(f"**Next week**\n• Tue 27 Oct: Bo said they'd [call back]({page['Bo', 'theirs']})", text)
@@ -126,7 +126,7 @@ class WeeklyRecap(unittest.TestCase):
             board = db.execute("SELECT id FROM events WHERE source_id='b'").fetchone()[0]
         prep = self.store.suggest('prep', 'Prep notes for the board', 'Body.', [board])['id']
         text = a.weekly_recap(self.store, self.config, dt.datetime.fromisoformat(FRIDAY))
-        self.assertIn(f'**Next week**\n• Wed 28 Oct 09:00 Board meeting, 1 person · [card](https://m.example/assistant/#card={prep})', text)
+        self.assertIn(f'**Next week**\n• Wed 28 Oct 09:00 Board meeting, 1 person · [card](https://m.example/assistant/#chat={prep})', text)
         self.assertEqual(text.count('Team offsite'), 1)
         self.assertIn('• Fri 30 Oct 17:00 Parents evening, 2 people', text)  # the partner and the school, not the owner
         for routine in ('Weekly one-on-one', 'Declined lunch', 'Next month', 'Dentist with Robin'):
@@ -207,7 +207,7 @@ class WeeklyRecap(unittest.TestCase):
         self.edits = []
         drop, now, keep = (self.snoozed_card(t, n) for t, n in (('Share the tow-bar cost', 4), ('Pay the painter', 3), ('Book the dentist', 2)))
         sent = self.send()
-        self.assertIn(f'**Snoozed more than once**\n2. [Share the tow-bar cost](https://m.example/assistant/#card={drop}), 4 times', sent['message'])
+        self.assertIn(f'**Snoozed more than once**\n2. [Share the tow-bar cost](https://m.example/assistant/#chat={drop}), 4 times', sent['message'])
         items = {i['ref']: i for i in self.items() if i['kind'] == 'snoozed'}
         self.assertEqual([b['label'] for b in sent['presentation']['blocks'][1]['buttons']], ['Drop 2', 'Do it now 2', 'Keep 2'])
         with self.store.connect() as db:

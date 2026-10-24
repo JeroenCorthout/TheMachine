@@ -165,6 +165,33 @@ class Preparation(unittest.TestCase):
         self.store.decide(sid,'complete','','done','dashboard')
         _,row=self.card_line(sid);self.assertNotIn('step_stopped',row)  # closed: the card says Done
 
+    def test_a_stopped_step_that_new_work_replaced_still_says_it_is_not_done(self):
+        """The order step paused, then the owner wrote "Buy it": the new run replaced the step (finish_uncertain) and the
+        card kept saying "In the cart" as if it were ready at checkout. It says the step isn't done until new work saves
+        a result; a replaced step with no record of being paused is only not confirmed."""
+        sid,job=self.confirmed_finish()
+        self.app.action('preparation_blocked',{'suggestion_id':sid,'job_id':job,'reason':'The checkout page did not load.','questions':[]})
+        self.store.decide(sid,'other','Buy it, tell me if you need my payment details','buy-it','dashboard')
+        self.assertEqual(self.step_state(sid),'finish_uncertain')
+        _,row=self.card_line(sid);self.assertEqual(row['step_stopped'],'Not done yet: Order the cable.')
+        with self.store.connect() as db:db.execute("UPDATE preparation_runs SET status='ok',finished_at=?",(a.now(),))
+        self.app.preparation_step(lambda r:{'status':'admitted'})
+        job=self.q('SELECT job_id FROM preparations WHERE suggestion_id=?',sid)['job_id']
+        self.app.action('preparation_blocked',{'suggestion_id':sid,'job_id':job,'questions':[],
+                        'reason':'I still cannot reach checkout because browser control is broken; the cable has not been ordered.'})
+        _,row=self.card_line(sid)
+        self.assertEqual(row['step_stopped'],'Not done yet: Order the cable (I still cannot reach checkout). Try again carries it on.')
+        self.assertIn(row['step_stopped'],a.card(row));self.assertNotIn('In the cart',a.card(row))
+        with self.store.connect() as db:  # replaced before the step's earlier state was kept: it may have gone through
+            db.execute("UPDATE action_jobs SET payload=json_remove(payload,'$.finish_result.was') WHERE suggestion_id=?",(sid,))
+        _,row=self.card_line(sid);self.assertTrue(row['step_stopped'].startswith('Not confirmed yet: Order the cable (I still'))
+        with self.store.connect() as db:  # a step whose own uncertain result is the card text says nothing more
+            db.execute("UPDATE suggestions SET body='Replaced by new work before its result was saved.' WHERE id=?",(sid,))
+        _,row=self.card_line(sid);self.assertNotIn('step_stopped',row)
+        with self.store.connect() as db:db.execute("UPDATE suggestions SET body='In the cart.' WHERE id=?",(sid,))
+        with self.store.connect() as db:db.execute("UPDATE preparations SET status='done',reason=NULL WHERE suggestion_id=?",(sid,))
+        _,row=self.card_line(sid);self.assertNotIn('step_stopped',row)  # newer work saved a result: that is the card text
+
     def test_a_step_left_running_from_before_is_paused_by_the_next_preparation_step(self):
         sid,job=self.confirmed_finish()
         with self.store.connect() as db:  # how a cancelled preparation left it before paused existed

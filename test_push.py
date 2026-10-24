@@ -45,11 +45,11 @@ class PhoneNotifications(unittest.TestCase):
         row = {'id': '0123456789abcdef', 'title': 'Top up Wise', 'body': 'Stripe debits **€420** on [Tuesday](https://x).', 'status': 'pending'}
         a.push_notify(self.store, self.config, row, sender)
         self.assertEqual(sent[-1]['payload'], {'title': 'Top up Wise', 'body': 'Stripe debits €420 on Tuesday.',
-                                               'url': 'https://the-machine.example/assistant/#card=0123456789abcdef', 'tag': '0123456789abcdef'})
+                                               'url': 'https://the-machine.example/assistant/#chat=0123456789abcdef', 'tag': '0123456789abcdef'})
         self.assertEqual(sent[-1]['subscriptions'][0]['endpoint'], SUB['endpoint'])
         a.push_notify(self.store, self.config, dict(row, status='prepared', _result_notice=True, body='Draft ready.'), sender)
         self.assertEqual(sent[-1]['payload']['title'], 'Ready: Top up Wise')
-        self.assertTrue(sent[-1]['payload']['url'].endswith('#result=0123456789abcdef'))
+        self.assertTrue(sent[-1]['payload']['url'].endswith('#chat=0123456789abcdef'))
         a.push_notify(self.store, self.config, dict(row, status='accepted', _result_notice=True, preparation_status='blocked', preparation_reason='Exact needs a login.'), sender)
         self.assertEqual((sent[-1]['payload']['title'], sent[-1]['payload']['body']), ('Needs your help: Top up Wise', 'Exact needs a login.'))
         # A run the service stopped (it timed out) asks nothing: Stuck, also after browser steps

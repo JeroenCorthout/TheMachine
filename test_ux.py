@@ -264,4 +264,14 @@ class UX(unittest.TestCase):
         row=self.row();row.update(status='prepared',body='Draft. [Full result](memory/assistant/261011-draft.md)')
         with patch.object(a,'telegram_request',side_effect=lambda config,args:args):
             payload=a.telegram({'dashboard_host':'machine.example','dashboard_path':'/assistant/','telegram_owner':'owner'},row,'send')
-        self.assertNotIn('memory/assistant/',payload['message']);self.assertIn('https://machine.example/assistant/#result=',payload['message'])
+        self.assertNotIn('memory/assistant/',payload['message']);self.assertIn('https://machine.example/assistant/#chat=',payload['message'])
+    def test_telegram_links_open_the_cards_own_page_not_the_old_result_modal(self):
+        """A tap on a Telegram link opened the old Result modal (Copy draft) over the list. Every link now opens the card's
+        own page (#chat=<id>), as a tap on the card in the list does."""
+        config={'dashboard_host':'machine.example','dashboard_path':'/assistant/','telegram_owner':'owner'}
+        row=self.row();row.update(status='prepared',body='Draft.',message_id=5)
+        with patch.object(a,'telegram_request',side_effect=lambda config,args:args):
+            texts=[a.telegram(config,row,'send')['message'],a.telegram(config,{**row,'_result_notice':True},'send')['message'],
+                   a.telegram(config,{**row,'status':'instructions','preparation_status':'blocked','_result_notice':True},'send')['message']]
+        for text in texts:
+            self.assertIn('https://machine.example/assistant/#chat='+self.sid+')',text);self.assertNotIn('#result=',text)

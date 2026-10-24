@@ -3154,7 +3154,10 @@ async function openResult(id,file){const s=state.suggestions.find(s=>s.id===id);
 $('#result-files').onclick=async e=>{const file=e.target.closest('[data-file]')?.dataset.file;if(file){try{await openResult(resultId,state.suggestions.find(s=>s.id===resultId).result_files.find(f=>f.path===file))}catch(e){toast(e.message,true)}}};
 $('#result-content').onclick=e=>{const revision=e.target.closest('[data-send-draft]')?.dataset.sendDraft;if(revision){$('#result-dialog').close();openSend(resultId,revision)}};
 $('#result-copy').onclick=()=>copyResult(resultId).catch(e=>toast(e.message,true));
-function openResultLink(){const match=/^#result=([a-f0-9]{16})$/.exec(location.hash);if(match&&state.suggestions){openResult(match[1]).catch(e=>toast(e.message,true));history.replaceState(null,'',location.pathname)}}
+// #result=<id> from Telegram and notifications sent before: the card's own page (its chat), as a tap in the list opens.
+function openResultLink(){const match=/^#result=([a-f0-9]{16})$/.exec(location.hash);if(match&&state.suggestions){history.replaceState(null,'',location.pathname+location.search+'#chat='+match[1]);openChatLink()}}
+// A link the installed app caught while it was open (launch_handler focus-existing): go where it points.
+{const first=location.href;if('launchQueue' in window)launchQueue.setConsumer(p=>{const u=p.targetURL&&new URL(p.targetURL);if(u&&u.href!==first&&u.hash&&u.hash!==location.hash)location.hash=u.hash})}
 let sendTask=null,sendRevision=null,sendDraft=null,sendHeader=null;
 function openSend(id,revision){
 const task=state.suggestions.find(s=>s.id===id),smart=taskActions(task),draft=revision?smart.find(a=>a.revision===revision):smart.find(a=>a.kind==='email');

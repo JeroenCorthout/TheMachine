@@ -5651,10 +5651,10 @@ class Store:
         if resume_action and old:action_id=old['action_id']
         # New work replaces a confirmed final step that never saved its result. It may have
         # gone through already, so a later Confirm checks the source first, never resubmits blindly.
-        for left in db.execute("SELECT id,payload FROM action_jobs WHERE suggestion_id=? AND status IN ('local_preparation','paused') AND id IS NOT ?",(suggestion_id,action_id)).fetchall():
+        for left in db.execute("SELECT id,status,payload FROM action_jobs WHERE suggestion_id=? AND status IN ('local_preparation','paused') AND id IS NOT ?",(suggestion_id,action_id)).fetchall():
             payload=json.loads(left['payload'])
             if payload['kind']!='finish':continue
-            payload['finish_result']={'state':'uncertain','body':'Replaced by new work before its result was saved.','at':now()}
+            payload['finish_result']={'state':'uncertain','body':'Replaced by new work before its result was saved.','at':now(),'was':left['status']}
             db.execute("UPDATE action_jobs SET status='finish_uncertain',payload=?,updated_at=? WHERE id=?",(encoded(payload),now(),left['id']))
         db.execute("INSERT INTO preparations(suggestion_id,decision_id,job_id,status,created_at,updated_at) VALUES(?,?,?,'queued',?,?) ON CONFLICT(suggestion_id) DO UPDATE SET decision_id=excluded.decision_id,job_id=excluded.job_id,status='queued',created_at=excluded.created_at,updated_at=excluded.updated_at,error=NULL,reason=NULL,details=NULL,questions=NULL,started_at=NULL,retry_at=NULL,attempts=0,auto_retries=0",
                    (suggestion_id,decision_id,uuid.uuid4().hex,now(),now()))
@@ -8748,13 +8748,26 @@ def pause_idle_steps(db, suggestion_id=None, stamp=None):
 def stopped_step(db, suggestion):
     """One true line for a card whose confirmed step stopped without going through (paused: its run was blocked, timed
     out, or a snooze or close cancelled it). It replaces the card's earlier result text, which still reads as if the step
-    were ready or done: what didn't happen, why in a few words, and when it carries on. None otherwise."""
-    rows = db.execute("SELECT payload FROM action_jobs WHERE suggestion_id=? AND status='paused' ORDER BY updated_at DESC", (suggestion['id'],)).fetchall()
-    if not rows:
-        return None
-    step = json.loads(rows[0]['payload'])
-    label = ' '.join(str(step.get('label') or '').split())[:80] or 'The next step'
+    were ready or done: what didn't happen, why in a few words, and when it carries on. None otherwise.
+    A final step that new work replaced before its result was saved (finish_uncertain, see queue_preparation) counts too
+    while that work has no result yet: the card still shows the step's preview. One that was paused then is not done;
+    one without that record may have gone through, so it is not confirmed."""
     prep = db.execute('SELECT status,reason,error FROM preparations WHERE suggestion_id=?', (suggestion['id'],)).fetchone()
+    step, prefix = None, ''
+    for row in db.execute("SELECT status,payload FROM action_jobs WHERE suggestion_id=? AND status IN ('paused','finish_uncertain') ORDER BY updated_at DESC", (suggestion['id'],)):
+        payload = json.loads(row['payload'])
+        if row['status'] == 'paused':
+            step, prefix = payload, 'Not done yet: ' if payload.get('kind') == 'finish' else 'Not prepared yet: '
+            break
+        result = payload.get('finish_result') or {}
+        # Its own uncertain result is the card's text then, or newer work saved a result: the card says what is true.
+        if result.get('body') == suggestion.get('body') or not prep or prep['status'] == 'done':
+            break
+        step, prefix = payload, 'Not done yet: ' if result.get('was') == 'paused' else 'Not confirmed yet: '
+        break
+    if not step:
+        return None
+    label = ' '.join(str(step.get('label') or '').split())[:80] or 'The next step'
     why = ''
     if prep and prep['error'] in ('completion_unconfirmed', 'ai_run_timed_out'):
         why = 'it ran too long'
@@ -8764,7 +8777,7 @@ def stopped_step(db, suggestion):
         why = re.split(r'[.;:!?]|,? so |,? but | because ', str(prep['reason']).strip(), maxsplit=1)[0].strip()
         why = why[:1].lower() + why[1:] if why[1:2] and why[1:2].islower() else why
         why = why if len(why) <= 70 else ''
-    line = ('Not done yet: ' if step.get('kind') == 'finish' else 'Not prepared yet: ') + label + (f' ({why}).' if why else '.')
+    line = prefix + label + (f' ({why}).' if why else '.')
     if suggestion.get('status') == 'snoozed' and suggestion.get('snoozed_until'):
         back = dt.datetime.fromisoformat(suggestion['snoozed_until']).astimezone(local_tz())
         today = dt.datetime.now(local_tz()).date()
@@ -9063,7 +9076,7 @@ def controls(row, root=''):
     if row['status'] in ('prepared','completed') and any(a['kind']=='merge' and (a.get('state') or row.get('action_status') or {}).get('undo_until','')>now() for a in actions):
         buttons.append({'label':'Undo merge','action':{'type':'callback','value':f"assistant:{row['id']}:unmerge"}})  # a merged fix stays reversible for a day
     if row.get('skill_proposal') and root:
-        buttons.append({'label':'Read instructions','action':{'type':'url','url':f"{root}#card={row['id']}"}})
+        buttons.append({'label':'Read instructions','action':{'type':'url','url':f"{root}#chat={row['id']}"}})
     buttons+=[{'label':label,'action':{'type':'callback','value':f"assistant:{row['id']}:{choice}"}} for label,choice in choices]
     # Fewer rows: up to three buttons per row that fit a phone's width, in order, so a Send
     # shares its row with Mark done. Same rule as packRows in the plugin.
@@ -9405,10 +9418,10 @@ def push_notify(store, config, row, sender=None):
         # A run the service stopped (a timeout, two failures) asks nothing: Stuck, as on the card
         payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Stuck: ' if row.get('preparation_error') else 'Needs your help: ') + row['title'],
                    'body': plain(strip_result_links(row['body']) if ready else row.get('preparation_reason') or ''),
-                   'url': signin or root + '#result=' + row['id']}
+                   'url': signin or root + '#chat=' + row['id']}
     else:
         payload = {'title': ('Reminder: ' if row.get('reminder') else '') + row['title'],
-                   'body': plain(row['body']), 'url': root + '#card=' + row['id']}
+                   'body': plain(row['body']), 'url': root + '#chat=' + row['id']}
     payload['tag'] = row['id']  # a newer notification for the same card replaces the older one
     if row.get('_silent'):
         payload['silent'] = True  # later cards of a batch still reach the phone, without a second buzz
@@ -9490,7 +9503,7 @@ def telegram(config, row, action, message_id=None):
         root='https://'+config['dashboard_host']+config.get('dashboard_path','/')
         signin=not ready and (row.get('preparation_browser') or {}).get('signin_url')
         message=('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Needs your help: ' if ask_blocked(row) or (row.get('preparation_browser') and not row.get('preparation_error')) else 'Stuck: ')+'**'+title+'**'
-        message+='\n\n[View '+('result' if ready else 'task')+']('+root+'#result='+row['id']+')'
+        message+='\n\n[View '+('result' if ready else 'task')+']('+root+'#chat='+row['id']+')'  # the card's own page, as a tap in the list opens
         # A sign-in blocker opens the dashboard's sign-in for this task; once in, the task carries on by itself.
         blocks=[{'type':'buttons','buttons':[{'label':'Sign in','action':{'type':'url','url':signin}}]}] if signin else []
         return telegram_request(config,{'action':'send','channel':'telegram','accountId':telegram_account(config),
@@ -9511,7 +9524,7 @@ def telegram(config, row, action, message_id=None):
     if root:
         body['body']=strip_result_links(body['body'])
         if shown:body['body']+='\n\n'+shown['text']
-        if row['status']=='prepared':body['body']+='\n\n[Read result]('+root+'#result='+row['id']+')'
+        if row['status']=='prepared':body['body']+='\n\n[Read result]('+root+'#chat='+row['id']+')'
         elif row.get('original_urls'):body['body']+='\n\n[Open original]('+row['original_urls'][0]+')'
     args = {'action':action,'channel':'telegram','accountId':telegram_account(config),'target':config.get('telegram_owner'),
             'message':('Your update\n\n' if action=='send' and row.get('reminder') and (row['status'] in ('prepared','instructions') or row.get('preparation_status')=='blocked') else 'Reminder\n\n' if action=='send' and row.get('reminder') else '')+card(body),'presentation':controls(row,root)}
@@ -9551,7 +9564,8 @@ def cached_card_ids(config, suggestion_id, since):
     found = []
     with contextlib.closing(sqlite3.connect('file:' + path + '?mode=ro', uri=True, timeout=2)) as native:
         for value, in native.execute("SELECT value_json FROM plugin_state_entries WHERE plugin_id='telegram' "
-                                     "AND namespace='telegram.message-cache' AND (instr(value_json,?)>0 OR instr(value_json,?)>0)", (callback,'#result='+suggestion_id)):
+                                     "AND namespace='telegram.message-cache' AND (instr(value_json,?)>0 OR instr(value_json,?)>0 OR instr(value_json,?)>0)",
+                                     (callback,'#chat='+suggestion_id,'#result='+suggestion_id)):  # #result= in notices sent before
             message = json.loads(value).get('sourceMessage', {})
             if (str(message.get('chat', {}).get('id')) == config.get('telegram_owner') and message.get('from', {}).get('is_bot')
                     and message.get('message_id') and (message.get('date') or 0) >= since):
@@ -10124,7 +10138,7 @@ def weekly_recap_message(store, config, current=None, usage=None):
     ahead = dt.datetime.combine(tomorrow + dt.timedelta(days=7), dt.time(), tz).astimezone(dt.timezone.utc).isoformat()
     in_week = lambda day: tomorrow.isoformat() <= str(day)[:10] < (tomorrow + dt.timedelta(days=7)).isoformat()
     root = 'https://' + config['dashboard_host'] + config.get('dashboard_path', '/') if config.get('dashboard_host') else ''
-    link = lambda text, card: f'[{recap_escape(text)}]({root}#card={card})' if root and card else recap_escape(text)
+    link = lambda text, card: f'[{recap_escape(text)}]({root}#chat={card})' if root and card else recap_escape(text)
     names = {x['id']: x.get('display_name') or x.get('email') or x['id'] for x in config.get('accounts', [])}
     with store.connect() as db:
         runs = db.execute("SELECT count(*) FROM review_runs WHERE started_at>=?", (since,)).fetchone()[0]
