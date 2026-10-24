@@ -161,7 +161,7 @@ class Preparation(unittest.TestCase):
         self.assertIn(row['step_stopped'],a.card(row));self.assertNotIn('In the cart',a.card(row))
         self.store.decide(sid,'snooze','','later','dashboard',snoozed_until=(a.dt.datetime.now(a.local_tz())+a.dt.timedelta(days=3)).replace(hour=9,minute=0).isoformat())
         _,row=self.card_line(sid)
-        self.assertRegex(row['step_stopped'],r'^Not done yet: Order the cable \(browser access is still failing\)\. It carries on when the card comes back, \w{3} \d+ \w{3}, 09:00\.$')
+        self.assertRegex(row['step_stopped'],r'^Not done yet: Order the cable \(browser access is still failing\)\. It carries on when the card comes back, \w{3}, \w{3} \d+ at 09:00\.$')
         self.store.decide(sid,'complete','','done','dashboard')
         _,row=self.card_line(sid);self.assertNotIn('step_stopped',row)  # closed: the card says Done
 

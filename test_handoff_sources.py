@@ -28,7 +28,7 @@ class HandoffSources(unittest.TestCase):
         card = self.card(source)
         draft = self.fleet.handoff_draft(card)
         self.assertEqual(len(draft['sources']), 1)
-        self.assertRegex(draft['sources'][0]['label'], r'^Email from Sam Lee · \w{3} \d{1,2} \w{3}$')
+        self.assertRegex(draft['sources'][0]['label'], r'^Email from Sam Lee · \w{3}, \w{3} \d{1,2}$')
         self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Send Sam the pricing for 40 seats.', 'sam@client.example')
         question = self.sent()
         self.assertEqual([(s['kind'], s['from'], s['subject'], s['body']) for s in question['sources']],
@@ -45,7 +45,7 @@ class HandoffSources(unittest.TestCase):
         self.assertTrue(row['source_line'].startswith('Source: email from Sam Lee, via Pat · '))
         # (+1 is Sam's own email on this Machine, the contact's latest.) The handoff's own event is the card's text, not a source:
         rows = [{'kind': k, 'metadata': {'sender_display': 'Sam, via Pat'}, 'occurred_at': '2026-10-22T09:00:00+00:00'} for k in ('fleet.email', 'fleet.request')]
-        self.assertEqual(tr.a.source_line(rows), 'Source: email from Sam, via Pat · Thu 22 Oct')
+        self.assertEqual(tr.a.source_line(rows), 'Source: email from Sam, via Pat · Thu, Oct 22')
         with self.store.connect() as db:
             first = db.execute('SELECT kind,title,body,metadata,analyzed_version FROM events WHERE id=?', (json.loads(row['event_ids'])[0],)).fetchone()
         meta = json.loads(first['metadata'])

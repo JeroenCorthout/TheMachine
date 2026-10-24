@@ -34,10 +34,10 @@ class Sealing(unittest.TestCase):
     def test_dates_in_the_email_read_as_a_person_writes_them(self):
         import datetime as dt
         today = dt.date(2026, 10, 23)
-        self.assertEqual(task_invites.spoken_day('2026-10-31', today), 'Saturday 31 October')
-        self.assertEqual(task_invites.spoken_day('2027-01-04', today), 'Monday 4 January 2027')  # the year only when it differs
+        self.assertEqual(task_invites.spoken_day('2026-10-31', today), 'Saturday, October 31')
+        self.assertEqual(task_invites.spoken_day('2027-01-04', today), 'Monday, January 4, 2027')  # the year only when it differs
         subject, body = task_invites.draft({'title': 'Sign the contract', 'due': '2026-10-31'}, 'Alex', 'Sam')
-        self.assertRegex(body, r'by Saturday 31 October( 2026)?\.')
+        self.assertRegex(body, r'by Saturday, October 31(, 2026)?\.')
 
     def test_links_parse_in_their_three_forms(self):
         key = 'k' * 43
@@ -81,7 +81,7 @@ class ByEmail(unittest.TestCase):
         self.assertEqual((action['kind'], action['account_id'], action['to']), ('email', 'work', ['kim@other.example']))
         self.assertEqual(action['subject'], 'Could you take this on: Send Sam the pricing')
         self.assertIn('Sam wants pricing for 40 seats.', action['body'])
-        self.assertIn('It would be great to have it by Tuesday 3 November', action['body'])  # as a person writes it
+        self.assertIn('It would be great to have it by Tuesday, November 3', action['body'])  # as a person writes it
         self.assertNotIn('2026-11-03', action['body'])
         self.assertNotIn('The Machine', action['body'])  # no promotional line or signature
         self.assertEqual(self.relay.sent('/task-invite'), [])  # nothing left this Machine

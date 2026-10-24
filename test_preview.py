@@ -115,7 +115,7 @@ class Preview(unittest.TestCase):
 STARTED = '2026-10-16T08:00:00+00:00'
 def status(run_status, cards=(), **run):
     suggestions = [{'id': f'c{n}', 'status': 'pending', 'title': title, 'body': '**Sam** asks to confirm the amount.', 'created_at': '2026-10-16T08:03:00+00:00',
-                    'source_line': 'Source: email from Sam Example · Thu 15 Oct', 'account_ids': '["work"]', 'event_ids': '[1]'} for n, title in enumerate(cards)]
+                    'source_line': 'Source: email from Sam Example · Thu, Oct 15', 'account_ids': '["work"]', 'event_ids': '[1]'} for n, title in enumerate(cards)]
     return {'suggestions': suggestions + [{'id': 'old', 'status': 'pending', 'title': 'Queued earlier', 'body': 'x', 'created_at': '2026-10-15T08:00:00+00:00'}],
             'deliveries': [{'suggestion_id': s['id'], 'status': 'previewed'} for s in suggestions] + [{'suggestion_id': 'old', 'status': 'queued'}],
             'review_runs': [{'run_id': 'r1', 'status': run_status, 'started_at': STARTED, 'claimed_count': 40, 'review_saved': run_status == 'ok',

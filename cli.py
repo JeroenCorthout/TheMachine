@@ -82,11 +82,12 @@ def call(config, action, args=None, upload=False):
         raise CliError('The assistant service is not reachable. Check: assistant service status') from None
 
 
-def local(value, fmt='%a %d %b %H:%M'):
+def local(value, fmt='%a, %b {day} %H:%M'):
     if not value:
         return '-'
     try:
-        return dt.datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(TZ).strftime(fmt)
+        t = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(TZ)
+        return t.strftime(fmt.replace('{day}', str(t.day)))
     except ValueError:
         return str(value)
 
@@ -177,7 +178,7 @@ def cmd_promises(config, args):
             continue
         print(f'{heading} ({len(rows)})')
         for p in rows:
-            due = f" · due {dt.date.fromisoformat(p['due']):%a %d %b}" if p['due'] else ''
+            due = f" · due {dt.date.fromisoformat(p['due']):%a, %b} {dt.date.fromisoformat(p['due']).day}" if p['due'] else ''
             state = {'card': ' · card out', 'kept': ' · kept', 'dropped': ' · dropped', 'answered': ' · they wrote again'}.get(p['state'], '')
             print(f"  #{p['id']}  {p['who']}: {p['what']}{due}{state}")
             print(f"    said {local(p['made_at'])}" + (f" · {p['note']}" if p.get('note') and p['state'] != 'open' else ''))

@@ -1404,7 +1404,7 @@ def _brief_date(value):
 
 
 def _on_day(value, today):
-    """A day as people say it: today, tomorrow, yesterday, Thu, 12 Oct."""
+    """A day as people say it: today, tomorrow, yesterday, Thu, Oct 12."""
     d = _brief_date(value)
     if not d:
         return ''
@@ -1417,13 +1417,13 @@ def _on_day(value, today):
         return 'yesterday'
     if -6 <= gap <= 6:
         return WEEKDAYS[d.weekday()]
-    return f"{d.day} {d.strftime('%b')}"
+    return f"{d.strftime('%b')} {d.day}"
 
 
 def _waited(value, today):
     d = _brief_date(value)
     days = (today - d).days if d else 0
-    return days, ('since yesterday' if days == 1 else f'{days} days' if days < 7 else f"since {d.day} {d.strftime('%b')}")
+    return days, ('since yesterday' if days == 1 else f'{days} days' if days < 7 else f"since {d.strftime('%b')} {d.day}")
 
 
 def _plain_name(label):

@@ -103,8 +103,8 @@ class WhichCalendars(unittest.TestCase):
 class Validate(unittest.TestCase):
     def test_a_new_event_shows_what_where_and_when(self):
         action = cw.validate(NEW, CONFIG)
-        self.assertEqual((action['account_id'], action['calendar_name'], action['when']), ('kid-cal', 'Kid’s calendar', 'Tue 27 Oct 2026, 16:00 to 16:30'))
-        self.assertEqual(cw.preview(action), 'Add to Kid’s calendar\nDaycare pick-up\nTue 27 Oct 2026, 16:00 to 16:30\nWhere: Daycare')
+        self.assertEqual((action['account_id'], action['calendar_name'], action['when']), ('kid-cal', 'Kid’s calendar', 'Tue, Oct 27, 2026, 16:00 to 16:30'))
+        self.assertEqual(cw.preview(action), 'Add to Kid’s calendar\nDaycare pick-up\nTue, Oct 27, 2026, 16:00 to 16:30\nWhere: Daycare')
         self.assertEqual(cw.label(action), 'Add to calendar')
         self.assertEqual(cw.done(action), 'Added to Kid’s calendar: Daycare pick-up')
 
@@ -117,10 +117,10 @@ class Validate(unittest.TestCase):
 
     def test_an_all_day_event_takes_its_last_day(self):
         action = cw.validate({**NEW, 'all_day': True, 'start': '2026-10-27', 'end': '2026-10-28'}, CONFIG)
-        self.assertEqual(action['when'], 'Tue 27 Oct 2026 to Wed 28 Oct 2026')
+        self.assertEqual(action['when'], 'Tue, Oct 27, 2026 to Wed, Oct 28, 2026')
         body = cw.body(action, 'tap')
         self.assertEqual((body['start'], body['end']), ({'date': '2026-10-27'}, {'date': '2026-10-29'}))  # Google's end is the day after
-        self.assertEqual(cw.validate({**NEW, 'all_day': True, 'start': '2026-10-27', 'end': None}, CONFIG)['when'], 'Tue 27 Oct 2026, all day')
+        self.assertEqual(cw.validate({**NEW, 'all_day': True, 'start': '2026-10-27', 'end': None}, CONFIG)['when'], 'Tue, Oct 27, 2026, all day')
 
     def test_a_new_event_has_a_stable_id_and_no_guests(self):
         body = cw.body(cw.validate(NEW, CONFIG), 'job-1')
@@ -134,10 +134,10 @@ class Validate(unittest.TestCase):
                       'end': '2026-10-28T11:00:00+01:00', 'all_day': False, 'guests': 0}}
         action = cw.validate({'kind': 'calendar', 'op': 'update', 'event': 7, 'title': 'Swimming lesson'}, CONFIG, events)
         self.assertEqual(cw.body(action), {'summary': 'Swimming lesson'})
-        self.assertEqual(action['when'], 'Wed 28 Oct 2026, 10:00 to 11:00')
+        self.assertEqual(action['when'], 'Wed, Oct 28, 2026, 10:00 to 11:00')
         moved = cw.validate({'kind': 'calendar', 'op': 'update', 'event': 7, 'start': '2026-10-28T11:00:00+01:00', 'end': '2026-10-28T12:00:00+01:00'}, CONFIG, events)
         self.assertEqual(set(cw.body(moved)), {'start', 'end'})
-        self.assertIn('Was: Swimming, Wed 28 Oct 2026, 10:00 to 11:00', cw.preview(moved))
+        self.assertIn('Was: Swimming, Wed, Oct 28, 2026, 10:00 to 11:00', cw.preview(moved))
         gone = cw.validate({'kind': 'calendar', 'op': 'delete', 'event': 7}, CONFIG, events)
         self.assertEqual((gone['title'], cw.label(gone)), ('Swimming', 'Delete event'))
         with self.assertRaisesRegex(ValueError, 'only names the event'):

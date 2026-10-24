@@ -95,7 +95,7 @@ class Delegate(unittest.TestCase):
         row = self.suggestion()
         self.assertEqual((row['status'], row['resume_status']), ('snoozed', 'prepared'))
         self.assertEqual(row['snoozed_until'], '2026-10-19T07:00:00+00:00')  # 3 days, Monday 09:00 local time
-        self.assertIn('Sent to Sam. Waiting for their reply until Mon 19 Oct', a.card(self.row()))
+        self.assertIn('Sent to Sam. Waiting for their reply until Mon, Oct 19', a.card(self.row()))
         # The owner's own message in that DM, someone else in another chat and older messages don't count.
         self.store.commit_page('slack', {}, [slack('s0', '2026-10-16T08:00:00+00:00', 'U0SAM12'),
                                              slack('s1', '2026-10-16T10:00:00+00:00', 'UOWNER1'),

@@ -100,14 +100,14 @@ def _moment(value):
 
 
 def when(start, end, all_day):
-    """"Mon 27 Oct 2026, 16:00 to 16:30", "Mon 27 Oct 2026, all day", in the event's own clock."""
+    """"Mon, Oct 27, 2026, 16:00 to 16:30", "Mon, Oct 27, 2026, all day", in the event's own clock."""
     if all_day:
         a, b = _day(start), _day(end)
-        day = lambda d: d.strftime('%a ') + str(d.day) + d.strftime(' %b %Y')
+        day = lambda d: d.strftime('%a, %b ') + str(d.day) + d.strftime(', %Y')
         return day(a) + (', all day' if a == b else ' to ' + day(b))
     a, b = _moment(start), _moment(end)
-    first = a.strftime('%a ') + str(a.day) + a.strftime(' %b %Y, %H:%M')
-    return first + ' to ' + (b.strftime('%H:%M') if a.date() == b.date() else b.strftime('%a ') + str(b.day) + b.strftime(' %b, %H:%M'))
+    first = a.strftime('%a, %b ') + str(a.day) + a.strftime(', %Y, %H:%M')
+    return first + ' to ' + (b.strftime('%H:%M') if a.date() == b.date() else b.strftime('%a, %b ') + str(b.day) + b.strftime(', %H:%M'))
 
 
 def _times(start, end, all_day):

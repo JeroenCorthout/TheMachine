@@ -180,7 +180,7 @@ class Promises(unittest.TestCase):
         card = self.store.snapshot([])['suggestions'][0]
         self.assertEqual((card['title'], card['due'], card['dedupe_key']), ('Send the Q3 deck for Alex', '2026-10-21', f'promise:{mine}'))
         # The title says what; the one line adds only who and when, never the title again
-        self.assertEqual(card['body'], 'Promised Alex on Mon 19 Oct for Wed 21 Oct. Nothing shows it done yet.')
+        self.assertEqual(card['body'], 'Promised Alex on Mon, Oct 19 for Wed, Oct 21. Nothing shows it done yet.')
         self.assertEqual(card['owner_step'], 0)
         self.assertEqual((card['status'], card['early']), ('accepted', 1))  # prepared ahead
         self.assertEqual(self.row(mine)['suggestion_id'], card['id'])
@@ -205,7 +205,7 @@ class Promises(unittest.TestCase):
         app.promise_step()
         card = self.store.snapshot([])['suggestions'][0]
         self.assertEqual(card['title'], 'Come by in the afternoon for the paint order for Sam at the paint shop')
-        self.assertEqual(card['body'], 'Promised Sam at the paint shop on Mon 19 Oct for Tue 20 Oct. Nothing shows it done yet.')
+        self.assertEqual(card['body'], 'Promised Sam at the paint shop on Mon, Oct 19 for Tue, Oct 20. Nothing shows it done yet.')
         self.assertEqual((card['status'], card['owner_step']), ('pending', 1))
         labels = [b['label'] for block in a.controls(card)['blocks'] for b in block['buttons']]
         self.assertEqual(labels[:2], ['Done', 'Plan it'])
@@ -284,7 +284,7 @@ class Promises(unittest.TestCase):
         self.record(due='2026-10-23')
         self.app().action('promise', {'direction': 'mine', 'event_id': self.mine, 'who': 'Alex', 'what': 'send the Q3 deck'})
         text = self.store.promises_text()
-        self.assertIn('Sam Lee → you: send the signed contract (due Fri 23 Oct; said Mon 19 Oct', text)
+        self.assertIn('Sam Lee → you: send the signed contract (due Fri, Oct 23; said Mon, Oct 19', text)
         self.assertIn('you → Alex: send the Q3 deck (no date;', text)
         prompt = a.review_prompt('run', ['work'], promises=text)
         self.assertIn('record it with promise', prompt)
@@ -304,7 +304,7 @@ class Promises(unittest.TestCase):
         out = io.StringIO()
         with patch.object(cli, 'load_config', return_value={}), patch.object(cli, 'call', return_value={'promises': self.store.promises()}), redirect_stdout(out):
             cli.main(['promises'])
-        self.assertIn('Promised to you (1)\n  #1  Sam Lee: send the signed contract · due Fri 23 Oct', out.getvalue())
+        self.assertIn('Promised to you (1)\n  #1  Sam Lee: send the signed contract · due Fri, Oct 23', out.getvalue())
 
 
 if __name__ == '__main__':

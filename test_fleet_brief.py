@@ -319,7 +319,7 @@ class Items(unittest.TestCase):
         self.assertEqual(globex['why'], '5 days, sent to you and Noor')
         self.assertTrue(globex['ask'] and globex['open'])
         self.assertEqual(items[1]['why'], '3 days, sent to Pat, you also talk to them')
-        self.assertEqual(items[-1]['why'], 'last contact 1 Aug, a customer')
+        self.assertEqual(items[-1]['why'], 'last contact Aug 1, a customer')
         self.assertFalse(items[1]['open'])  # not in your mail
         self.assertEqual(items[2]['title'], 'You and Noor meet Hooli tomorrow')
         self.assertEqual(items[3]['title'], 'You and Pat are both in touch with Umbrella')

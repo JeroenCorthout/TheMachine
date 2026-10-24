@@ -98,8 +98,8 @@ def clean_answer(kind, answer):
 def _shown(value):
     try:
         if len(value) == 10:
-            return dt.date.fromisoformat(value).strftime('%a %-d %b')
-        return dt.datetime.fromisoformat(value.replace('Z', '+00:00')).strftime('%a %-d %b %H:%M')
+            return dt.date.fromisoformat(value).strftime('%a, %b %-d')
+        return dt.datetime.fromisoformat(value.replace('Z', '+00:00')).strftime('%a, %b %-d %H:%M')
     except (TypeError, ValueError):
         return str(value or '')
 
@@ -173,7 +173,7 @@ def common_free(busy_lists, start, days, tz, hours=(FREE_FROM, FREE_UNTIL), minu
 
 def free_text(slot):
     a, b = (dt.datetime.fromisoformat(x) for x in slot)
-    return f"{a:%a %-d %b} {a:%H:%M}–{b:%H:%M}"
+    return f"{a:%a, %b} {a.day} {a:%H:%M}–{b:%H:%M}"
 
 
 class Family:

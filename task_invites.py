@@ -170,10 +170,10 @@ MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'Augus
 
 
 def spoken_day(day, today=None):
-    """A date as a person writes it in an email: "Saturday 31 October", with the year only when it is not this year."""
+    """A date as a person writes it in an email: "Saturday, October 31", with the year only when it is not this year."""
     found = dt.date.fromisoformat(day)
-    year = '' if found.year == (today or dt.date.today()).year else f' {found.year}'
-    return f'{DAYS[found.weekday()]} {found.day} {MONTHS[found.month - 1]}{year}'
+    year = '' if found.year == (today or dt.date.today()).year else f', {found.year}'
+    return f'{DAYS[found.weekday()]}, {MONTHS[found.month - 1]} {found.day}{year}'
 
 
 def draft(task, to_name, me, link=None):

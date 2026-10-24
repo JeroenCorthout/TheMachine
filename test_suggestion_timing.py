@@ -89,7 +89,7 @@ class HeldCards(unittest.TestCase):
         self.assertEqual(self.deliverable(at(2026,10,11,22,0).astimezone(dt.timezone.utc).isoformat()),0)
         self.assertEqual(self.deliverable(at(2026,10,12,8,31).astimezone(dt.timezone.utc).isoformat()),1)
         with self.store.connect() as db:row=dict(db.execute('SELECT * FROM suggestions WHERE id=?',(result['id'],)).fetchone())
-        self.assertEqual(row['source_line'],'Source: email from Dana Example · Fri 9 Oct')
+        self.assertEqual(row['source_line'],'Source: email from Dana Example · Fri, Oct 9')
         self.assertIn('Source: email from Dana Example',a.card({**row,'status':'pending'}))
 
 class RecapAndPreferences(unittest.TestCase):

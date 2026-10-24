@@ -58,7 +58,7 @@ class SnoozeFromChange(unittest.TestCase):
         self.assertTrue(saved['note'].endswith('in these words: It’ll be back on the dashboard then.'))
         row = self.row()
         self.assertEqual((row['status'], row['snoozed_until']), ('snoozed', '2026-10-27T08:00:00+00:00'))
-        self.assertTrue(a.card(row).endswith('Snoozed until Tue 27 Oct, 09:00.'))
+        self.assertTrue(a.card(row).endswith('Snoozed until Tue, Oct 27 at 09:00.'))
         self.assertNotIn('Mark it done', a.card(row))
         with self.store.connect() as db:
             # The same decision the Snooze button records; no notification goes out now.

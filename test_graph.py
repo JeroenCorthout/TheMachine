@@ -590,7 +590,7 @@ class Graph(unittest.TestCase):
         self.assertEqual({c['title'] for c in detail['open']['cards']}, {'Answer Ann', 'Book the call with Ann'})
         self.assertNotIn('known', detail['open'])  # a fact on her card is no fact about her: no subject, on nobody's page
         lines = self.app.graph_lines(task['id'])
-        self.assertIn('open: you promised to send the deck by Tue 20 Oct; they promised to sign the contract; card "Book the call with Ann"', lines)
+        self.assertIn('open: you promised to send the deck by Tue, Oct 20; they promised to sign the contract; card "Book the call with Ann"', lines)
         self.assertNotIn('card "Answer Ann"', lines)  # the task itself
 
     def test_a_fact_shows_on_who_it_is_about_never_on_who_sent_the_message(self):

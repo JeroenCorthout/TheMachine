@@ -1388,7 +1388,7 @@ def short_date(value):
     if not value:
         return 'never'
     day = dt.date.fromisoformat(str(value)[:10])
-    return f'{day:%a} {day.day} {day:%b}'
+    return f'{day:%a, %b} {day.day}'
 
 
 def context_lines(db, event_ids, limit_chars=1500, skip_card=None):

@@ -361,7 +361,7 @@ def thread_return_time(days):
 def thread_snooze_note(state):
     until = state.get('snooze_until')
     if state.get('snooze_status') in ('queued', 'snoozed') and until:
-        return ' Thread out of your inbox until ' + dt.datetime.fromisoformat(until).astimezone(local_tz()).strftime('%a %-d %b · %H:%M') + '.'
+        return ' Thread out of your inbox until ' + dt.datetime.fromisoformat(until).astimezone(local_tz()).strftime('%a, %b %-d · %H:%M') + '.'
     if state.get('snooze_status') == 'failed':
         return ' ' + (state.get('snooze_error') or 'I couldn’t snooze the thread in your mailbox.')
     return ''
@@ -432,7 +432,7 @@ def snooze_choices(work=False):
             continue
         seen.add(due)
         moved = work and due.date() != (local_now - dt.timedelta(hours=3)).date() + dt.timedelta(days={'tomorrow': 1, '3d': 3, '1w': 7}[option])
-        name = 'Tomorrow' if due.date() == tomorrow else due.strftime('%A') if moved and (due.date() - tomorrow).days < 6 else due.strftime('%a %-d %b') if moved else plain
+        name = 'Tomorrow' if due.date() == tomorrow else due.strftime('%A') if moved and (due.date() - tomorrow).days < 6 else due.strftime('%a, %b %-d') if moved else plain
         choices.append([option, name + ' · ' + morning_label()])
     return choices
 
@@ -4462,9 +4462,9 @@ class Store:
         lines = []
         for p in [p for p in self.promises() if p['state'] == 'open'][:limit]:
             made = dt.datetime.fromisoformat(p['made_at']).astimezone(local_tz())
-            due = 'due ' + dt.date.fromisoformat(p['due']).strftime('%a %d %b') if p['due'] else 'no date'
+            due = 'due ' + dt.date.fromisoformat(p['due']).strftime('%a, %b ') + str(dt.date.fromisoformat(p['due']).day) if p['due'] else 'no date'
             who = f"you with {p['who']}" if p.get('together') else f"you → {p['who']}" if p['direction'] == 'mine' else f"{p['who']} → you"
-            lines.append(f"- #{p['id']} {who}: {p['what']} ({due}; said {made:%a %d %b}, event {p['event_id']})")
+            lines.append(f"- #{p['id']} {who}: {p['what']} ({due}; said {made:%a, %b} {made.day}, event {p['event_id']})")
         return '\n'.join(lines)
 
     def slipped(self, run_id, limit=5):
@@ -4517,7 +4517,7 @@ class Store:
                                                                   "AND instr(lower(json_extract(metadata,'$.from')),?)>0 LIMIT 1", (first['occurred_at'], x)).fetchone()]
                     if people:
                         found['sent'].append((row, ', '.join(people[:3])))
-            day = lambda row: dt.datetime.fromisoformat(row['occurred_at']).astimezone(local_tz()).strftime('%a %-d %b')
+            day = lambda row: dt.datetime.fromisoformat(row['occurred_at']).astimezone(local_tz()).strftime('%a, %b %-d')
             waited = lambda row: (current - dt.datetime.fromisoformat(row['occurred_at'])).days
             # Three or more emails sent the same day with the same subject pattern are outreach: left out.
             batches = {}
@@ -4580,7 +4580,7 @@ class Store:
         for row, text in sorted(picked, key=lambda p: p[0]['occurred_at'], reverse=True):
             m = json.loads(row['metadata'])
             item = {'id': row['id'], 'source': OWN_KINDS[row['kind']], 'account': row['account_id'],
-                    'date': dt.datetime.fromisoformat(row['occurred_at']).astimezone(local_tz()).strftime('%a %d %b %H:%M'),
+                    'date': recap_day(row['occurred_at'], True),
                     'text': clamp(text, 900 if row['kind'] == 'gmail.message' else 300)}
             if row['kind'] == 'gmail.message':
                 item.update(to=clamp(str(m.get('to') or ''), 160), subject=clamp(row['title'] or '', 120))
@@ -8738,7 +8738,7 @@ def source_line(rows):
     who = (m.get('sender_display') or m.get('from') or m.get('chat_name') or m.get('app_name')
            or (('#' + m['channel_name']) if m.get('channel_name') else '') or (m.get('crm_account') or {}).get('name') or '')
     who = re.sub(r'\s*<[^>]+>', '', str(who)).strip().strip('"') or None
-    when = dt.datetime.fromisoformat(first['occurred_at']).astimezone(local_tz()).strftime('%a %-d %b')
+    when = dt.datetime.fromisoformat(first['occurred_at']).astimezone(local_tz()).strftime('%a, %b %-d')
     line = 'Source: ' + source_kind(first['kind']) + (f' from {who}' if who else '') + f' · {when}'
     more = [r for r in rows[1:] if r['kind'] != 'fleet.request']  # a Fleet request's own event is the card's text, not another source
     return line + (f' (+{len(more)} more)' if more else '')
@@ -8832,7 +8832,7 @@ def merge_state(row, state):
 def card(row):
     title = row['title'].replace('*', '').replace('_', '')
     status = {'accepted': 'On it.', 'rejected': 'Not needed.',
-              'snoozed': 'Snoozed until '+dt.datetime.fromisoformat(row['snoozed_until']).astimezone(local_tz()).strftime('%a %-d %b, %H:%M')+'.' if row.get('snoozed_until') else 'Snoozed.',
+              'snoozed': 'Snoozed until '+dt.datetime.fromisoformat(row['snoozed_until']).astimezone(local_tz()).strftime('%a, %b %-d at %H:%M')+'.' if row.get('snoozed_until') else 'Snoozed.',
               'instructions': 'Got your feedback. I’ll update this.',
               'prepared': 'Ready for you.', 'completed': 'Done.'}.get(row['status'], '')
     # One status line: where it stands and what's left for the owner. A later sign that it's
@@ -8886,7 +8886,7 @@ def card(row):
         status = checkin_line(row) + '.'
     if handed.get('delegated'):
         if row['status'] == 'snoozed' and row.get('snoozed_until'):
-            status = f"Sent to {handed['name']}. Waiting for their reply until " + dt.datetime.fromisoformat(row['snoozed_until']).astimezone(local_tz()).strftime('%a %-d %b') + '; it closes when they answer.'
+            status = f"Sent to {handed['name']}. Waiting for their reply until " + dt.datetime.fromisoformat(row['snoozed_until']).astimezone(local_tz()).strftime('%a, %b %-d') + '; it closes when they answer.'
         elif row['status'] == 'completed' and handed.get('answered'):
             status = f"{handed['name']} replied, so I closed this."
         elif row['status'] == 'prepared':
@@ -8898,7 +8898,7 @@ def card(row):
     due = ''
     if row.get('due') and row.get('status') not in ('completed', 'rejected'):
         try:
-            due = 'Due ' + dt.date.fromisoformat(row['due']).strftime('%a %-d %b')
+            due = 'Due ' + dt.date.fromisoformat(row['due']).strftime('%a, %b %-d')
         except ValueError:
             pass
     source = ' · '.join(x for x in (due, row.get('source_line'), tag) if x)
@@ -8961,7 +8961,7 @@ def stopped_step(db, suggestion):
     if suggestion.get('status') == 'snoozed' and suggestion.get('snoozed_until'):
         back = dt.datetime.fromisoformat(suggestion['snoozed_until']).astimezone(local_tz())
         today = dt.datetime.now(local_tz()).date()
-        at = back.strftime('%H:%M') if back.date() == today else back.strftime('%H:%M tomorrow') if (back.date() - today).days == 1 else back.strftime('%a %-d %b, %H:%M')
+        at = back.strftime('%H:%M') if back.date() == today else back.strftime('%H:%M tomorrow') if (back.date() - today).days == 1 else back.strftime('%a, %b %-d at %H:%M')
         line += f' It carries on when the card comes back, {at}.'
     elif prep and prep['status'] == 'blocked':
         line += ' Try again carries it on.'
@@ -9200,7 +9200,7 @@ def checkin_line(row):
         return ''
     local, today = dt.datetime.fromisoformat(until).astimezone(local_tz()), dt.datetime.fromisoformat(now()).astimezone(local_tz()).date()
     days = (local.date() - today).days
-    when = 'today' if days == 0 else 'tomorrow' if days == 1 else local.strftime('%a') if 1 < days < 7 else local.strftime('%a %-d %b')
+    when = 'today' if days == 0 else 'tomorrow' if days == 1 else local.strftime('%a') if 1 < days < 7 else local.strftime('%a, %b %-d')
     return f"Check in with {wait['name']} {when} {local:%H:%M} if no answer"
 
 
@@ -10228,12 +10228,12 @@ def recap_clip(text, limit=70):
 
 
 def recap_day(value, with_time=False):
-    """Fri 23 Oct (and 09:30) in the owner's time zone, from a date or a time."""
+    """Fri, Oct 23 (and 09:30) in the owner's time zone, from a date or a time."""
     if len(str(value)) <= 10:
         d = dt.date.fromisoformat(str(value)[:10])
-        return f'{d:%a} {d.day} {d:%b}'
+        return f'{d:%a, %b} {d.day}'
     t = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00')).astimezone(local_tz())
-    return f'{t:%a} {t.day} {t:%b}' + (f' {t:%H:%M}' if with_time else '')
+    return f'{t:%a, %b} {t.day}' + (f' {t:%H:%M}' if with_time else '')
 
 
 def recap_noise(db, since):
@@ -10449,7 +10449,7 @@ def weekly_recap_message(store, config, current=None, usage=None):
     kept_rules = [json.loads(k['data']).get('rule') for k in kept if k['kind'] == 'noise']
     kept_cards = {k['ref']: k['decided_at'] for k in kept if k['kind'] == 'snoozed'}
     start_local, end_local = dt.datetime.fromisoformat(since).astimezone(tz), current.astimezone(tz)
-    span = f"{start_local.day}–{end_local.day} {end_local:%b}" if (start_local.month, start_local.year) == (end_local.month, end_local.year) else f"{start_local.day} {start_local:%b} – {end_local.day} {end_local:%b}"
+    span = f"{end_local:%b} {start_local.day}–{end_local.day}" if (start_local.month, start_local.year) == (end_local.month, end_local.year) else f"{start_local:%b} {start_local.day} – {end_local:%b} {end_local.day}"
     lines = [f'**Your week with The Machine** · {span}']
 
     # 1. What needs the owner: promises made to them that are late, then their own open ones with a date.
@@ -10760,10 +10760,10 @@ def promise_text(p):
     """A promise card's title and body. The title says what was promised; the body adds only who and when, in one
     short line, so the card never says the same thing twice."""
     made = dt.datetime.fromisoformat(p['made_at']).astimezone(local_tz())
-    said = f"{made:%a} {made.day} {made:%b}"
+    said = f"{made:%a, %b} {made.day}"
     due = dt.date.fromisoformat(p['due']) if p.get('due') else None
     # The due chip says when it is due; the line adds it only when it isn't the day it was said
-    by = f" for {due:%a} {due.day} {due:%b}" if due and due != made.date() else ''
+    by = f" for {due:%a, %b} {due.day}" if due and due != made.date() else ''
     if p['direction'] == 'mine':
         title = p['what'][:1].upper() + p['what'][1:]
         title = title if p['who'].lower() in title.lower() or len(title) + len(p['who']) > 84 else f"{title} for {p['who']}"
@@ -10779,10 +10779,10 @@ def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promis
 ''' + (f'''Boards to sort, before anything else (separate from the batch: these projects need no new message). The owner put these projects on a board and their tiles say "Sorting" until you place them. For each, read its messages with events (its event_ids below, all accounts) and judge where it stands now from what they mean between these people, never their wording. Place it with graph {{"project": its node_id, "board", "stage", "event_id": the message that shows it, "reason": one short clause that reads after "Moved to <stage>:" (like "Demo held on Thu, they asked for pricing"), "next": the owner's next step in a few words}}. When nothing has moved it past the first stage, place it in the first stage the same way, with the message and why. Only when none of its messages shows where it stands, add it to finish_analysis sorted ([{{"project": its node_id, "why": a few words}}]). finish_analysis refuses until each one is placed or in sorted.
 {sorting}
 
-''' if sorting else '') + (f'''Projects that may fit a board, before the signal review (separate from the batch). These open projects are on no board yet; the owner's boards and which projects belong on each are on the first line. For each project, judge from what it is (open it with graph and its node_id when unsure), never from words in its name: when it clearly belongs on a board, place it with graph {{"project": its node_id, "board", "stage", "event_id": its message that shows where it stands, "reason", "next"}}; when it might belong, or clearly doesn't, add it to finish_analysis fits ([{{"project": its node_id, "board", "fit": "maybe" or "no", "why"}}]), one per board, each naming its board. A why names who and what happened, with a date, in under 12 words, like "Asked for a trial on 3 Oct, no demo yet"; never a label. Judge it against each board's own purpose: a maybe only when the work could really be what that board is for; work of another kind (what another board is for, or none) is a no there. When a maybe bundles several counterparts that the board keeps as one project each, add "split": true; the owner's Add then makes one project per counterpart. A maybe shows on the board for the owner to add. finish_analysis refuses until each one is placed or in fits.
+''' if sorting else '') + (f'''Projects that may fit a board, before the signal review (separate from the batch). These open projects are on no board yet; the owner's boards and which projects belong on each are on the first line. For each project, judge from what it is (open it with graph and its node_id when unsure), never from words in its name: when it clearly belongs on a board, place it with graph {{"project": its node_id, "board", "stage", "event_id": its message that shows where it stands, "reason", "next"}}; when it might belong, or clearly doesn't, add it to finish_analysis fits ([{{"project": its node_id, "board", "fit": "maybe" or "no", "why"}}]), one per board, each naming its board. A why names who and what happened, with a date, in under 12 words, like "Asked for a trial on Oct 3, no demo yet"; never a label. Judge it against each board's own purpose: a maybe only when the work could really be what that board is for; work of another kind (what another board is for, or none) is a no there. When a maybe bundles several counterparts that the board keeps as one project each, add "split": true; the owner's Add then makes one project per counterpart. A maybe shows on the board for the owner to add. finish_analysis refuses until each one is placed or in fits.
 {fitting}
 
-''' if fitting else '') + (f'''Looking through the history for new boards, before the signal review (separate from the batch). The owner made the boards on the first line and wants everything from before that belongs on them. Below are organizations, and people with no organization, from the owner's history whose messages or meetings are in no project yet, each with its key and a few of those messages. For each, judge what the work with them is from what the messages mean (read more with events and their event_ids, or graph and the key, when unsure), never from words in a name or subject. Each line says whether the owner wrote to or met them, or whether it is inbound only. Inbound only is real work when they came for the owner's own work (a trial, a question about the product). It is not when they pitch the owner: unsolicited outreach (a broker or a stranger offering to buy, sell or partner, a cold sales pitch, a deliverability or growth service) is never placed, at most a maybe whose why says it is unanswered cold outreach. Talks like buying or selling a company need the owner to have written to them or a real two-way exchange. When it clearly belongs on a board, make it one project per organization (or person) and place it in one call: graph {{"project": its name, "event_ids": its message ids about this work, "board", "stage": where it stands now, "event_id": the message that shows it, "reason": one short clause, "next"}}. When it might belong, or doesn't, add it to finish_analysis fits [{{"project": its key, "board", "fit": "maybe" or "no", "why"}}], one per board it is checked against, each naming its board, and make no project; a maybe waits on that board for the owner. Judge it against each board's own purpose: a maybe only when the work with them could really be what that board is for; work of another kind (what another board is for, or none) is a no there. A why names who and what happened, with a date, in under 12 words, so the owner can decide from it alone, like "Pitched them on 12 Oct, no reply yet" or "Cold buyer pitch from a broker, never answered"; never a label like "acquisition outreach". finish_analysis refuses until each one is placed or in fits.
+''' if fitting else '') + (f'''Looking through the history for new boards, before the signal review (separate from the batch). The owner made the boards on the first line and wants everything from before that belongs on them. Below are organizations, and people with no organization, from the owner's history whose messages or meetings are in no project yet, each with its key and a few of those messages. For each, judge what the work with them is from what the messages mean (read more with events and their event_ids, or graph and the key, when unsure), never from words in a name or subject. Each line says whether the owner wrote to or met them, or whether it is inbound only. Inbound only is real work when they came for the owner's own work (a trial, a question about the product). It is not when they pitch the owner: unsolicited outreach (a broker or a stranger offering to buy, sell or partner, a cold sales pitch, a deliverability or growth service) is never placed, at most a maybe whose why says it is unanswered cold outreach. Talks like buying or selling a company need the owner to have written to them or a real two-way exchange. When it clearly belongs on a board, make it one project per organization (or person) and place it in one call: graph {{"project": its name, "event_ids": its message ids about this work, "board", "stage": where it stands now, "event_id": the message that shows it, "reason": one short clause, "next"}}. When it might belong, or doesn't, add it to finish_analysis fits [{{"project": its key, "board", "fit": "maybe" or "no", "why"}}], one per board it is checked against, each naming its board, and make no project; a maybe waits on that board for the owner. Judge it against each board's own purpose: a maybe only when the work with them could really be what that board is for; work of another kind (what another board is for, or none) is a no there. A why names who and what happened, with a date, in under 12 words, so the owner can decide from it alone, like "Pitched them on Oct 12, no reply yet" or "Cold buyer pitch from a broker, never answered"; never a label like "acquisition outreach". finish_analysis refuses until each one is placed or in fits.
 {backfill}
 
 ''' if backfill else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a CRM or partner listing, a customer onboarding, a possible buyer or investor, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. A project whose messages are with several organizations in the same kind of work (several possible buyers in one acquisition project, several partners in one listings project) is really one project per counterpart: first name one per organization, all in one call: graph {{"split": [{{"project": "<the work>: <organization>", "event_ids": its message ids below}}, …]}} (up to 40). Then suggest a board with graph suggest_board, as in Boards below, for every clear group of three or more of the same kind of work, each with its own counterpart: several boards when there are several clear groups (up to three), never one only because names look alike. Give each its visibility: "only_you" for sensitive work (M&A, buyers, investors, legal, health, hiring a named person: its board, projects and messages never reach the team), "team" for customer, partner and other pipelines the team works on. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.

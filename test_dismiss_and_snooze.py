@@ -17,7 +17,7 @@ class WorkSnooze(unittest.TestCase):
             self.assertEqual(a.snooze_choices(True),[['2h','2 hours'],['tomorrow','Monday · 9:00'],['1w','1 week · 9:00']])
             self.assertEqual(a.snooze_choices(False)[1],['tomorrow','Tomorrow · 9:00'])
         with patch.object(a,'now',return_value=at(2026,10,10,15)):  # Saturday: a week lands on Saturday
-            self.assertEqual(a.snooze_choices(True)[-1],['1w','Mon 19 Oct · 9:00'])
+            self.assertEqual(a.snooze_choices(True)[-1],['1w','Mon, Oct 19 · 9:00'])
 
 class WorkSnoozeDecisions(unittest.TestCase):
     setUp=ux.UX.setUp

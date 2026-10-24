@@ -91,15 +91,15 @@ class WeeklyRecap(unittest.TestCase):
         self.promise('theirs', 'Eli', 'pay the invoice', due='2026-10-31')  # Saturday after next: past the week ahead
         text = a.weekly_recap(self.store, self.config, dt.datetime.fromisoformat(FRIDAY))
         lines = text.split('\n')
-        self.assertEqual(lines[0], '**Your week with The Machine** · 16–23 Oct')
+        self.assertEqual(lines[0], '**Your week with The Machine** · Oct 16–23')
         self.assertEqual(lines[2], '**Needs you**')
         with self.store.connect() as db:  # a promise links to its own page, never to its card (the page links the card)
             page = {(r[0], r[1]): f'https://m.example/assistant/#promise/{r[2]}' for r in db.execute('SELECT who,direction,id FROM promises')}
-        self.assertEqual(lines[3], f"• Waiting on Sam Lee: [send the signed contract]({page['Sam Lee', 'theirs']}), due Tue 20 Oct")
+        self.assertEqual(lines[3], f"• Waiting on Sam Lee: [send the signed contract]({page['Sam Lee', 'theirs']}), due Tue, Oct 20")
         self.assertNotIn('#chat=' + card, text)
-        self.assertEqual(lines[4], f"• Waiting on Kim: [review the deck]({page['Kim', 'theirs']}), since Wed 14 Oct")
-        self.assertEqual(lines[5], f"• Promised Alex: [send the Q3 deck]({page['Alex', 'mine']}), due Mon 26 Oct")
-        self.assertIn(f"**Next week**\n• Tue 27 Oct: Bo said they'd [call back]({page['Bo', 'theirs']})", text)
+        self.assertEqual(lines[4], f"• Waiting on Kim: [review the deck]({page['Kim', 'theirs']}), since Wed, Oct 14")
+        self.assertEqual(lines[5], f"• Promised Alex: [send the Q3 deck]({page['Alex', 'mine']}), due Mon, Oct 26")
+        self.assertIn(f"**Next week**\n• Tue, Oct 27: Bo said they'd [call back]({page['Bo', 'theirs']})", text)
         self.assertNotIn('Dee', text)
         self.assertNotIn('Eli', text)
         self.assertEqual(text.count('send the Q3 deck'), 1)
@@ -126,9 +126,9 @@ class WeeklyRecap(unittest.TestCase):
             board = db.execute("SELECT id FROM events WHERE source_id='b'").fetchone()[0]
         prep = self.store.suggest('prep', 'Prep notes for the board', 'Body.', [board])['id']
         text = a.weekly_recap(self.store, self.config, dt.datetime.fromisoformat(FRIDAY))
-        self.assertIn(f'**Next week**\n• Wed 28 Oct 09:00 Board meeting, 1 person · [card](https://m.example/assistant/#chat={prep})', text)
+        self.assertIn(f'**Next week**\n• Wed, Oct 28 09:00 Board meeting, 1 person · [card](https://m.example/assistant/#chat={prep})', text)
         self.assertEqual(text.count('Team offsite'), 1)
-        self.assertIn('• Fri 30 Oct 17:00 Parents evening, 2 people', text)  # the partner and the school, not the owner
+        self.assertIn('• Fri, Oct 30 17:00 Parents evening, 2 people', text)  # the partner and the school, not the owner
         for routine in ('Weekly one-on-one', 'Declined lunch', 'Next month', 'Dentist with Robin'):
             self.assertNotIn(routine, text)
 
@@ -244,7 +244,7 @@ class WeeklyRecap(unittest.TestCase):
         with patch.object(a, 'push_node', side_effect=lambda config, request: pushed.append(request) or {'results': []}), \
                 patch.object(a, 'telegram_request', side_effect=AssertionError('no Telegram')):
             self.assertEqual(self.app.recap_step(current=dt.datetime.fromisoformat(FRIDAY)), 'sent')
-        self.assertTrue(pushed[0]['payload']['body'].startswith('Needs you • Promised Alex: send the Q3 deck, due Mon 26 Oct'), pushed[0]['payload']['body'])
+        self.assertTrue(pushed[0]['payload']['body'].startswith('Needs you • Promised Alex: send the Q3 deck, due Mon, Oct 26'), pushed[0]['payload']['body'])
         self.assertEqual(self.items(), [])  # no buttons to tap without Telegram
 
 

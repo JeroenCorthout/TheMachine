@@ -298,7 +298,7 @@ def load_cards(db, fixture, ids, base):
                    'urgent,source_line,project) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                    (card_id, 'sandbox:' + card['key'], card['title'], card['body'], json.dumps(event_ids), json.dumps(card['accounts']), card['status'],
                     created, snoozed, 'pending' if snoozed else None, json.dumps(card['next_action']) if card.get('next_action') else None,
-                    int(bool(card.get('urgent'))), f"Source: {card['source']} · {(base - dt.timedelta(minutes=card['minutes_ago'])).strftime('%a %-d %b')}",
+                    int(bool(card.get('urgent'))), f"Source: {card['source']} · {(base - dt.timedelta(minutes=card['minutes_ago'])).strftime('%a, %b %-d')}",
                     card.get('project')))
         db.execute('INSERT INTO deliveries(suggestion_id,status,updated_at) VALUES(?,?,?)', (card_id, 'sent', created))
         if card.get('project'):  # Graph > Projects: the card's thread carries its project, as a review labels it

@@ -535,7 +535,7 @@ class Requests:
     def handoff_sources(self, card_id, accounts=None):
         """The card's own emails and messages, as a handoff carries them: who wrote, when, the subject and the text
         (cut to SOURCE_CHARS, SOURCES_CHARS in all). Only this card's evidence, never anything else of the mailbox.
-        Each has a label for the form ("Email from Stripe Alerts · Fri 23 Oct")."""
+        Each has a label for the form ("Email from Stripe Alerts · Fri, Oct 23")."""
         with self.connect() as db:
             card = db.execute('SELECT event_ids FROM suggestions WHERE id=?', (str(card_id),)).fetchone()
             ids = json.loads(card['event_ids'] or '[]') if card else []
@@ -558,7 +558,7 @@ class Requests:
             out.append({'kind': CARRIED[r['kind']], 'account_id': r['account_id'], 'from': who or 'Unknown sender', 'when': when.isoformat(),
                         'subject': fleet.clean(r['title'], 200), 'body': body,
                         **({'clipped': True} if len(text) > len(body) or meta.get('truncated') else {}),
-                        'label': f"{CARRIED[r['kind']].capitalize()} from {name or who or 'someone'} · {when.astimezone(self.local_now().tzinfo).strftime('%a %-d %b')}"})
+                        'label': f"{CARRIED[r['kind']].capitalize()} from {name or who or 'someone'} · {when.astimezone(self.local_now().tzinfo).strftime('%a, %b %-d')}"})
         return out
 
     @staticmethod

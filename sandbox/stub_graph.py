@@ -69,7 +69,7 @@ def shared(key):
     tomasz = [
         person(key, rid(), 'Ayla Valemont', 'ayla@kestrelenergy.example', 'Procurement manager', 'Kestrel Energy', 'kestrelenergy.example',
                4.0, 1, [(1, 'Ayla asked for a 3 year price'), (5, 'Tomasz sent the proposal'),
-                        (8, 'Private thread with Ayla, ' + dt.datetime.now(dt.timezone.utc).strftime('%-d %b'))]),
+                        (8, 'Private thread with Ayla, ' + dt.datetime.now(dt.timezone.utc).strftime('%b %-d'))]),
         person(key, rid(), 'Mila Underhay', 'mila@northwindanalytics.example', 'Head of operations', 'Northwind Analytics', 'northwindanalytics.example',
                1.2, 6, [(6, 'Mila asked about invoicing in euros')]),
         project(key, rid(), 'Kestrel Energy', 'Enterprise pipeline', PIPELINE, 'Negotiation', 1, 'Ayla asked for a 3 year price', 'Send the 3 year price',
@@ -80,7 +80,7 @@ def shared(key):
                 'Bramblebox', 'bramblebox.example', 0.9),
     ]
     tomasz_threads = {private_tag: {'tag': private_tag, 'private': True, 'at': ago(8), 'line': 'Private thread with Ayla, ' + (
-        dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=8)).strftime('%-d %b')}}
+        dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=8)).strftime('%b %-d')}}
     return {'m_team_priya': (priya, priya_threads), 'm_team_tomasz': (tomasz, tomasz_threads)}
 
 

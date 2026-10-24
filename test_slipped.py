@@ -56,8 +56,8 @@ class Slipped(unittest.TestCase):
             text = self.store.slipped('run-1')
         s1, q1 = self.ids('s1', 'q1')
         self.assertEqual(text.splitlines(), [
-            f'- No answer for 8 days: the owner emailed sam@client.example "Contract" on Thu 8 Oct (work, event {s1}).',
-            f'- Waiting 4 days on the owner: sam@client.example asked "Invoice" on Mon 12 Oct (work, event {q1}).'])
+            f'- No answer for 8 days: the owner emailed sam@client.example "Contract" on Thu, Oct 8 (work, event {s1}).',
+            f'- Waiting 4 days on the owner: sam@client.example asked "Invoice" on Mon, Oct 12 (work, event {q1}).'])
 
     def test_offered_once_to_a_review_that_saves(self):
         with patch.object(a, 'now', return_value=NOW):
