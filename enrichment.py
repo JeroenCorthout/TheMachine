@@ -678,7 +678,8 @@ class _Pinned(http.client.HTTPSConnection):
 
 def download_photo(url, timeout=10):
     """(bytes, type) of a photo, or None: https only, to a public address, no redirects, at most PHOTO_BYTES, and only
-    a JPEG, PNG or WebP image (by its own bytes, not only its header)."""
+    a JPEG, PNG or WebP image (by its own bytes, not only its header). Each checked address in turn, IPv4 first, so a
+    host without IPv6 still gets it."""
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != 'https' or not parts.hostname or not LOGO.fullmatch(url):
         return None
@@ -687,24 +688,31 @@ def download_photo(url, timeout=10):
         addresses = {info[4][0] for info in socket.getaddrinfo(parts.hostname, port, type=socket.SOCK_STREAM)}
         if not addresses or not all(ipaddress.ip_address(a.split('%')[0]).is_global for a in addresses):
             return None
-        connection = _Pinned(parts.hostname, sorted(addresses)[0], port=port, timeout=timeout, context=ssl.create_default_context())
     except (OSError, ValueError):
         return None
-    try:
-        connection.request('GET', (parts.path or '/') + ('?' + parts.query if parts.query else ''),
-                           headers={'Accept': 'image/jpeg,image/png,image/webp', 'User-Agent': 'the-machine/1 (+https://themachine.computer)'})
-        response = connection.getresponse()
-        if response.status != 200 or not (response.getheader('Content-Type') or '').lower().startswith('image/'):
+    for address in sorted(addresses, key=lambda a: (':' in a, a)):
+        connection = _Pinned(parts.hostname, address, port=port, timeout=timeout, context=ssl.create_default_context())
+        try:
+            connection.connect()
+        except OSError:
+            connection.close()
+            continue  # unreachable from here (no IPv6 route): the next address
+        try:
+            connection.request('GET', (parts.path or '/') + ('?' + parts.query if parts.query else ''),
+                               headers={'Accept': 'image/jpeg,image/png,image/webp', 'User-Agent': 'the-machine/1 (+https://themachine.computer)'})
+            response = connection.getresponse()
+            if response.status != 200 or not (response.getheader('Content-Type') or '').lower().startswith('image/'):
+                return None
+            if int(response.getheader('Content-Length') or 0) > PHOTO_BYTES:
+                return None
+            data = response.read(PHOTO_BYTES + 1)
+        except (OSError, ValueError, http.client.HTTPException):
             return None
-        if int(response.getheader('Content-Length') or 0) > PHOTO_BYTES:
-            return None
-        data = response.read(PHOTO_BYTES + 1)
-    except (OSError, ValueError, http.client.HTTPException):
-        return None
-    finally:
-        connection.close()
-    kind = image_type(data)
-    return (data, kind) if kind and len(data) <= PHOTO_BYTES else None
+        finally:
+            connection.close()
+        kind = image_type(data)
+        return (data, kind) if kind and len(data) <= PHOTO_BYTES else None
+    return None
 
 
 def photos_step(connect, now, limit=PHOTOS_PER_PASS, fetch=None):
@@ -935,11 +943,14 @@ def whatsapp_photos_step(connect, now, ask, accounts, limit=WHATSAPP_PHOTOS_PER_
                            "WHERE n.kind='person' ORDER BY n.strength DESC").fetchall()
         photos = {i for (i,) in db.execute('SELECT identifier FROM person_photos')}
         with_photo = {node for node, identifier in nodes if identifier in photos}
-        asked = {i: at for i, at in db.execute('SELECT identifier,asked_at FROM whatsapp_photo_asks')}
+        # A picture that didn't download (they have one, it isn't here) is asked again the next day, none in 30 days.
+        again = (stamp - dt.timedelta(days=1)).isoformat()
+        asked = {i: (at, again if picture else retry) for i, at, picture in db.execute('SELECT identifier,asked_at,picture_id FROM whatsapp_photo_asks')}
         wanted = []
         for node, identifier in nodes:
+            at, since = asked.get(identifier, ('', retry))
             if (node in with_photo or not re.fullmatch(r'wa:[0-9]{5,20}', str(identifier)) or identifier in wanted
-                    or asked.get(identifier, '') > retry or gone(identifier)):
+                    or at > since or gone(identifier)):
                 continue
             wanted.append(identifier)
         addresses = whatsapp_addresses(db, set(wanted), accounts) if wanted else {}

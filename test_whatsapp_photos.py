@@ -78,6 +78,16 @@ class WhatsAppPhotos(unittest.TestCase):
             self.assertEqual(db.execute("SELECT count(*) FROM whatsapp_photo_asks").fetchone()[0], 0)
         self.assertEqual(self.saved(), set())
 
+    def test_a_picture_that_didnt_download_is_asked_again_the_next_day(self):
+        self.add(tg.chat(1, '3255711', 'Ivy Low'))
+        self.build()
+        enrichment.whatsapp_photos_step(self.store.connect, NOW, self.ask({'id': '5', 'url': 'https://pps.whatsapp.net/v/i.jpg'}), ['chat'], fetch=lambda url: None)
+        self.step({'id': '5', 'url': 'https://pps.whatsapp.net/v/i.jpg'}, now=(tg.NOW + dt.timedelta(hours=12)).isoformat())
+        self.assertEqual(len(self.asked), 1)
+        self.step({'id': '5', 'url': 'https://pps.whatsapp.net/v/i.jpg'}, now=(tg.NOW + dt.timedelta(days=1, hours=1)).isoformat())
+        self.assertEqual(len(self.asked), 2)
+        self.assertEqual(self.saved(), {'wa:3255711'})
+
     def test_someone_with_a_photo_or_deleted_is_not_asked(self):
         self.add(tg.chat(1, '3255801', 'Eve Ray'), tg.chat(1, '3255802', 'Flo Day'))
         self.build()

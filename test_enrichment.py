@@ -421,6 +421,44 @@ class Enrichment(unittest.TestCase):
             self.assertIsNone(enrichment.download_photo('https://photos.example/me.jpg'))  # never to this Machine or its network
         self.assertIsNone(enrichment.download_photo('http://photos.example/me.jpg'))
 
+    def test_a_photo_download_tries_the_next_address_when_one_is_unreachable(self):
+        import socket
+        resolve = socket.getaddrinfo
+        self.addCleanup(setattr, socket, 'getaddrinfo', resolve)
+        socket.getaddrinfo = lambda *args, **kwargs: [(socket.AF_INET6, socket.SOCK_STREAM, 6, '', ('2a03:2880:f000::1', 443, 0, 0)),
+                                                      (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('57.144.0.32', 443))]
+        tried = []
+        jpeg = b'\xff\xd8\xff' + b'0' * 20
+
+        class Response:
+            status = 200
+            def getheader(self, name):
+                return {'Content-Type': 'image/jpeg'}.get(name)
+            def read(self, n):
+                return jpeg
+
+        class Pinned:
+            def __init__(self, host, address, **kwargs):
+                self.address = address
+            def connect(self):
+                tried.append(self.address)
+                if ':' in self.address:
+                    raise OSError('Network is unreachable')
+            def request(self, *args, **kwargs):
+                pass
+            def getresponse(self):
+                return Response()
+            def close(self):
+                pass
+        pinned = enrichment._Pinned
+        self.addCleanup(setattr, enrichment, '_Pinned', pinned)
+        enrichment._Pinned = Pinned
+        self.assertEqual(enrichment.download_photo('https://pps.whatsapp.net/v/t61/p.jpg?oe=1'), (jpeg, 'image/jpeg'))
+        self.assertEqual(tried, ['57.144.0.32'])  # IPv4 first
+        Pinned.connect = lambda self: tried.append(self.address) or (_ for _ in ()).throw(OSError('down'))
+        self.assertIsNone(enrichment.download_photo('https://pps.whatsapp.net/v/t61/p.jpg?oe=1'))
+        self.assertEqual(tried[1:], ['57.144.0.32', '2a03:2880:f000::1'])  # each address once, then none
+
     def test_the_one_time_backfill_looks_everyone_up_once_closest_first(self):
         self.add(tg.mail(3, 'Lee Parker <lee@globex.com>', 'sam@acme.com'), tg.mail(2, 'Sam <sam@acme.com>', 'Lee Parker <lee@globex.com>', ('SENT',)),
                  tg.mail(3, 'Kai Novak <kai@hooli.example>', 'sam@acme.com'), tg.mail(3, 'Rae Quinn <rae@initech.example>', 'sam@acme.com'))
