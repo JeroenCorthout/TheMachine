@@ -5,8 +5,8 @@ import {OPENCLAW} from './openclaw-root.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // The Graph as a CRM on the dashboard: Mine and Filter on the lists (the filters go to the Machine), the filter sheet,
-// Mine and owners on the board, an owner on a page and its change in the timeline, an organisation's websites with
-// Split off, Same organisation? and Add a website…, and a CSV import with its preview, mapping and Undo. On a phone and
+// Mine and owners on the board, an owner on a page and its change in the timeline, an organization's websites with
+// Split off, Same organization? and Add a website…, and a CSV import with its preview, mapping and Undo. On a phone and
 // a desktop. CRM_SHOT=<dir> writes screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const day=n=>new Date(Date.now()-n*864e5).toISOString();
@@ -22,7 +22,7 @@ const tiles=[{id:'project:1',name:'Globex pilot',stage:'Demo',days:3,value:12000
 const boards=[{id:1,name:'Sales',stages,default:true,stuck:0,maybes:[],projects:tiles}];
 const ada=node('person','person:a','Ada Lovelace',{ids:['email:ada@globex.example'],org:'org:globex.example',side:'work'});
 const preview=mapping=>({kind:'person',columns:[{index:0,header:'Full name',field:'name',samples:['Ada Lovelace','Nia Holm']},{index:1,header:'E-mail',field:'email',samples:['ada@globex.example']},{index:2,header:'Company',field:mapping?.['2']??'org',samples:['Globex','Newco']}],
- fields:[{id:'name',name:'Name'},{id:'email',name:'Email'},{id:'org',name:'Organisation'},{id:'title',name:'Title'}],counts:{new:1,match:1,skip:1},total:3,
+ fields:[{id:'name',name:'Name'},{id:'email',name:'Email'},{id:'org',name:'Organization'},{id:'title',name:'Title'}],counts:{new:1,match:1,skip:1},total:3,
  rows:[{line:2,status:'match',why:'Same email',match_name:'Ada Lovelace',record:{name:'Ada Lovelace'}},{line:3,status:'new',record:{name:'Nia Holm'}},{line:4,status:'skip',why:'No name',record:{}}]});
 let calls=[],lists=[],uploads=[];
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
@@ -89,12 +89,12 @@ try{
   await click('#people-view [data-board-mine]');await page.waitForFunction(()=>!document.querySelector('#people-view .tile[data-node="project:1"]'));
   assert.equal(await page.locator('#people-view [data-board-mine]').getAttribute('aria-pressed'),'true');
   await click('#people-view [data-board-mine]');await page.locator('#people-view .tile[data-node="project:1"]').waitFor({state:'attached'});
-  // Organisations: Same organisation? merges the second into the first
+  // Organizations: Same organization? merges the second into the first
   await page.evaluate(()=>document.querySelector('[data-graph-sub="orgs"]').click());await page.locator('#people-view [data-graph-panel="orgs"] .same-pair').waitFor();
   await shot(page,`orgs-doubles-${tag}`);
   await click('#people-view [data-graph-panel="orgs"] [data-org-merge]');await until(()=>calls.some(c=>c.action==='graph_org_merge'),'merged');
  assert.deepEqual(calls.find(c=>c.action==='graph_org_merge').args,{node_id:'org:globex-group.example',into:'org:globex.example'});
-  // An organisation's page: its owner, its websites with Split off, the change in its timeline, and the ⋯ menu
+  // An organization's page: its owner, its websites with Split off, the change in its timeline, and the ⋯ menu
   await page.evaluate(()=>graphOpen('org:globex.example'));await page.locator('#people-view .org-page [data-owner-pick]').waitFor();
   assert.equal(await page.locator('#people-view [data-owner-pick]').inputValue(),'m-kim');
   assert.deepEqual(await page.locator('#people-view .org-sites li span').allTextContents(),['globex.example','globex.io']);

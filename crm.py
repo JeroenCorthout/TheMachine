@@ -1,20 +1,20 @@
-"""The Graph as a CRM: who owns a record, one organisation with several websites, and the lists filtered and sorted
+"""The Graph as a CRM: who owns a record, one organization with several websites, and the lists filtered and sorted
 on the Machine.
 
-Owner: a person, organisation or project belongs to someone in the owner's Work Fleet. Nobody picked means the
+Owner: a person, organization or project belongs to someone in the owner's Work Fleet. Nobody picked means the
 owner of this Machine: they made it, or their Machine found it. A pick is kept on the record (record_owners: the
 person's identity it was saved on, so it stays through merges), shown on its page and its tile, and each change is a
 line in its timeline (record_changes). The graph build puts it on the node (info.owner, a Fleet member id; none is
 the owner here), so the lists filter on it in SQL.
 
-Several websites: "Same organisation as…" folds one organisation into another (org_aliases). Every rebuild maps the
+Several websites: "Same organization as…" folds one organization into another (org_aliases). Every rebuild maps the
 first one's people, and the people of every address at its domain, to the second; its notes join the second's, its
 projects point to it, its domain becomes one more website of it, and enrichment looks up every one of its domains.
 Split off undoes it and keeps the two apart. Likely doubles (the same name, the same company name on another top
-level domain, the same LinkedIn page) are offered as "Same organisation?" until merged or kept apart (org_apart).
+level domain, the same LinkedIn page) are offered as "Same organization?" until merged or kept apart (org_apart).
 
-Lists: People, Organisations and Projects filter by owner, board, stage, organisation, value and expected close, and
-sort by value and close date too. A person or organisation matches through the open projects they are on."""
+Lists: People, Organizations and Projects filter by owner, board, stage, organization, value and expected close, and
+sort by value and close date too. A person or organization matches through the open projects they are on."""
 from __future__ import annotations
 
 import datetime as dt
@@ -50,7 +50,7 @@ def now_iso():
 def node_row(db, node_id):
     row = graph.resolve(db, str(node_id or ''))
     if not row or row['kind'] not in ('person', 'org', 'project'):
-        raise ValueError('Pick a person, organisation or project from your Graph')
+        raise ValueError('Pick a person, organization or project from your Graph')
     return row
 
 
@@ -86,7 +86,7 @@ def change(db, node_id, field, old, new, now):
 
 
 def changes(db, row, limit=CHANGES):
-    """A record's own history for its timeline: owner changes, organisations merged into it or split off, imports."""
+    """A record's own history for its timeline: owner changes, organizations merged into it or split off, imports."""
     group = group_of(row)
     if row['kind'] == 'org':
         group += [r[0] for r in db.execute('SELECT alias FROM org_aliases WHERE target=?', (row['id'],))]
@@ -120,7 +120,7 @@ def owner_choices(fleets):
     return sorted(out, key=lambda m: m['name'].casefold())
 
 
-# ------------------------------------------------------------------ the build: owners and organisations with several websites
+# ------------------------------------------------------------------ the build: owners and organizations with several websites
 
 def aliases(db):
     """{alias org id: the org id it is part of}, followed through chains."""
@@ -137,7 +137,7 @@ def aliases(db):
 
 
 def org_profile(db, org_id):
-    """An organisation's details as the build gives them (the owner's edits over the looked-up profile)."""
+    """An organization's details as the build gives them (the owner's edits over the looked-up profile)."""
     key = org_id if org_id.startswith('org:named:') else org_id[4:]
     found = db.execute("SELECT profile FROM org_profiles WHERE domain=? AND profile IS NOT NULL AND status!='wrong'", (key,)).fetchone()
     edit = db.execute('SELECT fields FROM org_edits WHERE domain=?', (key,)).fetchone()
@@ -146,7 +146,7 @@ def org_profile(db, org_id):
 
 
 def decorate(db, nodes, links):
-    """After the build made its nodes and links: fold organisations into the one they are part of, and put each
+    """After the build made its nodes and links: fold organizations into the one they are part of, and put each
     record's owner on it. nodes: (id, kind, name, strength, last_at, signals, gap, quiet, trend, info JSON)."""
     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='record_owners'").fetchone():
         return nodes, links  # an old database the build met before ensure
@@ -219,7 +219,7 @@ def _fold(db, nodes, links, folded):
             if info.get('org') in moved:
                 info['org'] = moved[info['org']]
                 row[9] = json.dumps(info)
-    for node_id, row in by_id.items():  # someone whose stated organisation is the alias (and nobody else in it)
+    for node_id, row in by_id.items():  # someone whose stated organization is the alias (and nobody else in it)
         if row[1] == 'person' and node_id not in members and any('"' + a + '"' in row[9] for a in moved):
             info = json.loads(row[9])
             if info.get('org') in moved:
@@ -253,15 +253,15 @@ def _owners(nodes, owners, folded):
     return out
 
 
-# ------------------------------------------------------------------ organisations with several websites
+# ------------------------------------------------------------------ organizations with several websites
 
 def canonical(db, org_id):
-    """The organisation an org id is part of now (itself when it isn't folded into another)."""
+    """The organization an org id is part of now (itself when it isn't folded into another)."""
     return aliases(db).get(org_id, org_id)
 
 
 def canonical_domain(db, domain):
-    """A website's organisation's own domain: salesflare.io is salesflare.com once they're one."""
+    """A website's organization's own domain: salesflare.io is salesflare.com once they're one."""
     if not domain:
         return domain
     target = canonical(db, 'org:' + domain)
@@ -274,7 +274,7 @@ def _org(db, org_id):
 
 
 def merge_orgs(db, node_id, into=None, website=None, now=None):
-    """"Same organisation as…": node_id is part of into (another organisation in the Graph), or website is one more of
+    """"Same organization as…": node_id is part of into (another organization in the Graph), or website is one more of
     node_id's websites. The one with a website stays when only one has one (it keeps the name the owner picked).
     Its people, projects and notes go along; Split off undoes it."""
     now = now or now_iso()
@@ -282,7 +282,7 @@ def merge_orgs(db, node_id, into=None, website=None, now=None):
         db.execute('BEGIN IMMEDIATE')
     here = _org(db, canonical(db, str(node_id or '')))
     if not here:
-        raise ValueError('Pick an organisation from your Graph')
+        raise ValueError('Pick an organization from your Graph')
     if website:
         domain = graph.website_domain(website)
         if not domain:
@@ -294,14 +294,14 @@ def merge_orgs(db, node_id, into=None, website=None, now=None):
             raise ValueError(f'{domain} is free email: many companies use it')
         other = _org(db, canonical(db, alias))
         if other and other['id'] != target:
-            alias = other['id']  # that website is an organisation of its own: it joins this one
+            alias = other['id']  # that website is an organization of its own: it joins this one
     else:
         other = _org(db, canonical(db, str(into or '')))
         if not other:
-            raise ValueError('Pick the organisation it is the same as')
+            raise ValueError('Pick the organization it is the same as')
         alias, target = here['id'], other['id']
         if alias == target:
-            raise ValueError('That is the same organisation already')
+            raise ValueError('That is the same organization already')
     name_kept = None
     if alias.startswith('org:') and not alias.startswith('org:named:') and target.startswith('org:named:'):
         # Only the first one has a website: it stays, with the name of the one picked
@@ -341,13 +341,13 @@ def merge_orgs(db, node_id, into=None, website=None, now=None):
 
 
 def split_org(db, alias, now=None):
-    """Split off: a website or organisation folded into another stands on its own again, and isn't offered as the same."""
+    """Split off: a website or organization folded into another stands on its own again, and isn't offered as the same."""
     now = now or now_iso()
     if not db.in_transaction:
         db.execute('BEGIN IMMEDIATE')
     row = db.execute('SELECT * FROM org_aliases WHERE alias=?', (str(alias or ''),)).fetchone()
     if not row:
-        raise ValueError('That is not part of another organisation')
+        raise ValueError('That is not part of another organization')
     undo = json.loads(row['undo'] or '{}')
     alias, target = row['alias'], row['target']
     alias_domain = None if alias.startswith('org:named:') else alias[4:]
@@ -373,10 +373,10 @@ def split_org(db, alias, now=None):
 
 
 def keep_apart(db, a, b, now=None):
-    """Not the same organisation: the pair isn't offered again."""
+    """Not the same organization: the pair isn't offered again."""
     a, b = sorted((str(a or ''), str(b or '')))
     if a == b or not (a.startswith('org:') and b.startswith('org:')):
-        raise ValueError('Pick two organisations')
+        raise ValueError('Pick two organizations')
     db.execute('INSERT OR IGNORE INTO org_apart(a,b,created_at) VALUES(?,?,?)', (a, b, now or now_iso()))
     return {'apart': [a, b]}
 
@@ -395,9 +395,9 @@ def _label(domain):
 
 
 def org_doubles(db, limit=30, node_id=None):
-    """Same organisation? Likely doubles among the organisations: the same name, the same company name on another
+    """Same organization? Likely doubles among the organizations: the same name, the same company name on another
     domain (acme.com and acme.io), or the same LinkedIn page. Kept-apart pairs never come back. node_id: only the
-    ones for this organisation."""
+    ones for this organization."""
     rows = db.execute("SELECT id,name,strength,info FROM graph_nodes WHERE kind='org'").fetchall()
     if len(rows) < 2:
         return []
@@ -482,7 +482,7 @@ def clean_filters(raw):
 
 
 def org_ids(db, said):
-    """The organisations a filter names: an org id, a website or a name."""
+    """The organizations a filter names: an org id, a website or a name."""
     said = str(said or '').strip()
     if said.startswith('org:'):
         return [canonical(db, said)]
@@ -576,7 +576,7 @@ def list_query(db, name, filters, sort):
                        "SELECT 'org:'||p.org o,p.id pid FROM projects p WHERE p.org IS NOT NULL "
                        "UNION SELECT json_extract(m.info,'$.org'),CAST(substr(l.b,9) AS INTEGER) FROM graph_links l JOIN graph_nodes m ON m.id=l.a "
                        f"WHERE l.kind='project' AND json_extract(m.info,'$.org') IS NOT NULL)) y JOIN projects p ON p.id=y.pid WHERE {pw} GROUP BY y.o", pargs)
-            for alias, target in aliases(db).items():  # a project still pointing at a website that is part of another organisation
+            for alias, target in aliases(db).items():  # a project still pointing at a website that is part of another organization
                 db.execute('INSERT OR IGNORE INTO temp.crm_pick SELECT ?,value,close FROM temp.crm_pick WHERE id=?', (target, alias))
         if facts:
             where.append('id IN (SELECT id FROM temp.crm_pick)')

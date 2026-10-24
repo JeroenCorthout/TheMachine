@@ -228,7 +228,7 @@ def due(db, now, limit):
     current = dt.datetime.fromisoformat(now)
     fresh = (current - dt.timedelta(days=REFRESH_DAYS)).isoformat()
     retry = (current - dt.timedelta(hours=RETRY_HOURS)).isoformat()
-    # every website of an organisation with several (crm: "Same organisation as…")
+    # every website of an organization with several (crm: "Same organization as…")
     rows = db.execute("SELECT n.id,d.value domain,n.strength,json_extract(n.info,'$.paying') paying FROM graph_nodes n,"
                       "json_each(coalesce(json_extract(n.info,'$.domains'),json_array(json_extract(n.info,'$.domain')))) d "
                       "LEFT JOIN org_profiles p ON p.domain=d.value "

@@ -544,7 +544,7 @@ OWNER_ACTIONS |= AGENT_ACTIONS
 # own, from their dashboard only. Nothing is sent without their Send on exactly what they saw.
 LEARNING_ACTIONS = {'learnings_share', 'learnings_later', 'learnings_never', 'set_learnings_offer'}
 OWNER_ACTIONS |= LEARNING_ACTIONS
-# The Graph as a CRM (crm.py, crm_import.py): who owns a record, one organisation with several websites, and a
+# The Graph as a CRM (crm.py, crm_import.py): who owns a record, one organization with several websites, and a
 # spreadsheet imported; the owner's own, from their dashboard only.
 CRM_ACTIONS = {'graph_owner', 'graph_org_merge', 'graph_org_split', 'graph_org_apart', 'graph_import_preview', 'graph_import_run', 'graph_import_undo'}
 OWNER_ACTIONS |= CRM_ACTIONS
@@ -11762,7 +11762,7 @@ class App:
             return done
         if name in CRM_ACTIONS:
             if not owner_dashboard:
-                raise ValueError('Only the owner changes owners, merges organisations and imports, on the dashboard')
+                raise ValueError('Only the owner changes owners, merges organizations and imports, on the dashboard')
             return self.crm_action(name, args)
         if name == 'graph_person_edit':
             # One Save for a person's page: their name, what they are to the owner and where they work go where those
@@ -15115,7 +15115,7 @@ class App:
             return []
 
     def crm_action(self, name, args):
-        """The owner's CRM changes on the dashboard: a record's owner, organisations merged or split, an import."""
+        """The owner's CRM changes on the dashboard: a record's owner, organizations merged or split, an import."""
         if name == 'graph_import_preview':
             with self.store.connect() as db:
                 return crm_import.preview(db, str(args.get('kind') or ''), args.get('text'), args.get('mapping'))
@@ -15585,7 +15585,7 @@ class App:
                                     'SELECT id,name,board_id FROM projects WHERE closed_at IS NULL ORDER BY name COLLATE NOCASE LIMIT 2000')]  # the board editor's picker
                                 found['person_names'] = [{'id': r['id'], 'name': r['name']} for r in db.execute(
                                     "SELECT id,name FROM graph_nodes WHERE kind='person' AND name<>'' ORDER BY strength DESC LIMIT 1500")]  # the project dialog's people picker
-                                found['org_doubles'] = crm.org_doubles(db, 12)  # "Same organisation?"
+                                found['org_doubles'] = crm.org_doubles(db, 12)  # "Same organization?"
                                 found['last_import'] = crm_import.last(db)  # "Undo last import"
                                 if app.fleet:
                                     try:

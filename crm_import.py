@@ -1,9 +1,9 @@
-"""Import a spreadsheet (CSV) of people, organisations or projects into the Graph, on the Machine.
+"""Import a spreadsheet (CSV) of people, organizations or projects into the Graph, on the Machine.
 
 The owner uploads a file on the dashboard; nothing of it leaves the Machine. The columns are guessed from their
 headers (and can be changed), and a preview shows each row as new, matching one already in the Graph (to update), or
 skipped with why: no name, an address that isn't one, the same row twice in the file. A match is the same email for a
-person (else the same name at the same organisation), the same website for an organisation (any of its websites, else
+person (else the same name at the same organization), the same website for an organization (any of its websites, else
 the same name), and the same name for a project.
 
 Import makes the new ones as if added by hand and fills in what the file says for the ones that match (an empty cell
@@ -30,7 +30,7 @@ FIELDS = {
                'last_name': ('Last name', ('last name', 'lastname', 'surname', 'family name', 'last')),
                'email': ('Email', ('email', 'e-mail', 'email address', 'mail', 'work email')),
                'phone': ('Phone', ('phone', 'mobile', 'telephone', 'phone number', 'cell', 'tel')),
-               'org': ('Organisation', ('organisation', 'organization', 'company', 'account', 'company name', 'employer')),
+               'org': ('Organization', ('organisation', 'organization', 'company', 'account', 'company name', 'employer')),
                'title': ('Title', ('title', 'job title', 'position', 'role', 'function')),
                'location': ('Location', ('location', 'city', 'country', 'address')),
                'linkedin_url': ('LinkedIn', ('linkedin', 'linkedin url', 'linkedin profile')),
@@ -45,7 +45,7 @@ FIELDS = {
             'about': ('About', ('about', 'description', 'summary')),
             'notes': ('Notes', ('notes', 'note', 'comments', 'comment'))},
     'project': {'name': ('Name', ('name', 'project', 'deal', 'opportunity', 'deal name', 'project name', 'title')),
-                'org': ('Organisation', ('organisation', 'organization', 'company', 'account', 'website', 'domain')),
+                'org': ('Organization', ('organisation', 'organization', 'company', 'account', 'website', 'domain')),
                 'board': ('Board', ('board', 'pipeline')),
                 'stage': ('Stage', ('stage', 'status', 'deal stage', 'phase')),
                 'value': ('Value', ('value', 'amount', 'deal value', 'revenue', 'price', 'size')),
@@ -145,7 +145,7 @@ def match(db, kind, rec):
             org_ids = crm.org_ids(db, rec['org']) if rec.get('org') else []
             for r in db.execute("SELECT id,info FROM graph_nodes WHERE kind='person' AND name=? COLLATE NOCASE ORDER BY strength DESC LIMIT 5", (rec['name'],)):
                 if org_ids and json.loads(r['info'] or '{}').get('org') in org_ids:
-                    return r['id'], 'Same name and organisation'
+                    return r['id'], 'Same name and organization'
         return None, None
     if kind == 'org':
         domain = graph.website_domain(rec.get('website')) if rec.get('website') else None
@@ -190,7 +190,7 @@ def _same_key(kind, rec):
 def plan(db, kind, text, mapping=None):
     """Each row with what Import would do: new, match (with the record it updates) or skip (with why)."""
     if kind not in FIELDS:
-        raise ValueError('Import people, organisations or projects')
+        raise ValueError('Import people, organizations or projects')
     headers, rows = read(text)
     mapping = clean_mapping(kind, headers, mapping)
     if 'name' not in mapping.values() and not (kind == 'person' and ({'email', 'first_name', 'last_name'} & set(mapping.values()))):
@@ -327,7 +327,7 @@ def _project(db, rec, node_id, now, undo):
     args = {k: rec[k] for k in ('org', 'value', 'close_date', 'notes') if rec.get(k)}
     if rec.get('org') and not graph.ORG_DOMAIN.fullmatch(re.sub(r'^(?:https?://)?(?:www\.)?', '', rec['org'].lower()).split('/')[0]):
         if not _org_by_name(db, rec['org']):
-            args.pop('org')  # an organisation not in the Graph by that name: left out rather than the row
+            args.pop('org')  # an organization not in the Graph by that name: left out rather than the row
     if rec.get('board'):
         board = db.execute('SELECT id,stages,side FROM boards WHERE name=? COLLATE NOCASE', (rec['board'],)).fetchone()
         if board:

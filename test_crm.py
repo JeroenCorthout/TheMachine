@@ -1,4 +1,4 @@
-"""The Graph as a CRM: owners from the Work Fleet, organisations with several websites (merge, split, likely doubles),
+"""The Graph as a CRM: owners from the Work Fleet, organizations with several websites (merge, split, likely doubles),
 lists filtered and sorted on the Machine, and a spreadsheet imported (preview, import, undo)."""
 import json
 import unittest
@@ -94,7 +94,7 @@ class Crm(unittest.TestCase):
         self.assertEqual((out['owner'], out['owner_name'], out['owner_hand']), ('m-kim', 'Kim', True))
         self.assertEqual(shared_graph.resolve({'sources': entry['sources'][:1]})['owner'], 'm-ola')  # else the closest, as before
 
-    # ---------------------------------------------------------------- organisations with several websites
+    # ---------------------------------------------------------------- organizations with several websites
 
     def test_same_organisation_moves_people_projects_and_notes_and_split_off_undoes_it(self):
         self.mails()
@@ -117,7 +117,7 @@ class Crm(unittest.TestCase):
             # enrichment looks up every website
             db.execute("DELETE FROM org_profiles")
             self.assertIn('globex.io', enrichment_due(db))
-            # a new project at the other website lands on the one organisation
+            # a new project at the other website lands on the one organization
             self.assertEqual(graph.org_card(db, 'globex.io')['node_id'], 'org:globex.example')
         self.act('graph_org_split', alias='org:globex.io')
         self.assertEqual(self.node('email:jo@globex.io')['org'], 'org:globex.io')
@@ -138,7 +138,7 @@ class Crm(unittest.TestCase):
             self.act('graph_org_merge', node_id='org:umber.example', website='umber.io')
         with self.assertRaisesRegex(ValueError, 'free email'):
             self.act('graph_org_merge', node_id='org:umber.example', website='gmail.com')
-        # a later address at the added website joins the organisation
+        # a later address at the added website joins the organization
         self.add(tg.mail(1, 'Lu <lu@umber.io>', 'sam@acme.com'), tg.mail(1, 'Sam <sam@acme.com>', 'lu@umber.io', ('SENT',)))
         self.build()
         self.assertEqual(self.node('email:lu@umber.io')['org'], 'org:umber.example')

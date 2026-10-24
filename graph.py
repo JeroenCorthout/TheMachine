@@ -202,7 +202,7 @@ def ensure(db):
     for table in ('projects', 'board_suggestions'):  # who sees it (2026-10-24): a project's own (NULL: its board's), a suggestion's default
         if 'visibility' not in {r[1] for r in db.execute(f'PRAGMA table_info({table})')}:
             db.execute(f'ALTER TABLE {table} ADD COLUMN visibility TEXT')
-    import crm  # owners, organisations with several websites (2026-10-24)
+    import crm  # owners, organizations with several websites (2026-10-24)
     crm.ensure(db)
 
 
@@ -1199,7 +1199,7 @@ def _build(db, config, now):
             info.setdefault('relations', []).append({'a': a, 'a_name': nodes[by_node[a]][2], 'relation': relation, 'b': b, 'b_name': nodes[by_node[b]][2], 'by': by})
             row[9] = json.dumps(info)
             nodes[by_node[node]] = tuple(row)
-    from crm import decorate  # organisations folded into the one they are part of, and who owns each record
+    from crm import decorate  # organizations folded into the one they are part of, and who owns each record
     nodes, links = decorate(db, nodes, links)
     kept |= {n[0] for n in nodes}
     event_rows = []
@@ -1476,7 +1476,7 @@ DEFAULT_SORT = {'projects': 'last', 'projects_done': 'last'}
 def page(db, name, sort='', cursor=0, limit=30, filters=None):
     """One page of a Graph tab's list in the chosen order (closest, last contact, name, a project's stage, value or
     expected close); the cursor is where the page starts, next the cursor of the page after it, or None at the end.
-    filters (crm.FILTERS: owner, board, stage, organisation, value and close date) narrow it, and total counts
+    filters (crm.FILTERS: owner, board, stage, organization, value and close date) narrow it, and total counts
     what is left."""
     import crm
     if name not in PAGED and name != 'warmup':
@@ -1596,7 +1596,7 @@ def detail(db, node_id, events=12):
         except ValueError:
             view['project'] = None
     import crm
-    view['changes'] = crm.changes(db, row)  # owner changes, organisations merged in or split off
+    view['changes'] = crm.changes(db, row)  # owner changes, organizations merged in or split off
     if row['kind'] == 'org':
         view['doubles'] = crm.org_doubles(db, 5, node_id)
     if row['kind'] == 'org':
@@ -3559,9 +3559,9 @@ MESSAGE_KINDS = ('gmail.message', 'salesflare.email', 'linkedin.message', 'slack
 
 
 def org_card(db, domain):
-    """An organisation's name and logo for a tile: the owner's edits over the enrichment service's profile."""
+    """An organization's name and logo for a tile: the owner's edits over the enrichment service's profile."""
     import crm
-    domain = crm.canonical_domain(db, domain)  # a website of an organisation with several
+    domain = crm.canonical_domain(db, domain)  # a website of an organization with several
     found = db.execute("SELECT name,info FROM graph_nodes WHERE id=?", ('org:' + domain,)).fetchone()
     info = json.loads(found['info'] or '{}') if found else {}
     profile = info.get('profile')

@@ -50,7 +50,7 @@ try{
   await page.waitForFunction(()=>graphNode==='person:a');
   // A new person: name required; then name, email and organization; it opens their page
   await page.evaluate(()=>recOpen('person'));await page.locator('#record-dialog[open]').waitFor();
-  await click('#record-form button.primary');assert.equal(await page.locator('#record-form [data-rec-error]').textContent(),'Give them a name.');
+  await click('#record-form button.primary');await page.waitForFunction(()=>document.querySelector('#record-form [data-rec-error]')?.textContent);assert.equal(await page.locator('#record-form [data-rec-error]').textContent(),'Give them a name.');
   await page.locator('#record-form [name="name"]').fill('Rae Vos');await page.locator('#record-form [name="email"]').fill('rae@umber.example');await page.locator('#record-form [name="org"]').fill('Umber Labs');
   await shot(page,`new-person-${tag}`);await click('#record-form button.primary');await page.locator('#record-dialog[open]').waitFor({state:'detached'});
   assert.deepEqual(calls.find(c=>c.action==='graph_new').args,{kind:'person',name:'Rae Vos',email:'rae@umber.example',org:'Umber Labs'});
