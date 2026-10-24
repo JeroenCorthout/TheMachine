@@ -424,11 +424,12 @@ class Suggestions(unittest.TestCase):
         with self.store.connect() as db:
             found = a.places.suggest(db, {}, 'labath', fetch)
             self.assertEqual([(f['value'], f['source']) for f in found],
-                             [('Café Labath, Oude Houtlei 1, Gent', 'calendar'), ('Café Labath, Oude Houtlei 1, 9000 Gent, België', 'map'), ('Gent, Belgium', 'map')])
+                             [('Café Labath, Oude Houtlei 1, Gent', 'calendar'), ('Gent, Belgium', 'map')])  # the café once: the owner's own
             self.assertEqual(asked, ['https://photon.komoot.io/api/?q=labath&limit=6'])
             a.places.suggest(db, {}, 'Labath ', fetch)
             self.assertEqual(len(asked), 1, 'cached')
             self.assertEqual([f['value'] for f in a.places.local(db, 'ghent')], ['Acme, Ghent, Belgium'])
+            self.assertEqual([f['source'] for f in a.places.local(db, 'labath')], ['calendar'], 'an organisation only when its name or place matches')
             self.assertEqual(a.places.local(db, 'zoom'), [], 'a link is not a place')
             a.places.suggest(db, {'place_search': False}, 'somewhere', fetch)
             a.places.suggest(db, {}, 'ab', fetch)

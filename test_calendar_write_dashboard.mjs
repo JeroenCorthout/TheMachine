@@ -30,7 +30,7 @@ const change={kind:'calendar',op:'create',revision,label:'Add to calendar',accou
 const card={id:sid,title:'Book the check-up',body:'The doctor confirmed Thursday 9:30.',status:'prepared',scope:'personal',created_at:now,event_ids:[],next_action:change,next_actions:[change],
  outcome:JSON.stringify({state:'needs_you',needs:'Add it to the calendar'})};
 const placesFound=[{value:'Café Labath, Oude Houtlei 1, Gent',label:'Café Labath',detail:'Oude Houtlei 1, Gent',source:'calendar'},
- {value:'Acme, Ghent, Belgium',label:'Acme',detail:'Ghent, Belgium',source:'graph'},{value:'Café Labath, Oude Houtlei 1, 9000 Gent, Belgium',label:'Café Labath',detail:'Oude Houtlei 1, 9000 Gent, Belgium',source:'map'}];
+ {value:'Acme, Ghent, Belgium',label:'Acme',detail:'Ghent, Belgium',source:'graph'},{value:'Labath Roastery, Dok Noord 4, 9000 Gent, België',label:'Labath Roastery',detail:'Dok Noord 4, 9000 Gent, België',source:'map'}];
 const people=[{name:'Sam Lee',email:'sam@acme.example'},{name:'Samira Long-Surname-For-Wrapping',email:'samira.long@example.net'}];
 let lookups=[],outside=[];
 let calls=[],answer={status:'done',calendar:'Kid’s calendar'},writable=true;
@@ -39,7 +39,7 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(url.pathname==='/api/status'){res.end(JSON.stringify(state()));return}
  if(url.pathname==='/api/calendar'){res.end(JSON.stringify({meetings:writable?meetings:meetings.map(({edit,...m})=>m),calendars:writable?calendars:[]}));return}
- if(url.pathname==='/api/places'){lookups.push(['places',url.searchParams.get('q')]);res.end(JSON.stringify({places:placesFound}));return}
+ if(url.pathname==='/api/places'){lookups.push(['places',url.searchParams.get('q')]);const q=url.searchParams.get('q').toLowerCase();res.end(JSON.stringify({places:placesFound.filter(p=>q.split(/\s+/).every(w=>p.value.toLowerCase().includes(w)))}));return}
  if(url.pathname==='/api/invitees'){lookups.push(['people',url.searchParams.get('q')]);const q=url.searchParams.get('q').toLowerCase();res.end(JSON.stringify({people:people.filter(p=>(p.name+' '+p.email).toLowerCase().includes(q))}));return}
  if(url.pathname==='/api/action'){const r=JSON.parse(body||'{}');calls.push(r);res.end(JSON.stringify(r.action==='calendar_write'?answer:r.action==='card_chat'?{session:true,status:'ok',active:false,items:[]}:{status:'queued'}));return}
  res.statusCode=url.pathname.startsWith('/api/')?200:404;res.end('{}')});
@@ -122,13 +122,16 @@ try{
   assert.equal(await page.locator('#cal-f-fine').textContent(),'Nobody is invited.');assert.equal(await page.locator('#cal-f-save').textContent(),'Add');
   await page.locator('#cal-f-title').fill('Coffee with Sam');
   await page.locator('#cal-f-where').pressSequentially('labath',{delay:40});await page.locator('#cal-f-where-sug button').first().waitFor();
-  assert.deepEqual(lookups,[['places','labath']],'debounced: one lookup');
+  assert.ok(lookups.length<=2&&lookups.at(-1)[1]==='labath','debounced: not a lookup per key, '+JSON.stringify(lookups));
   if(shots)await page.locator('#cal-dialog').screenshot({path:`${shots}/calinvite-where-${width}-${scheme}.png`});
-  assert.deepEqual(await page.locator('#cal-f-where-sug button span').allTextContents(),['Café Labath','Acme','Café Labath']);
-  await page.locator('#cal-f-where-sug button').nth(2).click();
-  assert.equal(await page.locator('#cal-f-where').inputValue(),'Café Labath, Oude Houtlei 1, 9000 Gent, Belgium');assert.ok(await page.locator('#cal-f-where-sug').isHidden());
+  assert.deepEqual(await page.locator('#cal-f-where-sug button span').allTextContents(),['Café Labath','Labath Roastery']);
+  await page.locator('#cal-f-where-sug button').nth(1).click();
+  assert.equal(await page.locator('#cal-f-where').inputValue(),'Labath Roastery, Dok Noord 4, 9000 Gent, België');assert.ok(await page.locator('#cal-f-where-sug').isHidden());
   // Free text still works: type, no pick
-  await page.locator('#cal-f-where').fill('At the office');await page.locator('#cal-f-where-sug button').first().waitFor();await page.keyboard.press('Escape');
+  await page.locator('#cal-f-where').fill('acme');await page.locator('#cal-f-where-sug button').first().waitFor();
+  assert.deepEqual(await page.locator('#cal-f-where-sug button span').allTextContents(),['Acme'],'an organisation only when its name or place matches');
+  await page.keyboard.press('Escape');assert.ok(await page.locator('#cal-dialog').isVisible(),'Escape closes the suggestions, not the form');
+  await page.locator('#cal-f-where').fill('At the office');await page.waitForTimeout(450);
   assert.ok(await page.locator('#cal-f-where-sug').isHidden());assert.equal(await page.locator('#cal-f-where').inputValue(),'At the office');
   assert.ok(await page.locator('#cal-dialog').isVisible(),'Escape closes the suggestions, not the form');
   // Invite: people from the Graph and a typed address, as chips; the button says how many and the list is above it

@@ -123,13 +123,20 @@ def _get(url, timeout):
         return response.read(500_000)
 
 
+def same(place, mine):
+    """A map address for a place the owner has already: the same name, and its street in what they wrote."""
+    street = place['detail'].split(',')[0].strip().casefold()
+    return place['label'].casefold() == mine['label'].casefold() and (not street or street in mine['value'].casefold())
+
+
 def suggest(db, config, query, fetch=None):
-    """Local places first, then addresses from the map when there are few. A failing map search keeps the local ones."""
+    """Local places first, then addresses from the map when there are few, without the places the owner already has.
+    A failing map search keeps the local ones."""
     found = local(db, query)
     if len(found) < 3 and (config or {}).get('place_search', True) is not False:
         try:
             seen = {f['value'].casefold() for f in found}
-            found += [p for p in photon(query, fetch) if p['value'].casefold() not in seen]
+            found += [p for p in photon(query, fetch) if p['value'].casefold() not in seen and not any(same(p, f) for f in found)]
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             pass
     return found[:LIMIT + 2]
