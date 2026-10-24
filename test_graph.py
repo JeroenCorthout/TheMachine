@@ -1298,7 +1298,7 @@ class Boards(unittest.TestCase):
         self.assertIn('the owner wrote on 1 day', line['org:buyer.example'])
         self.assertIn('inbound only', line['org:brokers.example'])
         prompt = a.review_prompt('run1', ['work'], backfill=text)
-        self.assertIn('Unsolicited inbound outreach', prompt)
+        self.assertIn('unsolicited outreach', prompt)
         self.assertIn('never a label', prompt)
 
     def bundle(self):
