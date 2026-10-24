@@ -1365,6 +1365,42 @@ class SharedGraph(unittest.TestCase):
         with self.own.store.connect() as db:
             self.assertEqual(db.execute('SELECT visibility FROM boards WHERE id=?', (board,)).fetchone()[0], 'only_you')
 
+    def test_threads_of_a_board_shared_by_name_are_sorted_first_and_then_go_only_to_them(self):
+        board = self.deal_board()
+        self.add(self.own,
+                 mail('work', 24, 'Bo Hale <bo@buyer.example>', 'own1@acme.example', 'Closing date', 'We aim to close on June 3.', 1, 't-close'),
+                 mail('work', 25, 'Lee Park <lee@client.example>', 'own1@acme.example', 'Support question', 'How do I export a report?', 0, 't-support'))
+        with self.own.store.connect() as db:
+            graph.label(db, [self.event_id(self.own, 'work-24')], 'Sale: Buyer', 'review', a.now())
+        self.own.graph_board_share(board, [{'fleet': FLEET, 'member': 'mem3'}])
+        waiting = self.own.graph_unjudged(1)
+        self.assertEqual([w['subject'] for w in waiting], ['Closing date'])  # the owner waits on it: before the rest
+        self.assertIn('Support question', [w['subject'] for w in self.own.graph_unjudged()])
+        self.judge(self.own, ('work-24', 'sensitive', 'Bo set a closing date'))
+        self.assertNotIn('Closing date', [w['subject'] for w in self.own.graph_unjudged()])
+        self.rounds()
+        self.assertIn('close on June 3', self.received(self.mem))  # sorted: it goes to Mo
+        self.assertNotIn('close on June 3', self.received(self.adm) + json.dumps(self.team(self.adm)))
+
+    def test_another_company_or_a_personal_account_on_a_board_shared_by_name_stays_out(self):
+        board = self.deal_board()
+        self.add(self.own,
+                 mail('side', 3, 'Pat Moss <pat@buyer.example>', 'olive@sidecorp.example', 'Side deal', 'Sidecorp side letter.', 1, 't-side-deal'),
+                 mail('home', 24, 'Bo Hale <bo@buyer.example>', 'own1@home.example', 'From home', 'Home note on the sale.', 1, 't-home-deal'))
+        with self.own.store.connect() as db:
+            graph.label(db, [self.event_id(self.own, 'side-3'), self.event_id(self.own, 'home-24')], 'Sale: Buyer', 'review', a.now())
+        self.own.graph_board_share(board, [{'fleet': FLEET, 'member': 'mem3'}])
+        subjects = [w['subject'] for w in self.own.graph_unjudged()]
+        self.assertNotIn('Side deal', subjects)  # never even queued to be sorted
+        self.assertNotIn('From home', subjects)
+        self.judge(self.own, ('side-3', 'client', 'Pat sent a side letter'), ('home-24', 'client', 'Bo wrote from home'))
+        self.rounds()
+        self.assertIn(DEAL, self.received(self.mem))
+        for text in ('Sidecorp side letter', 'Home note on the sale', 'Sidecorp pilot'):
+            for box in (self.mem, self.adm):
+                self.assertNotIn(text, self.received(box) + json.dumps(self.team(box)))
+        self.assertNotIn('Sidecorp side letter', json.dumps(self.net.calls) + json.dumps(self.net.blobs))
+
     def test_a_project_added_to_a_shared_board_goes_and_one_moved_off_is_taken_back(self):
         board = self.deal_board()
         self.add(self.own, mail('work', 30, 'Cy Ross <cy@fund.example>', 'own1@acme.example', 'Term sheet', 'Our term sheet for the round.', 1, 't-fund'))

@@ -746,7 +746,8 @@ def unjudged(db, scope, limit, skip=(), first=None):
     """Work client threads the review hasn't judged yet, the newest first: for the history pass (one run judges a batch,
     the next one goes on), so all the Work history the Machine has goes through the same review labels. Each with its
     latest message and the start of earlier ones, since what a thread is about can sit in any of them. first: threads
-    to judge before the rest (the ones that went to the team before an update to the sorting)."""
+    to judge before the rest (the ones that went to the team before an update to the sorting); several, in turn: each
+    pass takes what the one before left (a board shared by name, then what went to the team, then the rest)."""
     found = []
     if not scope.accounts:
         return found
@@ -756,7 +757,8 @@ def unjudged(db, scope, limit, skip=(), first=None):
     for e in rows:
         e['metadata'] = json.loads(e['metadata'] or '{}')
         e['thread'] = thread_of(e['kind'], e['metadata'], e['id'])
-    passes = [lambda t: first(t), lambda t: not first(t)] if first else [lambda t: True]
+    firsts = [f for f in (first if isinstance(first, (list, tuple)) else [first]) if f]
+    passes = [*firsts, lambda t: not any(f(t) for f in firsts)] if firsts else [lambda t: True]
     taken = set(skip)
     for wanted in passes:
         seen, earlier = set(taken), {}
@@ -2063,8 +2065,15 @@ class SharedGraph:
             for group in groups:
                 sent = {r[0] for r in db.execute("SELECT key FROM share_out WHERE fleet=? AND kind='thread'", (group['id'],))}
                 went = (lambda t, sent=sent: keyed(secret, 'thread|' + t) in sent) if sent else None
-                for item in unjudged(db, Scope(db, self.graph_accounts(group['id']), self.internal(group['id']), self.my_emails(),
-                                           self._personal_people(db)), limit - len(out), first=went):
+                scope = Scope(db, self.graph_accounts(group['id']), self.internal(group['id']), self.my_emails(), self._personal_people(db))
+                # Boards and threads shared with someone by name: their threads are judged too (for those people), and first,
+                # since the owner just shared them and waits for them to arrive
+                granted = grants(db, group['id']).values()
+                named = None
+                if granted:
+                    scope = scope.granted(set().union(*(p for p, _ in granted)), set().union(*(t for _, t in granted)))
+                    named = (lambda t, mine=scope.board_threads | scope.hand_threads: t in mine)
+                for item in unjudged(db, scope, limit - len(out), first=[named, went]):
                     if item['event_id'] not in skip:
                         skip.add(item['event_id'])
                         out.append(item)
