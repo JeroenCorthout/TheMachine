@@ -115,5 +115,61 @@ class Timeline(unittest.TestCase):
         self.assertNotIn('graph_timeline', source)
 
 
+def invite(days_ago, source_id, title, *emails, account='work', uid='', all_day=False, me='sam@acme.com', names=None):
+    names = names or {}
+    return {'account_id': account, 'source_id': source_id, 'kind': 'calendar.event', 'occurred_at': tg.at(days_ago), 'title': title, 'body': 'Participants: ' + ', '.join(emails),
+            'deleted': False, 'metadata': {'attendees': [{'email': me, 'self': True, **({'displayName': names[me]} if me in names else {})}, *({'email': e, **({'displayName': names[e]} if e in names else {})} for e in emails)],
+                                           'organizer': {'email': me, 'self': True}, 'all_day': all_day, **({'ical_uid': uid} if uid else {})}}
+
+
+class Order(unittest.TestCase):
+    """Upcoming meetings apart and soonest first, the rest strictly newest first; a meeting on two of the owner's calendars
+    once; an all-day one says so; the person and the owner left out of who is on it."""
+    add = tg.Graph.add
+    build = tg.Graph.build
+    accounts = tg.CONFIG['accounts'] + [{'id': 'home', 'email': 'sam@home.example'}]
+
+    def setUp(self):
+        tg.Graph.setUp(self)
+        self.app.config = {**tg.CONFIG, 'accounts': self.accounts}
+        self.store.accounts = self.accounts
+        self.app.fleet = None
+        juli, names = 'juli@globex.example', {'juli@globex.example': 'Juli Ex', 'bo@globex.example': 'Bo Ex', 'kim@other.example': 'Kim',
+                                          'sam@home.example': 'Sam Owner', 'sam@old.example': 'Sam Owner'}
+        self.add(tg.mail(3, 'Juli Ex <juli@globex.example>', 'sam@acme.com'), tg.mail(1, 'Sam <sam@acme.com>', juli, ('SENT',)),
+                 invite(2, 'past', 'Review', juli, 'bo@globex.example', names=names),
+                 invite(-1, 'soon', 'Lunch', juli, names=names),
+                 invite(-9, 'later', 'Dinner', juli, 'kim@other.example', names=names),
+                 # The same weekend on two calendars: the same iCalUID, the owner's other addresses on the second (one known only by their name)
+                 invite(-5, 'wk-a', 'Weekend away', juli, 'bo@globex.example', uid='uid-1', all_day=True, names=names),
+                 invite(-5, 'wk-b', 'Weekend away', juli, 'kim@other.example', 'sam@acme.com', 'sam@old.example', account='home', uid='uid-1', all_day=True, me='sam@home.example', names=names),
+                 # The same meeting copied without an iCalUID: the same title at the same start
+                 invite(4, 'cp-a', 'Board  meeting', juli, names=names),
+                 invite(4, 'cp-b', 'board meeting', juli, account='home', me='sam@home.example', names=names))
+        self.build()
+        self.found = self.app.graph_timeline('email:' + juli, now=tg.NOW.isoformat())
+
+    def test_upcoming_apart_soonest_first_then_newest_first(self):
+        self.assertEqual([i['title'] for i in self.found['upcoming']], ['Lunch', 'Weekend away', 'Dinner'])
+        at = [graph.parse_time(i['occurred_at']) for i in self.found['items']]
+        self.assertEqual(at, sorted(at, reverse=True))
+        self.assertTrue(all(i['occurred_at'] <= tg.NOW.isoformat() for i in self.found['items']))
+        self.assertEqual(self.app.graph_timeline('email:juli@globex.example', cursor=1, now=tg.NOW.isoformat())['upcoming'], [])  # once, on the first page
+
+    def test_copies_on_two_calendars_are_one_row_with_everyone_once(self):
+        weekend = [i for i in self.found['upcoming'] if i['title'] == 'Weekend away']
+        self.assertEqual(len(weekend), 1)
+        self.assertEqual(weekend[0]['preview'], 'With Bo Ex, Kim')  # not Juli, not the owner on either address
+        self.assertEqual([i['title'].casefold() for i in self.found['items'] if i['kind'] == 'calendar.event'], ['review', 'board  meeting'])
+
+    def test_all_day_and_the_participant_line(self):
+        weekend = next(i for i in self.found['upcoming'] if i['title'] == 'Weekend away')
+        self.assertTrue(weekend['all_day'])
+        lunch = next(i for i in self.found['upcoming'] if i['title'] == 'Lunch')
+        self.assertFalse(lunch['all_day'])
+        self.assertEqual(lunch['preview'], '')  # only Juli on it: nothing to say
+        self.assertEqual(next(i for i in self.found['items'] if i['title'] == 'Review')['preview'], 'With Bo Ex')
+
+
 if __name__ == '__main__':
     unittest.main()

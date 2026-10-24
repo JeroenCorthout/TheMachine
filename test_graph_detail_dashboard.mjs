@@ -25,6 +25,9 @@ const person=()=>({id:'wa:3247000001',kind:'person',name:'Ann Example',strength:
          {id:35,account_id:'slack',kind:'slack.message',occurred_at:daysAgo(5),title:'#standup: done',from:'You',from_me:true,dm:false,place:'#standup',preview:'done'},
          {id:34,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(-9),title:'Later dinner',preview:''},
          {id:33,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(-2),title:'Lunch',preview:''},
+         {id:32,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(-3),title:'Call',preview:''},
+         {id:31,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(-4),title:'Weekend away',preview:'With Bo',all_day:true},
+         {id:30,account_id:'work',kind:'calendar.event',occurred_at:daysAgo(0.5),title:'Offsite',preview:'',all_day:true},
          // A group conversation: three messages minutes apart are one row; one two hours earlier is its own.
          ...[[50,1,true,'See you at the beach'],[51,1.01,false,'Bring the umbrella'],[52,1.02,false,'And snacks']].map(([id,d,me,t])=>({id,account_id:'chat',kind:'whatsapp.message',occurred_at:daysAgo(d),title:'Family 🌴',from:me?'You':'Ann Example',from_me:me,preview:t,thread:'chat:whatsapp.message:g1'})),
          // One to one with Ann: a run of three a minute apart, and one long message on its own.
@@ -73,9 +76,20 @@ try{
  assert.equal(await page.locator('.graph-known li').count(),2);
  // Events: by day, who wrote it, a preview cut with a fade, the source's icon; tapping opens the event.
  const days=await page.locator('.ge-day').allTextContents();
- // Coming up first, soonest on top; then today and back.
- assert.deepEqual((await page.locator('.graph-event h4').allTextContents()).slice(0,2),['Lunch','Later dinner']);
- assert.equal(days[2],'Today');assert.equal(days[3],'Yesterday');
+ // Coming up apart, the next three soonest first, the rest behind Show all upcoming; then strictly back in time from now.
+ assert.equal(days[0],'Coming up');
+ assert.deepEqual(await page.locator('.ge-soon .graph-event:visible h4').allTextContents(),['Lunch','Call','Weekend away']);
+ assert.match(await page.locator('.ge-soon .graph-event',{hasText:'Weekend away'}).locator('time').textContent(),/ · All day$/);
+ await page.locator('[data-ge-soon]').click();
+ assert.deepEqual(await page.locator('.ge-soon .graph-event:visible h4').allTextContents(),['Lunch','Call','Weekend away','Later dinner']);
+ assert.equal(await page.locator('[data-ge-soon]').count(),0);
+ const past=await page.locator('.graph-events time').evaluateAll(ts=>ts.map(t=>Date.parse(t.getAttribute('datetime'))));
+ assert.ok(past.every((t,i)=>!i||t<=past[i-1])&&past[0]<=Date.now(),'the timeline runs newest first, nothing to come');
+ assert.equal(days[1],'Today');assert.equal(days[2],'Yesterday');
+ const shownDays=days.slice(1).filter(d=>!['Today','Yesterday'].includes(d));
+ assert.deepEqual(shownDays,[...new Set(shownDays)],'each day once');
+ // An all-day event says so instead of 00:00.
+ assert.equal(await page.locator('.graph-events .graph-event',{hasText:'Offsite'}).locator('time').textContent(),'All day');
  // One row for the run of three, the time from the first to the last, the last two lines with who said them.
  const run=page.locator('.graph-event[data-events="52,51,50"]');
  assert.equal(await page.locator('.graph-event[data-events]').count(),2);
@@ -92,10 +106,10 @@ try{
  const annLong=page.locator('.graph-event[data-event="57"]');
  assert.equal(await annLong.locator('h4').count(),0);assert.equal(await annLong.locator('.ge-preview.fade').count(),1);
  // The count is rows; past fifteen the rest waits behind Show more.
- assert.equal(await page.locator('.graph-events ~ .section-head .count, .section-head:has(+ .graph-events) .count').textContent(),'23');
- assert.equal(await page.locator('.graph-event:visible').count(),15);
+ assert.equal(await page.locator('.graph-timeline .section-head .count').textContent(),'22');
+ assert.equal(await page.locator('.graph-events .graph-event:visible').count(),15);
  await page.locator('[data-ge-more]').click();
- assert.equal(await page.locator('.graph-event:visible').count(),23);assert.equal(await page.locator('[data-ge-more]').count(),0);
+ assert.equal(await page.locator('.graph-events .graph-event:visible').count(),22);assert.equal(await page.locator('[data-ge-more]').count(),0);
  // Tapping the run opens the conversation, in order.
  // A group's transcript: the date once, each turn its sender and time once, yours on the right.
  await run.click();
@@ -128,7 +142,7 @@ try{
  assert.ok(await first.locator('.ge-preview.fade').count()===1&&await page.locator('.graph-event[data-event="40"] .ge-preview.fade').count()===0);
  assert.equal(await page.locator('.graph-event[data-event="39"] h4').textContent(),'School trip');
  assert.ok((await page.locator('.graph-event[data-event="39"] .ge-preview').textContent()).startsWith('Ann Example: '));
- assert.equal(await page.locator('.graph-event[aria-label^="Calendar"]').count(),3);
+ assert.equal(await page.locator('.graph-event[aria-label^="Calendar"]').count(),6);
  assert.equal(await page.locator('.graph-event[aria-label^="Intercom"] .icon svg path').count(),1);
  const sizes=await page.evaluate(()=>({page:document.documentElement.scrollWidth,viewport:innerWidth}));
  assert.ok(sizes.page<=sizes.viewport,'overflow at 390');

@@ -1661,7 +1661,7 @@ def _timeline_people(db, row):
     return [row['id']]
 
 
-def timeline(db, node_id, source='', cursor=0, limit=40):
+def timeline(db, node_id, source='', cursor=0, limit=40, now=None):
     """One page of a person's, organization's or project's timeline: {'items', 'next', 'sources'}. An item is a signal
     ({'type': 'event', 'id': event id}), a card, a promise or a project's move, each with 'at' and its 'source' group
     (email, meetings, intercom, chats, cards, projects, other). source narrows it to one group; sources counts them all."""
@@ -1706,8 +1706,11 @@ def timeline(db, node_id, source='', cursor=0, limit=40):
                 at = parse_time(r['occurred_at'])
                 if any(abs(at - m) <= ZOOM_NEAR for m in meetings):
                     add(r['id'], r['occurred_at'], 'zoom.summary')
-    items = [{'type': 'event', 'id': e, 'at': at, 'source': timeline_source(k), 'kind': k, 'probable': bool(p)} for e, (at, k, p) in signals.items()]
     ids = list(signals)
+    copies = _meeting_copies(db, [e for e, (_, k, _) in signals.items() if k == 'calendar.event'])
+    items = [{'type': 'event', 'id': e, 'at': at, 'source': timeline_source(k), 'kind': k, 'probable': bool(p),
+              **({'copies': copies[e]} if copies.get(e) else {})}
+             for e, (at, k, p) in signals.items() if copies.get(e) is not None or k != 'calendar.event']
     try:
         cards, promised = {}, []
         for start in range(0, len(ids), 400):
@@ -1748,10 +1751,48 @@ def timeline(db, node_id, source='', cursor=0, limit=40):
     counts = collections.Counter(i['source'] for i in items)
     if source and source != 'all':
         items = [i for i in items if i['source'] == source]
-    items.sort(key=lambda i: (str(i['at'] or ''), str(i['id'])), reverse=True)
+    # What is still to come is apart, soonest first; the timeline itself goes strictly back in time from now.
+    current = parse_time(now) if now else dt.datetime.now(dt.timezone.utc)
+
+    def when(i):
+        try:
+            return parse_time(i['at'])
+        except (TypeError, ValueError):
+            return current
+    upcoming = sorted((i for i in items if when(i) > current), key=lambda i: (when(i), str(i['id'])))
+    items = sorted((i for i in items if when(i) <= current), key=lambda i: (when(i), str(i['id'])), reverse=True)
     offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit or 40), 100))
     return {'items': items[offset:offset + limit], 'next': str(offset + limit) if len(items) > offset + limit else None,
+            'upcoming': upcoming[:50] if not offset else [],
             'sources': {g: counts[g] for g in TIMELINE_GROUPS if counts[g]}, 'total': sum(counts.values())}
+
+
+def _meeting_copies(db, ids):
+    """{event id: [other copies]} for meetings, one per meeting: copies of one event on several calendars (the same iCalUID,
+    or the same title at the same start) become one row; a copy that isn't the kept one maps to None."""
+    rows = []
+    for start in range(0, len(ids), 400):
+        chunk = ids[start:start + 400]
+        rows += db.execute(f"SELECT id,title,occurred_at,metadata FROM events WHERE id IN ({','.join('?' * len(chunk))}) ORDER BY id", chunk).fetchall()
+    seen, out = {}, {}
+    for r in rows:
+        try:
+            m = json.loads(r['metadata'] or '{}')
+        except ValueError:
+            m = {}
+        keys = {('when', r['occurred_at'], ' '.join(str(r['title'] or '').split()).casefold())}
+        if isinstance(m, dict) and m.get('ical_uid'):
+            keys.add(('uid', str(m['ical_uid']), r['occurred_at']))
+        kept = next((seen[k] for k in keys if k in seen), None)
+        if kept is None:
+            out[r['id']] = []
+            kept = r['id']
+        else:
+            out[kept].append(r['id'])
+            out[r['id']] = None
+        for k in keys:
+            seen.setdefault(k, kept)
+    return out
 
 # The owner's Fleets, Family and Friends on the graph. Only what the Network's directory already shows every member of
 # that group (the name they chose to share there, their verified addresses, whether they have a Machine), matched on

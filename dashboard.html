@@ -706,6 +706,7 @@ span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:col
 /* Events: by day, rows on hairlines, no boxes; each its source, who wrote it, when, and the start of the text. */
 .ge-day{font:var(--fw-medium) var(--fs-xs)/1.2 var(--sans);color:var(--faint);letter-spacing:.02em;margin:var(--sp-5) 0 var(--sp-1)}
 .graph-events>.ge-day:first-child{margin-top:0}
+.ge-soon{margin-bottom:var(--sp-4)}.ge-soon>.ge-day{margin-top:0}
 #people-view .graph-event{display:flex;gap:var(--sp-3);align-items:flex-start;margin:0;padding:var(--sp-3) var(--sp-2);border:0;border-top:1px solid var(--border);border-radius:0;background:none;box-shadow:none;cursor:pointer;overflow:visible}
 #people-view .ge-group>.graph-event:first-child{border-top:0}
 #people-view .graph-event:hover{background:var(--tile)}#people-view .graph-event:focus-visible{outline:2px solid var(--mint);outline-offset:-2px}
@@ -5735,12 +5736,19 @@ const tlRow=(n,e,later)=>{const d=new Date(e.occurred_at),t=`<time datetime="${e
  if(e.type==='move')return `<article class="graph-event ge-item" data-tl="move" tabindex="0" aria-label="${esc(e.project)}: ${esc(e.stage)}"${later}>${sourceIcon('',e.type)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.project)}"><a href="${graphHash(e.project_id)}">${esc(e.project)}</a></h4>${t}</div><p class="ge-preview">Moved to ${esc(e.stage)}</p></div></article>`;
  return ''};
 const tlLink=e=>e.kind==='intercom.conversation'&&e.source_url?`<a class="ge-link" href="${esc(e.source_url)}" target="_blank" rel="noopener">Open in Intercom</a>`:e.kind==='zoom.summary'&&e.source_url?`<a class="ge-link" href="${esc(e.source_url)}" target="_blank" rel="noopener">Summary</a>`:'';
-const graphEvents=(n,title='Timeline')=>{const tl=n.timeline,all=[...(n.recent||[]).map(e=>e.occurred_at?e:{...e,occurred_at:e.at}),...(tl?.source?[]:(n.changes||[]).map(c=>({change:changeText(c),occurred_at:c.at})))].sort((a,b)=>Date.parse(b.occurred_at)-Date.parse(a.occurred_at)),soon=Date.now();
+// A meeting still to come, compact: its day and time (All day for an all-day one), who else is on it.
+const GE_SOON=3;
+const soonRow=(n,e,later)=>{if(e.type&&e.type!=='event')return tlRow(n,e,later);const d=new Date(e.occurred_at),src=SOURCE_NAME[graphSource(e.kind)]||'';
+ return `<article class="graph-event" data-event="${e.id}" tabindex="0" aria-label="${esc(src?src+': ':'')}${esc(e.title)}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}">${esc(e.title)}</h4><time datetime="${esc(e.occurred_at)}">${esc(dayLabel(d)+' · '+(e.all_day?'All day':graphTime(d)))}</time></div>${e.preview?`<p class="ge-preview">${esc(e.preview)}</p>`:''}</div></article>`};
+const graphEvents=(n,title='Timeline')=>{const soon=Date.now(),tl=n.timeline,all=[...(n.recent||[]).map(e=>e.occurred_at?e:{...e,occurred_at:e.at}),...(tl?.source?[]:(n.changes||[]).map(c=>({change:changeText(c),occurred_at:c.at})))].sort((a,b)=>Date.parse(b.occurred_at)-Date.parse(a.occurred_at)).filter(e=>!(Date.parse(e.occurred_at)>soon));
+ /* Coming up apart, soonest first; the timeline itself strictly back in time from now */
+ const up=[...(tl?.upcoming||[]),...(n.recent||[]).filter(e=>Date.parse(e.occurred_at||e.at)>soon&&!(tl?.upcoming||[]).some(u=>u.id===e.id))].map(e=>e.occurred_at?e:{...e,occurred_at:e.at}).sort((a,b)=>Date.parse(a.occurred_at)-Date.parse(b.occurred_at));
  const chips=tl?.sources&&Object.keys(tl.sources).length>1?subTabs('Show','data-tl-source',[{id:'',label:'All'},...Object.keys(TL_SOURCES).filter(k=>tl.sources[k]).map(k=>({id:k,label:TL_SOURCES[k]}))],tl.source||''):'';
  const head=count=>`<div class="section-head"><h2>${esc(title)}</h2>${count?`<span class="count">${count}</span>`:''}</div>`;
- if(!all.length)return tl?`<section class="graph-timeline">${head(0)}${chips}<p class="graph-sub muted ge-empty">Nothing here yet.</p></section>`:'';
+ const soonBox=up.length?`<div class="ge-soon"><h3 class="ge-day">Coming up</h3><div class="ge-group">${up.map((e,i)=>soonRow(n,e,i>=GE_SOON?' hidden':'')).join('')}</div>${up.length>GE_SOON?'<button type="button" class="ghost ge-more" data-ge-soon>Show all upcoming</button>':''}</div>`:'';
+ if(!all.length)return tl||up.length?`<section class="graph-timeline">${head(0)}${chips}${soonBox}${all.length||up.length?'':'<p class="graph-sub muted ge-empty">Nothing here yet.</p>'}</section>`:'';
  let last='',h='';const shown=tl?Math.max(GRAPH_ROWS,tl.shown||0):GRAPH_ROWS;
- const runs=graphRuns([...all.filter(e=>Date.parse(e.occurred_at)>soon).sort((a,b)=>a.occurred_at.localeCompare(b.occurred_at)),...all.filter(e=>!(Date.parse(e.occurred_at)>soon))]);  /* coming up first, soonest on top, then the latest */
+ const runs=graphRuns(all);
  runs.forEach((run,i)=>{const e=run[0],d=new Date(e.occurred_at),label=dayLabel(d),later=i>=shown?' hidden':'';
   if(label!==last){h+=(last?'</div>':'')+`<h3 class="ge-day"${later}>${esc(label)}</h3><div class="ge-group">`;last=label}
   if(e.change){h+=`<article class="graph-event ge-change"${later}><span class="ge-dot" aria-hidden="true">•</span><div class="ge-main"><div class="ge-head"><h4>${esc(e.change)}</h4><time datetime="${esc(e.occurred_at)}">${esc(graphTime(d))}</time></div></div></article>`;return}
@@ -5756,13 +5764,13 @@ const graphEvents=(n,title='Timeline')=>{const tl=n.timeline,all=[...(n.recent||
   const head=e.place||(chat?(e.from_me?'You':e.from||(n.kind==='person'?n.name:e.title)):e.title);
   const by=!chat&&e.from&&!['calendar.event','zoom.summary'].includes(e.kind)?(e.from_me?'You':e.from)+': ':'';
   const state=e.state?`<span class="chip ge-state" style="--c:var(${e.state==='open'?'--mint':'--faint'})">${e.state==='open'?'Open':'Closed'}</span>`:'';
-  h+=`<article class="graph-event" data-event="${e.id}" tabindex="0" aria-label="${esc(src?src+': ':'')}${esc(head)}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}">${esc(head)}</h4>${state}<time datetime="${esc(e.occurred_at)}">${esc(graphTime(d))}</time>${shareChip(e)}</div>${e.preview?`<p class="ge-preview">${by?`<b>${esc(by)}</b>`:''}${esc(e.preview)}</p>`:''}${tlLink(e)?`<p class="ge-note">${tlLink(e)}</p>`:''}${e.probable?'<p class="ge-note">Probably part of it</p>':''}</div></article>`});
+  h+=`<article class="graph-event" data-event="${e.id}" tabindex="0" aria-label="${esc(src?src+': ':'')}${esc(head)}"${later}>${sourceIcon(e.kind)}<div class="ge-main"><div class="ge-head"><h4 title="${esc(e.title)}">${esc(head)}</h4>${state}<time datetime="${esc(e.occurred_at)}">${esc(e.all_day?'All day':graphTime(d))}</time>${shareChip(e)}</div>${e.preview?`<p class="ge-preview">${by?`<b>${esc(by)}</b>`:''}${esc(e.preview)}</p>`:''}${tlLink(e)?`<p class="ge-note">${tlLink(e)}</p>`:''}${e.probable?'<p class="ge-note">Probably part of it</p>':''}</div></article>`});
  const more=runs.length>shown||tl?.next;
- return `<section class="graph-timeline">${head(tl?(tl.source?tl.sources?.[tl.source]:tl.total)||runs.length:runs.length)}${chips}<div class="graph-events">${h}</div></div>${more?'<button type="button" class="ghost ge-more" data-ge-more>Show more</button>':''}</section>`};
+ return `<section class="graph-timeline">${head(tl?(tl.source?tl.sources?.[tl.source]:tl.total)||runs.length:runs.length)}${chips}${soonBox}<div class="graph-events">${h}</div></div>${more?'<button type="button" class="ghost ge-more" data-ge-more>Show more</button>':''}</section>`};
 // Show more: the rows already here first, then the next page; a source chip reloads the list for that source.
 async function graphTlLoad(source,more){const n=graphTl.page;if(!n||graphTl.loading)return;graphTl.loading=true;
  try{const tl=n.timeline||{};const cursor=more?tl.next:'';const got=await request('api/graph/timeline?node='+encodeURIComponent(n.id)+'&source='+encodeURIComponent(source)+(cursor?'&cursor='+encodeURIComponent(cursor):''));
-  if(graphTl.page!==n)return;n.recent=more?[...n.recent,...got.items]:got.items;n.timeline={...tl,next:got.next,sources:got.sources,total:got.total,source,shown:more?(tl.shown||GRAPH_ROWS)+30:GRAPH_ROWS};graphTlDraw()}
+  if(graphTl.page!==n)return;n.recent=more?[...n.recent,...got.items]:got.items;n.timeline={...tl,next:got.next,sources:got.sources,total:got.total,upcoming:more?tl.upcoming:(got.upcoming||[]),source,shown:more?(tl.shown||GRAPH_ROWS)+30:GRAPH_ROWS};graphTlDraw()}
  catch(err){toast(err.message,true)}finally{graphTl.loading=false}}
 function graphTlDraw(){const box=$('#people-view .graph-timeline'),n=graphTl.page;if(!box||!n)return;const tmp=document.createElement('div');tmp.innerHTML=graphEvents(n);box.replaceWith(tmp.firstElementChild);
  for(const p of $('#people-view').querySelectorAll('.graph-timeline .ge-preview'))p.classList.toggle('fade',p.scrollHeight>p.clientHeight+1)}
@@ -6065,9 +6073,10 @@ document.addEventListener('keydown',async e=>{const i=e.target.closest?.('.tag-a
  try{await graphPost('graph_tag',{node_id:f.dataset.tagNode,tag:t,add:true});if(!graphTags.some(x=>x.tag.toLowerCase()===t.toLowerCase())){graphTags.push({tag:t,count:1});tagsPaint()}pagerDrop('graph');await people(graphNode,true)}catch(err){toast(err.message,true);i.disabled=false}},true);
 document.addEventListener('click',async e=>{const t=e.target.closest('[data-tag-remove],[data-fields-edit]');if(!t)return;e.preventDefault();e.stopPropagation();
  try{if(t.dataset.fieldsEdit)return await crmFieldsOpen(t.dataset.fieldsEdit);t.disabled=true;await graphPost('graph_tag',{node_id:t.dataset.tagNode,tag:t.dataset.tagRemove,add:false});pagerDrop('graph');await people(graphNode,true)}catch(err){toast(err.message,true);t.disabled=false}},true);
-$('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){const n=graphTl.page,box=e.target.closest('.graph-timeline'),hidden=box?box.querySelectorAll('.graph-event[hidden]').length:0;
+$('#people-view').onclick=async e=>{const tab=e.target.closest('[data-graph-pane]');if(tab){showGraphPane(tab.dataset.graphPane);return}if(e.target.closest('[data-ge-more]')){const n=graphTl.page,box=e.target.closest('.graph-timeline'),hidden=box?box.querySelectorAll('.graph-events .graph-event[hidden]').length:0;
   if(n?.timeline&&box){if(n.timeline.next&&hidden<30)graphTlLoad(n.timeline.source||'',true);else{n.timeline.shown=(n.timeline.shown||GRAPH_ROWS)+30;graphTlDraw()}}
   else{for(const x of $('#people-view').querySelectorAll('.graph-events [hidden]'))x.hidden=false;e.target.closest('[data-ge-more]').remove()}return}
+ const soonAll=e.target.closest('[data-ge-soon]');if(soonAll){for(const x of soonAll.closest('.ge-soon').querySelectorAll('[hidden]'))x.hidden=false;soonAll.remove();return}
  const tlChip=e.target.closest('[data-tl-source]');if(tlChip){graphTlLoad(tlChip.dataset.tlSource,false);return}if(openEventFrom(e))return;
  const q=e.target.closest('[data-quote-event]');if(q){openEvent(q.dataset.quoteEvent,'');return}
  const all=e.target.closest('[data-role-all]');if(all){const each=[...document.querySelectorAll('.whos [data-role-confirm]')];if(!each.length||!confirm(`Mark all ${each.length} roles as right?`))return;all.disabled=true;let done=0;try{for(const b of each){await graphPost('graph_role',{node_id:b.dataset.roleConfirm,role:b.dataset.role});done++}toast(`Confirmed ${done} roles.`)}catch(err){toast((done?`Confirmed ${done}, then: `:'')+err.message,true)}await people(graphNode,true);return}

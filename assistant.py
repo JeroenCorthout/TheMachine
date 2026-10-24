@@ -15214,25 +15214,44 @@ class App:
             self.graph_build()
         return done
 
-    def graph_timeline(self, node, source='', cursor=0, limit=40):
+    def graph_timeline(self, node, source='', cursor=0, limit=40, now=None):
         """A page of a person's, organization's or project's timeline for the owner's dashboard (graph.timeline), each
         signal as a row: who wrote it, the start of its text, its link, an Intercom conversation's state and a thread's
         Team or Only you. Never part of what the team's Graph sends."""
         accounts = self.config['accounts']
         with self.store.connect() as db:
-            found = graph.timeline(db, node, source, cursor, limit)
+            found = graph.timeline(db, node, source, cursor, limit, now)
         if found is None:
             raise ValueError('Not in the graph')
-        ids = [i['id'] for i in found['items'] if i['type'] == 'event']
+        both = found['items'] + found.get('upcoming', [])
+        ids = [i['id'] for i in both if i['type'] == 'event']
+        ids += [c for i in both for c in i.get('copies') or ()]
         rows = {r['id']: r for r in self.store.events([a['id'] for a in accounts], event_ids=ids)} if ids else {}
-        items = []
-        for item in found['items']:
+        # Who is on a meeting, without the owner and without the person whose page this is: they are a given here
+        with self.store.connect() as db:
+            got = graph.resolve(db, node)
+        info = json.loads(got['info'] or '{}') if got and got['kind'] == 'person' else {}
+        graph_owner = graph.Owner(self.config)
+        owner = self.owner_emails() | graph_owner.emails
+        given = owner | {str(i)[6:].lower() for i in [got['id'] if got else '', *(info.get('identifiers') or [])] if str(i).startswith('email:')}
+
+        # People on a meeting by the name the graph has for them, when the invite has only their address
+        invited = {str(a.get('email') or '').strip().lower() for r in rows.values() if r['kind'] == 'calendar.event'
+                   for a in r['metadata'].get('attendees') or () if isinstance(a, dict)} - {''}
+        known = {}
+        if invited:
+            with self.store.connect() as db:
+                for start in range(0, len(invited), 400):
+                    chunk = ['email:' + e for e in sorted(invited)[start:start + 400]]
+                    known |= {n['id'][6:]: n['name'] for n in db.execute(f"SELECT id,name FROM graph_nodes WHERE id IN ({','.join('?' * len(chunk))})", chunk)
+                              if n['name'] and '@' not in n['name']}
+
+        def row_for(item):
             if item['type'] != 'event':
-                items.append(item)
-                continue
+                return item
             r = rows.get(item['id'])
             if not r:
-                continue
+                return None
             m = r['metadata']
             row = {'id': r['id'], 'type': 'event', 'account_id': r['account_id'], 'kind': r['kind'], 'occurred_at': r['occurred_at'], 'title': r['title'][:200],
                    'source': item['source'], 'source_url': m.get('source_url'), 'probable': item['probable'], **event_glance(r, accounts)}
@@ -15243,12 +15262,38 @@ class App:
                 row['preview'] = ' '.join(opening.split())[:240]
                 if '@' in str(row.get('from') or ''):  # who opened it by name, not by address
                     row['from'] = (str(m.get('from_name') or '') or str(m.get('contact_name') or '') or row['from'])[:80]
-            items.append(row)
+            if r['kind'] == 'calendar.event':  # one row for its copies on several calendars, everyone on it once
+                row['all_day'] = bool(m.get('all_day'))
+                people, copies = {}, [r, *(rows[i] for i in item.get('copies') or () if i in rows)]
+                # The owner under another address of theirs: the name they have on their own calendar's copy
+                own = {' '.join(str(a.get('displayName') or '').split()).casefold() for c in copies for a in c['metadata'].get('attendees') or ()
+                       if isinstance(a, dict) and a.get('self') and str(a.get('email') or '').lower() in owner} - {''}
+                for c in copies:
+                    cm = c['metadata']
+                    for a in [*(cm.get('attendees') or ()), cm.get('organizer') or {}]:
+                        if not isinstance(a, dict) or a.get('responseStatus') == 'declined':
+                            continue
+                        address = str(a.get('email') or '').strip().lower()
+                        if address in given or graph_owner.mine(address) or not (address or a.get('displayName')):
+                            continue
+                        if ' '.join(str(a.get('displayName') or '').split()).casefold() in own:
+                            continue
+                        name = ' '.join(str(a.get('displayName') or '').split()) or known.get(address) or address
+                        people.setdefault(address or name.casefold(), name[:80])
+                where = str(m.get('location') or '').strip()
+                said = [line for line in str(r.get('body') or '').splitlines() if line.strip() and not line.startswith('Participants: ') and line.strip() != where]
+                names = list(people.values())
+                line = ' · '.join(filter(None, ['With ' + ', '.join(names[:6]) + (f' and {len(names) - 6} more' if len(names) > 6 else '') if names else '',
+                                                where, ' '.join(' '.join(said).split()) if said else '']))
+                row['preview'] = line[:240] + ('…' if len(line) > 240 else '')
+            return row
+        items = [x for x in map(row_for, found['items']) if x]
+        found['upcoming'] = [x for x in map(row_for, found.get('upcoming', [])) if x]
         if getattr(self, 'fleet', None) and rows:  # the Shared Graph: each Work thread's Team or Only you
             try:
                 with self.store.connect() as db:
                     labels = self.fleet.thread_labels(db, list(rows.values()))
-                for row in items:
+                for row in items + found['upcoming']:
                     if row.get('type') == 'event' and row['id'] in labels:
                         row['share'] = labels[row['id']]
             except (sqlite3.Error, ValueError, KeyError, TypeError) as error:
