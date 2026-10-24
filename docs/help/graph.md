@@ -62,7 +62,7 @@ The preview shows each row as new, matching one already in your Graph, or skippe
 
 **⋯**, **Same organization as…** on an organization's page makes it part of another one, with its people, projects and notes. **Add a website…** adds one more of its websites, like its .io next to its .com: people with an address there join it, and its details are looked up for every website.
 
-They're listed under **Websites**, each with **Split off** to undo it. Organizations that look like doubles show under **Same organization?**: **Merge** or **Not the same**.
+They're listed under **Websites**, each with **Split off** to undo it. Later edits to the combined organization are kept. Organizations that look like doubles show under **Same organization?**: **Merge** or **Not the same**.
 
 ## Add someone or an organization
 

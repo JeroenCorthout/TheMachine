@@ -126,6 +126,18 @@ class Crm(unittest.TestCase):
             self.assertEqual(json.loads(db.execute("SELECT fields FROM org_edits WHERE domain='globex.example'").fetchone()[0])['notes'], 'Main office')
             self.assertEqual(crm.org_doubles(db), [])  # kept apart from then on
 
+    def test_split_off_preserves_later_edits_to_the_combined_organization(self):
+        self.mails()
+        self.act('graph_org_edit', node_id='org:globex.io', fields={'notes': 'Met at the fair'})
+        self.act('graph_org_edit', node_id='org:globex.example', fields={'notes': 'Main office'})
+        self.act('graph_org_merge', node_id='org:globex.io', into='org:globex.example')
+        self.act('graph_org_edit', node_id='org:globex.example', fields={'notes': 'Updated after the merge'})
+        self.act('graph_org_split', alias='org:globex.io')
+        with self.store.connect() as db:
+            notes = json.loads(db.execute("SELECT fields FROM org_edits WHERE domain='globex.example'").fetchone()[0])['notes']
+        self.assertEqual(notes, 'Updated after the merge')
+        self.assertIsNotNone(self.node('org:globex.io'))
+
     def test_a_website_added_to_an_organisation_and_a_named_one_keeps_its_name(self):
         self.mails()
         made = self.act('graph_new', kind='org', name='Globex Group')

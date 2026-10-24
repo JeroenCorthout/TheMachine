@@ -10,6 +10,7 @@ import stat
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('shared_assistant', Path(__file__).with_name('assistant.py'))
@@ -321,6 +322,94 @@ class Shared(unittest.TestCase):
         self.own.step(wait=0)
         self.assertFalse([q for q in list(self.net.asks.values())[sent:] if q['to'] == 'mem3' and q['from'] == 'own1'])
         self.assertEqual([p['name'] for p in self.prompts(self.own, 'rekey')], ['Mo'])
+
+    def test_a_restart_after_shared_account_cleanup_keeps_its_removal_receipt(self):
+        self.shared_flag(['mem3'])
+        account = self.held(self.mem)
+        grant = account['shared']['grant']
+        drop = self.mem.drop_shared
+        def interrupted(ids):
+            drop(ids)
+            raise RuntimeError('restart after cleanup')
+        self.own.share_stop(FLEET, 'intercom')
+        self.mem.directory(refresh=True)
+        self.mem.drop_shared = interrupted
+        try:
+            self.mem.shared_round()
+        except RuntimeError:
+            pass
+        self.assertIsNone(self.held(self.mem))
+        self.mem.drop_shared = drop
+        self.mem.shared_round()
+        receipts = [c for c in self.net.calls if c[0] == 'mem3' and c[2] == '/shared' and c[3].get('op') == 'dropped' and c[3]['grant'] == grant]
+        self.assertEqual(len(receipts), 1)
+
+    def test_failed_shared_token_unlink_is_retried_even_after_its_account_is_gone(self):
+        self.shared_flag(['mem3'])
+        account = self.held(self.mem)
+        token = Path(self.mem.config['credentials'][account['credential']])
+        self.own.share_stop(FLEET, 'intercom')
+        self.mem.directory(refresh=True)
+        unlink = Path.unlink
+        def busy(path, *args, **kwargs):
+            if path == token:
+                raise OSError('temporary file contention')
+            return unlink(path, *args, **kwargs)
+        with patch.object(Path, 'unlink', busy):
+            try:
+                self.mem.shared_round()
+            except OSError:
+                pass
+        self.assertIsNone(self.held(self.mem))
+        self.assertTrue(token.exists())
+        self.mem.shared_round()
+        self.assertFalse(token.exists())
+
+    def test_pending_cleanup_preserves_a_replacement_grant_at_the_same_account_and_path(self):
+        self.shared_flag(['mem3'])
+        account = self.held(self.mem)
+        token = Path(self.mem.config['credentials'][account['credential']])
+        self.own.share_stop(FLEET, 'intercom')
+        self.mem.directory(refresh=True)
+        with patch.object(self.mem, 'drop_shared', side_effect=OSError('not ready')):
+            self.mem.shared_round()
+        replacement = 'f' * 32
+        def changed(config):
+            next(a for a in config['accounts'] if a['id'] == account['id'])['shared']['grant'] = replacement
+            return True
+        self.mem._save(changed)
+        token.write_text('fixture-replacement-token\n')
+        self.mem._ack_drops()
+        self.assertEqual(self.held(self.mem)['shared']['grant'], replacement)
+        self.assertEqual(token.read_text(), 'fixture-replacement-token\n')
+
+    def test_drop_received_resumes_file_cleanup_after_configuration_was_saved(self):
+        self.shared_flag(['mem3'])
+        account = self.held(self.mem)
+        token = Path(self.mem.config['credentials'][account['credential']])
+        unlink = Path.unlink
+        def busy(path, *args, **kwargs):
+            if path == token:
+                raise OSError('temporary file contention')
+            return unlink(path, *args, **kwargs)
+        with patch.object(Path, 'unlink', busy):
+            self.mem.drop_received()
+        self.assertIsNone(self.held(self.mem))
+        self.assertTrue(token.exists())
+        self.mem.drop_received()
+        self.assertFalse(token.exists())
+
+    def test_dropping_one_account_keeps_a_token_still_used_by_another(self):
+        self.shared_flag(['mem3'])
+        account = self.held(self.mem)
+        token = Path(self.mem.config['credentials'][account['credential']])
+        def kept(config):
+            config['accounts'].append({**copy.deepcopy(account), 'id': 'another-account'})
+            return True
+        self.mem._save(kept)
+        self.mem.drop_shared([account['id']])
+        self.assertTrue(token.exists())
+        self.assertIn(account['credential'], self.mem.config['credentials'])
 
     # -- leaving, replacing, stale grants
     def test_someone_leaving_asks_for_a_replace_and_the_new_token_goes_to_who_stays(self):

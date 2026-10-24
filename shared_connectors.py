@@ -424,12 +424,7 @@ class SharedConnectors:
             if not share or share.get('grant') != shared.get('grant'):
                 gone.append(a)
         if gone:
-            self.drop_shared([a['id'] for a in gone])
-            # Told to the control plane (op dropped), so the Fleet's admins see "Removed, confirmed" after a stop
-            acks = self.meta('shared_drop_acks', []) or []
-            acks += [{'fleet': a['shared']['fleet'], 'service': a.get('service'), 'grant': a['shared'].get('grant'), 'at': _now()}
-                     for a in gone if a['shared'].get('fleet') in by_id and a['shared'].get('grant')]
-            self.set_meta('shared_drop_acks', acks[-20:])
+            self._queue_drops(gone, by_id)
         for a in self.config.get('accounts', []):  # an origin account of a Fleet that stopped sharing is plain again
             shared = a.get('shared')
             if isinstance(shared, dict) and shared.get('origin'):
@@ -438,11 +433,53 @@ class SharedConnectors:
                 if group and not share:
                     self._save(lambda config, aid=a['id']: self._mark(config, aid, None))
 
+    def _queue_drops(self, accounts, groups):
+        # Keep the cleanup and receipt before changing configuration. Otherwise a restart after removing the
+        # account loses both its token path and the evidence needed to confirm removal to the Fleet.
+        acks = self.meta('shared_drop_acks', []) or []
+        for account in accounts:
+            shared = account['shared']
+            key = (shared.get('fleet'), account.get('service'), shared.get('grant'))
+            ack = next((x for x in acks if (x.get('fleet'), x.get('service'), x.get('grant')) == key), None)
+            if ack is None:
+                ack = dict(zip(('fleet', 'service', 'grant'), key), at=_now(), accounts=[], files=[], notify=key[0] in groups and bool(key[2]))
+                acks.append(ack)
+            ack.setdefault('accounts', [])
+            ack.setdefault('files', [])
+            if not groups:
+                ack['notify'] = False
+            if account['id'] not in ack['accounts']:
+                ack['accounts'].append(account['id'])
+            path = (self.config.get('credentials') or {}).get(account.get('credential'))
+            if path and path not in ack['files']:
+                ack['files'].append(path)
+        self.set_meta('shared_drop_acks', acks)
+
     def _ack_drops(self):
         """Says which shared tokens this Machine deleted; one that doesn't reach the control plane goes again next
         round, for a week at most."""
         left = []
         for ack in self.meta('shared_drop_acks', []) or []:
+            if 'accounts' in ack:
+                try:
+                    # A replacement grant can reuse an account id and token path. Never remove that newer grant.
+                    ids = [a['id'] for a in self.config.get('accounts', []) if a['id'] in ack['accounts']
+                           and isinstance(a.get('shared'), dict) and not a['shared'].get('origin')
+                           and (a['shared'].get('fleet'), a.get('service'), a['shared'].get('grant')) == (ack['fleet'], ack['service'], ack['grant'])]
+                    if ids:
+                        self.drop_shared(ids)
+                    used = {Path(p).expanduser() for a in self.config.get('accounts', [])
+                            if (p := (self.config.get('credentials') or {}).get(a.get('credential')))}
+                    for p in ack.get('files') or []:
+                        path = Path(p).expanduser()
+                        if path not in used:
+                            path.unlink(missing_ok=True)
+                except Exception as error:
+                    left.append(ack)
+                    LOG.warning('shared token cleanup pending error=%s', type(error).__name__)
+                    continue
+            if not ack.get('notify', True):
+                continue
             if _age(ack.get('at')) > 7 * 86400:
                 continue
             try:
@@ -457,7 +494,8 @@ class SharedConnectors:
         """The shared accounts this Machine was sent (not one it shares itself), all of them: no Fleet to hold them for."""
         ids = [a['id'] for a in self.config.get('accounts', []) if isinstance(a.get('shared'), dict) and not a['shared'].get('origin')]
         if ids:
-            self.drop_shared(ids)
+            self._queue_drops([a for a in self.config.get('accounts', []) if a.get('id') in ids], {})
+        self._ack_drops()  # finishes a prior cleanup too, even when its account is already gone
         return ids
 
     def drop_shared(self, ids):
@@ -473,8 +511,10 @@ class SharedConnectors:
                 (config.get('credentials') or {}).pop(name, None)
             return True
         self._save(change)
+        used = {Path(p).expanduser() for a in self.config.get('accounts', [])
+                if (p := (self.config.get('credentials') or {}).get(a.get('credential')))}
         for path in files:
-            if path:
+            if path and Path(path).expanduser() not in used:
                 Path(path).expanduser().unlink(missing_ok=True)
         LOG.info('shared connectors dropped count=%s', len(ids))
 

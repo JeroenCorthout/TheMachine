@@ -328,10 +328,12 @@ def merge_orgs(db, node_id, into=None, website=None, now=None):
         notes = [n for n in (kept.get('notes'), added.get('notes')) if n]
         if notes:
             merged['notes'] = '\n\n'.join(dict.fromkeys(notes))[:4000]
+        undo['after_edits'] = merged
         db.execute('INSERT OR REPLACE INTO org_edits(domain,fields,updated_at) VALUES(?,?,?)', (key(target), json.dumps(merged), now))
     if name_kept:
         was = db.execute('SELECT name FROM graph_names WHERE node_id=?', (target,)).fetchone()
         undo['name'] = was['name'] if was else ''
+        undo['after_name'] = name_kept
         db.execute('INSERT OR REPLACE INTO graph_names(node_id,name,created_at) VALUES(?,?,?)', (target, name_kept, now))
     pair = tuple(sorted((alias, target)))
     if db.execute('DELETE FROM org_apart WHERE a=? AND b=?', pair).rowcount:
@@ -359,12 +361,16 @@ def split_org(db, alias, now=None):
         marks = ','.join('?' * len(undo['projects']))
         db.execute(f'UPDATE projects SET org=? WHERE org=? AND id IN ({marks})', (alias_domain, target_domain, *undo['projects']))
     key = target if target.startswith('org:named:') else target[4:]
-    if undo.get('edits') is not None:
+    current = db.execute('SELECT fields FROM org_edits WHERE domain=?', (key,)).fetchone()
+    # Splitting remains available, but it must not restore an old snapshot over a later correction. Older merges
+    # without an exact post-merge value keep their current fields too.
+    if undo.get('edits') is not None and 'after_edits' in undo and current and json.loads(current['fields']) == undo['after_edits']:
         if undo['edits']:
             db.execute('INSERT OR REPLACE INTO org_edits(domain,fields,updated_at) VALUES(?,?,?)', (key, undo['edits'], now))
         else:
             db.execute('DELETE FROM org_edits WHERE domain=?', (key,))
-    if undo.get('name') is not None:
+    current_name = db.execute('SELECT name FROM graph_names WHERE node_id=?', (target,)).fetchone()
+    if undo.get('name') is not None and 'after_name' in undo and current_name and current_name['name'] == undo['after_name']:
         if undo['name']:
             db.execute('INSERT OR REPLACE INTO graph_names(node_id,name,created_at) VALUES(?,?,?)', (target, undo['name'], now))
         else:
