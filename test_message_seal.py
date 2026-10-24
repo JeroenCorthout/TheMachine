@@ -185,6 +185,24 @@ class Protected(unittest.TestCase):
             pass
         self.assertEqual(sqlite3.connect(self.path).execute("SELECT count(*) FROM network_replies WHERE typeof(body)='blob'").fetchone()[0], 2)
 
+    def test_a_reviews_board_check_answer_is_sealed_also_when_written_before(self):
+        store = assistant.Store(self.path, protect=True)
+        import graph
+        with store.connect() as db:
+            graph.ensure(db)
+            db.execute("INSERT OR REPLACE INTO board_offers(id,run_id,offered_at) VALUES(1,'r1','2026-10-24T00:00:00+00:00')")
+            graph.board_check_answer(db, 'r1', f'none: {CANARY} is a one-off')
+        self.assertNotIn(CANARY.encode(), files(self.path))
+        with sqlite3.connect(self.path) as raw:  # an answer written before the column was sealed
+            raw.execute('DROP TRIGGER mc_board_offers_answer_update')
+            raw.execute('UPDATE board_offers SET answer=?', (f'none: {CANARY} in the clear',))
+        with store.connect() as db:
+            self.assertEqual(db.execute('SELECT answer FROM board_offers').fetchone()[0], f'none: {CANARY} in the clear')
+        with store.connect():
+            pass
+        self.assertEqual(sqlite3.connect(self.path).execute("SELECT typeof(answer) FROM board_offers").fetchone()[0], 'blob')
+        self.assertEqual(store.boards_text('r2'), '')  # still counts as answered today
+
     def test_a_phone_notification_waits_sealed_and_arrives_readable(self):
         store = assistant.Store(self.path, protect=True)
         account = {'id': 'phone', 'service': 'android'}
