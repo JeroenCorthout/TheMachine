@@ -95,7 +95,7 @@ try{
  await page.locator('#people-view article[data-node="email:lee@globex.example"] button.node').click();
  const menu=page.locator('.graph-detail .person-menu');
  await menu.locator('summary').click();
- assert.deepEqual(await menu.locator('[role=menuitem]').allTextContents(),['New project','Delete permanently…']);
+ assert.deepEqual(await menu.locator('[role=menuitem]').allTextContents(),['New project','New card','Same person as…','Delete permanently…']);
  if(process.env.SHOT_DIR)await page.screenshot({path:`${process.env.SHOT_DIR}/menu-390-light.png`});
  await menu.locator('[data-person-delete]').click();
  const ask=page.locator('.person-delete-confirm');

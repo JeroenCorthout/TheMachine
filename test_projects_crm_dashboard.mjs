@@ -69,7 +69,7 @@ try{
   await page.locator('#project-form [name="org"]').fill('hazelbrook.example');await shot(page,'crm-new-1440',false);
   await page.locator('#project-form button.primary').click();await dialog(page).waitFor({state:'detached'});
   assert.deepEqual(calls.map(c=>c.action),['project_save']);
-  assert.deepEqual(calls[0].args,{name:'Hazelbrook',board_id:1,stage:'Discovery',org:'hazelbrook.example',value:'8000',notes:'',people:['person:b']});
+  assert.deepEqual(calls[0].args,{name:'Hazelbrook',board_id:1,stage:'Discovery',org:'hazelbrook.example',value:'8000',close_date:'',notes:'',people:['person:b']});
   await page.locator('.tile[data-node="project:50"]').waitFor();await page.waitForLoadState('networkidle');
   // A lane's + Add picks that stage; switching board picks its first stage; Cancel posts nothing
   calls=[];await page.locator('.lane[data-lane="Trial"] .lane-add').click();await dialog(page).waitFor();
@@ -126,8 +126,8 @@ try{
   // New project on a phone: the sheet fits
   await page.locator('.board-head [data-proj-new]').click();await dialog(page).waitFor();await fits(page,w+' dialog');await shot(page,`crm-new-${w}-${scheme}`,false);
   await page.locator('#project-form [data-pj-close]').first().click();
-  // The list has its own New project on a phone
-  await page.evaluate(()=>projectsViewSet('list'));assert.ok(await page.locator('.proj-list .proj-new button').isVisible());
+  // The list has its own New project in the page head on a phone
+  await page.evaluate(()=>projectsViewSet('list'));assert.ok(await page.locator('.head-new[data-graph-new="project"]').isVisible());
   await context.close()}}
  assert.deepEqual(errors,[]);
  console.log('projects crm dashboard ok');

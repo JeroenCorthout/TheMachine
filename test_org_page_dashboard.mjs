@@ -68,7 +68,7 @@ try{
   const form=card.locator('.org-form');await form.waitFor();
   assert.ok(await card.locator('[data-org-save]').isVisible()&&!(await card.locator('[data-org-edit]').isVisible()));
   assert.ok(!(await card.locator('.person-view').isVisible()),'the read view steps aside while editing');
-  assert.deepEqual(await form.locator('legend').allTextContents(),['Profile','Contact','About you']);
+  assert.deepEqual(await form.locator('legend').allTextContents(),['Profile','Contact','Notes','About you']);
   for(const i of await form.locator('input').all()){const h=await i.evaluate(e=>e.getBoundingClientRect().height);assert.ok(h>=36&&h<=46,'compact fields at '+tag+': '+h)}
   if(width>=1000)assert.ok(await form.locator('[name=founded]').evaluate(e=>e.getBoundingClientRect().width)<=160,'a year field fits a year');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no sideways scroll while editing at '+tag);

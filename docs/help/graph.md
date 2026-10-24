@@ -18,6 +18,18 @@ Everyone you're in touch with, closest first. A person's page starts with their 
 
 Someone's addresses and chats are joined by themselves when it's clear they're one person, like a work email with their own address in CC.
 
+The **Work** and **Personal** tabs list only those contacts. **Download CSV**, under the order menu, saves the tab you're on as a spreadsheet, also for Organisations and Projects.
+
+## Add someone or an organisation
+
+**New person** at the top of People, **New organisation** at the top of Organisations, or **+** in the top bar on a phone. Give a name, and for a person an email and organisation if you have them; for an organisation, its website. When someone like it is already in your Graph, the form shows them first, so you can open that one instead. **Add** opens the new page.
+
+Someone you add stays, also with no messages yet. Their first message joins them. An organisation you added can be deleted from its **⋯** menu while nobody is in it.
+
+## Notes
+
+**Edit** on a person's or organisation's page has a **Notes** field, for anything you want to remember. Notes show on the page and stay through merges.
+
 ## Edit someone
 
 **Edit**, at the top of their page, changes their name, title, organisation, location, LinkedIn, phones and emails, what they are to you, and Work or Personal. **Save** keeps it, **Cancel** leaves it as it was.
@@ -31,6 +43,8 @@ When two people might be one, their page asks if they are the same person, and P
 **Merge all** merges every pair in the list at once, except the ones you marked **Not the same**. **Undo** right after splits them all again.
 
 A joined person's page lists why under **Joined from**. **Undo** splits them again.
+
+To join two people yourself, open one of them, then **⋯**, **Same person as…** and pick the other.
 
 ## Job title and photo
 
@@ -52,7 +66,7 @@ Roles your Machine read in your messages, waiting for your word. **✓ Right** c
 
 Companies, from the addresses and names in your messages. See [Organisation details](organisation-data.md).
 
-An organisation's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you) and the people and projects there. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
+An organisation's page is built like a person's: its logo, name and what it does, one line on how you're in touch, then **Contact** (its website and LinkedIn), **About you** (what it is to you), the people and projects there and the recent messages with its people. **Edit** at the top changes its details and what it is to you. **Ask the Fleet who knows** it finds a way in through your Fleet.
 
 Mail from email warm-up tools is kept out, under "Hidden as warm-up", with **Undo** per domain.
 
@@ -62,7 +76,7 @@ Named by your Machine from what your messages are about. Signals that look like 
 
 Or run them by hand, like deals in a CRM:
 
-- **New project**: at the top of a board, **+ Add** under a stage, in the list, or from a person's or organisation's page. Give it a name, a board and stage, an organisation, a value, people and notes.
+- **New project**: at the top of a board, **+ Add** under a stage, **New project** at the top of the list, **+** in the top bar on a phone, or from a person's or organisation's page. Give it a name, a board and stage, an organisation (its website or name), a value, an expected close date, people and notes. Projects already in your Graph with a name like it show first.
 - **Edit** on a project's page, or **Edit** in a card's **⋯** on the board (or press E on a card). It changes all of the above.
 - **Won** or **Lost**, with why. Won moves it to the board's last stage, Lost to Stalled or declined. **Reopen** undoes it.
 - **Archive** takes it off the board and lists; a new message about it brings it back. **Delete** removes it for good; its messages and people stay.
@@ -73,6 +87,10 @@ Or run them by hand, like deals in a CRM:
 Projects of one kind in stages, like an evaluation pipeline. **⋯** on a board: **Edit board** (name, stages, which projects belong), **Open on this board** and **New board**. Reviews keep adding projects that fit and place them in a stage. When they aren't sure, the board shows "2 projects could belong here": **Add** or **Leave out**.
 
 A new board, or a suggested board you save, looks through your whole history once. It finds projects and organisations that fit, makes one project per organisation and puts each in a stage. The header says "Looking through your history…" while it works, then how many it added and how many wait for you to review. An Only-you board keeps what it finds to you.
+
+## A card about someone
+
+**New card** in the **⋯** menu of a person, organisation or project starts a card about them.
 
 ## What it knows about someone
 
