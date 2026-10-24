@@ -239,11 +239,16 @@ def event(account, raw, helpers):
     said = [p for p in parts if p.get('part_type') in ('comment', 'open') and isinstance(p.get('author'), dict)]
     last = max(said, key=lambda p: (p.get('created_at') or 0, str(p.get('id', ''))))['author'] if said else (source.get('author') or {})
     app = REGIONS.get(account.get('region') or 'us', REGIONS['us'])[1]
+    # The customer: who opened it, or, when Intercom's Operator bot or a teammate did, the first customer who wrote in it.
+    people = [source.get('author') or {}] + [p.get('author') for p in sorted(parts, key=lambda p: (p.get('created_at') or 0, str(p.get('id', ''))))]
+    customer = next((a for a in people if isinstance(a, dict) and a.get('type') in ('user', 'lead', 'contact') and '@' in str(a.get('email') or '')), {})
     metadata = {'conversation_id': cid, 'state': raw.get('state'), 'open': raw.get('open'), 'priority': raw.get('priority'),
                 'admin_assignee_id': raw.get('admin_assignee_id'), 'team_assignee_id': raw.get('team_assignee_id'),
                 'created_at': raw.get('created_at'), 'updated_at': raw['updated_at'],
                 'from': str((source.get('author') or {}).get('email') or ''),
                 'from_name': ' '.join(str((source.get('author') or {}).get('name') or '').split())[:100],
+                'contact_email': str(customer.get('email') or '').lower(),
+                'contact_name': ' '.join(str(customer.get('name') or '').split())[:100],
                 'last_author_type': str(last.get('type') or '') if isinstance(last, dict) else '', 'parts_returned': len(parts),
                 'parts_reported': reported, 'truncated': truncated, 'source_redacted': bool(source.get('redacted')),
                 'source_url': f"{app}/a/inbox/{account['workspace_id']}/inbox/shared/all/conversation/{cid}"}

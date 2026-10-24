@@ -101,7 +101,7 @@ FLOOR = 0.01            # faded below this: not stored
 HORIZON_DAYS = 400      # older signals have faded far below the floor anyway
 EVENTS_PER_NODE = 40
 BULK_LABELS = {'CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS', 'CATEGORY_UPDATES'}
-BULK = re.compile(r'(?:^|[._+-])(?:no-?reply|do-?not-?reply|notifications?|notify|newsletters?|news|mailer-daemon|mailer|bounces?|postmaster|'
+BULK = re.compile(r'(?:^|[._+-])(?:no[._-]?reply|do[._-]?not[._-]?reply|notifications?|notify|newsletters?|news|mailer-daemon|mailer|bounces?|postmaster|'
                   r'marketing|digest|alerts?|automated|receipts?|invoices?|billing)(?:[._+-]|@)|@(?:[\w-]+\.)*(?:mcsv\.net|mcdlv\.net|'
                   r'sendgrid\.net|amazonses\.com|mailgun\.org|bounces?\.[\w.-]+|calendar\.google\.com|resource\.calendar\.google\.com)$', re.I)
 FREEMAIL = {'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.be', 'outlook.com', 'outlook.be', 'live.com', 'live.be', 'msn.com',
@@ -191,6 +191,21 @@ def bulk(address):
     return bool(BULK.search(address))
 
 
+# System and relay addresses: never a person, also not when the owner wrote to one (a reply through Intercom goes to a
+# relay). Intercom's Operator bot and its reply relays, GitHub's noreply and reply addresses, reply+token relays of
+# feedback and ticket tools, and the notification senders of Slack, Google Calendar and GitHub.
+RELAY = re.compile(r'^operator\+[^@]*@intercom\.io$|@(?:[\w-]+\.)*intercom-mail\.(?:com|eu|io)$'
+                   r'|@(?:[\w-]+\.)*(?:no-?reply|reply)\.github\.com$|@(?:[\w-]+\.)*no-?reply\.[\w-]+(?:\.[\w-]+)+$'
+                   r'|^(?:reply|replies)[+=][^@]+@'
+                   r'|(?:^|[._+-])(?:no[._-]?reply|do[._-]?not[._-]?reply|notifications?)(?:[._+-]|@)'
+                   r'|^(?:calendar-notification|calendar-server|notify|feedback|bot)@(?:[\w-]+\.)*(?:google|slack|github)\.com$', re.I)
+
+
+def relay(address):
+    """A system or relay address: never a person, whoever wrote to it."""
+    return bool(RELAY.search(str(address or '').lower()))
+
+
 DOMAIN_NAME = re.compile(r'[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}')  # "HelloTV.nl": a sender's domain, not a person's name
 SUFFIX = re.compile(r'\s+(?:[|/\-–—•·:@]|via|from|at|for)\s+.*$')
 DEGREE = re.compile(r'^(?:[A-Z]{2,6}|Ph\.?D\.?|MSc|BSc|Jr\.?|Sr\.?)$')
@@ -230,7 +245,19 @@ def plain_name(name):
 
 def touches(kind, m, owner, wrote_to):
     """[(identifier, name, weight, role)] for one signal. Roles: 'owner' (the owner wrote to them),
-    'them' (they wrote to the owner directly), 'met' (a meeting with the owner), 'seen' (present)."""
+    'them' (they wrote to the owner directly), 'met' (a meeting with the owner), 'seen' (present).
+    A system or relay address is never one of them."""
+    return [t for t in _touches(kind, relayed(kind, m), owner, wrote_to) if not (t[0].startswith('email:') and relay(t[0][6:]))]
+
+
+def relayed(kind, m):
+    """The signal as its real sender wrote it: an Intercom conversation its Operator bot opened names the customer."""
+    if kind == 'intercom.conversation' and m.get('contact_email') and relay(next((a for _, a in addresses(m.get('from'))), '')):
+        return {**m, 'from': m['contact_email'], 'from_name': m.get('contact_name') or ''}
+    return m
+
+
+def _touches(kind, m, owner, wrote_to):
     if kind == 'gmail.message':
         labels = set(m.get('labels') or ())
         if labels & {'SPAM', 'TRASH'}:
@@ -238,8 +265,8 @@ def touches(kind, m, owner, wrote_to):
         sender = addresses(m.get('from'))[:1]
         to, cc = addresses(m.get('to')), addresses(m.get('cc'))
         if 'SENT' in labels or (sender and sender[0][1] in owner.emails):
-            to = [(n, a) for n, a in to if not owner.mine(a)]
-            cc = [(n, a) for n, a in cc if not owner.mine(a)]
+            to = [(n, a) for n, a in to if not owner.mine(a) and not relay(a)]
+            cc = [(n, a) for n, a in cc if not owner.mine(a) and not relay(a)]
             count = len(to) + len(cc)
             if not count or count > 20:
                 return []  # a note to self, or a mass mailing
@@ -683,8 +710,8 @@ def _build(db, config, now):
                 if isinstance(c, dict) and '@' in str(c.get('email') or ''):
                     appears['email:' + str(c['email']).lower()].add('a Salesflare contact' + (' at ' + str(crm['name']) if crm and crm.get('name') else ''))
         elif kind in ('stripe.event', 'intercom.conversation'):
-            for _, addr in addresses(m.get('from'))[:1]:
-                if addr.rsplit('@', 1)[1] in owner.domains:
+            for _, addr in addresses(relayed(kind, m).get('from'))[:1]:
+                if addr.rsplit('@', 1)[1] in owner.domains or relay(addr):
                     continue  # a teammate answering support or sending an invoice
                 appears['email:' + addr].add(('billed through Stripe' + (' as ' + str(m['customer_name']) if m.get('customer_name') else ''))
                                              if kind == 'stripe.event' else 'wrote to support (Intercom)')
