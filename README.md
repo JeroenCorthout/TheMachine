@@ -206,3 +206,7 @@ Microsoft access and folder caches are isolated by account, connection and crede
 ## Google sign-in recovery
 
 After an expired Google sign-in, use the exact reconnect command shown on Connections, on the computer that runs this collector. It pins the account/client and the same gog file keyring used by the service. The collector watches the renewed token every 15 seconds during authentication backoff; it does not sleep through the retry hour first. Ordinary throttling/network backoff remains unchanged. A successful committed sync clears the current warning, while the historical failure stays in Recent syncs/Details. Returning to the dashboard or regaining connectivity refreshes it immediately, without replacing an open form or overlapping its periodic status requests.
+
+### Automatic browser recovery
+
+An unresponsive managed browser is restarted only while The Machine holds its exclusive browser lease. If another job is using it, recovery waits for the next sync without consuming its fifteen-minute cooldown. It uses the configured lease helper and leaves the Gateway, attached CDP browsers and real-Chrome extension profiles alone. This adds no owner-approval step.

@@ -444,33 +444,46 @@ BROWSER_DOWN = ('connectovercdp', 'browser request timed out', 'econnrefused', '
 BROWSER_RECOVERED = {}  # profile -> time.monotonic() of the last restart attempt
 
 
-def recover_browser(profile, own_cdp=False):
-    """A read found the OpenClaw browser not answering: start it again, at most once per 15 minutes per profile.
-    Only that browser profile; never the Gateway, and never a browser of the account's own (own_cdp).
-    Returns True when it (re)started the browser."""
-    if own_cdp or time.monotonic() - BROWSER_RECOVERED.get(profile, -900) < 900:
+def recover_browser(profile, own_cdp=False, config=None):
+    """Restart an unresponsive managed browser under an exclusive lease, at most once per 15 minutes.
+    A busy lease waits for the next sync; external CDP/extension profiles and the Gateway stay untouched."""
+    if own_cdp or profile in ('chrome', 'user') or time.monotonic() - BROWSER_RECOVERED.get(profile, -900) < 900:
         return False
-    BROWSER_RECOVERED[profile] = time.monotonic()
-
-    def browser(*args):
-        return subprocess.run(['openclaw', 'browser', '--browser-profile', profile, *args], capture_output=True, text=True, timeout=90)
+    owner = 'browser-recovery-' + secrets.token_hex(8)
+    lease = [sys.executable, str(browser_lease_script(config))]
     try:
-        status = browser('--json', 'status')
-        state = json.loads(status.stdout) if status.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return False
-    if not isinstance(state, dict):  # the Gateway itself did not answer: not this browser's to fix
-        return False
-    if state.get('running') and state.get('cdpReady') and state.get('cdpHttp'):
-        return False  # it answers again
-    try:
-        if state.get('running'):
-            browser('stop')
-        started = browser('start').returncode == 0
+        claimed = subprocess.run([*lease, 'claim', '--owner', owner, '--minutes', '5', '--exclusive'],
+                                 capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.SubprocessError):
         return False
-    logging.warning('browser restart profile=%s ok=%s', profile, started)
-    return started
+    if claimed.returncode:
+        return False  # someone else is using it; don't consume the recovery cooldown
+    BROWSER_RECOVERED[profile] = time.monotonic()
+    try:
+        def browser(*args):
+            return subprocess.run(['openclaw', 'browser', '--browser-profile', profile, *args], capture_output=True, text=True, timeout=90)
+        try:
+            status = browser('--json', 'status')
+            state = json.loads(status.stdout) if status.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return False
+        if not isinstance(state, dict):
+            return False  # the Gateway did not answer: not this browser's to fix
+        if state.get('running') and state.get('cdpReady') and state.get('cdpHttp'):
+            return False
+        try:
+            if state.get('running'):
+                browser('stop')
+            started = browser('start').returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+        logging.warning('browser restart profile=%s ok=%s', profile, started)
+        return started
+    finally:
+        try:
+            subprocess.run([*lease, 'release', '--owner', owner], capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            pass  # the five-minute lease expires even if its helper is temporarily unavailable
 
 
 class SourceError(Exception):
@@ -7335,7 +7348,7 @@ def remember_profiles(store, source, offers):
 
 
 CONNECTOR_HELPERS = types.SimpleNamespace(
-    SourceError=SourceError, browser_read_failure=browser_read_failure, recover_browser=lambda profile, own_cdp=False: recover_browser(profile, own_cdp), now=lambda: now(), remember_profiles=lambda store, source, offers: remember_profiles(store, source, offers), credential=lambda config, name: credential(config, name), local_tz=lambda: local_tz(),
+    SourceError=SourceError, browser_read_failure=browser_read_failure, recover_browser=lambda profile, own_cdp=False, config=None: recover_browser(profile, own_cdp, config), now=lambda: now(), remember_profiles=lambda store, source, offers: remember_profiles(store, source, offers), credential=lambda config, name: credential(config, name), local_tz=lambda: local_tz(),
     iso=lambda stamp: dt.datetime.fromtimestamp(stamp, dt.timezone.utc).isoformat())
 _connectors = {}
 

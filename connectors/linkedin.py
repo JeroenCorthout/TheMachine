@@ -64,7 +64,7 @@ class Source:
             code = self.helpers.browser_read_failure('linkedin', result.stderr)
             if code.endswith('_browser_unreachable'):  # the browser crashed or hung: start it again, retry soon
                 env = browser_env(self.account) or os.environ
-                self.helpers.recover_browser(env.get('LINKEDIN_INBOX_BROWSER_PROFILE') or 'openclaw', own_cdp=bool(env.get('LINKEDIN_INBOX_BROWSER_CDP')))
+                self.helpers.recover_browser(env.get('LINKEDIN_INBOX_BROWSER_PROFILE') or 'openclaw', own_cdp=bool(env.get('LINKEDIN_INBOX_BROWSER_CDP')), config=self.config)
                 raise SourceError(code, retry_after=300)
             raise SourceError(code, retry_after=900)
         try:

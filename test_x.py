@@ -532,7 +532,7 @@ class BrowserDown(unittest.TestCase):
             with self.assertRaises(a.SourceError) as e:
                 x.Source({'x_inbox': '/bin/x-inbox-test'}, ACCOUNT, helpers).page(5, {})
         self.assertEqual((str(e.exception), e.exception.retry_after), ('x_browser_unreachable', 300))
-        recover.assert_called_once_with('openclaw', own_cdp=False)
+        recover.assert_called_once_with('openclaw', own_cdp=False, config={'x_inbox': '/bin/x-inbox-test'})
         self.assertEqual(a.browser_read_failure('linkedin', 'browser command failed: Error: browser request timed out'),
                          'linkedin_browser_unreachable')
         self.assertEqual(a.browser_read_failure('x', 'browser command failed: private title'), 'x_browser_failed')
@@ -541,6 +541,8 @@ class BrowserDown(unittest.TestCase):
         calls = []
 
         def fake(cmd, **kw):
+            if cmd[0] != 'openclaw':  # the exclusive lease is tested separately
+                return subprocess.CompletedProcess(cmd, 0, '', '')
             calls.append(cmd[4:])
             if cmd[4:] == ['--json', 'status']:
                 return subprocess.CompletedProcess(cmd, 0 if status else 1, json.dumps(status or {}), '')

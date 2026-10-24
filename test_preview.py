@@ -59,7 +59,8 @@ class Preview(unittest.TestCase):
         self.assertEqual(self.app.review_step(runner), 'admitted')
         start = runner.requests[0]
         self.assertEqual((start['kind'], start['action'], start['job_id']), ('review', 'start', run_id))
-        self.assertEqual(start['message'], a.review_prompt(run_id, ['work'], self.store.preference_summary(), self.store.facts_text()))
+        self.assertEqual(start['message'], a.review_prompt(run_id, ['work'], self.store.preference_summary(), self.store.facts_text(),
+                                                                    sources=a.source_notes(a.account_services(self.app.config, ['work']))))
         self.assertEqual(self.app.review_step(runner), 'pending')
         self.assertEqual(self.app.review_step(runner), 'ok')
         self.assertEqual(self.runs()[0]['status'], 'ok')
