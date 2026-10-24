@@ -4927,7 +4927,7 @@ async function pjOpen(o={}){try{await pjData();
  else{const shown=boardNow(),here=shown&&!shown.team&&graphMineBoards.some(x=>x.id===shown.id)?shown.id:graphMineBoards[0]?.id;
   pj={node_id:'',name:'',board_id:o.board??here??null,stage:o.stage||'',org:o.org||'',value:null,notes:'',people:o.person?[o.person]:[],mode:'new'}}
  pjDraw();const d=$('#project-dialog');if(!d.open)d.showModal();pjFocus(pj.mode==='won'||pj.mode==='lost'?'[name="reason"]':pj.mode==='delete'?'[data-pj-delete]':'[name="name"]')}catch(err){toast(err.message,true)}}
-const pjFocus=sel=>requestAnimationFrame(()=>$('#project-form').querySelector(sel)?.focus());
+const pjFocus=sel=>$('#project-form').querySelector(sel)?.focus();  /* at once: a later focus would take the field the owner went on to */
 const pjHead=t=>`<div class="snooze-heading"><h2 id="project-dialog-title">${esc(t)}</h2><button type="button" data-pj-close aria-label="Close">×</button></div>`;
 const pjErr='<p class="ed-note warn" data-pj-error role="alert" hidden></p>';
 function pjDraw(){const p=pj,f=$('#project-form'),boards=graphMineBoards||[],b=boards.find(x=>String(x.id)===String(p.board_id));
