@@ -1058,6 +1058,19 @@ class Boards(unittest.TestCase):
         prompt = a.review_prompt('run1', ['work'], boards=text)
         self.assertIn('one project per counterpart', prompt)
         self.assertIn('"only_you" for sensitive work', prompt)
+        self.assertIn('"split": [', prompt)
+        # One call names one project per counterpart, with one graph build: a loop of single calls ran out of time
+        builds = []
+        self.app.graph_build = lambda *a, **k: builds.append(1)
+        done = self.app.action('graph', {'split': [{'project': f'Company sale: {n}', 'event_ids': [e]} for n, e in zip(('Northwind', 'Contoso', 'Fabrikam'), events)]})
+        self.assertEqual(done, {'split': [{'project': f'Company sale: {n}', 'events': 1} for n in ('Northwind', 'Contoso', 'Fabrikam')], 'changed': True})
+        self.assertEqual(len(builds), 1)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM projects WHERE name LIKE 'Company sale: %'").fetchone()[0], 3)
+        with self.assertRaises(ValueError):  # all or nothing: a missing event names none of them
+            self.app.action('graph', {'split': [{'project': 'Company sale: Litware', 'event_ids': [events[0]]}, {'project': 'Company sale: Tailspin', 'event_ids': [999999]}]})
+        with self.store.connect() as db:
+            self.assertFalse(db.execute("SELECT 1 FROM projects WHERE name='Company sale: Litware'").fetchone())
 
     def test_editing_stages_renames_moves_to_the_nearest_earlier_stage_and_deleting_keeps_projects(self):
         asked, agreed, later = self.mails()

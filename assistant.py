@@ -10382,7 +10382,7 @@ def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promis
 ''' + (f'''Boards to sort, before anything else (separate from the batch: these projects need no new message). The owner put these projects on a board and their tiles say "Sorting" until you place them. For each, read its messages with events (its event_ids below, all accounts) and judge where it stands now from what they mean between these people, never their wording. Place it with graph {{"project": its node_id, "board", "stage", "event_id": the message that shows it, "reason": one short clause that reads after "Moved to <stage>:" (like "Demo held on Thu, they asked for pricing"), "next": the owner's next step in a few words}}. When nothing has moved it past the first stage, place it in the first stage the same way, with the message and why. Only when none of its messages shows where it stands, add it to finish_analysis sorted ([{{"project": its node_id, "why": a few words}}]). finish_analysis refuses until each one is placed or in sorted.
 {sorting}
 
-''' if sorting else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a CRM or partner listing, a customer onboarding, a possible buyer or investor, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. A project whose messages are with several organisations in the same kind of work (several possible buyers in one acquisition project, several partners in one listings project) is really one project per counterpart: first name one per organisation with graph {{"project": "<the work>: <organisation>", "event_ids": its message ids below}}. Then suggest a board with graph suggest_board, as in Boards below, for every clear group of three or more of the same kind of work, each with its own counterpart: several boards when there are several clear groups (up to three), never one only because names look alike. Give each its visibility: "only_you" for sensitive work (M&A, buyers, investors, legal, health, hiring a named person: its board, projects and messages never reach the team), "team" for customer, partner and other pipelines the team works on. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
+''' if sorting else '') + (f'''Two tasks in this turn. First, boards to suggest (once a day, separate from the batch: it is about the whole list below, not about this batch's signals, and needs no new message). These are the owner's open projects on no board, with the people they're with. Sort them by the kind of work each one is (a sale, a CRM or partner listing, a customer onboarding, a possible buyer or investor, a hire, a support case, an evaluation, a personal errand…), judged from what the project is, not the words in its name; open one with graph and its node_id when unsure. A project whose messages are with several organisations in the same kind of work (several possible buyers in one acquisition project, several partners in one listings project) is really one project per counterpart: first name one per organisation, all in one call: graph {{"split": [{{"project": "<the work>: <organisation>", "event_ids": its message ids below}}, …]}} (up to 40). Then suggest a board with graph suggest_board, as in Boards below, for every clear group of three or more of the same kind of work, each with its own counterpart: several boards when there are several clear groups (up to three), never one only because names look alike. Give each its visibility: "only_you" for sensitive work (M&A, buyers, investors, legal, health, hiring a named person: its board, projects and messages never reach the team), "team" for customer, partner and other pipelines the team works on. Then answer in finish_analysis: boards "suggested", or "none: <the kinds you found, with how many of each>" when no kind has three.
 {boards}
 
 Second, the signal review.
@@ -14611,6 +14611,18 @@ class App:
                     raise ValueError('Every event must exist and be live')
                 graph.label(db, args['event_ids'], args['project'], 'agent', now())
                 changed = True
+            if args.get('split'):  # several projects named at once (one per counterpart), with one graph build after
+                parts = args['split']
+                if not isinstance(parts, list) or not 1 <= len(parts) <= 40 or not all(
+                        isinstance(x, dict) and str(x.get('project') or '').strip() and isinstance(x.get('event_ids'), list) and x['event_ids'] for x in parts):
+                    raise ValueError('split takes 1 to 40 of {"project": name, "event_ids": [ids]}')
+                ids = {int(i) for x in parts for i in x['event_ids']}
+                if db.execute(f"SELECT count(*) FROM events WHERE deleted=0 AND id IN ({','.join('?' * len(ids))})", list(ids)).fetchone()[0] != len(ids):
+                    raise ValueError('Every event must exist and be live')
+                for x in parts:
+                    graph.label(db, [int(i) for i in x['event_ids']], str(x['project']).strip(), 'agent', now())
+                split = [{'project': str(x['project']).strip(), 'events': len(x['event_ids'])} for x in parts]
+                changed = True
             if args.get('project') and (args.get('stage') or args.get('board')):
                 said = graph.set_stage(db, args['project'], args.get('stage'), 'agent', now(), board=args.get('board'), stages=args.get('stages'),
                                        reason=args.get('reason'), event_id=args.get('event_id'), next_step=args.get('next'), org=args.get('org'))
@@ -14644,6 +14656,8 @@ class App:
                 changed = changed or 'kept' not in said
         if changed:
             self.graph_build()
+        if args.get('split'):
+            return {'split': split, 'changed': True}
         limit = min(int(args.get('limit') or 12), 30)
         with self.store.connect() as db:
             marks = self.graph_fleet_marks(db)
