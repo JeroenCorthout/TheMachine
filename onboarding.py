@@ -108,6 +108,8 @@ HINTS = (
     ('android', 'the OpenClaw Gateway could not reach the phone'),
     ('x_browser_busy', 'the OpenClaw browser was busy; it retries by itself'),
     ('linkedin_browser_busy', 'the OpenClaw browser was busy; it retries by itself'),
+    ('x_browser_unreachable', 'the OpenClaw browser stopped answering; it restarts it and retries by itself'),
+    ('linkedin_browser_unreachable', 'the OpenClaw browser stopped answering; it restarts it and retries by itself'),
     ('network:', 'a network error; it retries by itself'),
     ('timeout', 'the source was slow to answer; it retries by itself'),
 )

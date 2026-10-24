@@ -7,10 +7,11 @@ import json
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 import uuid
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import next_actions as n
 import test_ux as ux
 sys.path.insert(0, str(Path(__file__).parent / 'integrations'))
@@ -514,3 +515,50 @@ class XInboxSend(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BrowserDown(unittest.TestCase):
+    """The shared browser crashed or hung: the read says so (not a vague failure or a sign-in), retries soon and
+    starts that browser again; never the Gateway, at most once per 15 minutes."""
+    def setUp(self):
+        a.BROWSER_RECOVERED.clear()
+        self.addCleanup(a.BROWSER_RECOVERED.clear)
+
+    def test_an_unreachable_browser_is_named_and_restarted(self):
+        recover = MagicMock(return_value=True)
+        helpers = types.SimpleNamespace(**{**vars(H), 'recover_browser': recover})
+        down = subprocess.CompletedProcess([], 2, '', 'x-inbox: browser command failed: Error: browserType.connectOverCDP: Timeout 9000ms exceeded.')
+        with patch.object(a.subprocess, 'run', return_value=down):
+            with self.assertRaises(a.SourceError) as e:
+                x.Source({'x_inbox': '/bin/x-inbox-test'}, ACCOUNT, helpers).page(5, {})
+        self.assertEqual((str(e.exception), e.exception.retry_after), ('x_browser_unreachable', 300))
+        recover.assert_called_once_with('openclaw', own_cdp=False)
+        self.assertEqual(a.browser_read_failure('linkedin', 'browser command failed: Error: browser request timed out'),
+                         'linkedin_browser_unreachable')
+        self.assertEqual(a.browser_read_failure('x', 'browser command failed: private title'), 'x_browser_failed')
+
+    def run_recover(self, status, own_cdp=False):
+        calls = []
+
+        def fake(cmd, **kw):
+            calls.append(cmd[4:])
+            if cmd[4:] == ['--json', 'status']:
+                return subprocess.CompletedProcess(cmd, 0 if status else 1, json.dumps(status or {}), '')
+            return subprocess.CompletedProcess(cmd, 0, '', '')
+        with patch.object(a.subprocess, 'run', side_effect=fake):
+            done = a.recover_browser('openclaw', own_cdp=own_cdp)
+        return done, calls
+
+    def test_recover_restarts_only_a_hung_or_stopped_browser(self):
+        done, calls = self.run_recover({'running': True, 'cdpReady': False, 'cdpHttp': False})
+        self.assertTrue(done)
+        self.assertEqual(calls, [['--json', 'status'], ['stop'], ['start']])
+        self.assertEqual(self.run_recover({'running': False})[1], [])  # once per 15 minutes
+        a.BROWSER_RECOVERED.clear()
+        self.assertEqual(self.run_recover({'running': False})[1], [['--json', 'status'], ['start']])
+        a.BROWSER_RECOVERED.clear()
+        self.assertEqual(self.run_recover({'running': True, 'cdpReady': True, 'cdpHttp': True}), (False, [['--json', 'status']]))
+        a.BROWSER_RECOVERED.clear()
+        self.assertEqual(self.run_recover(None), (False, [['--json', 'status']]))  # Gateway not answering: leave it
+        a.BROWSER_RECOVERED.clear()
+        self.assertEqual(self.run_recover({'running': False}, own_cdp=True), (False, []))  # an account's own browser

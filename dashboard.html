@@ -1992,6 +1992,7 @@ if(/google_signin_expired/.test(what))return 'Google sign-in for '+(name||'this 
 if(/microsoft_signin_pending|microsoft_broker_busy/.test(v))return 'Microsoft is still setting up access; it retries by itself';
 if(/microsoft_signin_expired/.test(what))return 'Microsoft sign-in for '+(name||'this account')+' expired';
 if(/browser_busy$/.test(what))return 'The browser was busy with another read';
+if(/browser_unreachable$/.test(what))return 'The browser stopped answering; it restarts by itself';
 if(/timeout$/.test(what))return (name||'The source')+' was slow to answer';
 if(/rate_?limit/.test(what))return (name||'The source')+' asked to slow down';
 if(/read_failed$/.test(what))return 'Couldn’t read '+(name||'the source');
