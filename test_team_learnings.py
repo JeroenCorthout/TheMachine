@@ -160,14 +160,14 @@ class TeamLearnings(unittest.TestCase):
     def test_logs_stay_home_unless_ticked_and_a_failed_send_keeps_the_batch(self):
         ask = self.distil([{'text': 'Graph updates fail now and then on a busy day.', 'fault': 'fp1'}])
         self.network.fail = True
-        with self.assertRaisesRegex(ValueError, 'didn’t take it'):
+        with self.assertRaisesRegex(ValueError, 'not confirmed'):
             self.app.action('learnings_share', {'id': ask['id'], 'items': [{'n': 1}]}, owner_dashboard=True)
         again = self.app.learnings_view()['ask']
-        self.assertEqual((again['id'], again['error']), (ask['id'], 'not_sent'))
+        self.assertEqual((again['id'], again['error']), (ask['id'], 'delivery_unknown'))
         self.network.fail = False
-        self.app.action('learnings_share', {'id': ask['id'], 'items': [{'n': 1}], 'named': True}, owner_dashboard=True)
+        self.app.action('learnings_share', {'id': ask['id'], 'items': [{'n': 1}]}, owner_dashboard=True)
         self.assertNotIn('log', self.network.opened()['items'][0])
-        self.assertTrue(self.network.sent[0]['named'])
+        self.assertFalse(self.network.sent[0]['named'])  # retry the same choice, not a new disclosure
 
     def test_another_team_key_than_the_pinned_one_sends_nothing(self):
         ask = self.distil([{'text': 'Cards about invoices should show the due date first.'}])
@@ -218,6 +218,37 @@ class TeamLearnings(unittest.TestCase):
         with patch.object(self.store, 'learnings_due') as due:
             self.app.style_step()
         due.assert_not_called()
+
+    def test_uncertain_send_retries_the_saved_proposal_not_new_edits(self):
+        ask = self.distil([{'text': 'Drafts should introduce the context first.'}])
+        chosen = [{'n': 1, 'text': 'Drafts should introduce the context first.'}]
+        original = self.network.call
+        failed = False
+        def accepted_then_disconnected(method, path, body=None, timeout=40):
+            nonlocal failed
+            if body['action'] == 'send':
+                if self.network.sent:
+                    return {'ok': True}  # the real relay takes a batch id only once
+                reply = original(method, path, body, timeout)
+                if not failed:
+                    failed = True
+                    raise OSError('response lost after commit')
+                return reply
+            return original(method, path, body, timeout)
+        self.app.fleet.relay.call = accepted_then_disconnected
+        with self.assertRaises(ValueError):
+            self.app.action('learnings_share', {'id': ask['id'], 'items': chosen, 'named': True}, owner_dashboard=True)
+        with self.assertRaisesRegex(ValueError, 'same items'):
+            self.app.action('learnings_share', {'id': ask['id'], 'items': [{'n': 1, 'text': 'A different suggestion instead.'}], 'named': True}, owner_dashboard=True)
+        pending = self.app.learnings_view()['ask']
+        self.assertEqual(pending['pending']['items'], chosen)
+        self.assertTrue(pending['pending']['named'])
+        result = self.app.action('learnings_share', {'id': ask['id'], 'items': chosen, 'named': True}, owner_dashboard=True)
+        self.assertEqual(result['count'], 1)
+        with self.store.connect() as db:
+            record = json.loads(db.execute('SELECT sent FROM team_learnings WHERE id=?', (ask['id'],)).fetchone()[0])
+        self.assertEqual(record['request'], self.network.sent[0])
+        self.assertEqual(record['items'], self.network.opened()['items'])
 
 
 if __name__ == '__main__':

@@ -346,12 +346,15 @@ def finish(db, run_id):
 def view(db, network=True):
     """For the dashboard: the batch waiting for the owner, the Settings switch, and what was shared before."""
     ensure(db)
-    row = db.execute("SELECT id,items,created_at,error FROM team_learnings WHERE status IN ('ready','sending') ORDER BY created_at DESC LIMIT 1").fetchone()
+    row = db.execute("SELECT id,items,created_at,error,status,sent FROM team_learnings WHERE status IN ('ready','sending') ORDER BY created_at DESC LIMIT 1").fetchone()
     last = db.execute("SELECT decided_at,sent FROM team_learnings WHERE status='sent' ORDER BY decided_at DESC LIMIT 1").fetchone()
     out = {'offer': offer_on(db), 'network': bool(network and TEAM_KEY_FINGERPRINT), 'ask': None,  # off until the key is pinned
            'last_shared': {'at': last[0], 'count': len(json.loads(last[1] or '{}').get('items') or [])} if last else None}
     if row and network and out['offer']:
         out['ask'] = {'id': row[0], 'created_at': row[2], 'error': row[3], 'items': json.loads(row[1])}
+        record = json.loads(row[5] or '{}')
+        if row[4] == 'sending' and record.get('request'):
+            out['ask']['pending'] = {'items': record.get('chosen') or [], 'named': record['named']}
     return out
 
 
@@ -425,35 +428,55 @@ def keys_path(config):
 
 
 def share(db_connect, config, batch_id, chosen, named, call, version=None):
-    """Seal the owner's choice for the team's key and send it over the Network. `call(method, path, body)` is the
-    Network client. Idempotent: the same batch id is taken once there, so a retry after an unsure send is safe."""
+    """Keep the exact approved request before sending. An uncertain outcome retries that same envelope and batch id;
+    it never records edited items as delivered under a batch the relay may already have accepted."""
     with db_connect() as db:
         ensure(db)
-        row = db.execute("SELECT items,status FROM team_learnings WHERE id=?", (batch_id,)).fetchone()
+        row = db.execute('SELECT items,status,sent FROM team_learnings WHERE id=?', (batch_id,)).fetchone()
         if not row or row[1] not in ('ready', 'sending'):
             raise ValueError('These learnings are no longer waiting')
         items = final_items(json.loads(row[0]), chosen, known_names(db, config))
-    team = call('POST', '/learnings', {'action': 'key'}) or {}
-    checked = nc.check_keys(team.get('keys'))
-    if not checked:
-        raise ValueError('The Machine team can’t take learnings yet. Nothing was sent.')
-    if not TEAM_KEY_FINGERPRINT or checked['fingerprint'] != TEAM_KEY_FINGERPRINT:
-        raise ValueError('That isn’t the team’s key, so nothing was sent. Update The Machine and try again.')
-    mine = nc.load_or_make(keys_path(config))
-    public = nc.public_keys(mine)
-    me = nc.check_keys(public)['fingerprint']
-    body = {'v': 1, 'id': batch_id, 'items': items, 'app': version or '', 'at': now()}
-    sealed = nc.seal(body, mine, team['keys'], {**CONTEXT, 'f': me, 't': checked['fingerprint'], 'r': batch_id})
-    with db_connect() as db:
-        db.execute("UPDATE team_learnings SET status='sending',error=NULL WHERE id=?", (batch_id,))
+        previous = json.loads(row[2] or '{}')
+    def same(record):
+        if record['items'] != items or record['named'] != bool(named):
+            raise ValueError('Delivery is not confirmed yet. Retry the same items before changing them.')
+        return record
+    if row[1] == 'sending' and previous.get('request'):
+        record = same(previous)
+    else:
+        team = call('POST', '/learnings', {'action': 'key'}) or {}
+        checked = nc.check_keys(team.get('keys'))
+        if not checked:
+            raise ValueError('The Machine team can’t take learnings yet. Nothing was sent.')
+        if not TEAM_KEY_FINGERPRINT or checked['fingerprint'] != TEAM_KEY_FINGERPRINT:
+            raise ValueError('That isn’t the team’s key, so nothing was sent. Update The Machine and try again.')
+        mine = nc.load_or_make(keys_path(config))
+        public = nc.public_keys(mine)
+        me = nc.check_keys(public)['fingerprint']
+        body = {'v': 1, 'id': batch_id, 'items': items, 'app': version or '', 'at': now()}
+        sealed = nc.seal(body, mine, team['keys'], {**CONTEXT, 'f': me, 't': checked['fingerprint'], 'r': batch_id})
+        record = {'items': items, 'named': bool(named), 'chosen': chosen, 'to': checked['fingerprint'], 'from': me,
+                  'sha256': hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(),
+                  'request': {'action': 'send', 'id': batch_id, 'from': public, 'sealed': sealed, 'named': bool(named)}}
+        with db_connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = db.execute('SELECT items,status,sent FROM team_learnings WHERE id=?', (batch_id,)).fetchone()
+            if not current or current[1] not in ('ready', 'sending') or current[0] != row[0]:
+                raise ValueError('These learnings are no longer waiting')
+            held = json.loads(current[2] or '{}')
+            if current[1] == 'sending' and held.get('request'):
+                record = same(held)
+            else:
+                db.execute("UPDATE team_learnings SET status='sending',sent=?,error=NULL WHERE id=?", (json.dumps(record), batch_id))
     try:
-        call('POST', '/learnings', {'action': 'send', 'id': batch_id, 'from': public, 'sealed': sealed, 'named': bool(named)})
+        receipt = call('POST', '/learnings', record['request'])
+        if not isinstance(receipt, dict) or receipt.get('ok') is not True:
+            raise ValueError('no delivery receipt')
     except Exception as error:
         with db_connect() as db:
-            db.execute("UPDATE team_learnings SET status='ready',error=? WHERE id=?", ('not_sent', batch_id))
-        raise ValueError('The Network didn’t take it. Nothing is lost: try again in a bit.') from error
-    record = {'items': items, 'named': bool(named), 'to': checked['fingerprint'], 'from': me,
-              'sha256': hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()}
+            db.execute("UPDATE team_learnings SET error='delivery_unknown' WHERE id=? AND status='sending'", (batch_id,))
+        raise ValueError('Delivery is not confirmed yet. Try again to confirm the same items, without duplicates.') from error
     with db_connect() as db:
-        db.execute("UPDATE team_learnings SET status='sent',decided_at=?,sent=?,error=NULL WHERE id=?", (now(), json.dumps(record), batch_id))
-    return {'status': 'sent', 'count': len(items)}
+        db.execute("UPDATE team_learnings SET status='sent',decided_at=?,sent=?,error=NULL WHERE id=? AND status='sending'",
+                   (now(), json.dumps(record), batch_id))
+    return {'status': 'sent', 'count': len(record['items'])}

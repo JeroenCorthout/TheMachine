@@ -2313,11 +2313,12 @@ const shareKept=a=>a.items.filter(i=>!shareDraft.items[i.n]?.removed);
 const shareCount=n=>n===1?'1 learning':n+' learnings';
 function renderShare(force){const a=state.team_learnings?.ask,box=$('#share-learnings');if(!box)return;
  if(!a){box.innerHTML='';shareKey='';shareOpen=false;return}
- if(shareDraft.id!==a.id){shareDraft.id=a.id;shareDraft.items={};shareDraft.named=false;shareOpen=false}
+ if(shareDraft.id!==a.id){shareDraft.id=a.id;shareDraft.items={};shareDraft.named=!!a.pending?.named;shareOpen=false;
+  if(a.pending){const keep=new Map(a.pending.items.map(i=>[i.n,i]));for(const i of a.items)shareDraft.items[i.n]=keep.get(i.n)||{removed:true}}}
  const key=[a.id,shareOpen,Object.keys(shareDraft.items).filter(k=>shareDraft.items[k].removed).join(','),a.error||''].join('|');
  if(key===shareKey&&!force)return;shareKey=key;
  const n=a.items.length,kept=shareKept(a).length;
- const head=`<div class="notice-card share-ask" role="region" aria-label="Share learnings"><span><strong>Share ${n===1?'a learning':n+' learnings'} with The Machine team?</strong> General tips from how you use it, nothing personal.</span>${shareOpen?'':'<div class="share-ask-acts"><button type="button" class="head-link" data-share="open">Review</button><button type="button" class="quiet" data-share="later">Not now</button></div>'}</div>`;
+ const head=`<div class="notice-card share-ask" role="region" aria-label="Share learnings"><span><strong>Share ${n===1?'a learning':n+' learnings'} with The Machine team?</strong> General tips from how you use it. You choose what to share.</span>${shareOpen?'':'<div class="share-ask-acts"><button type="button" class="head-link" data-share="open">Review</button><button type="button" class="quiet" data-share="later">Not now</button></div>'}</div>`;
  if(!shareOpen){box.innerHTML=head;return}
  const item=i=>{const d=shareDraft.items[i.n]||{};
   if(d.removed)return `<li class="share-item removed" data-n="${i.n}"><span>Removed. It won’t be sent.</span><button type="button" class="quiet" data-share-undo>Undo</button></li>`;
@@ -2328,7 +2329,7 @@ function renderShare(force){const a=state.team_learnings?.ask,box=$('#share-lear
  box.innerHTML=head+`<div class="share-panel" role="region" aria-label="What would be sent"><p class="fine">This is exactly what would be sent. Edit or remove anything.</p><ol class="share-items">${a.items.map(item).join('')}</ol>`
   +`<label class="share-named"><input type="checkbox" id="share-named"${shareDraft.named?' checked':''}> Add my email so the team can reply</label>`
   +'<p class="fine">Sealed for the team. Without your email it comes from a made-up name. <a class="learn" href="https://themachine.computer/help/share-learnings" target="_blank" rel="noopener">Learn more</a></p>'
-  +(a.error?'<p class="share-error" role="status">The last try didn’t go through. Nothing was sent.</p>':'')
+  +(a.error?'<p class="share-error" role="status">Delivery isn’t confirmed yet. Try again to confirm the same items, without duplicates.</p>':'')
   +`<div class="actions"><button type="button" class="primary" data-share="send"${kept?'':' disabled'}>Send ${shareCount(kept)}</button><button type="button" class="ghost" data-share="later">Not now</button><button type="button" class="quiet" data-share="never">Never ask</button></div></div>`}
 $('#share-learnings').addEventListener('input',e=>{const li=e.target.closest('.share-item'),a=state.team_learnings?.ask;if(!li||!a)return;const d=shareDraft.items[li.dataset.n]??={};
  if(e.target.dataset.shareField)d[e.target.dataset.shareField]=e.target.value;if(e.target.matches('[data-share-log]'))d.log=e.target.checked});

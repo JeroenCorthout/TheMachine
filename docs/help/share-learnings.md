@@ -1,7 +1,7 @@
 ---
 title: Share learnings with the team
 area: security
-summary: Now and then it asks to send a few general tips to The Machine team. Nothing personal, nothing without your OK.
+summary: Now and then it asks to send a few general tips to The Machine team. General tips you review first, nothing without your OK.
 covers: share-learnings
 code: team_learnings.py, dashboard.html
 order: 3
@@ -14,8 +14,8 @@ About once a week, it turns what it learned from you into a few general tips tha
 
 - Only the general pattern, and a short made-up example if it helps.
 - Names, email addresses, links, phone numbers, dates and amounts are taken out before you see it. Each tip says what was taken out.
-- Never your messages, and never who you deal with.
-- An error log only when you tick **Add the error log**. It shows the error itself, never message content.
+- It is designed to share general tips, not your messages or who you deal with. Filtering can miss details: review the exact text before **Send**.
+- An error log only when you tick **Add the error log**. Review the excerpt too: filtering is best effort.
 
 ## Nothing without your OK
 
