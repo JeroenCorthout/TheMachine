@@ -4722,7 +4722,7 @@ function edDraw(){const e=ed,f=$('#board-form'),last=e.stages.length-1,pick=grap
   +`<input name="add" list="board-dialog-names" placeholder="Add a project" aria-label="Add a project" autocomplete="off"><datalist id="board-dialog-names">${pick.slice(0,500).map(p=>`<option value="${esc(p.name)}"></option>`).join('')}</datalist></fieldset>`
   +edGone()+'<p class="ed-note">After you save, The Machine sorts its projects into stages from your messages.</p>'
   +`<p class="ed-note warn" data-ed-error role="alert" hidden></p><div class="ed-actions">${e.id?`<button type="button" class="ghost danger" data-ed-delete>${e.sure?'Delete? Its projects stay':'Delete board'}</button>`:''}<span class="grow"></span><button type="button" class="ghost" data-ed-close>Cancel</button><button class="primary">Save</button></div>`}
-const edFocus=sel=>requestAnimationFrame(()=>$('#board-form').querySelector(sel)?.focus());
+const edFocus=sel=>{const before=document.activeElement;requestAnimationFrame(()=>{if(document.activeElement===before)$('#board-form').querySelector(sel)?.focus()})};  /* don't steal focus from a field the owner chose meanwhile */
 $('#board-form').addEventListener('input',e=>{const t=e.target;if(!ed)return;if(t.name==='name')ed.name=t.value;else if(t.name==='about')ed.about=t.value;else if(t.dataset.edStage)ed.stages[+t.dataset.edStage].name=t.value;
  else if(t.name==='add'){const p=graphProjNames.find(x=>x.name.toLowerCase()===t.value.trim().toLowerCase());if(p&&!ed.projects.some(x=>x.id===p.id)){ed.projects.push({id:p.id,name:p.name});edDraw();edFocus('[name="add"]')}}});
 $('#board-form').addEventListener('change',e=>{if(e.target.name==='side'&&ed){ed.side=e.target.checked;edDraw();edFocus('[name="side"]')}});

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('graph_share_assistant', Path(__file__).with_name('assistant.py'))
@@ -696,12 +697,13 @@ class SharedGraph(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'older'):
             self.mem.graph_take(old_item)
 
+    @patch.object(sg, 'SERVE_BATCH', 3)  # same signed catch-up path, a smaller per-round budget keeps this fixture quick
     def test_catchup_chain_larger_than_one_round_advances_in_order(self):
         group = self.own._group(FLEET)
         me = self.own._me_in(group)
         initial = next(r for r in self.team(self.mem, 'team_sources') if r['member'] == 'own1')['seq']
         previous = self.own._put(group, me, 'snapshot', {'records': [], 'threads': []}, ['adm2', 'mem3'])
-        for _ in range(sg.SERVE_BATCH + 5):
+        for _ in range(sg.SERVE_BATCH + 1):
             previous = self.own._put(group, me, 'delta', {'prev': previous['seq'], 'records': [], 'threads': []}, ['adm2', 'mem3'])
         self.adm.graph_fetch()
         self.net.expire('mem3')

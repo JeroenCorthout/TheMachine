@@ -51,7 +51,11 @@ try{
   await box.locator('[data-suggest-edit]').click();await page.locator('#board-dialog[open]').waitFor();
   assert.equal(await page.locator('#board-dialog-title').textContent(),'Start a board');
   assert.equal(await page.locator('#board-form [name="name"]').inputValue(),'Hiring');assert.deepEqual(await stageNames(page),['Sourced','Interviews','Hired']);
-  await page.locator('[data-ed-drop="project:11"]').click();await page.locator('#board-form [name="add"]').fill('Fernwave');
+  // A queued focus hint must not steal focus after the owner picks another field.
+  await page.evaluate(()=>{document.querySelector('[data-ed-drop="project:11"]').click();document.querySelector('[data-ed-stage="1"]').focus()});
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  assert.equal(await page.evaluate(()=>document.activeElement?.dataset.edStage),'1','queued focus respects the newly chosen field');
+  await page.locator('#board-form [name="add"]').fill('Fernwave');
   assert.deepEqual(await page.locator('.ed-projects li span').allTextContents(),['Hire: support lead','Hire: backend','Fernwave']);
   await page.locator('[data-ed-stage="1"]').fill('Talks');await page.locator('[data-ed-up="1"]').click();assert.deepEqual(await stageNames(page),['Talks','Sourced','Hired']);
   await page.locator('[data-ed-add]').click();await page.locator('[data-ed-stage="3"]').fill('Started');await page.locator('#board-form [name="side"]').uncheck();
