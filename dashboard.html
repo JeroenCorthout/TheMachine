@@ -2679,25 +2679,29 @@ function renderConnectAdd(){const box=$('#connect-add');if(connectRun)return ren
 async function connectStart(name,account){try{connectRun=await connectPost('connect_start',account?{name,account}:{name});$('#connect-add').dataset.sig='';renderConnectRun();connectPoll();return true}catch(err){toast(err.message,true);return false}}
 // Sign in with <provider> on a self-hosted Machine: the Machine asks the control plane for a one-time start link,
 // signed with its own key, and it opens in a new tab. The token comes back sealed for this Machine, which checks it.
-const SIGNIN_COPY={intercom:{about:'Reads your conversations. Replies only after you approve them, as yourself. Never assigns or closes.',paste:'From an app in Intercom’s Developer Hub.'}};
+const SIGNIN_COPY={intercom:{label:'Intercom',about:'Reads your conversations. Replies only after you approve them, as yourself. Never assigns or closes.',other:'Or paste an access token',how:'From an app in Intercom’s Developer Hub.',go:'Paste a token'},
+ google:{label:'Google',about:'Gmail and Google Calendar. Sends only emails you approved.',other:'Use your own app',how:'Your own Google Cloud app, step by step.',go:'Set it up'},
+ microsoft:{label:'Microsoft',about:'Outlook mail and calendar. Sends only emails you approved.',other:'Use your own app',how:'Your own Microsoft app registration, step by step.',go:'Set it up'},
+ zoom:{label:'Zoom',about:'Your meeting summaries and transcripts. Reads only.',other:'Use your own app',how:'Your own Zoom app, step by step.',go:'Set it up'}};
 function renderConnectSignin(){const s=connectSignin,box=$('#connect-add'),paired=connectList?.paired;
  const back='<button type="button" data-connect-back>Back</button>';let body;
+ const copy=SIGNIN_COPY[s.provider]||{};
  if(s.state==='started')body=`<p>Sign in at ${esc(s.label)} in the tab that opened. This updates by itself.</p><div class="actions"><button type="button" data-signin-go>Start again</button>${back}</div>`;
  else if(s.state==='connecting')body='<p class="muted">Connecting…</p>';
  else if(s.state==='done')body=`<p class="note sent-ok">✓ Connected${s.name?' to '+esc(s.name):''}.${s.replies?' Replies go as you, after you approve each one.':''} Restarting to start reading it…</p><div class="actions">${back}</div>`;
  else if(s.state==='failed'||s.state==='stopped')body=`<p class="alert">${esc(s.state==='stopped'?'That sign-in didn’t finish.':s.error||'Not connected.')}</p><div class="actions"><button type="button" class="primary" data-signin-go>Try again</button>${back}</div>`;
- else body=`<p class="muted">${esc(SIGNIN_COPY[s.name]?.about||'')}</p>`+(paired?`<div class="actions"><button type="button" class="primary" data-signin-go>Sign in with ${esc(s.label)}</button>${back}</div>`
+ else body=`<p class="muted">${esc(copy.about||'')}</p>`+(paired?`<div class="actions"><button type="button" class="primary" data-signin-go>Sign in with ${esc(s.label)}</button>${back}</div>`
   :`<p>To sign in here, pair this Machine with your account first.</p><div class="actions"><a class="btn-link primary" href="${esc(connectList.pair_url)}" target="_blank" rel="noopener">Pair this Machine first ↗</a>${back}</div>`);
- const paste=s.state==='done'||s.state==='connecting'?'':`<details class="connect-other"><summary>Or paste an access token</summary><p>${esc(SIGNIN_COPY[s.name]?.paste||'')}</p><div class="actions"><button type="button" data-connect="${esc(s.name)}">Paste a token</button></div></details>`;
+ const paste=s.state==='done'||s.state==='connecting'||!s.own?'':`<details class="connect-other"><summary>${esc(copy.other||'')}</summary><p>${esc(copy.how||'')}</p><div class="actions"><button type="button" data-connect="${esc(s.source)}">${esc(copy.go||'')}</button></div></details>`;
  const html=`<div class="connect-run connect-signin"><h3>${esc(s.label)}</h3>${body}${paste}</div>`;
- const sig=JSON.stringify(['signin',s.state,s.name,s.error,s.replies,paired]);if(box.dataset.sig===sig)return;box.dataset.sig=sig;box.innerHTML=html}
+ const sig=JSON.stringify(['signin',s.state,s.source,s.name,s.error,s.replies,paired]);if(box.dataset.sig===sig)return;box.dataset.sig=sig;box.innerHTML=html}
 function signinPoll(){clearTimeout(signinTimer);if(!connectSignin||!['started','connecting'].includes(connectSignin.state))return;
- signinTimer=setTimeout(async()=>{try{const r=await connectPost('connect_signin_state',{name:connectSignin.name});if(!connectSignin)return;
+ signinTimer=setTimeout(async()=>{try{const r=await connectPost('connect_signin_state',{name:connectSignin.source});if(!connectSignin)return;
   if(r.state!=='none')connectSignin={...connectSignin,...r};renderConnectSignin();if(r.state==='done')setTimeout(()=>{connectList=null;refresh()},8000)}catch{}signinPoll()},2500)}
 async function signinGo(){const s=connectSignin;if(!s)return;
  const tab=window.open('about:blank','_blank');  // opened now, while it is the click: a browser blocks it after a wait
- try{const r=await connectPost('connect_signin',{name:s.name});if(tab){tab.opener=null;tab.location.href=r.url}else location.assign(r.url);
-  connectSignin={name:s.name,label:s.label,state:'started'}}catch(err){tab?.close();connectSignin={...s,state:'failed',error:err.message}}
+ try{const r=await connectPost('connect_signin',{name:s.source});if(tab){tab.opener=null;tab.location.href=r.url}else location.assign(r.url);
+  connectSignin={source:s.source,provider:s.provider,label:s.label,own:s.own,state:'started'}}catch(err){tab?.close();connectSignin={...s,state:'failed',error:err.message}}
  $('#connect-add').dataset.sig='';renderConnectSignin();signinPoll()}
 // Reconnect on a card or in Needs you: the same steps as + Add, for that account, shown in the + Add pane.
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-reconnect]');if(!b)return;
@@ -2720,7 +2724,7 @@ function connectPoll(){clearTimeout(connectTimer);if(!connectRun||connectRun.sta
  if(connectRun.state==='done'&&connectRun.restarting)setTimeout(()=>{connectList=null;refresh()},8000)}catch(e){connectRun={...connectRun,state:'failed',error:e.message};renderConnectRun()}connectPoll()},connectRun.question?3000:1000)}
 async function connectAnswer(value){const q=connectRun?.question;if(!q)return;try{connectRun={...connectRun,...await connectPost('connect_answer',{session:connectRun.session,question:q.id,value})}}catch(e){toast(e.message,true)}renderConnectRun();connectPoll()}
 $('#connect-add').addEventListener('click',async e=>{const t=e.target;
- const signin=t.closest('[data-connect-signin]');if(signin){const x=connectList.sources.find(v=>v.name===signin.dataset.connectSignin);connectSignin={name:x.name,label:x.label,state:'intro'};$('#connect-add').dataset.sig='';renderConnectSignin();return}
+ const signin=t.closest('[data-connect-signin]');if(signin){const x=connectList.sources.find(v=>v.name===signin.dataset.connectSignin),p=x.signin===true?x.service:x.signin;connectSignin={source:x.name,provider:p,label:SIGNIN_COPY[p]?.label||x.label,own:!x.broker,state:'intro'};$('#connect-add').dataset.sig='';renderConnectSignin();return}
  if(t.closest('[data-signin-go]')){signinGo();return}
  const start=t.closest('[data-connect]');if(start){connectSignin=null;clearTimeout(signinTimer);start.disabled=true;if(!await connectStart(start.dataset.connect,start.dataset.connectAccount))start.disabled=false;return}
  const pick=t.closest('[data-connect-pick]');if(pick){const v=pick.dataset.connectPick;connectAnswer(v==='yes'?true:v==='no'?false:+v);return}

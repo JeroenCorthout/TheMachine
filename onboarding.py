@@ -1600,7 +1600,10 @@ def enable_replies(config_path, account_id, token):
     return admin, name
 
 
-DELIVERED = {'intercom'}  # sources a sign-in started on the dashboard connects on a paired self-hosted Machine (fleet.SIGNIN_SOURCES)
+# Google, Microsoft and Zoom signed in from the dashboard of a paired self-hosted Machine (connect_grant): the accounts each adds
+GRANT_SERVICES = {'google': ('gmail', 'calendar'), 'microsoft': ('outlook', 'outlook_calendar'), 'zoom': ('zoom',)}
+GRANT_LABELS = {'google': 'Google', 'microsoft': 'Microsoft', 'zoom': 'Zoom'}
+DELIVERED = {'intercom', *GRANT_SERVICES}  # sources a sign-in started on the dashboard connects on a paired self-hosted Machine (fleet.SIGNIN_SOURCES)
 
 
 class AnswersUI(UI):
@@ -1643,6 +1646,8 @@ def connect_delivered(config_path, args):
     workspace and admin) and keeps it in its private credential file. replies: the owner's own Sign in with Intercom,
     which also replies as them (enable_replies checks their admin first). Returns {'ok', 'name', 'replies'?}."""
     source = args.get('source') if isinstance(args, dict) else None
+    if source in GRANT_SERVICES and source in DELIVERED:
+        return connect_grant(config_path, source, args)
     service = SERVICES.get(source, source)
     if source not in DELIVERED or not setup_of(service).get('secret'):
         raise SetupError('That source is not connected this way')
@@ -1664,6 +1669,70 @@ def connect_delivered(config_path, args):
         except SetupError:
             result['replies'] = False
     return result
+
+
+def connect_grant(config_path, provider, args):
+    """Google (Gmail and Calendar), Microsoft (Outlook mail and calendar) or Zoom, signed in from this paired Machine's
+    dashboard with the control plane's own app: {source, grant: {provider, email, refresh_token, scopes}}. The refresh
+    token is kept here only (mail_grants.py); access tokens come from the control plane this Machine is paired with
+    (POST <Network>/<provider>-token, with this Machine's own device token), which uses it for that one call and keeps
+    nothing, as for a hosted Machine's broker accounts. Each account is checked first with a real read as the address it
+    signed in as (check); when one does not check out, nothing is kept. Returns {'ok', 'name'}."""
+    import fleet
+    import mail_grants
+    name = GRANT_LABELS[provider]
+    grant = args.get('grant') if isinstance(args.get('grant'), dict) else {}
+    email = str(grant.get('email') or '').strip().lower()
+    refresh = grant.get('refresh_token')
+    if (grant.get('provider') != provider or not re.fullmatch(r'[^@\s]{1,200}@[^@\s]{1,200}\.[^@\s]{2,63}', email)
+            or not isinstance(refresh, str) or not 8 <= len(refresh) <= 4096):
+        raise SetupError(f'No {name} sign-in came with it', 'sign in again from Connections, + Add')
+    config = load(config_path)
+    home = fleet.settings(config)
+    device_token = (config.get('credentials') or {}).get('fleet')
+    if not home or not device_token or config.get('manage_url'):
+        raise SetupError('Only a paired self-hosted Machine signs in this way', 'pair this Machine first')
+    url, key = home['url'].rstrip('/') + f'/{provider}-token', provider + '_broker'
+    if (config.get(key) or {}).get('url') not in (None, url):
+        raise SetupError(f'This Machine gets {name} access from another place', f'disconnect those {name} accounts first')
+    try:
+        previous = mail_grants.get(config, provider, email)
+    except mail_grants.GrantError:
+        raise SetupError('This Machine cannot keep sign-ins yet', 'try again in a minute') from None
+    config[key] = {'url': url}
+    config.setdefault('credentials', {})[provider + '-broker'] = device_token  # its own device token, as for the Network
+    same = [a for a in config.get('accounts', []) if str(a.get('email', '')).lower() == email and a.get('boundary')]
+    boundary = same[0]['boundary'] if same else boundary_label(company_of(email) or ('work' if provider == 'zoom' else 'personal'))
+    mail_grants.put(config, provider, email, refresh)
+    checked = []
+    try:
+        for service in GRANT_SERVICES[provider]:
+            account = next((a for a in config.get('accounts', []) if a.get('service') == service and str(a.get('email', '')).lower() == email), None)
+            if account is None:
+                account = new_account(config, service, ui=AnswersUI({'part of your life': boundary, 'company': boundary, 'sign-in': email}))
+                account['boundary'] = boundary
+                account.pop('boundary_by', None)  # guessed from the address; Work or Personal stays the owner's to set
+            account = {**account, 'email': email, 'transport': 'broker'}
+            account.pop('client', None)
+            if service in ('calendar', 'outlook_calendar'):
+                account.setdefault('calendar_id', 'primary')
+            if provider == 'microsoft':  # a refused sign-in right after this is Microsoft still settling (ms_graph.py)
+                account['connected_at'] = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+            error = check(config, account)
+            if error and not error.startswith(BUSY):
+                raise SetupError(f'{label(service)} for {email} did not check out ({error})', 'sign in again from Connections, + Add')
+            checked.append(account)
+    except BaseException:
+        if previous:
+            mail_grants.put(config, provider, email, previous)
+        else:
+            mail_grants.forget(config, provider, email, revoke=False)
+        raise
+    for account in checked:
+        known = any(a.get('id') == account['id'] for a in config.get('accounts', []))
+        config['accounts'] = [account if a.get('id') == account['id'] else a for a in config.get('accounts', [])] + ([] if known else [account])
+    save(config_path, config)
+    return {'ok': True, 'name': email}
 
 
 # ---------------------------------------------------------------- service, first sync

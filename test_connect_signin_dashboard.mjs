@@ -6,7 +6,8 @@ const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modul
 
 // Connections, + Add on a self-hosted Machine: Intercom signs in through The Machine's own app once this Machine is
 // paired (a one-time start link in a new tab, then its row follows how it goes); not paired, it says pair first.
-// Pasting a token stays, folded away. SHOTS=<folder> saves screenshots.
+// Pasting a token stays, folded away. Google, Microsoft and Zoom the same way, with their own app folded away (Use your
+// own app). SHOTS=<folder> saves screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 let paired=true,state='started',calls=[];
 const server=createServer(async(req,res)=>{
@@ -17,9 +18,13 @@ const server=createServer(async(req,res)=>{
  if(url.pathname==='/api/action'){let body='';for await(const b of req)body+=b;const {action,args}=JSON.parse(body);calls.push(action);
   if(action==='connect_sources'){res.end(JSON.stringify({saveable:true,manage_url:null,paired,pair_url:'https://app.example.org/account?tab=fleet#devices',sources:[
    {name:'intercom',service:'intercom',label:'Intercom',what:'Customer conversations in your Intercom workspace.',connected:0,broker:false,account_page:'source-intercom',signin:true},
+   {name:'gmail',service:'gmail',label:'Gmail',what:'Your email.',connected:0,broker:false,signin:'google'},
+   {name:'calendar',service:'calendar',label:'Google Calendar',what:'Your meetings.',connected:0,broker:false,signin:'google'},
+   {name:'outlook',service:'outlook',label:'Outlook',what:'Your Outlook email.',connected:0,broker:false,signin:'microsoft'},
+   {name:'zoom',service:'zoom',label:'Zoom',what:'Your meetings.',connected:0,broker:false,signin:'zoom'},
    {name:'github',service:'github',label:'GitHub',connected:0,broker:false}]}));return}
-  if(action==='connect_signin'){assert.equal(args.name,'intercom');res.end(JSON.stringify({url:base+'/connect/start/'+'A'.repeat(32),state:'started'}));return}
-  if(action==='connect_signin_state'){res.end(JSON.stringify(state==='done'?{state:'done',name:'Example Support',replies:true}:{state}));return}
+  if(action==='connect_signin'){assert.ok(['intercom','gmail'].includes(args.name));res.end(JSON.stringify({url:base+'/connect/start/'+'A'.repeat(32),state:'started'}));return}
+  if(action==='connect_signin_state'){res.end(JSON.stringify(state==='done'?{state:'done',name:'Example Support',replies:true}:state==='done-google'?{state:'done',name:'dee@acme.example'}:{state}));return}
   if(action==='connect_start'){res.end(JSON.stringify({session:'s1',state:'running',label:'Intercom',lines:[],question:{id:'q1',kind:'secret',prompt:'Intercom access token'}}));return}
   res.end('{}');return}
  res.end('{}');
@@ -73,6 +78,34 @@ try{
   await page.getByRole('button',{name:'Paste a token'}).click();
   await page.locator('#connect-answer').waitFor();
   assert.ok(calls.includes('connect_start'));
+  // Google: Gmail and Calendar in one sign-in, with its own app folded away
+  paired=true;state='started';
+  await page.goto('about:blank');await page.goto(base+'/#connections=add');
+  await page.locator('#connect-add [data-connect-signin="gmail"]').click();
+  const google=page.getByRole('button',{name:'Sign in with Google'});
+  await google.waitFor();
+  assert.match(await page.locator('#connect-add').innerText(),/Gmail and Google Calendar\. Sends only emails you approved\./);
+  assert.equal(await page.locator('#connect-add details.connect-other summary').innerText(),'Use your own app');
+  assert.equal(await page.locator('#connect-add details.connect-other').getAttribute('open'),null);
+  assert.ok(!(await page.locator('#connect-add').innerText()).includes('—'),'no em dashes');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no sideways scroll');
+  await shot(page,`add-google-${tag}`);
+  const [gtab]=await Promise.all([context.waitForEvent('page'),google.click()]);
+  await gtab.close();
+  await page.getByText('Sign in at Google in the tab that opened').waitFor();
+  await shot(page,`add-google-waiting-${tag}`);
+  state='done-google';
+  await page.getByText('Connected to dee@acme.example.').waitFor({timeout:8000});
+  assert.doesNotMatch(await page.locator('#connect-add').innerText(),/Replies go as you/);
+  await shot(page,`add-google-connected-${tag}`);
+  await page.goto('about:blank');await page.goto(base+'/#connections=add');
+  await page.locator('#connect-add [data-connect-signin="zoom"]').click();
+  await page.getByRole('button',{name:'Sign in with Zoom'}).waitFor();
+  assert.match(await page.locator('#connect-add').innerText(),/Reads only\./);
+  await page.locator('#connect-add details.connect-other summary').click();
+  await shot(page,`add-zoom-own-app-${tag}`);
+  await page.goto('about:blank');await page.goto(base+'/#connections=add');
+  await shot(page,`add-list-${tag}`);
   await context.close();
  }
  assert.deepEqual(errors,[]);

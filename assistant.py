@@ -12716,12 +12716,13 @@ class App:
                 # Sign in with <provider> through The Machine's own app (fleet.py connect_start), once this Machine is
                 # paired with an account; pasting a token stays as the fallback
                 for source in found['sources']:
-                    if source['service'] in fleet.SIGNIN_SOURCES:
-                        source['signin'] = True
+                    if fleet.SIGNIN_OF.get(source['service']):
+                        source['signin'] = fleet.SIGNIN_OF[source['service']]
                 found['paired'], found['pair_url'] = getattr(self, 'fleet', None) is not None, fleet.PAIR_PAGE
             return found
         if name in ('connect_signin', 'connect_signin_state'):
             source = args.get('name') if isinstance(args.get('name'), str) else ''
+            source = fleet.SIGNIN_OF.get(onboarding.SERVICES.get(source, source), source)  # Gmail and Calendar: Google
             if hosted:
                 raise ValueError('Your account page signs this one in')
             if source not in fleet.SIGNIN_SOURCES:
@@ -12774,6 +12775,8 @@ class App:
                     onboarding.disconnect(self.config_path, account['id'])
                 except onboarding.SetupError as error:
                     raise ValueError(error.message) from None
+                if not hosted:
+                    self.forget_device_grant(account)
             LOG.info('connect removed account=%s', account['id'])
             return {'removed': account['id'], 'restarting': restart_self(3)}
         if name == 'connect_start':
@@ -14249,6 +14252,29 @@ class App:
         if result['accounts']:
             result['restarting'] = restart_self(5)
         return result
+
+    def forget_device_grant(self, account):
+        """A Google, Microsoft or Zoom account signed in from this paired Machine's dashboard (onboarding.connect_grant),
+        disconnected: once no account on that sign-in is left, its refresh token is forgotten here (Google's revoked) and
+        the control plane forgets this Machine had it, so nothing refreshes it again."""
+        import mail_grants
+        provider = fleet.SIGNIN_OF.get(account.get('service'))
+        if account.get('transport') != 'broker' or provider not in ('google', 'microsoft', 'zoom'):
+            return
+        email = str(account.get('email') or '').lower()
+        services = {s for s, p in fleet.SIGNIN_OF.items() if p == provider}
+        if any(a.get('id') != account['id'] and a.get('service') in services and str(a.get('email', '')).lower() == email
+               for a in self.config.get('accounts', [])):
+            return
+        try:
+            mail_grants.forget(self.config, provider, email)
+        except (mail_grants.GrantError, OSError) as error:
+            LOG.warning('sign-in not forgotten provider=%s error=%s', provider, type(error).__name__)
+        if getattr(self, 'fleet', None) is not None:
+            try:
+                self.fleet.relay.call('POST', '/grant-forget', {'provider': provider, 'email': email}, timeout=30)
+            except Exception as error:  # noqa: BLE001 - its token is gone here: the control plane can refresh nothing
+                LOG.warning('grant forget not sent provider=%s error=%s', provider, type(error).__name__)
 
     def fleet_connect_delivered(self, body):
         """A sign-in sealed for this paired Machine (fleet.py connects_round): connected the way the dashboard's

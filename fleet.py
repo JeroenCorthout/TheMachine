@@ -204,7 +204,9 @@ def settings(config):
 CONTROL = 'https://app.themachine.computer'  # the control plane: the Account page, on the same node as NETWORK
 PAIR_PAGE = CONTROL + '/account?tab=fleet#devices'  # where a self-hosted Machine is paired with an account
 START_PREFIX = b'tm-device-connect-start/1\n'  # what a start request is signed as (the control plane's device_connect.start)
-SIGNIN_SOURCES = {'intercom'}  # sources this Machine can sign in through the control plane's app, from its dashboard
+SIGNIN_SOURCES = {'intercom', 'google', 'microsoft', 'zoom'}  # sign-ins through the control plane's own apps, from the dashboard
+# a dashboard source -> the sign-in that connects it (Google: Gmail and Calendar together; Microsoft: Outlook mail and calendar)
+SIGNIN_OF = {'intercom': 'intercom', 'gmail': 'google', 'calendar': 'google', 'outlook': 'microsoft', 'outlook_calendar': 'microsoft', 'zoom': 'zoom'}
 SIGNIN_EXPIRES = 30 * 60  # a sign-in started on the dashboard and not finished by then is shown as stopped
 
 
@@ -2868,8 +2870,8 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         return {k: found[k] for k in ('state', 'name', 'error', 'replies') if k in found} or {'state': 'none'}
 
     def connects_round(self):
-        """Sign-ins for this paired self-hosted Machine: its owner pressed Sign in with Intercom on its dashboard
-        (connect_start), and the control plane sealed the token for this Machine's own key (network_crypto.open_box). Each is
+        """Sign-ins for this paired self-hosted Machine: its owner pressed Sign in with Intercom, Google, Microsoft or Zoom on
+        its dashboard (connect_start), and the control plane sealed the token for this Machine's own key (network_crypto.open_box). Each is
         handed out once; it is opened here, connected through connect_delivered (which checks it, GET /me, before
         keeping it) and how it went is reported back, in a few words. Nothing of what it carries is logged."""
         if not self.connects_due or not self.connect_delivered:

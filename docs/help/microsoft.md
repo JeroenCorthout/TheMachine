@@ -4,7 +4,7 @@ area: connections
 summary: Outlook mail and meetings, for Microsoft 365 and Outlook.com. Sends an email only after you approve it.
 covers: connector:outlook, connector:outlook_calendar
 code: ms_graph.py, onboarding.py
-site: Connect Microsoft, Copy link for your admin, I'm the admin: approve now, Disconnect
+site: Connect Microsoft, Copy link for your admin, I'm the admin: approve now, Disconnect, Sign in with Microsoft, Use your own app
 order: 12
 ---
 ## What it reads
@@ -27,7 +27,9 @@ On a hosted Machine:
 2. Press **Connect Microsoft** and sign in.
 3. If Microsoft asks for admin approval, press **Copy link for your admin**, or **I'm the admin: approve now** if that's you.
 
-On your own computer, run `assistant connect outlook` or `assistant connect outlook_calendar`. It uses your own app registration in Microsoft Entra and a sign-in code. It asks whether to also send what you approve.
+On your own computer, once it's [paired with your account](fleet.md): open **Connections**, then **+ Add**, pick Outlook and press **Sign in with Microsoft**. Mail and calendar connect together.
+
+With your own app: open **Use your own app** there, or run `assistant connect outlook` or `assistant connect outlook_calendar`. It uses your own app registration in Microsoft Entra and a sign-in code. It asks whether to also send what you approve.
 
 ## Remove it
 
