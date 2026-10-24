@@ -284,6 +284,27 @@ class Requests(unittest.TestCase):
         self.fleet.hand_off(card, self.ref, 'kim1', 'Send Sam the pricing', draft['summary'], replace=replace)  # the owner's Send
         return card, pat
 
+    def test_a_redirect_shows_on_the_card_list_as_the_dashboard_gets_it(self):
+        """Through the real card-list build (Store.snapshot, then the Fleet's annotate, as the status call does): the new
+        handoff stays on a card still with Pat, so Review handoff to Kim shows; one to Pat again doesn't."""
+        self.with_kim()
+        card = self.handed_card()
+        self.fleet.hand_off(card, self.ref, 'pat1', 'Send Sam the pricing', 'Sam wants pricing.')
+        with self.store.connect() as db:
+            pat = db.execute("SELECT id FROM fleet_out WHERE kind='handoff'").fetchone()[0]
+        self.fleet.take_answer({'id': pat, 'status': 'waiting'})
+        self.store.decide(card, 'other', 'This should go to Kim', 'chat-1', 'dashboard')
+        actions = [{'kind': 'handoff', 'label': 'Hand off to Kim', 'to_name': 'Kim Doe', 'to_email': 'kim@acme.example', 'body': 'Can you send Sam the pricing?', 'revision': 'r1'},
+                   {'kind': 'handoff', 'label': 'Hand off to Pat', 'to_name': 'Pat', 'to_email': TEAM, 'body': 'Again', 'revision': 'r2'}]
+        with self.store.connect() as db:
+            db.execute("UPDATE suggestions SET status='prepared',next_action=? WHERE id=?", (json.dumps({'kind': 'menu', 'actions': actions}), card))
+        listed = self.store.snapshot(CONFIG['accounts'])['suggestions']
+        with self.store.connect() as db:
+            self.fleet.annotate(db, listed)
+        shown = next(s for s in listed if s['id'] == card)
+        self.assertEqual((shown['fleet_handoff']['name'], shown['fleet_handoff']['stage']), ('Pat', 'waiting for them'))
+        self.assertEqual([(a['kind'], a['to_name']) for a in shown['next_actions']], [('handoff', 'Kim Doe')])
+
     def handed_to(self, card):
         with self.store.connect() as db:
             suggestions = [{'id': card, 'status': 'snoozed'}]
@@ -469,6 +490,11 @@ class Requests(unittest.TestCase):
                 self.assertEqual({k: v for k, v in shown['fleet_handoff'].items() if k != 'asked'}, {'name': 'Kim Doe', 'stage': 'asked'})
                 self.assertTrue(shown['fleet_handoff']['asked'].startswith('Confirmed P1: the export leaks'))  # the body: what was asked
                 self.assertEqual(shown['next_actions'], [link])  # no Review and send while it is with them
+                again = {'kind': 'handoff', 'label': 'Hand off to Kim', 'revision': 'r3', 'to_email': 'kim@acme.example', 'to_name': 'Kim Doe', 'body': 'Take it'}
+                other = {**again, 'label': 'Hand off to Lou', 'revision': 'r4', 'to_email': 'lou@acme.example', 'to_name': 'Lou'}
+                with self.store.connect() as db:  # handing it to someone else instead stays on the card; to Kim again doesn't
+                    shown = (lambda s: (self.fleet.annotate(db, s), s[0])[1])([{**self.card_row(card), 'next_actions': [again, other, link]}])
+                self.assertEqual(shown['next_actions'], [other, link])
                 if answer == 'expired':
                     self.fleet.take_answer({'id': ask_id, 'status': 'expired'})
                 else:

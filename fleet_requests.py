@@ -1287,8 +1287,11 @@ class Requests:
             if handed.get(s['id']):
                 s['fleet_handoff'] = handed[s['id']]
                 if handed[s['id']]['stage'] not in (STAGES['declined'], 'expired') and s.get('next_actions'):
-                    # with them: nothing left to send it again (only links); a decline brings the sends back
-                    s['next_actions'] = [a for a in s['next_actions'] if a.get('kind') == 'open']
+                    # with them: nothing left to send it again (only links); a decline brings the sends back. A handoff to
+                    # someone else stays: the card says "Still with <them> until you send it to <other>" (Review handoff)
+                    has = {first_name(handed[s['id']]['name']), *handed[s['id']].get('also', [])}
+                    s['next_actions'] = [a for a in s['next_actions'] if a.get('kind') == 'open' or (
+                        a.get('kind') == 'handoff' and a.get('to_name') and first_name(a['to_name']) not in has)]
             ids = s.get('event_ids')
             ids = json.loads(ids) if isinstance(ids, str) else ids or []
             split = next((splits[i] for i in ids if i in splits), None)
