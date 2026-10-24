@@ -113,7 +113,7 @@ try{
  mode='down';graphDown=true;
  await tab.goto(base+'#chat='+'1'.repeat(16));await tab.reload();await tab.locator('#chat-log',{hasText:'Drafted the numbers for Robin.'}).waitFor();
  await tab.goto(base+'#graph');await tab.reload();await tab.locator('#people-view',{hasText:'Robin Example'}).waitFor();
- assert.match(await tab.locator('#updated').textContent(),/^Offline · updated \d\d:\d\d$/);
+ await until(tab,()=>/^Offline · updated \d\d:\d\d$/.test(document.querySelector('#updated').textContent),null,'the offline line on the Graph');
  mode='ok';graphDown=false;
 
  // 6. Kept cards with nothing open: still the outline until the Machine itself says "All clear"
