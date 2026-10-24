@@ -31,7 +31,11 @@ Click a row to open its card's chat, the promise, or the meeting in its own cale
 
 ## Add or change an event
 
-When a calendar can be changed from here, **New event** adds one: pick the calendar, a title and the time. Click an event without guests on that calendar to change it, or **Delete** it (tap twice). Nobody is invited or gets an update.
+When a calendar can be changed from here, **New event** adds one (on a phone it's the round **+**): pick the calendar, a title and the time. Click an event without guests on that calendar to change it, or **Delete** it (tap twice).
+
+**Where** suggests places as you type: ones you used before and your organisations first, then addresses from [OpenStreetMap](https://www.openstreetmap.org) through Photon, a free map search. Your Machine asks it, with only the words you typed. Pick one or keep your own text.
+
+**Invite** adds people from your Graph, or any email address. It's there on your own calendar only. Who gets an invite is listed above the button, and the button says how many: **Add and invite 2**. Google sends the invitations when you tap it, not before. Without guests nobody is invited or gets an update.
 
 A card can offer a change too, like a pick-up to add. It shows exactly what changes, and only your **Add**, **Save** or **Delete** makes it.
 

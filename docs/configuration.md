@@ -62,6 +62,7 @@
 | `review_worker` | `enabled: false` | `enabled`, `first_look` (true: the automatic first preview, below; false turns it off), `min_signals` (40), `max_wait_minutes` (60), `gap_seconds` (600), `timeout_seconds` (1500), `outage_grace_seconds` (600), `retry_seconds` (60), `max_retry_seconds` (1800) |
 | `weekly_recap` | `enabled: false` | `enabled`, `weekday` (1–7, default 5), `at` (`16:00`) |
 | `embeddings` | `enabled: false` | Optional [related signals](../README.md#related-signals-optional-local-embeddings): `url`, `model`, `dims` (256), `floor` (0.6), `query_floor` (0.4) |
+| `place_search` | on | The Calendar's **Where** also asks Photon (photon.komoot.io, OpenStreetMap data) for addresses, with only the typed text, at most once a second. `false` keeps it to your own places |
 | `enrichment` | off | Optional [organisation data](../README.md#organisation-data-optional-enrichment): `provider` or `url`, `headers`, `key_file`/`key_env`, `fields`, `per_day` (50); for [work contacts](intelligence.md#people-data) `people_url`, `people_fields`, `people_per_day` (50) |
 | `accounts` | `[]` | Sources, below |
 

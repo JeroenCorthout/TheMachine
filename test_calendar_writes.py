@@ -316,5 +316,133 @@ class CardChange(unittest.TestCase):
         self.assertNotIn('Calendars you can change', a.preparation_prompt(job, '', config={'accounts': [PARTNER]}))
 
 
+class Invites(unittest.TestCase):
+    """Guests only from the Calendar form, only on the owner's own calendar, listed in what they approve. Google sends
+    the invitations on that tap (sendUpdates all); every other write tells nobody. FakeGoogle: no invite is sent."""
+    OWN_NEW = {**NEW, 'calendar': 'cal', 'guests': ['Sam@Example.org', 'sam@example.org', 'kim@example.net', 'owner@example.com']}
+
+    def test_a_card_never_invites(self):
+        with self.assertRaisesRegex(ValueError, 'never invites'):
+            cw.validate(self.OWN_NEW, CONFIG)
+
+    def test_the_form_invites_from_the_owners_own_calendar_only(self):
+        action = cw.validate(self.OWN_NEW, CONFIG, invite=True)
+        self.assertEqual(action['guests'], ['sam@example.org', 'kim@example.net'])  # each once, never the owner
+        self.assertEqual(cw.label(action), 'Add and invite 2')
+        self.assertTrue(cw.preview(action).endswith('Invites: sam@example.org, kim@example.net'))
+        self.assertEqual(cw.done(action), 'Added to owner@example.com: Daycare pick-up, invited 2 people')
+        with self.assertRaisesRegex(ValueError, 'your own calendar only'):
+            cw.validate({**self.OWN_NEW, 'calendar': 'kid-cal'}, CONFIG, invite=True)
+        for bad in (['not-an-address'], 'sam@example.org', ['a@b.example'] * 51, [7]):
+            with self.assertRaises(ValueError):
+                cw.validate({**self.OWN_NEW, 'guests': bad}, CONFIG, invite=True)
+        self.assertNotIn('guests', cw.validate({**self.OWN_NEW, 'guests': []}, CONFIG, invite=True))
+
+    def test_google_sends_the_invites_only_with_guests(self):
+        google = FakeGoogle()
+        action = cw.validate(self.OWN_NEW, CONFIG, invite=True)
+        with granted(google):
+            google.transport().preflight(action)
+            self.assertEqual(google.transport().send(action, {'id': 'j'}), {'message_id': 'calendar:' + cw.event_id('j')})
+        [(method, params, payload, _)] = google.writes
+        self.assertEqual(params['sendUpdates'], 'all')
+        self.assertEqual(payload['attendees'], [{'email': 'sam@example.org'}, {'email': 'kim@example.net'}])
+        self.assertEqual(google.transport().reconcile(action, {'id': 'j'}), {'message_id': 'calendar:' + cw.event_id('j')})
+        plain = cw.validate({**NEW, 'calendar': 'cal'}, CONFIG, invite=True)
+        with granted(google):
+            google.transport().send(plain, {'id': 'k'})
+        self.assertEqual(google.writes[-1][1]['sendUpdates'], 'none')
+        self.assertNotIn('attendees', google.writes[-1][2])
+
+    def test_inviting_people_to_an_event_without_guests(self):
+        events = {7: {'account_id': 'cal', 'source_id': 'g7', 'title': 'Lunch', 'start': '2026-10-28T12:00:00+01:00',
+                      'end': '2026-10-28T13:00:00+01:00', 'all_day': False, 'guests': 0}}
+        action = cw.validate({'kind': 'calendar', 'op': 'update', 'event': 7, 'guests': ['sam@example.org']}, CONFIG, events, invite=True)
+        self.assertEqual((cw.body(action), cw.label(action)), ({'attendees': [{'email': 'sam@example.org'}]}, 'Save and invite 1'))
+        google = FakeGoogle(events={'g7': {'status': 'confirmed'}})
+        with granted(google):
+            google.transport().preflight(action)
+            google.transport().send(action, {'id': 'j'})
+        self.assertEqual((google.writes[0][0], google.writes[0][1]['sendUpdates']), ('calendar.events.patch', 'all'))
+        with self.assertRaisesRegex(ValueError, 'only names the event'):
+            cw.validate({'kind': 'calendar', 'op': 'delete', 'event': 7, 'guests': ['sam@example.org']}, CONFIG, events, invite=True)
+        events[7]['account_id'] = 'kid-cal'
+        with self.assertRaisesRegex(ValueError, 'your own calendar only'):
+            cw.validate({'kind': 'calendar', 'op': 'update', 'event': 7, 'guests': ['sam@example.org']}, CONFIG, events, invite=True)
+
+    def test_the_form_sends_only_the_count_the_button_showed(self):
+        form = CalendarForm('test_one_tap_one_event');form.setUp();self.addCleanup(form.doCleanups)
+        t = form.google.transport()
+        guests = ['sam@example.org', 'kim@example.net']
+        with patch.object(cw, 'CalendarTransport', lambda *x: t):
+            with self.assertRaisesRegex(ValueError, 'Nothing was sent'):
+                form.write({'request_id': 'd' * 32, **NEW, 'calendar': 'cal', 'guests': guests})
+            with self.assertRaisesRegex(ValueError, 'Nothing was sent'):
+                form.write({'request_id': 'd' * 32, **NEW, 'calendar': 'cal', 'guests': guests, 'invite': 1})
+            self.assertEqual(form.google.writes, [])
+            done = form.write({'request_id': 'd' * 32, **NEW, 'calendar': 'cal', 'guests': guests, 'invite': 2})
+        self.assertEqual((done['status'], done['invited']), ('done', 2))
+        self.assertEqual(form.google.writes[0][2]['attendees'], [{'email': g} for g in guests])
+
+
+class Suggestions(unittest.TestCase):
+    """Where and Invite suggestions: the owner's own places and people first; the map only gets the typed text."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.store = a.Store(Path(self.temp.name) / 'events.sqlite')
+        self.store.commit_page('cal', {}, [
+            a.calendar_event(OWN, raw(f'e{i}', 'Coffee', {'dateTime': f'2026-10-2{i}T10:00:00+01:00'}, {'dateTime': f'2026-10-2{i}T11:00:00+01:00'},
+                                      location=place), 'Europe/Brussels')
+            for i, place in enumerate(['Café Labath, Oude Houtlei 1, Gent', 'Café Labath, Oude Houtlei 1, Gent', 'https://zoom.us/j/1'])])
+        with self.store.connect() as db:
+            for node, kind, name, strength, info in (
+                    ('org:acme.example', 'org', 'Acme', 3, {'domain': 'acme.example'}),
+                    ('p1', 'person', 'Sam Lee', 5, {'identifiers': ['email:sam@acme.example', 'phone:+3212']}),
+                    ('p2', 'person', 'Samira Bot', 1, {'identifiers': ['email:noreply@acme.example']}),
+                    ('p3', 'person', 'Kim', 2, {'identifiers': ['email:kim.sammy@example.net']}),
+                    ('p4', 'person', 'Me', 9, {'identifiers': ['email:owner@example.com']})):
+                db.execute('INSERT INTO graph_nodes(id,kind,name,strength,signals,info) VALUES(?,?,?,?,0,?)', (node, kind, name, strength, json.dumps(info)))
+            db.execute("INSERT INTO org_profiles(domain,status,profile,fetched_at) VALUES('acme.example','found',?,'2026-10-01')",
+                       (json.dumps({'location': 'Ghent, Belgium'}),))
+        a.places._cache.clear();self.addCleanup(a.places._cache.clear)
+
+    def test_people_from_the_graph(self):
+        with self.store.connect() as db:
+            self.assertEqual(a.invite_people(db, 'sam', {'owner@example.com'}),
+                             [{'name': 'Sam Lee', 'email': 'sam@acme.example'}, {'name': 'Kim', 'email': 'kim.sammy@example.net'}])
+            self.assertEqual(a.invite_people(db, 's'), [])
+            self.assertEqual(a.invite_people(db, 'owner', {'owner@example.com'}), [])
+
+    def test_own_places_first_then_the_map_with_only_the_text(self):
+        asked = []
+        def fetch(url, timeout):
+            asked.append(url)
+            return json.dumps({'features': [{'properties': {'name': 'Café Labath', 'street': 'Oude Houtlei', 'housenumber': '1',
+                                                            'postcode': '9000', 'city': 'Gent', 'country': 'Belgium'}},
+                                            {'properties': {'name': 'Gent', 'city': 'Gent', 'country': 'Belgium'}}]}).encode()
+        with self.store.connect() as db:
+            found = a.places.suggest(db, {}, 'labath', 'en', fetch)
+            self.assertEqual([(f['value'], f['source']) for f in found],
+                             [('Café Labath, Oude Houtlei 1, Gent', 'calendar'), ('Café Labath, Oude Houtlei 1, 9000 Gent, Belgium', 'map'), ('Gent, Belgium', 'map')])
+            self.assertEqual(asked, ['https://photon.komoot.io/api/?q=labath&limit=6&lang=en'])
+            a.places.suggest(db, {}, 'Labath ', 'en', fetch)
+            self.assertEqual(len(asked), 1, 'cached')
+            self.assertEqual([f['value'] for f in a.places.local(db, 'ghent')], ['Acme, Ghent, Belgium'])
+            self.assertEqual(a.places.local(db, 'zoom'), [], 'a link is not a place')
+            a.places.suggest(db, {'place_search': False}, 'somewhere', 'en', fetch)
+            a.places.suggest(db, {}, 'ab', 'en', fetch)
+            self.assertEqual(len(asked), 1, 'off in the config, or too short: nothing goes out')
+            def down(url, timeout):
+                raise a.urllib.error.URLError('offline')
+            self.assertEqual([f['source'] for f in a.places.suggest(db, {}, 'labath gent', 'en', down)], ['calendar'])
+
+    def test_one_outside_request_a_second(self):
+        t, slept = [10.0], []
+        a.places._last[0] = 9.7
+        a.places.photon('first place', fetch=lambda u, s: b'{}', clock=lambda: t[0], sleep=slept.append)
+        self.assertEqual([round(x, 1) for x in slept], [0.7])
+
+
 if __name__ == '__main__':
     unittest.main()

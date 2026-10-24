@@ -62,6 +62,7 @@ import ms_graph
 import signatures
 import next_actions
 import calendar_writes
+import places
 import browser_login
 import browser_viewer
 import preparation_state
@@ -2150,6 +2151,35 @@ def calendar_write_events(db, ids, owner=()):
             found[row['id']] = {'account_id': row['account_id'], 'source_id': row['source_id'], 'title': row['title'],
                                 'start': start, 'end': end, 'all_day': all_day, 'guests': calendar_guests(m, owner)}
     return found
+
+
+def invite_people(db, query, owner=(), limit=8):
+    """People from the Graph to invite: a name and an address, the strongest first, matching the typed words."""
+    q = ' '.join(str(query or '').split()).casefold()
+    if len(q) < 2:
+        return []
+    like = '%' + q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+    try:
+        rows = db.execute("SELECT name,info FROM graph_nodes WHERE kind='person' AND (lower(name) LIKE ? ESCAPE '\\' OR lower(info) LIKE ? ESCAPE '\\') "
+                          'ORDER BY strength DESC LIMIT 60', (like, like)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    found, seen = [], {str(e).lower() for e in owner}
+    for name, info in rows:
+        try:
+            ids = json.loads(info or '{}').get('identifiers') or []
+        except ValueError:
+            continue
+        emails = [i.split(':', 1)[1].lower() for i in ids if isinstance(i, str) and i.startswith('email:')]
+        emails = [e for e in emails if calendar_writes.EMAIL.fullmatch(e) and not graph.bulk(e) and not graph.relay(e)]
+        named = q in str(name).casefold()
+        for email in sorted(emails, key=lambda e: q not in e)[:1 if named else 2]:
+            if email not in seen and (named or q in email):
+                seen.add(email)
+                found.append({'name': ' '.join(str(name).split())[:80] if '@' not in str(name) else '', 'email': email})
+        if len(found) >= limit:
+            break
+    return found[:limit]
 
 
 def calendar_write_ids(value):
@@ -10874,11 +10904,17 @@ class App:
 
     def calendar_write(self, args, transport=None):
         """The Calendar form's Add, Save or Delete: the owner filled it in and tapped it, so this one change runs now.
-        request_id is the tap: the same id again is that same write (a create keeps its Google event id), never a second."""
+        request_id is the tap: the same id again is that same write (a create keeps its Google event id), never a second.
+        guests: who the owner invited; the form listed them above a button that said how many (invite), so a list that
+        doesn't match that count is refused, and nobody gets an invite without that tap."""
         request_id = str(args.get('request_id') or '')
         if not re.fullmatch(r'[a-f0-9-]{16,64}', request_id):
             raise ValueError('Invalid request')
         change = {k: v for k, v in args.items() if k in calendar_writes.KEYS - {'kind', 'label'}}
+        if args.get('guests'):
+            if not isinstance(args['guests'], list) or args.get('invite') != len(args['guests']):
+                raise ValueError('Check who gets an invite and tap again. Nothing was sent.')
+            change['guests'] = args['guests']
         with self.store.connect() as db:
             done = db.execute('SELECT status,result FROM calendar_writes WHERE id=?', (request_id,)).fetchone()
             if done and done['status'] == 'done':
@@ -10886,7 +10922,7 @@ class App:
             if done and done['status'] == 'sending':
                 raise ValueError('That change is still going through.')
             events = calendar_write_events(db, [change.get('event')], self.owner_emails())
-        action = calendar_writes.validate({'kind': 'calendar', **change}, self.config, events)
+        action = calendar_writes.validate({'kind': 'calendar', **change}, self.config, events, invite=True)
         transport = transport or calendar_writes.CalendarTransport(self.config, credential, gog_read)
         transport.preflight(action)
         stamp = now()
@@ -10915,7 +10951,7 @@ class App:
                        (status, result.get('message_id'), error, now(), request_id))
         if status == 'done':
             self.sync_soon(action['account_id'])
-        return {'status': status, 'error': error, 'op': action['op'], 'calendar': action['calendar_name']}
+        return {'status': status, 'error': error, 'op': action['op'], 'calendar': action['calendar_name'], 'invited': len(action.get('guests') or ())}
 
     def sync_soon(self, account_id):
         """Read this calendar again now instead of at its next poll, so a change shows in the Calendar in seconds."""
@@ -15287,6 +15323,13 @@ class App:
                                           'calendars': writable})
                     except (ValueError, sqlite3.OperationalError):
                         self.output(400, {'error': 'Ask for a window of at most 15 days'})
+                elif path.path == '/api/places':  # the Calendar form's Where: the owner's places first, then the map
+                    args = urllib.parse.parse_qs(path.query)
+                    with app.store.connect() as db:
+                        self.output(200, {'places': places.suggest(db, app.config, args.get('q', [''])[0][:200], args.get('lang', ['en'])[0][:5])})
+                elif path.path == '/api/invitees':  # the Calendar form's Invite: people from the owner's Graph
+                    with app.store.connect() as db:
+                        self.output(200, {'people': invite_people(db, urllib.parse.parse_qs(path.query).get('q', [''])[0][:200], app.owner_emails())})
                 elif path.path == '/api/fleet':
                     if not getattr(app, 'fleet', None):
                         self.output(200, {'on': False})

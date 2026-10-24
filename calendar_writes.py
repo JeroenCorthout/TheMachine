@@ -6,8 +6,10 @@ someone shared with them that they marked writable in the config ("writable": tr
 read-only here.
 
 How: every write is one the owner saw and tapped. A card offers it as a next action {kind: calendar} and its Add,
-Save or Delete runs only after their confirm; the Calendar tab's own form writes when they tap Add or Save. An event
-never gets guests and Google never sends anyone an update (sendUpdates none), so a write reaches nobody.
+Save or Delete runs only after their confirm; the Calendar tab's own form writes when they tap Add or Save. A card's
+change never has guests. Only the Calendar form can invite people, on the owner's own calendar: the form lists who gets
+an invite above a button that says how many ("Add and invite 2"), and Google sends the invitations (sendUpdates all)
+only for that tap. Every other write tells nobody (sendUpdates none).
 Nothing here asks for a new permission: a sign-in without calendar write access gets a plain refusal."""
 from __future__ import annotations
 
@@ -26,6 +28,8 @@ OPS = ('create', 'update', 'delete')
 TEXT = {'title': 200, 'location': 300, 'notes': 2000}
 KEYS = {'kind', 'op', 'calendar', 'event', 'title', 'start', 'end', 'all_day', 'location', 'notes', 'label'}
 MAX_DAYS = 60  # one event, not a season
+MAX_GUESTS = 50
+EMAIL = re.compile(r'[^@\s<>(),;:"\[\]]{1,64}@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+')
 
 
 def own(account):
@@ -49,7 +53,7 @@ def name(account):
 def calendars(config, allowed=None):
     """The calendars the owner can add to, for the Calendar form's picker and the preparation prompt. allowed(account)
     says whether its sign-in may write (see may_write), so a read-only sign-in never offers a change it can't make."""
-    return [{'id': a['id'], 'name': name(a), 'own': own(a)} for a in config.get('accounts', [])
+    return [{'id': a['id'], 'name': name(a), 'own': own(a), 'invite': own(a)} for a in config.get('accounts', [])
             if writable(a) and (allowed is None or allowed(a))]
 
 
@@ -126,9 +130,26 @@ def _text(value, field):
     return value.strip() if field == 'notes' else ' '.join(value.split())
 
 
-def validate(value, config, events=None):
+def guest_list(value, account):
+    """The addresses to invite: valid, each once, never the calendar's own address."""
+    if not isinstance(value, list) or len(value) > MAX_GUESTS:
+        raise ValueError(f'guests is a list of at most {MAX_GUESTS} email addresses')
+    found, mine = [], {str(account.get('email') or '').lower(), str(account.get('calendar_id') or '').lower()}
+    for item in value:
+        address = str(item).strip().lower() if isinstance(item, str) else ''
+        if len(address) > 254 or not EMAIL.fullmatch(address):
+            raise ValueError(f'{str(item)[:80]} is not an email address')
+        if address not in mine and address not in found:
+            found.append(address)
+    return found
+
+
+def validate(value, config, events=None, invite=False):
     """A calendar change as the owner will see it. `events` maps an event's id (from the events table) to what is
-    known about it: account_id, source_id, title, start, end, all_day, guests. Returns the action without a revision."""
+    known about it: account_id, source_id, title, start, end, all_day, guests. Returns the action without a revision.
+    invite: the Calendar form, where the owner sees who gets an invite; a card's change never invites anyone."""
+    value = dict(value)
+    guests = value.pop('guests', None) if invite else None
     if set(value) - KEYS:
         raise ValueError('A calendar change has op, calendar, event, title, start, end, all_day, location and notes; '
                          'no guests: it never invites anyone')
@@ -151,6 +172,12 @@ def validate(value, config, events=None):
         before = {'title': event['title'], 'when': when(event['start'], event['end'], event['all_day'])}
         result.update(event_id=event['source_id'], event=value['event'], was=before)
     result.update(account_id=account['id'], calendar_name=name(account))
+    if guests:
+        if op == 'delete':
+            raise ValueError('A delete only names the event')
+        if not own(account):
+            raise ValueError('Invites go out from your own calendar only. Add guests there.')
+        guests = guest_list(guests, account)
     if op == 'delete':
         if set(value) - {'kind', 'op', 'event', 'calendar', 'label'}:
             raise ValueError('A delete only names the event')
@@ -177,6 +204,8 @@ def validate(value, config, events=None):
             raise ValueError('Switching between all day and a time needs a new start and end')
         changes['start'], changes['end'] = _times(start, end, all_day)
         changes['all_day'] = all_day
+    if guests:
+        changes['guests'] = guests
     if op == 'update' and not changes:
         raise ValueError('Say what changes: title, start, end, all_day, location or notes')
     result.update(changes)
@@ -191,12 +220,16 @@ def validate(value, config, events=None):
 
 
 def label(action):
+    if action.get('guests'):
+        return {'create': 'Add and invite ', 'update': 'Save and invite '}[action['op']] + str(len(action['guests']))
     return {'create': 'Add to calendar', 'update': 'Save event', 'delete': 'Delete event'}[action['op']]
 
 
 def done(action):
     """What happened, once it went through: "Added to Robin’s calendar: Swimming"."""
-    return {'create': 'Added to ', 'update': 'Changed on ', 'delete': 'Deleted from '}[action['op']] + action['calendar_name'] + ': ' + action['title']
+    text = {'create': 'Added to ', 'update': 'Changed on ', 'delete': 'Deleted from '}[action['op']] + action['calendar_name'] + ': ' + action['title']
+    n = len(action.get('guests') or ())
+    return text + (f", invited {n} {'person' if n == 1 else 'people'}" if n else '')
 
 
 def preview(action):
@@ -208,6 +241,8 @@ def preview(action):
         lines.append('Where: ' + action['location'])
     if action.get('notes'):
         lines.append('Notes: ' + action['notes'])
+    if action.get('guests'):
+        lines.append('Invites: ' + ', '.join(action['guests']))
     return '\n'.join(lines)
 
 
@@ -217,8 +252,9 @@ def event_id(key):
 
 
 def body(action, key=None):
-    """The Google event fields this change sets: on an update only those it changes; never attendees."""
-    changed = set(action.get('changed') or ()) if action['op'] == 'update' else {'title', 'location', 'notes', 'start'}
+    """The Google event fields this change sets: on an update only those it changes. Attendees only when the owner
+    invited people from the Calendar form."""
+    changed = set(action.get('changed') or ()) if action['op'] == 'update' else {'title', 'location', 'notes', 'start', 'guests'}
     out = {}
     if 'title' in changed:
         out['summary'] = action['title']
@@ -232,6 +268,8 @@ def body(action, key=None):
         if action['op'] == 'update':  # the other kind of time goes, or Google keeps both
             other = 'dateTime' if action['all_day'] else 'date'
             out['start'][other] = out['end'][other] = None
+    if 'guests' in changed and action.get('guests'):
+        out['attendees'] = [{'email': g} for g in action['guests']]
     if action['op'] == 'create':
         out['id'] = event_id(key)
     return out
@@ -258,6 +296,8 @@ class CalendarTransport:
     def preflight(self, action):
         import next_actions  # noqa: PLC0415 - next_actions imports this module
         account = self.account(action)
+        if action.get('guests') and not own(account):
+            raise ValueError('Invites go out from your own calendar only. Nothing was changed.')
         if not next_actions.granted_scopes(self.config, self.credential, account) & WRITE_SCOPES:
             raise ValueError('This Google sign-in can only read calendars. Nothing was changed.')
         try:
@@ -281,9 +321,10 @@ class CalendarTransport:
                 return None
             raise
 
-    def write(self, account, method, params, payload=None):
-        """(status, answer): status None when it went through, else Google's HTTP status (0 when unknown)."""
-        params = {'calendarId': self.calendar_id(account), 'sendUpdates': 'none', **params}
+    def write(self, account, method, params, payload=None, notify=False):
+        """(status, answer): status None when it went through, else Google's HTTP status (0 when unknown). notify: the
+        owner invited people on this tap, so Google sends them the invitation; otherwise nobody hears of it."""
+        params = {'calendarId': self.calendar_id(account), **params, 'sendUpdates': 'all' if notify else 'none'}
         if account.get('transport') == 'broker':
             import google_api  # noqa: PLC0415
             try:
@@ -312,12 +353,12 @@ class CalendarTransport:
         account = self.account(action)
         if action['op'] == 'create':
             payload = body(action, job['id'])
-            status, answer = self.write(account, 'events.insert', {}, payload)
+            status, answer = self.write(account, 'events.insert', {}, payload, notify=bool(action.get('guests')))
             if status == 409:  # this approval's event is there already: the earlier try went through
                 return self.reconcile(action, job)
             google_id = payload['id']
         elif action['op'] == 'update':
-            status, answer = self.write(account, 'events.patch', {'eventId': action['event_id']}, body(action))
+            status, answer = self.write(account, 'events.patch', {'eventId': action['event_id']}, body(action), notify=bool(action.get('guests')))
             google_id = action['event_id']
         else:
             status, answer = self.write(account, 'events.delete', {'eventId': action['event_id']})
@@ -342,5 +383,7 @@ class CalendarTransport:
         if not event or event.get('status') == 'cancelled':
             return {}
         if action['op'] == 'update' and 'title' in action.get('changed', ()) and event.get('summary') != action['title']:
+            return {}
+        if action.get('guests') and not {g.lower() for g in action['guests']} <= {str(a.get('email') or '').lower() for a in event.get('attendees') or []}:
             return {}
         return {'message_id': 'calendar:' + google_id}
