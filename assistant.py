@@ -13375,6 +13375,12 @@ class App:
         found = self.card_chat_gateway({'session_key': 'agent:main:assistant-review-preparation-' + (job['session_job_id'] or job['job_id']),
                                         'cursor': gateway_cursor, 'limit': CHAT_HISTORY_LIMIT})
         if not isinstance(found, dict) or found.get('error') or not isinstance(found.get('messages', []), list):
+            # Logged (once a minute at most: the dashboard asks every second during a run) with the helper's fixed word
+            # for why, so a chat that shows "couldn't load" can be traced to a slow or signed-out Gateway.
+            reason = found.get('reason') if isinstance(found, dict) and found.get('reason') in ('timeout', 'auth', 'offline', 'other') else 'other'
+            if time.monotonic() - getattr(self, '_chat_unavailable_logged', -1e9) >= 60:
+                self._chat_unavailable_logged = time.monotonic()
+                LOG.warning('card chat history unavailable suggestion=%s active=%s reason=%s', suggestion_id, active, reason)
             return {**result, 'items': chat_items([], owner, results), 'cursor': None, 'unavailable': True}
         flight = found.get('inFlightRun') if isinstance(found.get('inFlightRun'), dict) else None
         result['live'] = {'text': chat_text(flight.get('text'), chars=8000)} if flight and active else None
@@ -13583,9 +13589,11 @@ class App:
                'OPENCLAW_CONFIG_PATH': str(Path(self.config.get('openclaw_config') or Path.home() / '.openclaw' / 'openclaw.json').expanduser())}
         try:
             result = subprocess.run([node_bin(self.config), str(ROOT / 'chat-history-run.mjs')], env=env,
-                                    input=encoded(request), capture_output=True, text=True, timeout=20)
+                                    input=encoded(request), capture_output=True, text=True, timeout=40)
             return json.loads(result.stdout) if result.returncode == 0 else {'error': 'unavailable'}
-        except (ValueError, OSError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired:
+            return {'error': 'unavailable', 'reason': 'timeout'}
+        except (ValueError, OSError):
             return {'error': 'unavailable'}
 
     def peek_target(self, job_id):

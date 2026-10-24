@@ -39,5 +39,6 @@ const helper=(request,extra={})=>JSON.parse(execFileSync(process.execPath,[ROOT+
 assert.match(readFileSync(ROOT+'/chat-history-run.mjs','utf8'),/^const SCOPES = \['operator\.read'\];$/m);
 assert.throws(()=>helper({session_key:'agent:main:main',limit:10},{ASSISTANT_STATE_DIR:FIXTURE+'/chat'}));
 assert.throws(()=>helper({session_key:'agent:main:assistant-review-preparation-'+'a'.repeat(32),limit:10},{ASSISTANT_STATE_DIR:'chat'}));
-assert.deepEqual(helper({session_key:'agent:main:assistant-review-preparation-'+'a'.repeat(32),limit:10},{ASSISTANT_STATE_DIR:FIXTURE+'/chat',OPENCLAW_CONFIG_PATH:FIXTURE+'/none.json',OPENCLAW_GATEWAY_PORT:'9'}),{error:'unavailable'});
+{const r=helper({session_key:'agent:main:assistant-review-preparation-'+'a'.repeat(32),limit:10},{ASSISTANT_STATE_DIR:FIXTURE+'/chat',OPENCLAW_CONFIG_PATH:FIXTURE+'/none.json',OPENCLAW_GATEWAY_PORT:'9'});
+ assert.equal(r.error,'unavailable');assert.ok(['timeout','auth','offline','other'].includes(r.reason),'only a fixed word for why: '+JSON.stringify(r));assert.deepEqual(Object.keys(r).sort(),['error','reason'])}
 console.log('Pinned SDK and Telegram transport loaded; real plugin installation passed in a disposable home. No Gateway or send.');

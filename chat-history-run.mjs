@@ -72,10 +72,12 @@ async function history(request, bootstrap) {
   const client = new GatewayClient({
     url: gateway.url, ...(stored?.token ? {} : {token: gateway.token, password: gateway.password}),
     clientName: 'gateway-client', mode: 'ui', clientDisplayName: 'The Machine card chat', role: 'operator', scopes: SCOPES,
-    minProtocol: PROTOCOL_VERSION, maxProtocol: PROTOCOL_VERSION, requestTimeoutMs: 10000, hostDeps,
+    minProtocol: PROTOCOL_VERSION, maxProtocol: PROTOCOL_VERSION, requestTimeoutMs: 15000, hostDeps,
     onHelloOk: hello => connected(hello), onConnectError: error => failed(error),
   });
-  const timer = setTimeout(() => failed(new Error('connect timeout')), 8000);
+  // A Gateway busy with a run can take several seconds to greet a new client (7-8 s seen on a busy desktop): wait for it
+  // rather than call the chat unreadable while the answer is being written.
+  const timer = setTimeout(() => failed(new Error('connect timeout')), 15000);
   client.start();
   try {
     await ready;
@@ -101,15 +103,17 @@ if (!SESSION.test(request.session_key || '') || !STATE_OK ||
   process.stdout.write(JSON.stringify({error: 'invalid_request'}));
   process.exit(1);
 }
-let result;
+let result, reason = 'other';
+const why = error => { const m = String(error?.message || ''); return /timeout/i.test(m) ? 'timeout' : /token|pair|auth/i.test(m) ? 'auth' : /ECONNREFUSED|closed|socket/i.test(m) ? 'offline' : 'other'; };
 try {
   result = await history(request, false);
 } catch (error) {
+  reason = why(error);
   // A device token the Gateway no longer knows: pair again once with the shared secret.
   if (/token|pair|auth/i.test(String(error?.message || '')) && !/timeout/i.test(String(error?.message || ''))) {
-    try { result = await history(request, true); } catch {}
+    try { result = await history(request, true); } catch (again) { reason = why(again); }
   }
 }
-// Never pass on raw Gateway errors (they can name paths or settings): unavailable is all the caller needs.
-// Exit only once all of it is out: a large history is more than one pipe buffer.
-process.stdout.write(JSON.stringify(result ?? {error: 'unavailable'}), () => process.exit(0));
+// Never pass on raw Gateway errors (they can name paths or settings): unavailable and a fixed word for why (timeout,
+// auth, offline, other) is all the caller needs. Exit only once all of it is out: a large history is more than one pipe buffer.
+process.stdout.write(JSON.stringify(result ?? {error: 'unavailable', reason}), () => process.exit(0));

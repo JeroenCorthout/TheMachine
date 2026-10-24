@@ -1430,7 +1430,14 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
   .chat-layout{grid-template-columns:minmax(0,1fr)}
   body.chat-open:has(#inbox:not([hidden])) .site-footer{display:none}
   body.chat-open:has(#inbox:not([hidden])) main{padding:0 20px}
-  .chat-main{min-height:100dvh}
+  /* The chat is one column the height of what you see, like the ChatGPT and Claude apps: the thread scrolls in its own
+     box and the message box is the column's last row, so it never moves while you scroll. The page itself doesn't
+     scroll (the address bar stays as it is), and the column follows the visible part of the window (chatKeyboard):
+     on an iPhone the keyboard shrinks and slides that part instead of the window. */
+  html:has(body.chat-open #inbox:not([hidden])),body.chat-open:has(#inbox:not([hidden])){height:100%;overflow:hidden;overscroll-behavior:none}
+  body.chat-open:has(#inbox:not([hidden])) .chat-main{position:fixed;left:0;right:0;top:var(--vv-top,0px);height:var(--vv-h,100dvh);min-height:0;box-sizing:border-box;padding:0 max(20px,env(safe-area-inset-right)) 0 max(20px,env(safe-area-inset-left))}
+  .chat-head,.chat-panel,.chat-compose{flex:none}
+  .chat-log{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
   /* Phone: ‹ and ⋯ are 44px boxes at the screen edges, their glyphs on the chat's 20px gutters (the chevron's stroke over the
      text, the dots' edge over the bubbles); all three share the title's centre line, and the title ends in an ellipsis */
   .chat-head{align-items:center;gap:0;margin:0 -20px;padding:calc(4px + env(safe-area-inset-top)) env(safe-area-inset-right) 6px env(safe-area-inset-left)}
@@ -1438,11 +1445,11 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
   .chat-back{justify-items:start;padding-left:13.6px}  /* the chevron's left stroke at 20px */
   .chat-menu>summary{justify-items:end;padding-right:17.3px}  /* the right dot's edge at 20px from the right */
   .chat-title{margin:0 4px 0 0;text-overflow:ellipsis}.chat-title.fade{-webkit-mask-image:none;mask-image:none}
-  .chat-log{padding:24px 0 calc(12px + var(--kb,0px))}
+  .chat-log{padding:24px 0 12px}
   .chat-layout [data-chat-drawer]{display:flex}
   .chat-msg.you{max-width:86%}
   .chat-result{padding:14px 16px 12px}
-  .chat-compose{bottom:var(--kb,0px);padding:14px 0 calc(max(12px,env(safe-area-inset-bottom)) + 8px)}
+  .chat-compose{position:relative;bottom:auto;padding:14px 0 calc(max(12px,env(safe-area-inset-bottom)) + 8px)}
   body.kb-open .chat-compose{padding-bottom:10px}
   .chat-side{position:fixed;inset:0 auto 0 0;z-index:30;width:min(300px,85vw);max-height:none;padding:calc(16px + env(safe-area-inset-top)) 16px 16px;background:var(--bg);box-shadow:var(--shadow-pop);transform:translateX(-105%);transition:transform .2s;overscroll-behavior:contain}
   .chat-layout.drawer .chat-side{transform:none}
@@ -3712,7 +3719,9 @@ const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||s.status==
  // A result with files: its links under the last reply
  if(p.links&&!drafts.length&&s?.status==='prepared'&&!p.copy)out.push(`<div class="chat-links">${p.links}</div>`);
  if(chat.active)out.push(chat.live?.text?`<div class="chat-msg machine chat-live"><div class="bubble">${chatMarkdown(chat.live.text)}</div></div>`:'<div class="chat-msg machine chat-live"><div class="bubble typing" role="status" aria-label="Working"><i></i><i></i><i></i></div></div>');
- if(chat.unavailable)out.push('<p class="chat-note">I can’t read all of this chat right now.</p>');
+ // The run's side of the chat couldn't be read (the Gateway was slow or away) and nothing of it was loaded before:
+ // said once the run is over, never as an aside under the typing dots; the next ask (a few seconds) tries again.
+ if(chat.unavailable&&!chat.active)out.push('<p class="chat-note">I couldn’t load my replies just now. Trying again…</p>');
  return out.join('')}
 // At most two things to say, from what the card holds; tapping one fills the message box.
 // Quick picks only from next steps the card itself proposes; cards don't carry any yet, so there are none (no templated lines).
@@ -3737,7 +3746,7 @@ function chatView(s,groups){const p=chatParts(s);
  <div class="chat-compose"><div class="chat-sheet" id="chat-sheet">${p.sheet}</div><div class="chat-status" id="chat-status">${chatStatus(s,p)}</div><div class="chat-picks" id="chat-picks"${chatPicksShown()?'':' hidden'}>${chatPicks(s)}</div><div class="chat-box"><textarea id="chat-input" rows="1" aria-label="Message" placeholder="Ask or change something" enterkeyhint="send"></textarea><div class="chat-tools"><span class="grow"></span><button type="button" class="chat-send" data-chat-send aria-label="Send" title="Send" disabled>${SEND}</button></div></div></div></div></div>`}
 function chatGrow(t){if(!t)return;t.style.height='34px';t.style.height=Math.min(160,Math.max(34,t.scrollHeight))+'px';const b=$('[data-chat-send]');if(b)b.disabled=!t.value.trim()}
 // On open: the latest at the bottom, nothing cut off under the header; a short chat just sits under the header.
-// On a computer the thread scrolls in its own box; on a phone the page scrolls.
+// The thread scrolls in its own box (on a phone too, so the message box never moves); a page without that layout scrolls itself.
 const chatScroller=()=>{const l=$('#chat-log');return l&&getComputedStyle(l).overflowY!=='visible'?l:null};
 const chatToEnd=()=>{const l=chatScroller();if(l)l.scrollTop=l.scrollHeight;else scrollTo(0,document.documentElement.scrollHeight)};
 function chatScrollStart(){const log=$('#chat-log');if(!log)return;if(chatScroller())return chatToEnd();scrollTo(0,document.documentElement.scrollHeight);
@@ -3786,14 +3795,16 @@ function chatMount(id,html){const box=$('#suggestions'),cur=box.querySelector(':
  const side=cur.querySelector('.chat-side'),top=side?.scrollTop;if(side)chatPatch(side,nu.querySelector('.chat-side').innerHTML);if(side)side.scrollTop=top;
  swap('.chat-panel');chatKeepPlace(()=>chatPatch(cur.querySelector('#chat-log'),nu.querySelector('#chat-log').innerHTML));
  if(!cur.querySelector('#chat-menu')?.open)swap('.chat-head');swap('#chat-status');swap('#chat-picks');{const typing=document.activeElement?.matches('textarea,input[type=text]')&&cur.querySelector('#chat-sheet')?.contains(document.activeElement);if(!typing||!nu.querySelector('#chat-sheet')?.children.length)swap('#chat-sheet')}chatFades()}
-// Where the browser doesn't shrink the page for the on-screen keyboard (iOS Safari, older Chrome), lift the message box
-// above it by the part of the window the keyboard covers; and keep the latest message in view when you were at the end.
+// On a phone the chat column is exactly the visible part of the window (--vv-h, --vv-top): where the browser doesn't
+// shrink the page for the on-screen keyboard (iOS Safari) that part shrinks and slides instead, and the message box
+// rides on the keyboard; Android Chrome resizes the page itself (interactive-widget=resizes-content). Zoomed in with
+// two fingers, the column keeps the window's size. Keep the latest message in view when you were at the end.
 let chatAtEnd=false;
 const chatEndNow=(gap=80)=>{const l=chatScroller();return l?l.scrollTop+l.clientHeight>=l.scrollHeight-gap:innerHeight+scrollY>=document.documentElement.scrollHeight-gap};
-function chatKeyboard(){const v=window.visualViewport;if(!v)return;const kb=Math.max(0,Math.round(innerHeight-v.height-v.offsetTop)),typing=document.activeElement?.id==='chat-input';
- document.documentElement.style.setProperty('--kb',(typing?kb:0)+'px');document.body.classList.toggle('kb-open',typing&&(kb>0||innerHeight<screen.height*.6));
+function chatKeyboard(){const v=window.visualViewport;if(!v)return;const kb=Math.max(0,Math.round(innerHeight-v.height-v.offsetTop)),typing=document.activeElement?.id==='chat-input',zoomed=Math.abs((v.scale||1)-1)>.01,r=document.documentElement.style;
+ r.setProperty('--vv-h',(zoomed?innerHeight:v.height)+'px');r.setProperty('--vv-top',(zoomed?0:Math.max(0,v.offsetTop))+'px');document.body.classList.toggle('kb-open',typing&&(kb>0||innerHeight<screen.height*.6));
  if(typing&&chatAtEnd)requestAnimationFrame(chatToEnd)}
-window.visualViewport?.addEventListener('resize',chatKeyboard);window.visualViewport?.addEventListener('scroll',chatKeyboard);addEventListener('resize',chatKeyboard);
+window.visualViewport?.addEventListener('resize',chatKeyboard);window.visualViewport?.addEventListener('scroll',chatKeyboard);addEventListener('resize',chatKeyboard);chatKeyboard();
 function paintChat(){const log=$('#chat-log'),s=chatOpen();if(!log||!s)return;chatKeepPlace(()=>chatPatch(log,chatLog(s)));
  const st=$('#chat-status'),sh=chatStatus(s);if(st&&st.innerHTML!==sh)st.innerHTML=sh;const menu=$('#chat-menu');if(menu&&!menu.open)menu.querySelector('.chat-menu-list').innerHTML=chatParts(s).rest+`<button type="button" class="ghost" data-chat-drawer aria-expanded="${chatDrawer}">All tasks</button>`;
  const picks=$('#chat-picks');if(picks){const ph=chatPicks(s);if(picks.innerHTML!==ph)picks.innerHTML=ph;picks.hidden=!chatPicksShown()}
@@ -3802,8 +3813,12 @@ function paintChat(){const log=$('#chat-log'),s=chatOpen();if(!log||!s)return;ch
 async function chatKept(id){const hit=await localCache.read('chat:'+id);if(!hit||id!==chatId||chat)return;chat={...hit.value,cursor:null,active:false};paintChat();requestAnimationFrame(chatScrollStart)}
 async function chatPoll(){clearTimeout(chatTimer);const id=chatId;if(!id)return;
  if(!document.hidden&&!$('#inbox').hidden)try{const r=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'card_chat',args:{suggestion_id:id,...(chat?.cursor&&chat.items?{cursor:chat.cursor}:{})}})});
-  if(id!==chatId)return;const was=chat?.active,first=!chat;const keep=r.unchanged||r.unavailable&&chat?.items?.length;chat={...r,items:keep?chat.items:r.items,cursor:(keep?chat.cursor:r.cursor)||null};paintChat();if(!r.unchanged&&!r.unavailable)localCache.put('chat:'+id,{...chat,cursor:null});if(first){requestAnimationFrame(chatScrollStart);setTimeout(chatScrollStart,150)}if(was&&!r.active)refresh()}catch(e){if(id===chatId&&!chat){chat={items:[],unavailable:true};paintChat()}}
- if(id===chatId)chatTimer=setTimeout(chatPoll,chat?.active?1000:10000)}
+  if(id!==chatId)return;const was=chat?.active,first=!chat;
+  // A read that failed while the chat was already on screen changes nothing but whether the run still goes: what was
+  // shown stays (with the live answer), quietly, and the next ask catches up
+  if(r.unavailable&&chat?.items?.length&&!chat.unavailable)chat={...chat,active:r.active,status:r.status,live:r.active?chat.live:null,stale:true};
+  else{const keep=r.unchanged;chat={...r,items:keep?chat.items:r.items,cursor:(keep?chat.cursor:r.cursor)||null}}paintChat();if(!r.unchanged&&!r.unavailable)localCache.put('chat:'+id,{...chat,cursor:null});if(first){requestAnimationFrame(chatScrollStart);setTimeout(chatScrollStart,150)}if(was&&!r.active)refresh()}catch(e){if(id===chatId&&!chat){chat={items:[],unavailable:true};paintChat()}}
+ if(id===chatId)chatTimer=setTimeout(chatPoll,chat?.active?1000:chat?.unavailable||chat?.stale?4000:10000)}
 // Whether this page put the open chat on the history (so back can take it off again instead of adding an entry)
 let chatPushed=false;
 function openChatLink(){if(!state.suggestions||location.hash==='#browser')return;  // the browser pane over a chat keeps that chat for Back

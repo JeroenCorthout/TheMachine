@@ -87,14 +87,17 @@ try{
   await page.goto(base);await page.locator('#task-'+hex('a',0)).waitFor();
   for(const [name,open] of screens){
    await open(page);await page.waitForTimeout(400);
-   const H=await page.evaluate(()=>{const H=document.documentElement.scrollHeight-innerHeight;scrollTo(0,Math.round(H/2));return H});
-   assert.ok(H>400,`${name}: the page is taller than the screen (${H})`);
-   await page.waitForTimeout(300);const y0=await page.evaluate(()=>scrollY),text=await page.evaluate(mark);
+   // A card chat's thread scrolls in its own box (the page itself stays put); every other screen scrolls the page
+   const H=await page.evaluate(()=>{const l=document.querySelector('#chat-log'),box=l&&l.getClientRects().length&&getComputedStyle(l).overflowY!=='visible'?l:null;window.__box=box;
+    const H=box?box.scrollHeight-box.clientHeight:document.documentElement.scrollHeight-innerHeight;if(box)box.scrollTop=Math.round(H/2);else scrollTo(0,Math.round(H/2));return H});
+   assert.ok(H>400,`${name}: the page (or the thread) is taller than the screen (${H})`);
+   const at=()=>page.evaluate(()=>Math.round(window.__box?window.__box.scrollTop:scrollY));
+   await page.waitForTimeout(300);const y0=await at(),text=await page.evaluate(mark);
    for(let i=0;i<2;i++){tick++;await page.evaluate(()=>refresh());await page.waitForTimeout(700)}
    // a slow machine: give the lists that load after the refresh time to come back before measuring
    await page.waitForFunction(()=>{const m=window.__mark;return m.el.isConnected&&m.el.getClientRects().length||[...document.querySelectorAll('main '+m.tag)].some(x=>x.getClientRects().length&&x.textContent.replace(/\s+/g,' ').trim().slice(0,80)===m.text)},null,{timeout:6000}).catch(()=>{});await page.waitForTimeout(300);
    const r=await page.evaluate(moved),where=`${name}${anchoring?'':' (no scroll anchoring)'}: "${text.slice(0,30)}"`;
-   if(!r.found||Math.abs(r.d)>2||r.cls>0.01)failures.push(`${where} moved ${r.d}px, CLS ${r.cls.toFixed(3)}, scrollY ${y0} -> ${await page.evaluate(()=>scrollY)}`);
+   if(!r.found||Math.abs(r.d)>2||r.cls>0.01)failures.push(`${where} moved ${r.d}px, CLS ${r.cls.toFixed(3)}, scrollY ${y0} -> ${await at()}`);
    if(name==='Cards'&&!await page.locator('#task-'+hex('a',4)+' details.agent-more').evaluate(d=>d.open))failures.push(where+': the fold the reader opened closed');
    if(process.env.NO_JUMPS_SHOT)await page.screenshot({path:`${process.env.NO_JUMPS_SHOT}/${name.replace(/\W+/g,'-').toLowerCase()}${anchoring?'':'-noanchor'}.png`})}
   // The phone's drawer scrolls in its own box: a new card above keeps the rows in view where they were

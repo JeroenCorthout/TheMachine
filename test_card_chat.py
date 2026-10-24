@@ -364,10 +364,20 @@ class CardChat(unittest.TestCase):
         with self.gateway({'messages': history['messages'], 'deltaCursor': 'cur4'}):
             sent = self.app.card_chat(self.sid, moved['cursor'])
         self.assertIn(('event', 'Sent to Sam'), [(i['kind'], i['text']) for i in sent['items']])
-        with self.gateway({'error': 'unavailable'}):
+        with self.gateway({'error': 'unavailable', 'reason': 'timeout'}), self.assertLogs('personal-assistant', 'WARNING') as logged:
             down = self.app.card_chat(self.sid)
+            self.app.card_chat(self.sid)  # asked again a second later: logged once a minute at most
         self.assertTrue(down['unavailable'])
         self.assertEqual(down['items'][1]['text'], 'Make it shorter')
+        self.assertEqual(logged.output, [f'WARNING:personal-assistant:card chat history unavailable suggestion={self.sid} active=True reason=timeout'])
+
+    def test_a_slow_gateway_helper_is_a_timeout_not_a_hang(self):
+        # The helper waits up to 15 s for a busy Gateway's greeting; the service gives it more than that before it gives up
+        def slow(*args, **kwargs):
+            self.assertGreaterEqual(kwargs['timeout'], 30)
+            raise a.subprocess.TimeoutExpired('node', kwargs['timeout'])
+        with patch.object(a.subprocess, 'run', side_effect=slow), patch.object(a, 'node_bin', return_value='node'), patch.object(a, 'node_env', return_value={}):
+            self.assertEqual(self.app.card_chat_gateway({'session_key': 'x'}), {'error': 'unavailable', 'reason': 'timeout'})
 
     def test_card_chat_refuses_what_is_not_a_card(self):
         for bad in ('', '../x', 'ABCDEF0123456789', '0' * 16):
