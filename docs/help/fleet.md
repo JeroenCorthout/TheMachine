@@ -4,6 +4,7 @@ area: fleet
 summary: A Work Fleet for your team, a Family Fleet for home. Machines that help each other, with your yes on every answer.
 covers: tab:fleet, network
 code: fleet.py, network.py, dashboard.html
+site: Company sign-in, Ask to join, Approve
 order: 1
 ---
 The Machine Network connects Machines. What they tell each other is encrypted end to end, and each Machine answers only by your rules.
@@ -25,5 +26,13 @@ Ask "who knows someone at Acme?" from the Fleet tab, or **Ask the Fleet** on an 
 ## What your Machine answers
 
 Set it per Fleet, on the Sharing pane. See [Sharing rules](sharing-rules.md). **Settings** has a shortcut: **Fleet rules**.
+
+## Company sign-in
+
+For a hosted Work Fleet. An owner or admin signed in with a company Google Workspace or Microsoft 365 account can turn on **Company sign-in** on the Account page. It uses that account's domain.
+
+Teammates who sign in with an account on that domain then see **Ask to join**. An owner or admin must **Approve** each request. Personal Gmail and Outlook.com accounts never count.
+
+Removing someone from the Fleet signs them out everywhere.
 
 To join a Fleet, start one, or pair a Machine on your own computer, see [Plans and billing](plans-and-billing.md) and [Friends and the Network](friends.md).
