@@ -7,7 +7,8 @@ const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs'
 // A new board looks through the history once: its header says "Looking through your history…" while it runs, then how
 // many it added and how many wait for review. An organization from the history with no project yet waits under "could
 // belong here" like a project, and Add or Leave out posts one board_fit with its key. A project that bundles several
-// counterparts says "Add as N". Ticking rows (or Select all) turns the top buttons into "Add N" / "Leave out N", which
+// counterparts says "Add as N" and only how many it becomes. On a phone the name and why get the row's width with Add and
+// Leave out together under them. Ticking rows (or Select all) turns the top buttons into "Add N" / "Leave out N", which
 // post one board_fit with node_ids, and the toast offers Undo. The list stays open and in place after each one, also
 // through a refresh, and Add and Leave out sit side by side on a phone. Desktop and a 390 px phone, light and dark, no
 // sideways scroll. BACKFILL_SHOT=<dir> also writes screenshots.
@@ -58,10 +59,14 @@ try{
   await box.locator('summary').click();await fits(page,tag+' done');
   // a bundle says what Add does
   assert.equal((await box.locator('[data-fit-add="project:11"]').textContent()).trim(),'Add as 7');
-  assert.match(await box.locator('li',{hasText:'Acme acquisition talks'}).textContent(),/Splits into 7 projects, one per counterpart/);
+  assert.equal(await box.locator('li',{hasText:'Acme acquisition talks'}).locator('.fit-text small').allTextContents().then(t=>t.join('|')),'Splits into 7 projects, one per counterpart');  // no repeated why
+  assert.doesNotMatch(await box.locator('li',{hasText:'Acme acquisition talks'}).textContent(),/several buyers/);
   // Add and Leave out side by side, on the phone too
   const row=box.locator('li',{hasText:'Tinker Lane'}),[ab,lb]=[await row.locator('[data-fit-add]').boundingBox(),await row.locator('[data-fit-skip]').boundingBox()];
   assert.ok(Math.abs(ab.y-lb.y)<2&&lb.x>ab.x,`${tag}: Add and Leave out on one line ${JSON.stringify([ab,lb])}`);
+  const tb=await row.locator('.fit-text').boundingBox(),lw=await row.boundingBox();
+  if(width<600)assert.ok(tb.width>lw.width-60&&ab.y>tb.y+tb.height-2,`${tag}: the name and why get the width, the buttons under them ${JSON.stringify([tb,ab,lw])}`);
+  else assert.ok(Math.abs(ab.y+ab.height/2-(tb.y+tb.height/2))<12,`${tag}: on a wide screen the buttons sit beside the text`);
   await box.locator('li',{hasText:'Saffron Sync'}).scrollIntoViewIfNeeded();await shot(page,`backfill-done-${tag}`);
   // a refresh while it runs (the count changes) keeps the list open
   boards[0].maybes=boards[0].maybes.concat([{id:'org:late.example',name:'Late One',why:'found later'}]);await page.evaluate(()=>people('',true));

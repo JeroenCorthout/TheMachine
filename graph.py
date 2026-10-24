@@ -3357,7 +3357,8 @@ def backfill_counterparts(db):
         if str(r['org'] or '').startswith('org:'):
             taken.add(r['org'])
     out, seen = {}, set()
-    for r in db.execute("SELECT n.id person,n.name pname,json_extract(n.info,'$.org') org,e.id event_id,e.occurred_at FROM graph_events g "
+    for r in db.execute("SELECT n.id person,n.name pname,json_extract(n.info,'$.org') org,e.id event_id,e.occurred_at,coalesce(json_extract(n.info,'$.wrote'),0) wrote,"
+                        "coalesce(json_extract(n.info,'$.heard'),0) heard,coalesce(json_extract(n.info,'$.met'),0) met FROM graph_events g "
                         "JOIN graph_nodes n ON n.id=g.node_id JOIN events e ON e.id=g.event_id "
                         f"WHERE n.kind='person' AND g.probable=0 AND e.deleted=0 AND e.kind IN ({','.join('?' * len(BACKFILL_KINDS))}) "
                         "AND json_extract(n.info,'$.colleague') IS NOT 1 AND NOT EXISTS(SELECT 1 FROM event_projects ep WHERE ep.event_id=e.id) "
@@ -3365,7 +3366,11 @@ def backfill_counterparts(db):
         key = r['org'] if str(r['org'] or '').startswith('org:') else r['person']
         if key in taken or r['person'] in taken:
             continue
-        c = out.setdefault(key, {'name': None, 'people': [], 'event_ids': [], 'first': r['occurred_at'], 'last': r['occurred_at']})
+        c = out.setdefault(key, {'name': None, 'people': [], 'event_ids': [], 'first': r['occurred_at'], 'last': r['occurred_at'], 'wrote': 0, 'heard': 0, 'met': 0, '_seen': set()})
+        if r['person'] not in c['_seen']:  # how the owner and they talk: days the owner wrote, they wrote, they met (from the graph)
+            c['_seen'].add(r['person'])
+            for k in ('wrote', 'heard', 'met'):
+                c[k] += int(r[k] or 0)
         if (key, r['event_id']) not in seen:
             seen.add((key, r['event_id']))
             c['event_ids'].append(r['event_id'])
@@ -3378,6 +3383,7 @@ def backfill_counterparts(db):
         for r in db.execute(f"SELECT id,name FROM graph_nodes WHERE id IN ({','.join('?' * len(part))})", part):
             out[r['id']]['name'] = r['name']
     for key, c in out.items():
+        c.pop('_seen', None)
         c['name'] = (one_line(c['name'], 60) or '') or (key[4:] if key.startswith('org:') else key.split(':', 1)[-1])[:60]
     return out
 
@@ -3446,6 +3452,8 @@ def backfill_brief(db, run_id, now, describe, batch=BACKFILL_BATCH, chars=BACKFI
         head = (f"- {c['name']} ({key}): {len(c['event_ids'])} message{'s' if len(c['event_ids']) != 1 else ''} or meeting"
                 f"{'s' if len(c['event_ids']) != 1 else ''}, {c['first'][:10]} to {c['last'][:10]}"
                 + (f", with {', '.join(c['people'])}" if c['people'] else '')
+                + (f"; the owner wrote on {c['wrote']} day{'s' if c['wrote'] != 1 else ''}, they wrote on {c['heard']}, met {c['met']}"
+                   if c['wrote'] or c['met'] else f"; inbound only: they wrote on {c['heard']} day{'s' if c['heard'] != 1 else ''}, the owner never wrote to or met them")
                 + (f"; check against {', '.join(b['name'] for b in wants[key])} only" if len(wants[key]) < len(running) else ''))
         block = head + ''.join('\n    ' + line for line in describe(c['event_ids'][:4]))
         if lines and size + len(block) > chars:

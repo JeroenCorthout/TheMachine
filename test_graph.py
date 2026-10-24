@@ -1285,6 +1285,22 @@ class Boards(unittest.TestCase):
             maybes = {b['name']: [m['id'] for m in b['maybes']] for b in graph.boards(db, NOW.isoformat())}
             self.assertEqual(maybes, {'Listings': ['org:shop.example'], 'Buyers': []})
 
+    def test_the_look_through_the_history_says_who_wrote_so_cold_outreach_is_never_placed(self):
+        talk = [mail(30, 'Sam <sam@acme.com>', 'Ann <ann@buyer.example>', ('SENT',), thread='b', title='Would you consider buying Acme?'),
+                mail(20, 'Ann <ann@buyer.example>', 'sam@acme.com', thread='b', title='Re: Would you consider buying Acme?')]
+        cold = [mail(40, 'Max <max@brokers.example>', 'sam@acme.com', thread='c', title='Buyer seeking acquisition of Acme')]
+        self.add(*talk, *cold)
+        self.build()
+        self.app.graph_build = lambda *a, **k: None
+        self.app.model_usage = None
+        text = self.app.backfill_text('run1')
+        line = {k: next(x for x in text.splitlines() if f'({k})' in x) for k in ('org:buyer.example', 'org:brokers.example')}
+        self.assertIn('the owner wrote on 1 day', line['org:buyer.example'])
+        self.assertIn('inbound only', line['org:brokers.example'])
+        prompt = a.review_prompt('run1', ['work'], backfill=text)
+        self.assertIn('Unsolicited inbound outreach', prompt)
+        self.assertIn('never a label', prompt)
+
     def bundle(self):
         """A project with two counterparts a review says the board keeps apart, one of them with a project already."""
         partner = [mail(30, 'Ann <ann@partner.example>', 'sam@acme.com', thread='p', title='Buying Acme'),
