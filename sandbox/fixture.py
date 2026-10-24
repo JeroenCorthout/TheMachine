@@ -533,6 +533,10 @@ def build(profile):
              'text': 'Ines Calloway wants a Standard server in your Fleet', 'detail': '€30 a month, on your Fleet’s bill.', 'key': 'k1',
              'buttons': [{'choice': 'confirm', 'label': 'Confirm'}, {'choice': 'decline', 'label': 'Decline'}]},
         ],
+        # A card this Machine handed to a teammate whose Machine hasn't answered yet: its chat shows when it went
+        'handed': [{'card': 'open' + str(next(i for i, s in enumerate(STORIES) if s['key'] == 'partner')), 'to': 'm_team_priya',
+                    'title': 'Take the Pinecrest Legal partnership call',
+                    'summary': 'Dorian at Pinecrest Legal asks for 20 minutes about a CRM integration their clients keep asking for. You run partnerships: can you take the call next week?'}],
         'asked': [  # what this Machine asked its teammates, with their answers
             {'kind': 'relationships', 'question': {'about': 'northwindanalytics.example'}, 'answers': {'m_team_priya': {'knows': True, 'people': 2, 'closeness': 'close', 'last_contact': 'last week'},
                                                                                                          'm_team_tomasz': {'knows': False}}},

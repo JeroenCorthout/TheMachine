@@ -8222,6 +8222,14 @@
     ]
    }
   ],
+  "handed": [
+   {
+    "card": "open5",
+    "to": "m_team_priya",
+    "title": "Take the Pinecrest Legal partnership call",
+    "summary": "Dorian at Pinecrest Legal asks for 20 minutes about a CRM integration their clients keep asking for. You run partnerships: can you take the call next week?"
+   }
+  ],
   "asked": [
    {
     "kind": "relationships",

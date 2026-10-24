@@ -44,6 +44,7 @@ class Network:
         self.notices = {n['id']: {**n, 'at': now()} for n in self.net['notices']}
         self.trust = []  # signed trust statements (fleet_trust.py), as Machines post them
         self.graph = []  # the Shared Graph blobs waiting for this Machine (stub_graph.py)
+        self.hold = {h['to'] for h in self.net.get('handed', [])}  # teammates whose Machine keeps a handoff waiting for them
 
     # -- sealing, as the simulated Machines do
     def peer(self, member_id):
@@ -132,6 +133,10 @@ class Network:
             time.sleep(ANSWER_AFTER)
             with self.lock:
                 for index, (member_id, ask_id) in enumerate(ids.items()):
+                    if kind == 'handoff' and member_id in self.hold:  # it waits for them, as a real teammate's often does
+                        self.inbox['answers'].append({'id': ask_id, 'fleet_id': fleet_id, 'from': member_id, 'kind': kind, 'status': 'waiting',
+                                                      'receipt': secrets.token_hex(8)})
+                        continue
                     answer = self.reply(kind, index)
                     self.inbox['answers'].append({'id': ask_id, 'fleet_id': fleet_id, 'from': member_id, 'kind': kind,
                                                   'status': 'answered' if answer is not None else 'declined',

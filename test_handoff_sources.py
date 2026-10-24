@@ -119,6 +119,40 @@ class HandoffSources(unittest.TestCase):
         self.assertEqual(fleet_requests.sentences('Done!', ' Next ', ''), 'Done! Next')
         self.assertNotIn('The Machine', summary)
 
+    REASON = 'Triage confirmed a cross-team exposure of user names. The account issue is tracked, but these two paths are not. I can hand this to Pat’s Machine to get the fixes coordinated **today**.'
+
+    def chat_item(self, account, url='https://inbox.example/conversation/42'):
+        return {'account_id': account, 'source_id': 'c-' + account, 'kind': 'intercom.conversation', 'occurred_at': '2026-10-22T09:00:00+00:00',
+                'title': 'Security triage', 'body': 'Verdict: CONFIRMED', 'deleted': False, 'metadata': {'source_url': url}}
+
+    def mixed_card(self, *items):
+        for item in items:
+            self.store.commit_page(item['account_id'], {}, [item])
+        with self.store.connect() as db:
+            ids = [db.execute('SELECT id FROM events WHERE source_id=?', (e['source_id'],)).fetchone()[0] for e in items]
+        return self.store.suggest('k-mixed-' + items[0]['source_id'], 'Confirmed leaks need engineering follow-up', self.REASON, ids)['id']
+
+    def test_the_handoff_says_why_and_where_from_not_just_the_title(self):
+        card = self.mixed_card(self.chat_item('work'))
+        summary = self.fleet.handoff_draft(card)['summary']
+        self.assertEqual(summary, 'Confirmed leaks need engineering follow-up. Triage confirmed a cross-team exposure of user names. '
+                                  'The account issue is tracked, but these two paths are not. Source: Security triage (https://inbox.example/conversation/42)')
+        self.assertNotIn('I can', summary)  # the Machine's offer to the owner stays with the owner
+        self.assertNotIn('**', summary)
+
+    def test_nothing_personal_or_of_another_company_goes_along(self):
+        other = {'id': 'other', 'email': 'owner@othercorp.example', 'service': 'gmail', 'boundary': 'work:Othercorp'}
+        self.fleet.config = {**self.fleet.config, 'accounts': [*self.fleet.config['accounts'], other]}
+        for account in ('home', 'other'):
+            private = mail(account, 1, 'Kim Roe <kim@friend.example>', 'owner@gmail.com')
+            card = self.mixed_card(self.chat_item('work'), private)
+            draft = self.fleet.handoff_draft(card)
+            self.assertEqual(draft['summary'], 'Confirmed leaks need engineering follow-up', account)  # no reason, no link: the card mixes accounts
+            self.assertEqual(draft['sources'], [], account)  # the private email isn't listed
+            self.fleet.hand_off(card, self.ref, 'pat1', draft['title'], draft['summary'])
+            self.assertNotIn('sources', self.sent(), account)
+            self.assertNotIn('40k', json.dumps(self.relay.sent('/ask')[-1]))
+
     def test_a_teammates_sources_are_kept_in_their_fixed_form(self):
         hostile = [{'kind': 'email', 'from': 'Sam', 'when': '2026-10-22T09:00:00+00:00', 'subject': 'Hi', 'body': 'x' * 9000,
                     'run': 'send_email', 'labels': ['INBOX']},

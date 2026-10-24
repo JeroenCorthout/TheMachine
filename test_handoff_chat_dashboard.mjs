@@ -14,14 +14,17 @@ const BODY='Triage confirmed a cross-team exposure of user names and tag names. 
 const card=(id,title,extra)=>({id,title,body:BODY,status:'pending',event_ids:[1],scope:'work',created_at:iso(t0),next_actions:[],urgent:true,...extra});
 const waiting=card('a1a1a1a1a1a1a1a1','Confirmed contact owner and tag leaks need engineering follow-up',{fleet_handoff:{name:'Pat Lee',stage:'waiting for them'}});
 const declined=card('c1c1c1c1c1c1c1c1','Export leaks rows',{fleet_handoff:{name:'Pat Lee',stage:'declined',note:'Not my area',back:true}});
+const accepted=card('d1d1d1d1d1d1d1d1','Fix the export filter',{status:'completed',updated_at:iso(t0+2*hour),fleet_handoff:{name:'Pat Lee',stage:'accepted',note:'On it this week'}});
 const failed=card('b1b1b1b1b1b1b1b1','Rotate the shared webhook secret',{fleet_handoff_failed:{name:'Pat Lee',at:iso(t0+60e3)}});
 const source={kind:'source',from:'Alex Doe',via:'intercom',title:'Security triage',text:'Security triage\nVerdict: CONFIRMED\nConfidence: 90%',mine:false,at:t0-10*60e3};
 const items={
  [waiting.id]:[source,{kind:'event',text:'Handed off to Pat’s Machine',mine:true,handoff:true,at:t0+60e3}],
  [declined.id]:[source,{kind:'event',text:'Handed off to Pat’s Machine',mine:true,handoff:true,at:t0+60e3},
   {kind:'event',text:'Pat declined it. Their note: “Not my area”',handoff:true,at:t0+2*hour}],
+ [accepted.id]:[source,{kind:'event',text:'Handed off to Pat’s Machine',mine:true,handoff:true,at:t0+60e3},
+  {kind:'event',text:'Pat accepted it. Their note: “On it this week”',handoff:true,at:t0+2*hour}],
  [failed.id]:[source,{kind:'event',text:'Handoff didn’t go out to Pat’s Machine',handoff:true,retry_handoff:failed.id,at:t0+60e3}]};
-const state=()=>({suggestions:[waiting,declined,failed],connectors:[],suggestion_counts:{pending:3},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
+const state=()=>({suggestions:[waiting,declined,failed,accepted],connectors:[],suggestion_counts:{pending:3,completed:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
 const view={on:true,kinds:{},ask_meetings:false,fleets:[],waiting:[],asked:[],intro_offers:[],splits:[],log:[],notices:[]};
 const calls=[];
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;res.setHeader('Content-Type','application/json');
@@ -43,22 +46,31 @@ try{
   await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
   const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const open=async id=>{await page.goto('http://127.0.0.1:'+server.address().port+'/#chat='+id);await page.locator('#chat-log .chat-event').first().waitFor()};
-  // With Pat, no answer yet: the line with its time, the buttons under it, the status line says so
+  // With Pat, no answer yet: the line with its time, then "No answer from Pat yet", then the buttons (no Do it)
   await open(waiting.id);
   const ev=page.locator('#chat-log .chat-event').first();
   assert.equal((await ev.textContent()).trim(),'Handed off to Pat’s Machine · '+hm(t0+60e3));
   assert.ok(await ev.locator('.chat-when').isVisible(),'the time shows on a phone too');
   assert.doesNotMatch(await page.locator('#chat-log').textContent(),/\bYou (handed|snoozed)/i);
-  const log=await page.locator('#chat-log').evaluate(l=>[...l.children].map(n=>n.className.includes('chat-handoff-options')?'options':n.className.includes('chat-event')?'event':n.className.includes('chat-card')?'card':'other'));
-  assert.ok(log.indexOf('options')>log.indexOf('event'),log.join());
+  const log=await page.locator('#chat-log').evaluate(l=>[...l.children].map(n=>n.className.includes('chat-handoff-options')?'options':n.className.includes('chat-handoff-wait')?'wait':n.className.includes('chat-event')?'event':n.className.includes('chat-card')?'card':'other'));
+  assert.deepEqual(log.slice(-3),['event','wait','options'],log.join());
+  assert.equal((await page.locator('#chat-log .chat-handoff-wait').textContent()).trim(),'No answer from Pat yet');
   assert.equal(await page.locator('#chat-log .chat-card .chat-options').count(),0);  // no stale buttons above the line
-  assert.equal((await page.locator('#chat-status').textContent()).trim(),'No answer from Pat yet');
+  assert.deepEqual((await page.locator('#chat-log .chat-handoff-options button').allTextContents()).map(t=>t.trim()),['Mark done','Snooze','Not needed']);
+  assert.equal(await page.locator('#chat-log .chat-handoff-options button.primary').textContent(),'Mark done');
+  assert.equal((await page.locator('#chat-status').textContent()).trim(),'');  // said once, under the line
+  assert.ok(await page.locator('#chat-input').isVisible());  // "remind Pat" or "take it back" still go here
   if(dir)await page.screenshot({path:`${dir}/handoff-waiting-${width}.png`});
   // Declined, with their note: its own line; Do it myself under it
   await open(declined.id);
   assert.match(await page.locator('#chat-log .chat-event').nth(1).textContent(),/^Pat declined it\. Their note: “Not my area” · \d\d:\d\d$/);
   assert.match(await page.locator('#chat-log .chat-handoff-options').textContent(),/Do it myself/);
   if(dir)await page.screenshot({path:`${dir}/handoff-declined-${width}.png`});
+  // Accepted: their answer, and the card is done
+  await open(accepted.id);
+  assert.match(await page.locator('#chat-log .chat-event').nth(1).textContent(),/^Pat accepted it\. Their note: “On it this week” · \d\d:\d\d$/);
+  assert.equal(await page.locator('#chat-log .chat-handoff-wait').count(),0);
+  if(dir)await page.screenshot({path:`${dir}/handoff-accepted-${width}.png`});
   // Didn't go out: said, with Try again, which opens the handoff form
   await open(failed.id);
   const bad=page.locator('#chat-log .chat-event.failed');
@@ -68,6 +80,11 @@ try{
   await page.locator('.chat-panel .fleet-handoff-form').waitFor();
   assert.deepEqual(calls.filter(c=>c.action==='fleet_handoff_draft').at(-1).args,{suggestion_id:failed.id});
   if(dir)await page.screenshot({path:`${dir}/handoff-retry-form-${width}.png`});
+  // The card in the list: no Do it while Pat has it
+  await page.goto('http://127.0.0.1:'+server.address().port+'/');
+  const w=page.locator('#task-'+waiting.id);await w.waitFor();
+  assert.equal(await w.locator('button',{hasText:/^Do it$/}).count(),0);
+  if(dir){await w.scrollIntoViewIfNeeded();await w.screenshot({path:`${dir}/handoff-waiting-card-${width}.png`})}
   // The card itself says it too
   await page.goto('http://127.0.0.1:'+server.address().port+'/');
   const c=page.locator('#task-'+failed.id);await c.waitFor();

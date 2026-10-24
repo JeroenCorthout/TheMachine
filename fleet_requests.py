@@ -100,6 +100,18 @@ def carried_text(text, chars):
     return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip()[:chars]
 
 
+# A sentence where the Machine speaks of itself ("I can hand this to Pat's Machine…", "The Machine checked the thread"):
+# its account to the owner, never part of what a teammate is asked
+MACHINE_SAYS = re.compile(r"^(?:I|I'm|I’m|I've|I’ve|I'll|I’ll|The Machine)\b")
+
+
+def card_reason(body):
+    """A suggestion's own text as a teammate reads it: plain words, without what the Machine says of itself."""
+    text = ' '.join(re.sub(r'\*\*([^*]+)\*\*', r'\1', str(body or '')).split())
+    kept = [x for x in re.split(r'(?<=[.!?])\s+', text) if x and not MACHINE_SAYS.match(x)]
+    return ' '.join(kept)[:600]
+
+
 def sentences(*parts):
     """Parts of a message joined as plain sentences, with a full stop between them where one is missing."""
     parts = [' '.join(str(p).split()) for p in parts if p and str(p).strip()]
@@ -465,7 +477,16 @@ class Requests:
         else:
             task = (self.card_task or (lambda row: row.get('title') or ''))({**dict(card), **(dict(prep) if prep else {})})
             mine_note = ' '.join(str(note['feedback']).split()) if note else ''
-        summary = sentences(task, mine_note)
+        refs = [ref for ref in self.work_fleets() if self.teammates(ref) and 'handoff' in self.fleets()[ref].get('asks', fleet.ASKS['work'])]
+        allowed = self.handoff_accounts(refs)
+        # Why it matters, from the card itself, and where it came from: only when everything the card is built from may
+        # go to each of those Fleets (no Personal account, no other company's), and never on a card whose text is
+        # already the Machine's own outcome (prepared). A handoff text the preparation wrote stands as it is.
+        why, links = '', ''
+        if not ready and allowed and set(json.loads(card['account_ids'] or '[]')) <= set(allowed):
+            why = card_reason(card['body']) if card['status'] in ('pending', 'snoozed', 'accepted', 'instructions') else ''
+            links = '; '.join(f"{t} ({u})" if t else u for t, u in self.handoff_links(card['id'], allowed))
+        summary = sentences(task, why, ('Source: ' + links) if links else '', mine_note)
         first = lambda m: not (ready and self.is_person(m, ready))  # the teammate that text is for comes first, so it's the default
         fleets = [f for f in [{'id': ref, 'name': self.fleets()[ref].get('name'),
                    'members': sorted(({'member_id': m['member_id'], 'name': fleet.label(m), '_first': first(m)} for m in self.teammates(ref)
@@ -479,17 +500,41 @@ class Requests:
         return {'suggestion_id': card['id'], 'title': fleet.clean(card['title'], 120), 'summary': fleet.clean(summary, 1000),
                 'task': fleet.clean(task, 1000), 'note': fleet.clean(mine_note, 600),
                 'contact': contact, 'due': card['due'] if 'due' in card.keys() else None, 'fleets': fleets,
-                'sources': [{'label': s['label'], 'kind': s['kind']} for s in self.handoff_sources(card['id'])]}
+                'sources': [{'label': s['label'], 'kind': s['kind']} for s in self.handoff_sources(card['id'], allowed)]}
 
-    def handoff_sources(self, card_id):
+    def handoff_accounts(self, refs):
+        """The accounts whose content may go in a handoff to each of these Fleets: work accounts only, and none of another
+        company's (fleet_accounts)."""
+        found = None
+        for ref in refs:
+            found = set(self.fleet_accounts(ref)) if found is None else found & set(self.fleet_accounts(ref))
+        return sorted(found or ())
+
+    def handoff_links(self, card_id, accounts):
+        """Where the card's own items are (an Intercom conversation, a Slack thread): their title and https link, only
+        from these accounts, at most two."""
+        with self.connect() as db:
+            card = db.execute('SELECT event_ids FROM suggestions WHERE id=?', (str(card_id),)).fetchone()
+            ids = json.loads(card['event_ids'] or '[]') if card else []
+            rows = db.execute('SELECT account_id,title,metadata FROM events WHERE deleted=0 AND id IN (SELECT value FROM json_each(?)) '
+                              'ORDER BY occurred_at', (json.dumps(ids),)).fetchall()
+        out = []
+        for r in rows:
+            url = str(json.loads(r['metadata'] or '{}').get('source_url') or '').strip()
+            if r['account_id'] in accounts and url.startswith('https://') and len(url) <= 500 and not any(u == url for _, u in out):
+                out.append((fleet.clean(r['title'], 120), url))
+        return out[:2]
+
+    def handoff_sources(self, card_id, accounts=None):
         """The card's own emails and messages, as a handoff carries them: who wrote, when, the subject and the text
         (cut to SOURCE_CHARS, SOURCES_CHARS in all). Only this card's evidence, never anything else of the mailbox.
         Each has a label for the form ("Email from Stripe Alerts · Fri 23 Oct")."""
         with self.connect() as db:
             card = db.execute('SELECT event_ids FROM suggestions WHERE id=?', (str(card_id),)).fetchone()
             ids = json.loads(card['event_ids'] or '[]') if card else []
-            rows = {r['id']: r for r in db.execute('SELECT id,kind,occurred_at,title,body,metadata FROM events WHERE deleted=0 AND id IN '
-                                                   '(SELECT value FROM json_each(?))', (json.dumps(ids),))}
+            rows = {r['id']: r for r in db.execute('SELECT id,kind,account_id,occurred_at,title,body,metadata FROM events WHERE deleted=0 AND id IN '
+                                                   '(SELECT value FROM json_each(?))', (json.dumps(ids),))
+                    if accounts is None or r['account_id'] in accounts}  # never a Personal or another company's item
         out, budget = [], SOURCES_CHARS
         for event_id in ids:
             r = rows.get(event_id)
@@ -503,7 +548,7 @@ class Requests:
             body = text[:min(SOURCE_CHARS, budget)]
             budget -= len(body)
             when = dt.datetime.fromisoformat(r['occurred_at'])
-            out.append({'kind': CARRIED[r['kind']], 'from': who or 'Unknown sender', 'when': when.isoformat(),
+            out.append({'kind': CARRIED[r['kind']], 'account_id': r['account_id'], 'from': who or 'Unknown sender', 'when': when.isoformat(),
                         'subject': fleet.clean(r['title'], 200), 'body': body,
                         **({'clipped': True} if len(text) > len(body) or meta.get('truncated') else {}),
                         'label': f"{CARRIED[r['kind']].capitalize()} from {name or who or 'someone'} · {when.astimezone(self.local_now().tzinfo).strftime('%a %-d %b')}"})
@@ -592,10 +637,13 @@ class Requests:
         keys = self.message_keys(card_id, fleet_ref)
         if keys:
             question['messages'] = keys
-        found = self.handoff_sources(card_id) if sources else []
+        refs = [f['id'] for f in draft['fleets']]
+        found = self.handoff_sources(card_id, self.handoff_accounts(refs)) if sources else []  # as the form listed them
         if isinstance(sources, list):
             keep = {n for n in sources if isinstance(n, int) and not isinstance(n, bool)}
             found = [x for n, x in enumerate(found) if n in keep]
+        mine = set(self.fleet_accounts(fleet_ref))
+        found = [x for x in found if x.pop('account_id', None) in mine]
         carried = parse_sources(found)
         if carried:
             question['sources'] = carried

@@ -1395,7 +1395,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 .chat-log>:hover .chat-time,.chat-log>:focus-within .chat-time,.chat-from .chat-time{opacity:1}
 @media(hover:none){.chat-msg>.chat-time,.chat-result>.chat-time,.chat-event .chat-time,.chat-result-head .chat-time{display:none}}
 .chat-clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}.chat-source .chat-clamp{-webkit-line-clamp:3}.chat-clamp.open{display:block}.chat-clamp p+p{margin-top:10px}
-#chat-log button.link,.chat-status button.link{display:inline;min-height:0;margin:0;padding:0;border:0;background:none;box-shadow:none;color:var(--c-accent);font:500 var(--chat-meta)/1.5 var(--sans);cursor:pointer}
+#chat-log button.link,.chat-status button.link{display:inline;white-space:nowrap;min-height:0;margin:0;padding:0;border:0;background:none;box-shadow:none;color:var(--c-accent);font:500 var(--chat-meta)/1.5 var(--sans);cursor:pointer}
 #chat-log button.link:hover,.chat-status button.link:hover{text-decoration:underline}
 .chat-more,.chat-source .read-original{margin:6px 14px 0 0!important}
 .chat-noted{margin:6px 0 0;font-size:var(--chat-meta);color:var(--chat-quiet)}.chat-files .chat-noted{margin:0 0 0 4px;align-self:center}
@@ -1467,7 +1467,7 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 /* The bottom: a status line, at most two suggestions and a roomy message box, in the same column as the thread */
 .chat-compose{position:sticky;bottom:0;z-index:5;align-self:center;width:min(100%,var(--chat-col));padding:14px 0 calc(max(12px,env(safe-area-inset-bottom)) + 8px);background:var(--bg)}
 /* No fade above the box: a message passing under it must never look cut off */.chat-compose::before{content:none}
-.chat-status{display:flex;gap:6px;align-items:baseline;justify-content:center;font-size:var(--chat-meta);color:var(--chat-quiet);line-height:1.5}.chat-status:empty{display:none}.chat-status:not(:empty){margin:0 0 12px}
+.chat-status{display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline;justify-content:center;text-align:center;font-size:var(--chat-meta);color:var(--chat-quiet);line-height:1.5}.chat-status:empty{display:none}.chat-status:not(:empty){margin:0 0 12px}
 .chat-picks{display:flex;flex-wrap:nowrap;gap:8px;margin:0 0 12px;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}.chat-picks::-webkit-scrollbar{display:none}.chat-picks:empty,.chat-picks[hidden]{display:none}
 .chat-say{flex:none;width:auto;min-height:30px;margin:0;padding:4px 12px;border:1px solid var(--c-line-strong);border-radius:999px;background:none;box-shadow:none;color:var(--muted);font:400 .84rem/1.3 var(--sans);white-space:nowrap;cursor:pointer}.chat-say:hover{background:var(--c-hover);color:var(--text)}
 .chat-box{display:flex;align-items:flex-end;gap:8px;padding:10px 10px 10px 8px;border-radius:28px;background:var(--surface);border:1px solid var(--c-line-strong);box-shadow:0 6px 20px -14px #0006}
@@ -2307,7 +2307,7 @@ function cardActions(s,choices,smartButtons,unmerge,hint,smart){const copy=copyL
  const answered=s.status==='prepared'&&(()=>{try{return JSON.parse(s.outcome||'{}').state==='answered'}catch{return false}})();
  const ask=askQuestion(s,smart,hint);
  const mine=ownerStep(s)&&!ask;
- const isPrimary=c=>c==='send'||(c==='retry'&&!ask)||c==='answer'||(c==='complete'&&mine)||(c==='complete'&&!copy&&(hint||(s.status==='prepared'&&!answered&&!ask&&!finalStep(s)&&!smart.some(a=>a.kind!=='open'))))||(c==='accept'&&(s.status==='pending'||answered)&&!hint&&!mine);
+ const isPrimary=c=>c==='send'||(c==='complete'&&withTeammate(s))||(c==='retry'&&!ask)||c==='answer'||(c==='complete'&&mine)||(c==='complete'&&!copy&&(hint||(s.status==='prepared'&&!answered&&!ask&&!finalStep(s)&&!smart.some(a=>a.kind!=='open'))))||(c==='accept'&&(s.status==='pending'||answered)&&!hint&&!mine);
  const btn=([c,t])=>c==='change'&&agentAsk(s)?`<button class="ghost" data-agent-ask="${esc(s.id)}">Ask ${esc(s.agent_job.name)} for changes</button>`:c==='handoff'?`<button class="ghost" data-fleet-handoff="${esc(s.id)}">${t}</button>`:c.startsWith('agent:')?`<button class="ghost" data-agent-hand="${esc(c.slice(6))}" data-card="${esc(s.id)}">${esc(t)}</button>`:`<button class="${isPrimary(c)?'primary':c==='reject'?'quiet':'ghost'}" data-id="${s.id}" data-choice="${c}">${t}</button>`;
  const all=[...choices,...(canHandoff(s)&&s.status!=='snoozed'&&!smart.some(a=>a.kind==='handoff')?[['handoff',s.fleet_handoff?.back?'Hand to someone else':'Hand off']]:[]),...(canAgent(s)?agentTools().map(t=>['agent:'+t.id,'Hand to '+t.name]):[]),...(agentAsk(s)&&!choices.some(([c])=>c==='change')?[['change','']]:[])];
  const head=all.filter(([c])=>isPrimary(c)),order=(mine&&s.status==='pending'?['accept','snooze','reject','change','handoff']:ask?['handoff','complete','retry','snooze','reject']:answered?['snooze','change','complete','reject','handoff']:SECONDARY[s.status])||['complete','snooze','change','reject','handoff'];
@@ -2350,7 +2350,7 @@ const handled=!closed(s)&&s.handled_hint?(()=>{try{return JSON.parse(s.handled_h
 const ask=askQuestion(s,smart,hint);
 // Try again already ran without anything new and stopped asking again: retrying alone won't help, so it isn't offered.
 const retryPointless=s.preparation_cause==='retry'&&askBlocked(s);
-const asked=ask?[['answer','Answer'],...(s.preparation_status==='blocked'&&!retryPointless?[['retry',retryLabel(s.preparation_reason)]]:[]),['complete','Mark done'],['snooze','Snooze'],['reject','Not needed']]:s.status==='pending'?[['accept',s.labels?.accept||'Do it'],['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject',s.labels?.reject||'Not needed']]:s.status==='snoozed'?[['accept',s.handoff_wait?'Check in now':'Unsnooze'],['snooze','Change time'],['reject','Not needed']]:[...(s.preparation_status==='blocked'?[['retry',retryLabel(s.preparation_reason)]]:answered?[['accept','Do it']]:[]),['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']];
+const asked=ask?[['answer','Answer'],...(s.preparation_status==='blocked'&&!retryPointless?[['retry',retryLabel(s.preparation_reason)]]:[]),['complete','Mark done'],['snooze','Snooze'],['reject','Not needed']]:withTeammate(s)?[['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']]:s.status==='pending'?[['accept',s.labels?.accept||'Do it'],['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject',s.labels?.reject||'Not needed']]:s.status==='snoozed'?[['accept',s.handoff_wait?'Check in now':'Unsnooze'],['snooze','Change time'],['reject','Not needed']]:[...(s.preparation_status==='blocked'?[['retry',retryLabel(s.preparation_reason)]]:answered?[['accept','Do it']]:[]),['complete','Mark done'],['snooze','Snooze'],['change','Change'],['reject','Not needed']];
 const choices=ownerStep(s)&&!ask?ownerStepChoices(asked):asked;
 const notes=smart.map(a=>({action:a,state:a.state||s.action_status})).filter(x=>x.action!==tpSent&&actionNote(x.action.kind==='intercom'?{...x.state,as_name:x.action.as_name}:x.state,x.action.kind));
 const undo=closed(s)&&s.undo_until&&Date.parse(s.undo_until)>Date.now();
@@ -3751,7 +3751,7 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  const q=s&&!items.some(i=>i.kind==='reply')&&!p.ask?chatQuestion(s):{};
  const headline=t=>{const m=/^\s*\*\*([^*\n]+)\*\*[ \t]*(?:\n+|$)/.exec(String(t||''));return m?{title:m[1].trim(),rest:String(t).slice(m[0].length).trim()}:null};
  const copyAt=s&&s.status==='prepared'&&!p.send&&p.copy?rows.findLastIndex(i=>i.kind==='reply'):-1;
- const isResult=(i,n)=>i.kind==='reply'?!!((i.drafts||[]).length||headline(i.text)||n===copyAt):i.kind==='card'?!!(s&&!closed(s)&&(p.ask||q.ask||s.status==='prepared'&&p.send)):false;
+ const isResult=(i,n)=>i.kind==='reply'?!!((i.drafts||[]).length||headline(i.text)||n===copyAt):i.kind==='card'?!!(s&&!closed(s)&&!['asked','waiting for them'].includes(s.fleet_handoff?.stage)&&(p.ask||q.ask||s.status==='prepared'&&p.send)):false;
  // Raised only while it is open: a draft not sent yet, an outcome on a card still going, or the call the card waits on
  // A draft is open only while the card offers it to send: once a change is asked for, it is an earlier draft.
 const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||s.status==='prepared'&&i.drafts.some(d=>!sent.has(d.body.trim())));
@@ -3782,6 +3782,7 @@ const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||s.status==
    // A handoff that didn't go out: Try again opens the handoff form again, as it was sent
    const retry=i.retry_handoff&&s&&!closed(s)&&!s.fleet_handoff?` · <button type="button" class="link" data-fleet-handoff="${esc(s.id)}">Try again</button>`:'';
    push(i,`<div class="chat-event${i.mine?' mine':''}${i.retry_handoff?' failed':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+(i.handoff?`<span class="chat-when"> · ${chatHM(i.at)}</span>`:tm(i.at))+retry}</div>`);
+   if(i.handoff&&n===lastMachine&&s&&withTeammate(s))push({kind:'event',mine:i.mine},`<div class="chat-event chat-handoff-wait">No answer from ${esc(String(s.fleet_handoff.name||'your teammate').split(' ')[0])} yet</div>`);
    if(i.handoff&&n===lastMachine&&options(n,false))push({kind:'event',mine:false},`<div class="chat-msg machine chat-handoff-options">${options(n,false)}</div>`)}
   else if(i.kind==='learned')push(i,chatLearned(i));  // no time of its own: it sits under its reply, and beside a wide centered line it would stick out sideways
   else if(i.kind==='you'){const to=i.to||'',show=to&&to!==lastTo;lastTo=to;
@@ -3828,7 +3829,7 @@ const DOTS='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r
 const chatUntil=v=>{const d=new Date(v),days=(d-Date.now())/864e5;return (chatDayOf(v)==='Today'?'today':days<6&&days>-1?d.toLocaleDateString(CHAT_LOCALE,{weekday:'short'}):d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short'}))+' '+chatHM(v)};
 // One small line over the message box: where the card stands, with its one way back (Unsnooze, Reopen) as a text button
 function chatStatus(s,p=chatParts(s)){const text=chat?.active?'Working on it…':s.status==='snoozed'?(s.snoozed_until?(s.handoff_wait?checkinLabel(s):'Snoozed until '+chatUntil(s.snoozed_until)):'Snoozed')
-  :closed(s)?(s.status==='completed'?'Done':'Not needed'):s.status==='pending'&&['asked','waiting for them'].includes(s.fleet_handoff?.stage)?'No answer from '+String(s.fleet_handoff.name||'your teammate').split(' ')[0]+' yet':s.preparation_status==='blocked'?p.status||cardState(s):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':'';
+  :closed(s)?(s.status==='completed'?'Done':'Not needed'):s.preparation_status==='blocked'?p.status||cardState(s):['queued','starting','running'].includes(s.preparation_status)||['accepted','instructions'].includes(s.status)?'Preparing':'';
  return text?`<span>${esc(text)}</span>${p.back&&!chat?.active?`<span aria-hidden="true">·</span>${p.back}`:''}`:''}
 function chatView(s,groups){const p=chatParts(s);
  const side=`<aside class="chat-side" aria-label="Tasks"><div class="scope-filter" role="group" aria-label="Show">${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${groups.map(([items,title,key])=>{const cut=sideList(items,key);return cut.count?`<h3>${title}<span>${cut.count}</span></h3>${cut.list.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===s.id?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')}${cut.more?sideMoreRow(key):''}`:''}).join('')}</aside>`;
@@ -4831,6 +4832,8 @@ function fleetHandoffs(f,work,inFleet){const cards=new Set((state?.suggestions||
  return`<div class="fleet-box fleet-handoffs"><h3>Handoffs</h3><ul class="fleet-ho-list">${open.map(row).join('')}${quiet.map(row).join('')}</ul>${quiet.length>shown?`<button type="button" class="quiet fleet-brief-show" data-ho-more>Show ${quiet.length-shown} more</button>`:''}</div>`}
 function fleetIntroOffers(f,work,inFleet){const offers=(f.intro_offers||[]).filter(o=>inFleet(o,work));
  return offers.length?`<div class="list">${offers.map(o=>`<article><p><strong>${esc(o.name)}</strong> knows someone at ${esc(o.about)}.</p><form class="fleet-ask fleet-intro-form" data-fleet="${esc(o.fleet)}" data-member="${esc(o.member_id)}" data-about="${esc(o.about)}"><input name="note" maxlength="300" placeholder="Why, in a line (optional; they see it)" aria-label="Why"><button class="primary">Ask ${esc(o.name)} for an intro</button></form></article>`).join('')}</div>`:''}
+// Back from a check-in while a teammate still has it: no Do it (that would prepare it all over again); Mark done leads
+const withTeammate=s=>s.status==='pending'&&['asked','waiting for them'].includes(s.fleet_handoff?.stage);
 // A handoff that didn't go out to "Pat’s Machine" (Pat Lee): said with a first name, like the chat's lines
 const handoffMachine=n=>n&&n!=='A teammate'?String(n).split(' ')[0]+'’s Machine':'a teammate’s Machine';
 const handoffFailed=s=>s.fleet_handoff_failed&&!s.fleet_handoff&&!closed(s)?`<p class="note fleet handoff-failed" role="alert">Handoff didn’t go out to ${esc(handoffMachine(s.fleet_handoff_failed.name))} · <button type="button" class="link" data-fleet-handoff="${esc(s.id)}">Try again</button></p>`:'';

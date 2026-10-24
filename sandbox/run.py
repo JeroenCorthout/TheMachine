@@ -12,6 +12,7 @@ Slack, WhatsApp, LinkedIn, X) goes to <dir>/sent.jsonl instead, and the phone an
 refuses any connection beyond 127.0.0.1 and any program start, whatever the code path."""
 import argparse
 import datetime as dt
+import hashlib
 import http.client
 import http.server
 import json
@@ -156,6 +157,16 @@ def seed_network(app, net, fixture):
                     except Exception:  # the Fleet still starting up
                         time.sleep(0.5)
             threading.Thread(target=ask, daemon=True).start()
+        for handed in fixture['network'].get('handed', []):
+            def hand(handed=handed):
+                card = hashlib.sha256(handed['card'].encode()).hexdigest()[:16]  # as load.py names the card
+                for _ in range(20):
+                    try:
+                        app.fleet.directory(refresh=True)
+                        return app.fleet.hand_off(card, app.fleet.ref('work'), handed['to'], handed['title'], handed['summary'], sources=False)
+                    except Exception:  # the Fleet still starting up
+                        time.sleep(0.5)
+            threading.Thread(target=hand, daemon=True).start()
         threading.Thread(target=seed_brief, args=(app, fixture), daemon=True).start()
         threading.Thread(target=seed_graph, args=(app,), daemon=True).start()
 

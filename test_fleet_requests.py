@@ -134,7 +134,7 @@ class Requests(unittest.TestCase):
         card = self.handed_card()
         draft = self.app.action('fleet_handoff_draft', {'suggestion_id': card}, owner_dashboard=True)
         self.assertEqual((draft['title'], draft['summary'], draft['contact'], draft['due']),
-                         ('Send Sam the pricing', 'Send Sam the pricing', 'sam@client.example', '2026-11-03'))  # the task, never the card's own text
+                         ('Send Sam the pricing', 'Send Sam the pricing. Sam asked for pricing for 40 seats.', 'sam@client.example', '2026-11-03'))  # the task, then why
         self.assertEqual(draft['fleets'][0]['members'], [{'member_id': 'pat1', 'name': 'Pat'}])
         with self.assertRaisesRegex(ValueError, 'Only the contact'):
             self.fleet.hand_off(card, self.ref, 'pat1', 'Pricing', 'Short', 'x@evil.example')
