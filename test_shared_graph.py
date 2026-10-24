@@ -358,6 +358,52 @@ class SharedGraph(unittest.TestCase):
     def projects_of(self, box):
         return {json.loads(r['body'])['name']: json.loads(r['body']) for r in self.team(box) if r['kind'] == 'project'}
 
+    def test_team_project_summaries_do_not_repeat_withheld_signal_text(self):
+        self.olive_mail()
+        self.board(self.own, 'Renewals', 'team', {'Renewal: Lee': ['work-1', 'work-3', 'work-4']})
+        for index, source in enumerate(('work-3', 'work-4')):
+            with self.subTest(source=source):
+                with self.own.store.connect() as db:
+                    eid = self.event_id(self.own, source)
+                    db.execute('UPDATE events SET occurred_at=? WHERE id=?', (ago(0, 2-index), eid))
+                    graph.set_stage(db, 'project:1', 'Signed' if index == 0 else 'Talks', 'review', a.now(),
+                                    reason='Withheld project reason', event_id=eid, next_step='Withheld project next step')
+                self.rounds()
+                record = self.projects_of(self.mem)['Renewal: Lee']
+                self.assertIsNone(record['why'])
+                self.assertIsNone(record['next'])
+                self.assertNotIn('Withheld project', json.dumps(self.team(self.mem)))
+
+    def test_same_stage_next_step_uses_its_own_sharing_provenance(self):
+        self.olive_mail()
+        self.board(self.own, 'Renewals', 'team', {'Renewal: Lee': ['work-1', 'work-3']})
+        with self.own.store.connect() as db:
+            graph.set_stage(db, 'project:1', 'Signed', 'review', a.now(), reason='Client signed',
+                            event_id=self.event_id(self.own, 'work-1'), next_step='Send the client a welcome')
+        self.rounds()
+        self.assertEqual(self.projects_of(self.mem)['Renewal: Lee']['next'], 'Send the client a welcome')
+        with self.own.store.connect() as db:
+            graph.set_stage(db, 'project:1', 'Signed', 'review', a.now(), reason='Private health update',
+                            event_id=self.event_id(self.own, 'work-3'), next_step='Private follow-up for surgery')
+        self.rounds()
+        record = self.projects_of(self.mem)['Renewal: Lee']
+        self.assertEqual(record['why'], 'Client signed')
+        self.assertIsNone(record['next'])
+        self.assertNotIn('Private follow-up', json.dumps(self.team(self.mem)))
+
+    def test_explicit_board_sharing_still_includes_its_authorized_sensitive_summary(self):
+        self.olive_mail()
+        board = self.board(self.own, 'Renewals', 'only_you', {'Renewal: Lee': ['work-1', 'work-3']})
+        with self.own.store.connect() as db:
+            graph.set_stage(db, 'project:1', 'Signed', 'review', a.now(), reason='Explicit sensitive reason',
+                            event_id=self.event_id(self.own, 'work-3'), next_step='Explicit sensitive next step')
+        self.own.graph_board_share(board, [{'fleet': FLEET, 'member': 'mem3'}])
+        self.rounds()
+        record = self.projects_of(self.mem)['Renewal: Lee']
+        self.assertEqual(record['why'], 'Explicit sensitive reason')
+        self.assertEqual(record['next'], 'Explicit sensitive next step')
+        self.assertNotIn('Renewal: Lee', self.projects_of(self.adm))
+
     def test_an_only_you_board_its_projects_and_their_threads_never_reach_the_team_and_switching_retracts_them(self):
         self.olive_mail()
         board = self.board(self.own, 'Renewals', 'team', {'Renewal: Lee': ['work-1', 'work-2']})
