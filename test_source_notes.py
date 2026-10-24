@@ -46,7 +46,7 @@ class SourceNotes(unittest.TestCase):
 
     def test_account_services(self):
         config={'accounts':[{'id':'w','service':'gmail'},{'id':'i','service':'intercom'},{'id':'odd'}]}
-        self.assertEqual(a.account_services(config),['gmail','intercom',None])
+        self.assertEqual(a.account_services(config),['gmail','intercom','gmail'])  # an account with no service is Gmail
         self.assertEqual(a.account_services(config,['i']),['intercom'])
         self.assertEqual(a.account_services(config,[]),[])
 
@@ -62,7 +62,7 @@ class PromptsCarryTheirNotes(unittest.TestCase):
         self.store=a.Store(Path(self.temp.name)/'events.sqlite')
         self.app=object.__new__(a.App);self.app.store=self.store
         self.app.quick_first_review=lambda db:0
-        self.app.config={'accounts':[{'id':'work','service':'gmail'},{'id':'help','service':'intercom'}],
+        self.app.config={'accounts':[{'id':'work'},{'id':'help','service':'intercom'}],  # no service: Gmail
                          'review_worker':{'enabled':True,'gap_seconds':120,'timeout_seconds':1500,'min_signals':1}}
         self.store.commit_page('work',{},[{'account_id':'work','source_id':'one','kind':'gmail.message','occurred_at':a.now(),'title':'Hi','body':'Text','metadata':{},'deleted':False}])
 

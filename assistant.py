@@ -10164,9 +10164,9 @@ def source_notes(services):
 
 
 def account_services(config, account_ids=None):
-    """The services of the configured accounts, or of only these account IDs."""
+    """The services of the configured accounts, or of only these account IDs (no service is Gmail)."""
     wanted = None if account_ids is None else set(account_ids)
-    return [a.get('service') for a in config.get('accounts', []) if wanted is None or a.get('id') in wanted]
+    return [a.get('service', 'gmail') for a in config.get('accounts', []) if wanted is None or a.get('id') in wanted]
 
 
 def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting='', sources=''):
