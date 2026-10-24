@@ -1055,10 +1055,14 @@ def _build(db, config, now):
         if value < FLOOR and not project_events.get(pid) and not project['board_id']:  # on a board it stays, however quiet
             continue
         events_ = sorted(project_events.get(pid, ()))
-        nodes.append(('project:' + str(pid), 'project', project['name'], round(value, 4), events_[-1][0].date().isoformat() if events_ else None,
-                      len(events_), None, 0, round(value / before, 2) if before > FLOOR else None,
-                      json.dumps({'closed_at': project['closed_at'], 'created_at': project['created_at'], 'probable': sum(1 for e in events_ if e[2]),
-                                  'board_id': project['board_id'], 'stage': project['stage']})))
+        # Last signal is what already happened; a meeting still to come is the next one, never the last.
+        past = [e for e in events_ if e[0] <= current]
+        coming = [e for e in events_ if e[0] > current]
+        nodes.append(('project:' + str(pid), 'project', project['name'], round(value, 4), past[-1][0].astimezone(tz).date().isoformat() if past else None,
+                      len(past), None, 0, round(value / before, 2) if before > FLOOR else None,
+                      json.dumps({'closed_at': project['closed_at'], 'created_at': project['created_at'], 'probable': sum(1 for e in past if e[2]),
+                                  'board_id': project['board_id'], 'stage': project['stage'],
+                                  'next_meeting': coming[0][0].isoformat() if coming else None})))
         kept.add('project:' + str(pid))
     for (node, pid), value in project_people.items():
         if value >= FLOOR and node in kept:
@@ -1150,7 +1154,8 @@ def node_view(row, links=None):
         view.update(role=info.get('role'), role_by=info.get('role_by'), domain=info.get('domain'), profile=info.get('profile'),
                     about=enrichment.summary(info.get('profile')), edited=info.get('edited', []), wrong=bool(info.get('wrong')))
     elif row['kind'] == 'project':
-        view.update(trend=row['trend'], state=project_state(row), closed=bool(info.get('closed_at')), probable_signals=info.get('probable', 0))
+        view.update(trend=row['trend'], state=project_state(row), closed=bool(info.get('closed_at')), probable_signals=info.get('probable', 0),
+                    next_meeting=info.get('next_meeting'))
     if links is not None:
         view['links'] = links
     return view
@@ -1288,7 +1293,8 @@ def context_lines(db, event_ids, limit_chars=1500, skip_card=None):
         elif row['kind'] == 'project':
             people = [n['name'] for n in neighbours(db, row['id'], 6) if n['kind'] == 'person'][:4]
             between = open_line(open_between(db, row['id'], 2, skip_card))
-            lines.append(f"- Project {view['name']}: {view['state']}, last signal {short_date(view['last_at'])}" + (f"; people: {', '.join(people)}" if people else '')
+            lines.append(f"- Project {view['name']}: {view['state']}, last signal {short_date(view['last_at'])}"
+                         + (f", next meeting {short_date(view['next_meeting'])}" if view.get('next_meeting') else '') + (f"; people: {', '.join(people)}" if people else '')
                          + (f"; open: {between}" if between else ''))
     text = ''
     for line in lines:

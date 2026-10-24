@@ -243,6 +243,18 @@ class Graph(unittest.TestCase):
         for ratio, expected in ((1.0, 'active'), (1.5, 'heating up')):
             self.assertEqual(graph.project_state({'strength': 1.0, 'trend': ratio}), expected)
 
+    def test_a_projects_last_signal_is_never_in_the_future_a_coming_one_is_its_next_meeting(self):
+        self.add(mail(3, 'Ann Example <ann@client.com>', 'sam@acme.com', thread='deal'), mail(-9, 'Ann Example <ann@client.com>', 'sam@acme.com', thread='deal'),
+                 mail(-25, 'Ann Example <ann@client.com>', 'sam@acme.com', thread='deal'))
+        with self.store.connect() as db:
+            pid = graph.label(db, self.ids(self.sources()), 'Acme deal', 'agent', NOW.isoformat())
+        self.build()
+        project = self.node('project:' + str(pid))
+        self.assertEqual((project['last_at'], project['signals']), ((NOW - dt.timedelta(days=3)).date().isoformat(), 1))
+        self.assertEqual(project['next_meeting'][:10], (NOW + dt.timedelta(days=9)).date().isoformat())
+        with self.store.connect() as db:
+            self.assertFalse(db.execute('SELECT count(*) FROM graph_nodes WHERE last_at>?', (NOW.date().isoformat(),)).fetchone()[0])
+
     def test_going_quiet_is_measured_against_their_own_rhythm(self):
         weekly = [chat(d, '00000000001', 'Wes Weekly', mine=d % 2 == 0) for d in range(30, 120, 7)]
         self.add(*weekly, chat(30, '00000000001', 'Wes Weekly', mine=True),

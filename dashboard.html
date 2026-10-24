@@ -567,8 +567,10 @@ span.share-chip{cursor:default}.share-chip.on{color:var(--text);border-color:col
 .board-suggest-text{flex:1 1 320px;min-width:0}
 .board-suggest-title{margin:0;font:var(--fw-heading) var(--fs-md)/1.3 var(--serif);color:var(--text)}
 .board-suggest-sub{margin:2px 0 0;color:var(--c-text-3);font-size:var(--fs-sm)}
-.stage-flow{display:flex;flex-wrap:wrap;gap:4px 0;margin:8px 0 0;padding:0;list-style:none;color:var(--c-text-2);font-size:var(--fs-sm)}
-.stage-flow li+li::before{content:"→";margin:0 6px;color:var(--c-text-3)}
+/* Inline, each stage with its arrow kept whole, lines balanced: a narrow card never leaves one stage alone on a line */
+.stage-flow{margin:8px 0 0;padding:0;list-style:none;color:var(--c-text-2);font-size:var(--fs-sm);line-height:1.6;text-wrap:balance}
+.stage-flow li{display:inline;white-space:nowrap}
+.stage-flow li+li::before{content:"→";margin:0 6px 0 2px;color:var(--c-text-3)}
 .board-suggest-actions{display:flex;gap:8px;flex-wrap:wrap}.board-suggest-actions button{margin:0;min-height:34px}
 .board-start{margin:0 0 14px}
 .board-name-row{display:flex;align-items:center;gap:4px;min-width:0}
@@ -4524,7 +4526,7 @@ const PROJECT_COLOR={'heating up':'var(--amber)','active':'var(--mint)','cooling
 const bar=n=>`<span class="graph-bar" title="${esc(n.closeness||'')}"><i style="width:${Math.min(100,Math.round(100*Math.log1p(n.strength)/Math.log1p(12)))}%"></i></span>`;
 const cap=t=>t?t[0].toUpperCase()+t.slice(1):t;
 const personSub=p=>[p.profile?.title,cap(p.role||p.closeness),(p.seen_only?'last seen ':'last contact ')+day(p.last_at),p.usual_gap_days?(Math.round(p.usual_gap_days)<=1?'usually daily':'usually every '+Math.round(p.usual_gap_days)+' days'):'',p.next_meeting?'meeting '+day(p.next_meeting):''].filter(Boolean).join(' · ');
-const graphItem=n=>n.kind==='project'?`<article class="tap" data-node="${esc(n.id)}"><div class="graph-row">${nodeButton(n)}<span class="chip" style="--c:${PROJECT_COLOR[n.state]||'var(--muted)'}">${esc(n.state)}</span></div><p class="graph-sub" style="white-space:normal">${n.team_only?'':`Last signal ${esc(day(n.last_at))} · ${n.signals} signal${n.signals===1?'':'s'}`}${n.people?.length?' · '+esc(n.people.join(', ')):''}${n.via?`<span class="via">${n.team_only?'':' · '}${esc(n.via)}</span>`:''}</p></article>`
+const graphItem=n=>n.kind==='project'?`<article class="tap" data-node="${esc(n.id)}"><div class="graph-row">${nodeButton(n)}<span class="chip" style="--c:${PROJECT_COLOR[n.state]||'var(--muted)'}">${esc(n.state)}</span></div><p class="graph-sub" style="white-space:normal">${n.team_only?'':`${n.last_at?`Last signal ${esc(day(n.last_at))} · `:''}${n.signals} signal${n.signals===1?'':'s'}${n.next_meeting?` · next meeting ${esc(day(n.next_meeting))}`:''}`}${n.people?.length?' · '+esc(n.people.join(', ')):''}${n.via?`<span class="via">${n.team_only?'':' · '}${esc(n.via)}</span>`:''}</p></article>`
  :n.kind==='org'?`<article class="tap" data-node="${esc(n.id)}"><div class="graph-row">${orgPic(n)}${nodeButton(n)}<small>${n.role?esc(cap(n.role))+' · ':''}${n.profile?.industry?esc(n.profile.industry)+' · ':''}${n.team_only?'':`${n.signals} ${n.signals===1?'person':'people'} · `}last contact ${esc(day(n.last_at))}${n.via?' · <span class="via">'+esc(n.via)+'</span>':''}</small></div></article>`
  :`<article class="tap person-item" data-node="${esc(n.id)}"><div class="graph-row one">${personPic(n)}${nodeButton(n)}${fleetChip(n)}${n.quiet?'<span class="chip" style="--c:var(--orange)">gone quiet</span>':''}${bar(n)}</div><p class="graph-sub" title="${esc(personSub(n)+(n.ids?.length?' · '+n.ids.slice(0,2).join(', '):''))}">${n.via?'<span class="via">'+esc(n.via)+'</span> · ':''}${n.fleet?.machine?'Has a Machine · ':''}${esc(personSub(n))}${n.org_name&&n.team_only?' · '+esc(n.org_name):''}${n.ids?.length?' · <span class="mono">'+esc(n.ids.slice(0,2).join(', '))+'</span>':''}</p></article>`;
 // Each Graph page's lists are tabs that filter (with their counts; an empty one is not shown) and a quiet menu sets the
@@ -4615,7 +4617,7 @@ $('#people-view').addEventListener('keydown',e=>{const t=e.target.closest?.('.ti
 // on it. After a save, reviews place its projects by their messages. Deleting a board keeps its projects.
 let graphSuggest=[],graphProjNames=[],ed=null;
 const suggestBox=()=>{const s=graphSuggest[0];if(!s)return '';
- return `<article class="board-suggest" data-suggest="${s.id}"><div class="board-suggest-text"><p class="board-suggest-title">Start a board for ${esc(s.name)}?</p><p class="board-suggest-sub">${s.projects.length} projects${s.reason?' · '+esc(s.reason):''}</p><ol class="stage-flow" aria-label="Stages">${s.stages.map(x=>`<li>${esc(x.name)}</li>`).join('')}</ol></div>`
+ return `<article class="board-suggest" data-suggest="${s.id}"><div class="board-suggest-text"><p class="board-suggest-title">Start a board for ${esc(s.name)}?</p><p class="board-suggest-sub">${s.projects.length} projects${s.reason?' · '+esc(s.reason):''}</p><ol class="stage-flow" aria-label="Stages">${s.stages.map(x=>`<li>${esc(x.name)}</li>`).join(' ')}</ol></div>`
   +`<div class="board-suggest-actions"><button type="button" class="primary" data-suggest-save>Save</button><button type="button" class="ghost" data-suggest-edit>Edit</button><button type="button" class="ghost" data-suggest-dismiss>Not now</button></div></article>`};
 const boardSavedToast=(r,name)=>{const moved=(r.moved||[]).map(m=>m.to?`${m.count} from ${m.from} moved to ${m.to}.`:`${m.count} stalled left the board.`).join(' ');
  toast(`Saved ${name}.${r.added?' Sorting its projects from your messages.':''}${moved?' '+moved:''}`)};

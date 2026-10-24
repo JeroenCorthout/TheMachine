@@ -82,6 +82,11 @@ try{
   await page.locator('.board-menu summary').click();await page.locator('[data-board-new]').click();await page.locator('#board-dialog[open]').waitFor();
   assert.equal(await page.locator('#board-dialog-title').textContent(),'New board');assert.equal(await page.locator('#board-form [name="name"]').inputValue(),'');
   await page.keyboard.press('Escape');await context.close()}
+ // A long stage chain on a phone wraps without leaving one stage alone on its line
+ for(const width of [390,360]){data=fresh();data.suggestions[0].stages=['Discovery','Demo','Trial','Decision','Won','Signed'].map(name=>({name}));
+  const {context,page}=await open(width,780);
+  const lines=await page.locator('.stage-flow li').evaluateAll(x=>Object.values(x.reduce((m,li)=>{const t=Math.round(li.getClientRects()[0].top);(m[t]||=[]).push(li.textContent);return m},{})));
+  assert.ok(lines.length>1&&lines.every(l=>l.length>1),width+': stage lines '+JSON.stringify(lines));await fits(page,width+' long stages');await context.close()}
  // Not now: the suggestion goes and is not posted as anything else
  data=fresh();calls=[];
  {const {context,page}=await open(390,844);

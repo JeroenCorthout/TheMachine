@@ -57,6 +57,11 @@ class GraphFixes(unittest.TestCase):
         self.assertLess(p.index('Hire: designer'),p.index('begin_analysis with account_ids'))
         self.assertIn('not about this batch',p)
         self.assertNotIn('Two tasks',a.review_prompt('r1',['acct']))
+    def test_a_suggested_boards_lost_or_declined_ending_is_its_stalled_row_not_a_stage(self):
+        a=tg.a if hasattr(tg,'a') else __import__('assistant')
+        p=a.review_prompt('r1',['acct'],boards='- Hire: designer (project:1)')
+        self.assertIn('own Stalled or declined row, so an ending where it didn',p)
+        self.assertIn('is never a stage',p)
     def test_a_review_with_a_board_check_answers_it_before_it_finishes(self):
         with self.store.connect() as db:
             for name in ('Hire: designer','Hire: backend','Hire: support lead'):tg.graph.project_id(db,name,tg.at(0))
