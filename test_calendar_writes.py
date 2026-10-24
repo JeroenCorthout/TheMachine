@@ -419,12 +419,12 @@ class Suggestions(unittest.TestCase):
         def fetch(url, timeout):
             asked.append(url)
             return json.dumps({'features': [{'properties': {'name': 'Café Labath', 'street': 'Oude Houtlei', 'housenumber': '1',
-                                                            'postcode': '9000', 'city': 'Gent', 'country': 'Belgium'}},
+                                                            'postcode': '9000', 'city': 'Gent', 'country': 'België / Belgique / Belgien'}},
                                             {'properties': {'name': 'Gent', 'city': 'Gent', 'country': 'Belgium'}}]}).encode()
         with self.store.connect() as db:
             found = a.places.suggest(db, {}, 'labath', fetch)
             self.assertEqual([(f['value'], f['source']) for f in found],
-                             [('Café Labath, Oude Houtlei 1, Gent', 'calendar'), ('Café Labath, Oude Houtlei 1, 9000 Gent, Belgium', 'map'), ('Gent, Belgium', 'map')])
+                             [('Café Labath, Oude Houtlei 1, Gent', 'calendar'), ('Café Labath, Oude Houtlei 1, 9000 Gent, België', 'map'), ('Gent, Belgium', 'map')])
             self.assertEqual(asked, ['https://photon.komoot.io/api/?q=labath&limit=6'])
             a.places.suggest(db, {}, 'Labath ', fetch)
             self.assertEqual(len(asked), 1, 'cached')

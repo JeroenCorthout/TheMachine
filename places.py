@@ -73,7 +73,8 @@ def address(properties):
     city = clean(' '.join(x for x in (clean(p.get('postcode')), clean(p.get('city') or p.get('town') or p.get('village') or p.get('county'))) if x))
     name = clean(p.get('name'))
     parts = []
-    for part in (name, street, city, clean(p.get('country'))):
+    country = clean(str(p.get('country') or '').split(' / ')[0])  # "België / Belgique / Belgien": its first name
+    for part in (name, street, city, country):
         if part and part.casefold() not in (x.casefold() for x in parts):
             parts.append(part)
     if not parts:
