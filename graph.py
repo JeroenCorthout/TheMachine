@@ -2186,9 +2186,11 @@ def set_stage(db, project, stage, source, now, board=None, stages=None, reason=N
         reason, event_id = None, None
     moved = row['board_id'] != target['id'] or (row['stage'] or '').casefold() != match.casefold() or not row['stage_by']  # placing one the owner put on the board counts
     kept = None
-    if moved and not owner:
+    if not owner:
         if row['stage_by'] == 'owner' and row['stage_at'] and parse_time(at) <= parse_time(row['stage_at']):
             kept = 'The owner moved it after this message'
+        elif row['stage_at'] and parse_time(at) < parse_time(row['stage_at']):
+            kept = 'A later message moved it already'
         elif row['stage_event_id']:
             last = db.execute('SELECT occurred_at FROM events WHERE id=?', (row['stage_event_id'],)).fetchone()
             if last and parse_time(at) < parse_time(last['occurred_at']):
@@ -2203,11 +2205,15 @@ def set_stage(db, project, stage, source, now, board=None, stages=None, reason=N
         if step is None:
             raise ValueError('next: the owner\'s next step in a few words (up to 120 characters)')
         db.execute('UPDATE projects SET next_step=? WHERE id=?', (step or None, row['id']))
-    if org:
+    if org and not kept:
         domain = re.sub(r'^(?:https?://)?(?:www\.)?', '', str(org).strip().lower()).split('/')[0]
         if not ORG_DOMAIN.fullmatch(domain):
             raise ValueError('org: the organisation\'s web domain, like "example.com"')
         db.execute('UPDATE projects SET org=? WHERE id=?', (domain, row['id']))
+    if not owner and not moved and not kept and (next_step is not None or org):
+        # The stage stayed the same, but its next step/details have newer evidence. Keep that watermark too;
+        # a message between the last move and this update must not put the older details back.
+        db.execute('UPDATE projects SET stage_at=? WHERE id=?', (at, row['id']))
     return {'node_id': 'project:' + str(row['id']), 'project': row['name'], 'board': target['name'],
             'stage': row['stage'] if kept else match, **({'kept': kept} if kept else {})}
 

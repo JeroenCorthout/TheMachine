@@ -779,6 +779,20 @@ class Boards(unittest.TestCase):
             self.assertTrue({'board_id', 'stage', 'stage_reason', 'stage_event_id', 'stage_by', 'stage_at', 'next_step', 'org'} <= cols)
             self.assertTrue(db.execute("SELECT 1 FROM sqlite_master WHERE name IN ('boards','project_moves')").fetchone())
 
+    def test_older_same_stage_evidence_cannot_replace_a_newer_next_step(self):
+        asked, agreed, later = self.mails()
+        with self.store.connect() as db:
+            node = graph.set_stage(db, 'Paperkite', 'Agreed', 'review', NOW.isoformat(), board='Listings',
+                                   reason='Ann agreed', event_id=agreed, next_step='Publish their listing', org='partner.example')['node_id']
+            kept = graph.set_stage(db, node, 'Agreed', 'review', NOW.isoformat(),
+                                   reason='An older question', event_id=asked, next_step='Ask if they agree', org='old.example')
+            row = db.execute('SELECT next_step,org FROM projects WHERE id=?', (node.split(':')[1],)).fetchone()
+            self.assertEqual((row['next_step'], row['org']), ('Publish their listing', 'partner.example'))
+            self.assertIn('kept', kept)
+            graph.set_stage(db, node, 'Agreed', 'review', NOW.isoformat(), reason='New next step', event_id=later,
+                            next_step='Check that it is live')
+            self.assertEqual(db.execute('SELECT next_step FROM projects WHERE id=?', (node.split(':')[1],)).fetchone()[0], 'Check that it is live')
+
     def test_review_moves_keep_reason_and_message_and_the_owner_wins_until_a_newer_message(self):
         asked, agreed, later = self.mails()
         with self.store.connect() as db:

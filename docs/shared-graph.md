@@ -190,6 +190,11 @@ publisher's original, still checked against their signature; only its key is sea
 What someone who left shared is passed on only by an admin's Machine. Two teammates answering the same want is fine:
 the CP skips a blob already waiting for that Machine, and the receiver drops what it has.
 
+Catch-up sends a long snapshot/delta chain in ordered prefixes within each round's budget, retaining the last sent
+sequence before continuing. Signed empty mail/file blobs are retained as removal markers: a later relay of older
+content cannot restore a removed copy, and an offline teammate receives the removal during catch-up. Temporary
+attachment-listing failures leave the thread unfinished for retry; files already shared are not downloaded twice.
+
 **Matching and conflicts.** A receiver matches teammates' people by hashed address, organisations by hashed domain,
 projects by board and name. For each field of a matched record the value set by hand wins; otherwise the value from
 whoever is closest (highest score) wins. Stages are facts with dates: the newest move by hand wins, else the newest

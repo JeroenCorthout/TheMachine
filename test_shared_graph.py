@@ -665,5 +665,72 @@ class SharedGraph(unittest.TestCase):
         self.assertRegex(lines[0], r'^• Shared with Acme: 1 thread, 1 person, \d+ projects?\. 1 held back\. \[Review\]\(https://box\.example/#graph=held\)$')
 
 
+    def test_empty_removal_blobs_remove_threads_files_and_catchup_requests(self):
+        self.olive_mail()
+        self.files(self.own)
+        self.rounds()
+        group = self.own._group(FLEET)
+        me = self.own._me_in(group)
+        thread = next(r for r in self.team(self.mem, 'team_mail')
+                      if r['member'] == 'own1' and not json.loads(r['body']).get('private'))
+        tag = thread['tag']
+        old_id, _, wrap, by = next(w for w in self.net.wraps if w[1] == 'mem3' and self.net.blobs[w[0]]['header'].get('tag') == tag)
+        old_item = {**copy.deepcopy(self.net.blobs[old_id]), 'wrap': wrap, 'by': by}
+        attachments = [r['tag'] for r in self.team(self.mem, 'team_files') if r['member'] == 'own1']
+        self.assertTrue(attachments)
+        for ftag in attachments:
+            self.own._put(group, me, 'file', None, ['mem3'], tag=ftag)
+        self.own._put(group, me, 'mail', None, ['mem3'], tag=tag)
+        self.own._put(group, me, 'want', {'at': a.now(), 'snap': {}, 'got': {}}, ['mem3'], tag='a' * 32)
+        self.mem.graph_fetch()
+        self.assertFalse([r for r in self.team(self.mem, 'team_mail') if r['tag'] == tag])
+        self.assertFalse([r for r in self.team(self.mem, 'team_files') if r['tag'] in attachments])
+        self.assertTrue([r for r in self.team(self.mem, 'team_wants') if r['member'] == 'own1'])
+        self.own._put(group, me, 'want', None, ['mem3'], tag='a' * 32)
+        self.mem.graph_fetch()
+        self.assertFalse([r for r in self.team(self.mem, 'team_wants') if r['member'] == 'own1'])
+        # The signed tombstones, not the old content, remain available for an offline teammate's catch-up.
+        kept = [r for r in self.team(self.mem, 'team_blobs') if r['tag'] == tag]
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]['ct'], '')
+        with self.assertRaisesRegex(ValueError, 'older'):
+            self.mem.graph_take(old_item)
+
+    def test_catchup_chain_larger_than_one_round_advances_in_order(self):
+        group = self.own._group(FLEET)
+        me = self.own._me_in(group)
+        initial = next(r for r in self.team(self.mem, 'team_sources') if r['member'] == 'own1')['seq']
+        previous = self.own._put(group, me, 'snapshot', {'records': [], 'threads': []}, ['adm2', 'mem3'])
+        for _ in range(sg.SERVE_BATCH + 5):
+            previous = self.own._put(group, me, 'delta', {'prev': previous['seq'], 'records': [], 'threads': []}, ['adm2', 'mem3'])
+        self.adm.graph_fetch()
+        self.net.expire('mem3')
+        self.mem._put(self.mem._group(FLEET), self.mem._me_in(self.mem._group(FLEET)), 'want',
+                      {'at': a.now(), 'snap': {}, 'got': {}}, ['adm2'], tag='b' * 32)
+        self.adm.graph_fetch()
+        self.adm.set_meta('graph_puts', [])
+        adm_group = self.adm._group(FLEET)
+        found, trusted, _ = self.adm.confirmed(adm_group)
+        self.adm._graph_serve(adm_group, self.adm._me_in(adm_group), found, trusted)
+        self.mem.graph_fetch()
+        source = next(r for r in self.team(self.mem, 'team_sources') if r['member'] == 'own1')
+        self.assertGreater(source['seq'], initial)
+        self.assertLess(source['seq'], previous['seq'])
+        self.adm._graph_serve(adm_group, self.adm._me_in(adm_group), found, trusted)
+        self.mem.graph_fetch()
+        source = next(r for r in self.team(self.mem, 'team_sources') if r['member'] == 'own1')
+        self.assertEqual(source['seq'], previous['seq'])
+
+    def test_a_temporary_attachment_listing_failure_is_retried_without_new_mail(self):
+        self.olive_mail()
+        self.files(self.own)
+        fetch = self.own.mail_files
+        self.own.mail_files = lambda *args: (_ for _ in ()).throw(OSError('temporary provider outage'))
+        self.rounds()
+        self.assertFalse(self.team(self.mem, 'team_files'))
+        self.own.mail_files = fetch
+        self.rounds()
+        self.assertTrue(self.team(self.mem, 'team_files'))
+
 if __name__ == '__main__':
     unittest.main()

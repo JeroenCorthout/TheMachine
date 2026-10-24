@@ -200,8 +200,8 @@ def keep_blob(db, header, ct, sig, dk):
         db.execute("DELETE FROM team_blobs WHERE fleet=? AND member=? AND kind IN ('snapshot','delta') AND seq<?", (fleet, member, seq))
     elif kind in TAGGED:
         db.execute('DELETE FROM team_blobs WHERE fleet=? AND member=? AND kind=? AND tag=? AND seq<?', (fleet, member, kind, header.get('tag'), seq))
-        if not ct:
-            return  # no longer shared: nothing to pass on
+        # Keep the signed tombstone too. A teammate who missed it must not regain the previous content
+        # through catch-up, and its sequence remains the high-water mark after the visible row is gone.
     db.execute('INSERT OR IGNORE INTO team_blobs(id,fleet,member,kind,tag,seq,dk,header,sha,ct,sig,at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
                (header['id'], fleet, member, kind, header.get('tag'), seq, dk, json.dumps(header), digest(header, nc.unb64(ct)), ct, sig, now()))
 
@@ -752,8 +752,11 @@ class SharedGraph:
                        and str(json.loads(r['header']).get('at') or '') >= since]
             out += [('low', r['member'], [r]) for r in threads]  # the newest first
             for what, p, chain in out:
-                if len(chain) > budget:
+                if budget <= 0:
                     break
+                # A day's deltas can exceed one round. Send an ordered prefix and remember its last sequence,
+                # so the next round continues that chain rather than waiting forever for a larger budget.
+                chain = chain[:budget]
                 for r in chain:
                     header = json.loads(r['header'])
                     wrap = nc.seal({'dk': r['dk'], 'h': r['sha'], 'from_key': sign_of(p)}, self._private(), keys, wrap_context(header, me['member_id'], who))
@@ -882,9 +885,11 @@ class SharedGraph:
         for message, (event_id, _account, _kind) in zip(body['messages'], sources):
             try:
                 listed = fetch(event_id) or []
-            except Exception as error:  # noqa: BLE001 - the mailbox is away: the thread goes without its files this time
+            except Exception as error:  # noqa: BLE001 - retry this unfinished thread when the mailbox is back
                 LOG.info('shared graph attachments unavailable error=%s', type(error).__name__)
-                listed = []
+                # Do not record the unchanged thread as fully shared: without another email, the listing would
+                # never be tried again. Already-sent files remain in share_out and aren't downloaded twice.
+                raise Later('shared attachments are temporarily unavailable') from None
             out = []
             for a in listed[:20]:
                 if not isinstance(a, dict) or a.get('inline') or a.get('kind', 'file') != 'file' or not a.get('id'):
@@ -1031,6 +1036,12 @@ class SharedGraph:
                 row = db.execute('SELECT * FROM team_sources WHERE fleet=? AND member=?', (fleet, sender)).fetchone()
             elif name and name != row['name']:
                 db.execute('UPDATE team_sources SET name=? WHERE fleet=? AND member=?', (name[:80], fleet, sender))
+            if kind in ('mail', 'file'):
+                # A tombstone removes the visible row, but must still outrank an old copy relayed later.
+                latest = db.execute('SELECT MAX(seq) FROM team_blobs WHERE fleet=? AND member=? AND kind=? AND tag=?',
+                                    (fleet, sender, kind, header.get('tag'))).fetchone()[0]
+                if latest is not None and seq <= latest:
+                    raise ValueError('older mail or file')
             keep_blob(db, header, item['ct'], item['sig'], dk)
             if kind == 'key':
                 kv, key = body.get('kv'), body.get('key')
