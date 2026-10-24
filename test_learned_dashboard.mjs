@@ -6,7 +6,7 @@ import {navClick} from './nav-click.mjs';
 const {chromium}=await import(OPENCLAW+'/node_modules/playwright-core/index.mjs');
 
 // Feedback, What I've learned: one block per kind with a heading and count, channels show 2 lines with More,
-// long blocks fold after 5 with Show all, and Remove on a fact still works. All mocked; LEARNED_SHOTS=dir saves screenshots.
+// long blocks fold after 5 with Show all, Edit rewrites a fact in place (on a phone Remove sits in its editor), and Remove still works. All mocked; LEARNED_SHOTS=dir saves screenshots.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const t=d=>`2026-10-${String(d).padStart(2,'0')}T09:00:00+00:00`;
 const voices=[
@@ -25,7 +25,7 @@ let facts=[
  {id:15,kind:'fact',text:'Trial sign-ups get a welcome note within a day.',created_at:t(16),merged:0},
  {id:14,kind:'fact',text:'A very long fact to check wrapping: when a partner asks for a co-marketing slot, check the shared calendar first and propose two dates in the same week, never more than three weeks out.',created_at:t(15),merged:0},
  {id:8,kind:'draft',text:'For a listing exchange, ask for their listing link before sending ours.',created_at:t(14),merged:0}];
-const posts=[];
+const original=structuredClone(facts),posts=[];
 const server=createServer(async(req,res)=>{
  const url=new URL(req.url,'http://fixture.invalid');res.setHeader('Content-Type','application/json');
  const asset={'/brand/avatar.png':'brand/app-icon-192.png','/brand/serif.woff2':'brand/fonts/source-serif-4-latin.woff2','/brand/sans.woff2':'brand/fonts/inter-latin.woff2'}[url.pathname];
@@ -33,7 +33,8 @@ const server=createServer(async(req,res)=>{
  if(url.pathname==='/'){res.setHeader('Content-Type','text/html');res.end(dashboard);return}
  if(url.pathname==='/api/status'){res.end(JSON.stringify({suggestions:[],moved:[{skill_id:'sk_9',name:'Partner listings',notes:5}],promises:[],suggestion_counts:{},decisions:[],analyses:[],deliveries:[],review_health:{},connectors:[],review_runs:[],voices,facts,condensed:{at:t(20),notes:4}}));return}
  if(url.pathname==='/api/action'){let body='';for await(const c of req)body+=c;const {action,args}=JSON.parse(body);posts.push({action,args});
-  if(action==='forget_fact'){facts=facts.filter(f=>f.id!==args.id);res.end(JSON.stringify({ok:true}));return}}
+  if(action==='forget_fact'){facts=facts.filter(f=>f.id!==args.id);res.end(JSON.stringify({ok:true}));return}
+  if(action==='edit_fact'){facts=facts.map(f=>f.id===args.id?{...f,text:args.text}:f);res.end(JSON.stringify({id:args.id,text:args.text}));return}}
  res.statusCode=404;res.end('{}');
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -41,6 +42,7 @@ const errors=[];let browser;const shots=process.env.LEARNED_SHOTS;
 try{
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  for(const width of [1440,390])for(const scheme of ['light','dark']){
+  facts=structuredClone(original);
   const context=await browser.newContext({viewport:{width,height:900},colorScheme:scheme}),page=await context.newPage();
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port+'/#feedback');
@@ -68,15 +70,36 @@ try{
   assert.equal(await fg.locator('.fact-row').count(),5);
   await fg.locator('[data-learn-all]',{hasText:'Show all 8'}).click();
   assert.equal(await learned.locator('[data-group="facts"] .fact-row').count(),8);
-  // Remove sits to the right of the text, never under it.
+  // Edit (and Remove, on a computer) sit to the right of the text, never under it; a phone keeps Remove in the editor.
   const long=learned.locator('.fact-row',{hasText:'A very long fact'});
-  const [txt,btn]=await Promise.all([long.locator('.grow').boundingBox(),long.locator('[data-forget]').boundingBox()]);
-  assert.ok(btn.x>=txt.x+txt.width-1&&btn.y<txt.y+txt.height,'Remove beside the text');
+  assert.equal(await long.locator('> .learn-acts [data-forget]').isVisible(),width>500);
+  const [txt,btn]=await Promise.all([long.locator('.grow').boundingBox(),long.locator('[data-edit-fact]').boundingBox()]);
+  assert.ok(btn.x>=txt.x+txt.width-1&&btn.y<txt.y+txt.height,'Edit beside the text');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal scroll at '+width);
   assert.ok(txt.width>=(width<500?200:400),'fact text keeps its width: '+txt.width);
   if(shots)await learned.screenshot({path:`${shots}/learned-${width}-${scheme}-open.png`});
+  if(scheme==='light'){
+   // Edit opens the text in place; a refresh while typing keeps it; Save sends the new words and shows them.
+   await learned.locator('[data-edit-fact="18"]').click();
+   const box=learned.locator('#learned-18 textarea');assert.equal(await box.inputValue(),'Fridays are kept free of meetings.');
+   assert.equal(await page.evaluate(()=>document.activeElement?.tagName),'TEXTAREA');
+   await box.fill('Fridays are kept free of meetings, also for partners.');
+   await page.evaluate(()=>refresh());await page.waitForTimeout(150);
+   assert.equal(await learned.locator('#learned-18 textarea').inputValue(),'Fridays are kept free of meetings, also for partners.');
+   if(shots)await learned.locator('#learned-18').screenshot({path:`${shots}/learned-${width}-edit.png`});
+   await learned.locator('#learned-18 [type=submit]').click();
+   await page.locator('#toast',{hasText:'Saved.'}).waitFor({state:'attached'});
+   assert.deepEqual(posts.at(-1),{action:'edit_fact',args:{id:18,text:'Fridays are kept free of meetings, also for partners.'}});
+   await learned.locator('#learned-18 textarea').waitFor({state:'detached'});
+   assert.equal(await learned.locator('#learned-18 .grow').textContent(),'Fridays are kept free of meetings, also for partners.');
+   // Escape leaves without saving.
+   await learned.locator('[data-edit-fact="17"]').click();await learned.locator('#learned-17 textarea').press('Escape');
+   await learned.locator('#learned-17 textarea').waitFor({state:'detached'});
+   assert.equal(posts.at(-1).action,'edit_fact');
+  }
   if(width===390&&scheme==='dark'){
-   await learned.locator('[data-forget="19"]').click();
+   await learned.locator('[data-edit-fact="19"]').click();
+   await learned.locator('#learned-19 [data-forget="19"]').click();
    await page.locator('#toast',{hasText:'Removed.'}).waitFor({state:'attached'});
    assert.deepEqual(posts.at(-1),{action:'forget_fact',args:{id:19}});
    await learned.locator('[data-forget="19"]').waitFor({state:'detached'});

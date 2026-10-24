@@ -25,5 +25,5 @@ Search everything that came in, by meaning or by words, across all accounts or o
 ## Feedback
 
 - **How the cards are doing**: over the last 30 days, how many were **Worth it**, done on the **First try**, **Finished**, and **Sent as is**.
-- **What I've learned**: how you write, facts and how you like things done, from your notes. **Edit** how you write, and **Remove** anything that's no longer true.
+- **What I've learned**: how you write, facts and how you like things done, from your notes. **Edit** any of it in your own words, and **Remove** anything that's no longer true. When a note on a card teaches a fact or rule, the card's chat says so under the reply (**Saved to what I’ve learned**, with **Edit** and **Undo**); that line comes from what was stored, so a reply never just claims it.
 - **What you decided**: a timeline of your choices on cards.

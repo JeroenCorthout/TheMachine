@@ -336,14 +336,15 @@ details.tech{margin:6px 0 0;font-size:.82rem}details.tech>summary{cursor:pointer
 #facts{display:grid;gap:30px;min-width:0}#facts>.learn-note{font-size:.85rem;margin:-6px 0 -14px}
 .learn-group{min-width:0}.learn-head{margin:0 0 10px}.learn-head h3{display:flex;align-items:baseline;gap:8px;margin:0;font:var(--fw-heading,600) 1.12rem/1.3 var(--serif)}.learn-head .count{font:600 .76rem var(--mono);color:var(--faint)}.learn-head p{margin:3px 0 0;font-size:.85rem;color:var(--muted)}
 #facts .list>div{flex-wrap:nowrap;align-items:flex-start;gap:12px}#facts .list .grow{min-width:0;overflow-wrap:anywhere;line-height:1.45}#facts .learn-acts{flex:0 0 auto;margin-top:-5px}
-@media (max-width:620px){#facts .learn-acts button{padding-inline:8px}#facts .list>div{padding-inline:14px}}
+@media (max-width:620px){#facts .learn-acts button{padding-inline:8px}#facts .list>div{padding-inline:14px}#facts .fact-row>.learn-acts [data-forget]{display:none}}
 #facts .voice-row .icon{width:30px;height:30px}#facts .voice-row .icon svg{width:16px;height:16px}#facts .voice-row strong{display:block;font-weight:600}
 #facts .voice-lines{margin:3px 0 0;padding:0;list-style:none;color:var(--muted);font-size:.9rem}#facts .voice-lines li{margin:2px 0}#facts .voice-lines li[hidden]{display:none}
 #facts button.learn-link{display:inline;min-height:0;padding:0;border:0;background:none;box-shadow:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}#facts button.learn-link:hover{color:var(--text)}
 #facts button.voice-more{min-height:0;margin-top:4px;padding:2px 0;border:0;background:none;box-shadow:none;color:var(--faint);font-size:.82rem;text-decoration:underline;text-underline-offset:3px;cursor:pointer}#facts button.voice-more:hover{color:var(--text)}
 #facts .list>.learn-all{display:block;width:100%;padding:11px 16px;border:0;border-top:1px solid var(--border);border-radius:0;background:none;box-shadow:none;text-align:left;color:var(--muted)}
 .skill-notes{font-size:.8rem;color:var(--muted);margin-top:4px}.skill-notes summary{cursor:pointer}.skill-notes ul{margin:4px 0 0;padding-left:18px}
-#facts .learn-acts{display:flex;gap:4px;margin-left:auto}#facts .grow small{display:block;color:var(--faint);font-size:.78rem;margin-top:2px}
+#facts .learn-acts{display:flex;gap:4px;margin-left:auto}#facts .fact-edit{display:grid;gap:8px;width:100%}#facts .fact-edit textarea{width:100%;min-height:64px;resize:vertical;font:inherit;line-height:1.45}#facts .fact-edit .learn-acts{margin:0;justify-content:flex-end}#facts .fact-edit .learn-remove{margin-right:auto}
+#facts .list>div.flash{animation:learned-flash 2.2s ease-out}@keyframes learned-flash{0%,45%{background:color-mix(in srgb,var(--mint) 16%,transparent)}100%{background:transparent}}#facts .grow small{display:block;color:var(--faint);font-size:.78rem;margin-top:2px}
 .list>.more-rows{display:block;width:100%;padding:12px 16px;border-top:1px solid var(--border);border-radius:0;text-align:left;color:var(--muted)}
 .list .grow{flex:1;min-width:160px}
 .list details{flex-basis:100%;margin:0}
@@ -1317,6 +1318,12 @@ a.head-link,a.btn-link{display:inline-flex;align-items:center;justify-content:ce
 @media(prefers-reduced-motion:reduce){.voice-form.voice-flash{animation:none}}
 .chat-event details{margin:0;padding:0;border:0;background:none;font:inherit}.chat-event summary{cursor:pointer;list-style:none;font:inherit;color:inherit;padding:0;margin:0}.chat-event summary::-webkit-details-marker{display:none}.chat-event summary::before{content:none}.chat-event .chev{margin-left:4px}.chat-event details[open] .chev{display:inline-block;transform:scaleX(-1)}
 .chat-event ol{margin:2px 0 0;padding:0;list-style:none}
+/* Something a note taught: a quiet line that opens it on What I've learned, with Edit and Undo, and what was saved under it */
+.chat-learned{display:grid;gap:3px;justify-items:center}.chat-learned .learned-acts{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:2px 6px}
+#chat-log .chat-learned button.link{min-height:0;padding:8px 3px;margin:-8px -3px;border:0;background:none;box-shadow:none;font:inherit;font-weight:400;color:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 45%,transparent);text-underline-offset:3px;cursor:pointer}#chat-log .chat-learned button.link:is(:hover,:focus-visible){color:var(--text);text-decoration-color:currentColor}
+.chat-log>.chat-learned.cont,.chat-log>.chat-learned+.chat-learned{margin-top:12px}
+.chat-learned .learned-sep{opacity:.6}.chat-learned q{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:46ch;color:var(--chat-quiet);opacity:.9;quotes:'“' '”'}
+.chat-learned.gone q{text-decoration:line-through;text-decoration-color:color-mix(in srgb,currentColor 50%,transparent)}
 /* A result: what the Machine or an agent made for you. The latest is the one raised card in the thread;
    earlier ones step back to an outline with a short preview. */
 .chat-result{position:relative;align-self:stretch;padding:16px 18px 14px;border-radius:16px;background:var(--surface);border:1px solid var(--c-line);color:var(--muted)}
@@ -2893,13 +2900,20 @@ $('#suggestions').addEventListener('click',e=>{const h=e.target.closest('.sectio
 const notesN=n=>`${n} note${n===1?'':'s'}`;
 // What I've learned: one block per kind (how they write per channel, facts, how to do things, moved into skills); newest first.
 // Each block has a count and folds after 5 with Show all; a channel shows 2 lines with More. A condensed one says what it stands for, with Undo.
-const learnAll=new Set(),voiceOpen=new Set();
+const learnAll=new Set(),voiceOpen=new Set();let learnEdit=null,learnEditText=null;  // the fact being edited, and what was typed so far
+// Open one learning on What I've learned (from a card's chat): its block unfolded, the row in view and lit; with edit, its editor open.
+function learnedShow(id,what,edit){if(chatId){history.pushState(null,'',location.pathname+location.search);openChatLink()}showTab('feedback');  // Back returns to the chat
+const f=(state.facts||[]).find(x=>x.id===id);
+ if(edit&&f){learnEdit=id;learnEditText=null}const group=f?(f.kind==='draft'?'rules':'facts'):null;if(group)learnAll.add(group);
+ $('#facts').innerHTML=learnedList();const row=f?document.getElementById('learned-'+id):null;
+ requestAnimationFrame(()=>{(row||$('#facts')).scrollIntoView({block:row?'center':'start'});if(row){row.classList.remove('flash');void row.offsetWidth;row.classList.add('flash')}const t=row?.querySelector('textarea');if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}})}
 const learnDay=d=>d.toLocaleDateString(CHAT_LOCALE,{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})}).replace(/,/g,'');  // Tue 20 Oct, as elsewhere
 const VOICE_ICON={linkedin:'linkedin',whatsapp:'whatsapp',slack:'slack',email:'gmail',gmail:'gmail',outlook:'gmail',x:'x','x dm':'x',twitter:'x',github:'github'};
 function learnedList(){
  const facts=state.facts||[],at=x=>x.updated_at||x.created_at||'',newest=(a,b)=>at(b).localeCompare(at(a));
  const mergedUndo=(n,attr,label)=>n?`<small>Merged from ${notesN(n)} · <button type="button" class="learn-link" ${attr} aria-label="Undo merge: ${esc(label)}">Undo merge</button></small>`:'';
- const fact=f=>`<div class="fact-row"><span class="grow">${esc(f.text)}${mergedUndo(f.merged,`data-unmerge-fact="${f.id}"`,f.text)}</span><span class="learn-acts"><button type="button" class="quiet" data-forget="${f.id}" aria-label="Remove: ${esc(f.text)}">Remove</button></span></div>`;
+ const fact=f=>learnEdit===f.id?`<div class="fact-row" id="learned-${f.id}"><form class="fact-edit" data-fact-edit="${f.id}"><textarea name="text" maxlength="240" aria-label="Edit what I learned">${esc(learnEditText??f.text)}</textarea><span class="learn-acts"><button type="button" class="quiet learn-remove" data-forget="${f.id}" aria-label="Remove: ${esc(f.text)}">Remove</button><button type="button" class="quiet" data-edit-cancel>Cancel</button><button type="submit" class="primary">Save</button></span></form></div>`:
+  `<div class="fact-row" id="learned-${f.id}"><span class="grow">${esc(f.text)}${mergedUndo(f.merged,`data-unmerge-fact="${f.id}"`,f.text)}</span><span class="learn-acts"><button type="button" class="quiet" data-edit-fact="${f.id}" aria-label="Edit: ${esc(f.text)}">Edit</button><button type="button" class="quiet" data-forget="${f.id}" aria-label="Remove: ${esc(f.text)}">Remove</button></span></div>`;
  const voice=v=>{const name=v.channel==='All'?'Everywhere':v.channel,lines=String(v.text||'').split('\n').map(l=>l.trim()).filter(Boolean),open=voiceOpen.has(v.channel),extra=lines.length-2;
   return `<div class="voice-row" data-channel="${esc(v.channel)}">${icon(VOICE_ICON[String(v.channel).toLowerCase()]||'plugin')}<span class="grow"><strong>${esc(name)}</strong><ul class="voice-lines">${lines.map((l,i)=>`<li${i>1&&!open?' hidden':''}>${esc(l)}</li>`).join('')}</ul>${extra>0?`<button type="button" class="voice-more" data-voice-more="${esc(v.channel)}" aria-expanded="${open}">${open?'Less':extra+' more'}</button>`:''}${mergedUndo(v.merged,`data-unmerge-voice="${esc(v.channel)}"`,v.channel)}</span><span class="learn-acts"><button type="button" class="quiet" data-voice-edit="${esc(v.channel)}" aria-label="Edit how you write: ${esc(name)}">Edit</button></span></div>`};
  const groups=[['voices','How you write','Per channel, from your messages and notes.',[...(state.voices||[])].sort(newest).map(voice)],
@@ -2952,7 +2966,13 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-prom
 $('#facts').addEventListener('click',async e=>{const vm=e.target.closest('[data-voice-more]');if(vm){const ch=vm.dataset.voiceMore,open=!voiceOpen.has(ch);open?voiceOpen.add(ch):voiceOpen.delete(ch);$('#facts').innerHTML=learnedList();$(`#facts [data-voice-more="${CSS.escape(ch)}"]`)?.focus();return}
  const la=e.target.closest('[data-learn-all]');if(la){const k=la.dataset.learnAll;learnAll.has(k)?learnAll.delete(k):learnAll.add(k);$('#facts').innerHTML=learnedList();$(`#facts [data-learn-all="${k}"]`)?.focus();return}
  const u=e.target.closest('[data-unmerge-fact],[data-unmerge-voice],[data-unmerge-skill]');if(u){u.disabled=true;try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'unmerge_fact',args:u.dataset.unmergeSkill?{skill:u.dataset.unmergeSkill}:u.dataset.unmergeVoice?{channel:u.dataset.unmergeVoice}:{id:Number(u.dataset.unmergeFact)}})});toast('Notes restored.');refresh()}catch(err){u.disabled=false;toast(err.message,true)}return}
- const b=e.target.closest('[data-forget]');if(!b)return;b.disabled=true;try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'forget_fact',args:{id:Number(b.dataset.forget)}})});toast('Removed.');refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
+ const ed=e.target.closest('[data-edit-fact]');if(ed){learnEdit=Number(ed.dataset.editFact);learnEditText=null;$('#facts').innerHTML=learnedList();const t=$(`#learned-${learnEdit} textarea`);t?.focus();t?.setSelectionRange(t.value.length,t.value.length);return}
+ if(e.target.closest('[data-edit-cancel]')){const id=learnEdit;learnEdit=learnEditText=null;$('#facts').innerHTML=learnedList();$(`#facts [data-edit-fact="${id}"]`)?.focus();return}
+ const b=e.target.closest('[data-forget]');if(!b)return;b.disabled=true;try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'forget_fact',args:{id:Number(b.dataset.forget)}})});if(learnEdit===Number(b.dataset.forget))learnEdit=learnEditText=null;toast('Removed.');refresh()}catch(err){b.disabled=false;toast(err.message,true)}});
+$('#facts').addEventListener('input',e=>{if(e.target.closest('[data-fact-edit]'))learnEditText=e.target.value});
+$('#facts').addEventListener('keydown',e=>{if(e.key==='Escape'&&e.target.closest('[data-fact-edit]'))e.target.closest('form').querySelector('[data-edit-cancel]').click()});
+$('#facts').addEventListener('submit',async e=>{const form=e.target.closest('[data-fact-edit]');if(!form)return;e.preventDefault();const id=Number(form.dataset.factEdit),text=form.text.value.trim(),save=form.querySelector('[type=submit]');save.disabled=true;
+ try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'edit_fact',args:{id,text}})});const f=(state.facts||[]).find(x=>x.id===id);if(f)f.text=text;learnEdit=learnEditText=null;$('#facts').innerHTML=learnedList();toast('Saved.');refresh()}catch(err){save.disabled=false;toast(err.message,true)}});
 // Ctrl+Enter (Cmd+Enter on a Mac) in a filled text field clicks the nearest primary button of its form, editor or card, if enabled. Plain Enter is left alone.
 document.addEventListener('keydown',e=>{const f=e.target;if(e.key!=='Enter'||!(e.ctrlKey||e.metaKey)||e.isComposing||e.defaultPrevented||!f.matches?.('textarea,input:not([type]),input[type=text],input[type=email],input[type=search],input[type=url],input[type=tel],input[type=number]')||!f.value.trim())return;const shown=b=>b.getClientRects().length>0;for(let box=f.parentElement;box&&box!==document.body;box=box.parentElement){const b=[...box.querySelectorAll('button.primary')].find(shown);if(b){e.preventDefault();if(!b.disabled)b.click();return}if(box.matches('form,dialog,article'))return}});
 $('#suggestions').addEventListener('keydown',e=>{const h=e.target.closest('.section-head[data-fold]');if(h&&(e.key==='Enter'||e.key===' ')){e.preventDefault();toggleSection(h.dataset.fold)}});
@@ -3043,7 +3063,7 @@ fleetSync();
 const choiceTone={accept:'mint',complete:'mint',reject:'muted',snooze:'lavender',other:'amber',reopen:'lavender',undo:'lavender',retry:'lavender',update:'lavender'};
 {const q=state.quality;const pct=v=>v==null?'–':`${v}%`;const was=(v,prev)=>prev==null||v==null?'':`<small>${v>prev?'up':v<prev?'down':'same'} from ${prev}%</small>`;
 $('#quality').innerHTML=!q||!q.cards?'<div class="muted">No cards in the last 30 days yet.</div>':`<div class="stats quality"><div class="stat"><b>${pct(q.hit_rate)}</b><span>Worth it</span>${was(q.hit_rate,q.previous.hit_rate)}</div><div class="stat"><b>${pct(q.first_time_rate)}</b><span>First try</span>${was(q.first_time_rate,q.previous.first_time_rate)}</div><div class="stat"><b>${pct(q.finished_rate)}</b><span>Finished</span>${was(q.finished_rate,q.previous.finished_rate)}</div><div class="stat"><b>${q.sent_as_written+q.sent_edited?q.sent_as_written+'/'+(q.sent_as_written+q.sent_edited):'–'}</b><span>Sent as is</span></div></div>${trendChart(q.trend)}${noteSplit(q.notes)}<div class="list quality-sources">${Object.entries(q.by_source).sort((a,b)=>(b[1].worth_it+b[1].dismissed)-(a[1].worth_it+a[1].dismissed)).map(([k,n])=>`<div><span class="grow">${esc(k)}</span><span>${n.worth_it} of ${n.worth_it+n.dismissed} worth it</span></div>`).join('')}</div>`}
-$('#facts').innerHTML=learnedList();renderShare();
+if(learnEdit==null)$('#facts').innerHTML=learnedList();renderShare();  // an open editor keeps what was typed until Save or Cancel
 $('#decisions').innerHTML=clipList('decisions',state.decisions.map(d=>`<article style="--c:var(--${({mint:'mint',muted:'faint',lavender:'lavender',amber:'amber'})[choiceTone[d.choice]||'muted']})"><h3>${esc(state.suggestions.find(s=>s.id===d.suggestion_id)?.title||d.suggestion_id)}</h3><div class="row">${chip({accept:'Accepted',reject:'Not needed',snooze:'Saved for later',other:'Instructions',complete:'Done',send:'Approved send',reopen:'Reopened',undo:'Reopened',retry:'Trying again',update:'Updated',prepare_ahead:'Prepared ahead'}[d.choice]||d.choice,choiceTone[d.choice]||'muted')}<small>via ${esc(d.source)}</small>${time(d.created_at)}</div>${d.annotation?'<p class="note">Earlier message was matched incorrectly. The correction is recorded.</p>':''}${d.feedback?`<blockquote>${esc(d.feedback)}</blockquote>`:''}</article>`),'<p class="muted">No decisions yet.</p>',5);
 const expandedSync=new Set([...document.querySelectorAll('#connectors details[open]')].map(d=>d.id));
 $('#connectors').innerHTML=state.connectors.map(c=>connectorCard(c,expandedSync)).join('');
@@ -3349,7 +3369,13 @@ const CHAT_TAPS={'Do it':'Chose Do it','Reopened':'Reopened it','Snoozed':'Snooz
 const chatEventText=i=>String(i.mine&&CHAT_TAPS[i.text]||i.text||'').replace(/^You\s+(\S)/,(m,c)=>c.toUpperCase());
 const chatVia=v=>CHAT_VIA[v]||(v&&v!=='signal'?v[0].toUpperCase()+v.slice(1):'');
 // Whose side an item is on: the owner's messages and taps on the right, the Machine and the people it is about on the left.
-const chatSide=i=>i.kind==='you'||i.kind==='event'&&i.mine||i.kind==='source'&&i.mine?'you':i.kind==='event'?'mid':'them';
+const chatSide=i=>i.kind==='you'||i.kind==='event'&&i.mine||i.kind==='source'&&i.mine?'you':i.kind==='event'||i.kind==='learned'?'mid':'them';
+// What a note on this card taught (from what was stored, never from what a reply says): a quiet line that opens it on
+// What I've learned, with Edit and Undo while it is there (a channel's voice has its own 'Saved to How you write' line).
+function chatLearned(i){const sep='<span class="learned-sep" aria-hidden="true">·</span>',q=i.text?`<q>${esc(i.text)}</q>`:'';
+ if(i.state==='removed')return `<div class="chat-event chat-learned gone"><span class="learned-acts">Removed from what I’ve learned</span>${q}</div>`;
+ const id=i.state==='merged'?i.into:i.id,go=`<button type="button" class="link" data-learned-go="${id||''}" data-what="${i.what}">Saved to what I’ve learned</button>`;
+ return `<div class="chat-event chat-learned"><span class="learned-acts">${go}${i.state==='saved'?`${sep}<button type="button" class="link" data-learned-edit="${i.id}" aria-label="Edit what was learned">Edit</button>${sep}<button type="button" class="link" data-learned-undo="${i.id}" aria-label="Undo: remove from what I’ve learned">Undo</button>`:''}</span>${q}</div>`}
 // A reply that says it left a page open in the browser (a sign-in tab, a form)
 const CHAT_TAB=/\b(?:tab|browser)\b[^.]*\b(?:open|opened|reopened|ready)\b|\b(?:open|opened|reopened)\b[^.]*\b(?:tab|browser)\b|\bis open for\b/i;
 function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…</p>';const p=s?chatParts(s):{},out=[];let day='',side='';
@@ -3414,6 +3440,7 @@ const isOpen=i=>!closed(s)&&(i.kind==='card'||!(i.drafts||[]).length||s.status==
   else if(i.kind==='steps')push(i,`<div class="chat-work">${chatFold(k,'chat-steps',`Checked ${i.steps.length} thing${i.steps.length===1?'':'s'}`,`<ol>${i.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`)}</div>`);
   else if(i.kind==='event'){const c=i.times.length,t=chatEventText(i),line=(c>1?`${esc(t)} ${c} times<span class="chev" aria-hidden="true">›</span>`:esc(t))+(i.voice&&c===1?` · <a class="learn-link" href="#settings/writing" data-voice-edit="${esc(i.voice)}">Edit</a>`:'');
    push(i,`<div class="chat-event${i.mine?' mine':''}">${c>1?chatFold(k+':'+i.times[0],'',line+tm(i.at),`<ol>${i.times.map(t=>`<li>${esc(chatDayOf(t))} ${chatHM(t)}</li>`).join('')}</ol>`):line+tm(i.at)}</div>`)}
+  else if(i.kind==='learned')push(i,chatLearned(i).replace(/<\/div>$/,tm(i.at)+'</div>'));
   else if(i.kind==='you'){const to=i.to||'',show=to&&to!==lastTo;lastTo=to;
    push(i,`<div class="chat-msg you">${show?`<div class="chat-to">to ${esc(to)}</div>`:''}<div class="bubble">${chatMarkdown(i.text)}</div>${tm(i.at)}</div>`)}
   else if(i.kind==='reply'){const ds=i.drafts||[],h=headline(i.text);
@@ -3561,6 +3588,8 @@ $('#suggestions').addEventListener('click',async e=>{if(!chatId)return;
  if(e.target.closest('[data-chat-drawer]')){e.target.closest('details')?.removeAttribute('open');drawerOpen();return}
  if(e.target.closest('.chat-menu-list button'))setTimeout(()=>$('#chat-menu')?.removeAttribute('open'));
  const scope=e.target.closest('.chat-side [data-scope]');if(scope){e.stopPropagation();scopeFilter=scope.dataset.scope;localStorage.setItem('scope-filter',scopeFilter);render();return}
+ const lg=e.target.closest('[data-learned-go],[data-learned-edit]');if(lg){e.stopPropagation();const v=lg.dataset.learnedGo;lg.dataset.learnedEdit?learnedShow(Number(lg.dataset.learnedEdit),'fact',true):learnedShow(Number(v)||null,lg.dataset.what);return}
+ const lu=e.target.closest('[data-learned-undo]');if(lu){e.stopPropagation();lu.disabled=true;try{await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'forget_fact',args:{id:Number(lu.dataset.learnedUndo)}})});toast('Removed from what I’ve learned.');if(chat)chat.cursor=null;await chatPoll();refresh()}catch(err){lu.disabled=false;toast(err.message,true)}return}
  const un=e.target.closest('[data-unclamp]');if(un){e.stopPropagation();const k=un.dataset.unclamp;chatOpenSet.has(k)?chatOpenSet.delete(k):chatOpenSet.add(k);paintChat();return}
  const b=e.target.closest('button');const input=$('#chat-input');
  // A quick pick or a suggestion fills the message box.

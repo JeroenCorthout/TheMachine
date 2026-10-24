@@ -107,6 +107,59 @@ class CardChat(unittest.TestCase):
         self.assertEqual(result['text'], 'Drafted it. See notes.')
         self.assertEqual([(d['to'], d['body'], d['reply']) for d in result['drafts']], [(['Alex'], 'Hi Alex, done.', True)])
 
+    def test_what_a_note_taught_shows_from_the_database_never_from_the_reply(self):
+        """Card chat on a signing card: "next time keep it open in the browser for me". The reply alone claiming it noted
+        something shows nothing; a rule remember_fact saved from that note shows as a learned line under the reply, which
+        follows it when it is edited, removed (Undo) or condensed."""
+        self.store.decide(self.sid, 'other', 'I hope it went well - next time keep it open in the browser for me', 'chat-1', 'dashboard')
+        with self.store.connect() as db:
+            db.execute("INSERT INTO preparation_runs(job_id,suggestion_id,session_job_id,status,started_at) VALUES('job1',?,'job1','ok',?)", (self.sid, a.now()))
+            db.execute('INSERT INTO preparation_calls(job_id,call_id,tool,params,started_at) VALUES(?,?,?,?,?)', ('job1', 'c1', 'assistant_signals', json.dumps(
+                {'action': 'prepare', 'args': {'suggestion_id': self.sid, 'body': 'It went through. I’ve noted your preference.'}}), a.now()))
+            owner, results = self.app.card_chat_service(db, self.sid)
+        self.assertEqual([i for i in owner if i['kind'] == 'learned'], [], 'a claim in the reply is not a learning')
+        rule = 'After signing or submitting in the browser, leave the confirmation page open for the owner to check.'
+        saved = self.store.remember_fact(rule, 'chat-1', 'draft')
+        with self.store.connect() as db:
+            owner, results = self.app.card_chat_service(db, self.sid)
+        learned = [i for i in owner if i['kind'] == 'learned']
+        self.assertEqual([(i['what'], i.get('id'), i.get('text'), i.get('channel'), i['state']) for i in learned],
+                         [('draft', saved['id'], rule, None, 'saved')])
+        # Under the reply it came with (it was saved before the reply), not before it
+        items = a.chat_items([], [o for o in owner if o['kind'] != 'learned'] + learned, results)
+        kinds = [i['kind'] for i in items]
+        self.assertEqual(kinds[kinds.index('reply') + 1:], ['learned'])
+        self.assertTrue(all(i['at'] >= items[kinds.index('reply')]['at'] for i in items if i['kind'] == 'learned'))
+        # Edited, it shows the new words; removed, it says so; condensed, it points at the fact it went into
+        self.app.action('edit_fact', {'id': saved['id'], 'text': rule.replace('the owner', 'Sam')}, owner_dashboard=True)
+        with self.store.connect() as db:
+            self.assertIn('for Sam to check', self.app.card_chat_learned(db, self.sid)[0]['text'])
+        other = self.store.remember_fact('Keep the browser tab with a signed contract open.', 'chat-1', 'draft')
+        merged = self.store.remember_fact('After a last step in the browser, leave its confirmation page open.', None, 'draft', replaces=[saved['id'], other['id']])
+        with self.store.connect() as db:
+            learned = self.app.card_chat_learned(db, self.sid)
+        self.assertEqual([(i.get('id'), i['state'], i.get('into')) for i in learned if i['what'] == 'draft'],
+                         [(saved['id'], 'merged', merged['id']), (other['id'], 'merged', merged['id'])], 'the condensed one is no new learning')
+        self.store.unmerge_fact(merged['id'])
+        self.app.action('forget_fact', {'id': saved['id']}, owner_dashboard=True)
+        with self.store.connect() as db:
+            self.assertEqual(self.app.card_chat_learned(db, self.sid)[0]['state'], 'removed')
+
+    def test_only_the_owner_edits_what_was_learned(self):
+        self.store.decide(self.sid, 'other', 'we stopped using that tool', 'n1', 'dashboard')
+        fact = self.store.remember_fact('The team stopped using the old translation tool.', 'n1')
+        self.assertIn('edit_fact', a.OWNER_ACTIONS)
+        with self.assertRaises(ValueError):
+            self.app.action('edit_fact', {'id': fact['id'], 'text': 'Something else entirely.'})
+        for bad in ('', 'tiny', 'x' * 241):
+            with self.assertRaises(ValueError):
+                self.store.edit_fact(fact['id'], bad)
+        self.store.remember_fact('The team meets on Mondays.', 'n1')
+        with self.assertRaises(ValueError):
+            self.store.edit_fact(fact['id'], 'the team meets on mondays.')
+        self.assertEqual(self.store.edit_fact(fact['id'], '  The team   uses DeepL now. ')['text'], 'The team uses DeepL now.')
+        self.assertIn('The team uses DeepL now.', [f['text'] for f in self.store.facts()])
+
     def test_result_file_links_are_chips_not_bare_titles(self):
         body, files = a.chat_result_files('Drafted it. Nothing sent.\n\n[Draft and sources](memory/assistant/261023-note.md)\n'
                                           'See [the plan](/home/x/.openclaw/workspace/memory/assistant/plan.md) too. [Bad](memory/assistant/../secret.md)')
