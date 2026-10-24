@@ -9144,6 +9144,24 @@ def tailnet_login(ip):
     return login
 
 
+def dashboard_csrf(token, owner):
+    """The dashboard's CSRF token: the same for every page of this owner on this Machine."""
+    return hmac.new(token.encode(), owner.encode(), hashlib.sha256).hexdigest()
+
+
+def dashboard_cache_scope(token, owner):
+    """Whose last data the dashboard may keep on a device (encrypted, see docs/architecture.md): another owner or a new
+    Machine token is another scope, and the device drops what it kept for the old one. It says nothing about either."""
+    return hmac.new(token.encode(), b'dashboard-cache\0' + owner.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def dashboard_page(token, owner, base):
+    """dashboard.html as served: the CSRF token, the release, the base path and the device cache's scope filled in."""
+    return ((ROOT / 'dashboard.html').read_text().replace('__CSRF__', dashboard_csrf(token, owner))
+            .replace('__UI_VERSION__', dashboard_version()).replace('__BASE__', base)
+            .replace('__CACHE_SCOPE__', dashboard_cache_scope(token, owner)))
+
+
 def dashboard_base(config, host):
     """The dashboard's own host serves it at `dashboard_path` (for example / on a custom
     domain); ts.net aliases keep it under `dashboard_alias_path` (/assistant/)."""
@@ -14928,6 +14946,9 @@ class App:
                 self.send_response(status)
                 self.send_header('Content-Type', content_type if content_type.startswith('image/') or content_type=='application/pdf' else content_type + '; charset=utf-8')
                 self.send_header('Cache-Control', 'no-store')
+                if getattr(self, 'etag', None):
+                    self.send_header('ETag', self.etag)
+                    self.etag = None
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Referrer-Policy', 'no-referrer')
                 self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' https: data:; frame-ancestors 'none'")
@@ -14968,8 +14989,18 @@ class App:
                 if (path.path == '/browser' or path.path.startswith('/browser/')) and app.config.get('browser_vnc'):
                     self.browser_view(path.path[len('/browser/'):], short=path.path in ('/browser', '/browser/'))
                 elif path.path == '/':
-                    csrf = hmac.new(app.token.encode(), app.config['tailscale_owner'].encode(), hashlib.sha256).hexdigest()
-                    self.output(200, (ROOT / 'dashboard.html').read_text().replace('__CSRF__', csrf).replace('__UI_VERSION__', dashboard_version()).replace('__BASE__', dashboard_base(app.config, self.headers.get('Host', ''))), 'text/html')
+                    page = dashboard_page(app.token, app.config['tailscale_owner'], dashboard_base(app.config, self.headers.get('Host', '')))
+                    # The installed app's service worker keeps a copy of this page and asks again with its ETag: an
+                    # unchanged page is a short 304 instead of the whole page over a phone's connection.
+                    etag = '"' + hashlib.sha256(page.encode()).hexdigest()[:24] + '"'
+                    if self.headers.get('If-None-Match') == etag:
+                        self.send_response(304)
+                        self.send_header('ETag', etag)
+                        self.send_header('Cache-Control', 'no-store')
+                        self.end_headers()
+                        return
+                    self.etag = etag
+                    self.output(200, page, 'text/html')
                 elif path.path == '/manifest.webmanifest':
                     self.output(200, (ROOT / 'manifest.webmanifest').read_text(), 'application/manifest+json')
                 elif path.path == '/sw.js':
@@ -14979,6 +15010,11 @@ class App:
                 elif path.path in BRAND_ASSETS:
                     asset = BRAND_ASSETS[path.path]
                     self.output(200, asset.read_bytes(), {'.webp': 'image/webp', '.woff2': 'font/woff2'}.get(asset.suffix, 'image/png'))
+                elif path.path == '/api/session':
+                    # Asked once by a page: the CSRF token (a page started from the app's on-device copy has none, that
+                    # copy never keeps it) and whose data the device may keep (dashboard_cache_scope)
+                    self.output(200, {'csrf': dashboard_csrf(app.token, app.config['tailscale_owner']),
+                                      'cache_scope': dashboard_cache_scope(app.token, app.config['tailscale_owner'])})
                 elif path.path == '/api/status':
                     self.output(200, {**app.action('status', {'full': True}), 'ui_version': dashboard_version(), 'source_url': source_url(), 'browser_link': browser_link(app.config),
                                       'browser_embed': browser_embed(app.config, self.headers.get('Host', ''))})
@@ -15281,7 +15317,7 @@ class App:
 
             def do_POST(self):
                 internal = self.internal()
-                csrf = hmac.new(app.token.encode(), app.config['tailscale_owner'].encode(), hashlib.sha256).hexdigest()
+                csrf = dashboard_csrf(app.token, app.config['tailscale_owner'])
                 dashboard = (self.owner() and self.headers.get('Origin') == 'https://' + self.headers.get('Host', '') and
                              hmac.compare_digest(self.headers.get('X-CSRF-Token', '').encode(), csrf.encode()))
                 if not internal and not dashboard:

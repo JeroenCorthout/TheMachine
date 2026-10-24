@@ -44,6 +44,10 @@ In **Settings**, **General**, **This device**, the bell next to **Notifications*
 
 If notifications are blocked, the row says where to allow them again: on a computer, click the icon left of the address and allow Notifications. On an iPhone, open the Settings app, Notifications, The Machine.
 
+## Opening fast
+
+The app opens with your last cards right away, then updates them. Without a connection it shows what it had, marked **Offline** with the time it was last updated. That copy stays on the device for at most 7 days, encrypted, and goes when you sign out.
+
 ## More devices
 
 Sign in on each device the same way. On a hosted Machine, a passkey per device makes signing in quicker: add one under Security on your account page.

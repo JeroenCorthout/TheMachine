@@ -49,6 +49,9 @@ invalid receipt or timeout blocks it as well. The token is never included in rel
   an export holds them only with a passphrase. On a self-hosted install the key sits next to them for the service
   user: protect that user's account and disk (full-disk encryption) accordingly. Without message protection they
   keep a key of their own next to them, as before.
+- The dashboard keeps its last cards, the open chat and the Graph's lists on each device so it opens at once:
+  encrypted (AES-GCM, a key the browser can't export), for one owner, at most 7 days, never a token, and wiped on
+  Sign out or when the session ends ([On the device](docs/architecture.md#on-the-device)). On a shared computer, sign out.
 - The browser's own cookies and sign-ins (its profile) are the browser's: protected by the account and the disk,
   not by The Machine's keys. Anything running as the service user, the agent included, can use them.
 - Credentials a tool prints (provider tokens, JWTs, private keys, `password=` and `Authorization:` values,

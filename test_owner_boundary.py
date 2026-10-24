@@ -239,6 +239,29 @@ class OwnerBoundary(unittest.TestCase):
             self.assertNotEqual(status, 403, (action, body))
             self.assertEqual(self.post(port, {'action': action, 'args': {}}, {'Authorization': 'Bearer ' + TOKEN})[0], 403)
 
+    def test_dashboard_page_session_and_etag(self):
+        # The page carries its CSRF token and the device-cache scope; a repeat with its ETag is a 304; api/session gives
+        # the same token and scope to a page opened from the device copy (which holds no token), and only to the owner.
+        port = self.serve()
+        owner = {'Host': 'machine.example:8443', 'Tailscale-User-Login': 'owner@example.com'}
+        def get(path, headers):
+            conn = http.client.HTTPConnection('127.0.0.1', port)
+            conn.request('GET', path, headers=headers); r = conn.getresponse(); body = r.read(); conn.close(); return r, body
+        r, page = get('/', owner)
+        self.assertEqual(r.status, 200)
+        csrf = a.dashboard_csrf(self.app.token, 'owner@example.com'); scope = a.dashboard_cache_scope(self.app.token, 'owner@example.com')
+        self.assertIn(("const csrf='" + csrf + "'").encode(), page)
+        self.assertIn(("CACHE_SCOPE='" + scope + "'").encode(), page)
+        self.assertNotIn(b'__CACHE_SCOPE__', page)
+        self.assertRegex(scope, '^[0-9a-f]{32}$'); self.assertNotIn(scope, csrf)
+        self.assertNotEqual(scope, a.dashboard_cache_scope(self.app.token, 'other@example.com'))
+        etag = r.getheader('ETag'); self.assertTrue(etag)
+        r, body = get('/', {**owner, 'If-None-Match': etag})
+        self.assertEqual((r.status, body), (304, b''))
+        r, body = get('/api/session', owner)
+        self.assertEqual(r.status, 200); self.assertEqual(json.loads(body), {'csrf': csrf, 'cache_scope': scope})
+        self.assertEqual(get('/api/session', {'Authorization': 'Bearer ' + TOKEN})[0].status, 403)
+
     def test_owner_key_is_created_private(self):
         config = {'credentials': {}, 'database': str(Path(self.temp.name) / 'events.sqlite')}
         key = a.owner_credential(config)

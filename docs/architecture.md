@@ -50,6 +50,18 @@ Python's standard library and SQLite are enough: no database server, queue, web 
 
 **Boundaries.** Every account has an explicit ID and `boundary` (`work:Acme`, `personal:phone`, `owner:system`…). Every read names its accounts explicitly; app names and chat labels never decide which company an item belongs to.
 
+### On the device
+
+The dashboard opens from the device and then refreshes. Until the first real data is known it shows a quiet outline of the cards (as many as last time, never their content); "All clear" shows only when the Machine itself says there are no cards, never from a kept copy.
+
+- **The page.** `sw.js` keeps a copy of the dashboard page (the app shell) and the brand images, and opens the app from them. The copy never holds the CSRF token: the service worker takes it out, and a page started from the copy gets it from `api/session` (a change waits for it). After opening, the service worker asks for the page again with its ETag (a short 304 when nothing changed). A new release drops the copy before the page reloads.
+- **The data.** The last cards (`api/status`), the open card's chat and the Graph's overview and the first page of each list are kept in IndexedDB, encrypted with AES-GCM under a non-extractable key that never leaves that browser's IndexedDB, each row bound to its name and owner. Keys that look like secrets (`csrf`, `token`, `*_token`, `password`, `*_key` and the like) are removed first. Rows older than 7 days are dropped, one row is at most 3 MB and all of them at most 8 MB (oldest first).
+- **Whose.** The page (and `api/session`) carries `cache_scope`, an HMAC of the Machine's token and its owner that says nothing about either. A different scope (another owner, or a new Machine) wipes what the device kept.
+- **Wiped** on Sign out (before the sign-out request goes), when the session is gone (the sign-in gate's redirect or a 401/403 on `api/status` or `api/session`, also seen by the service worker), and on another owner. Nothing is kept inside a frame (the site's demo).
+- **Stale.** A kept copy shown while the Machine can't be reached says so at the foot of the sidebar: "Offline · updated 10:42".
+
+The copy protects against someone reading the browser's files (a lost laptop's disk, a backup). Anyone using the unlocked browser profile itself sees what the dashboard shows anyway, so on a shared computer sign out when done.
+
 
 ## Reviews
 
