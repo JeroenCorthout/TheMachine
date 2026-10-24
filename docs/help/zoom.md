@@ -4,7 +4,7 @@ area: connections
 summary: The AI Companion summaries and transcripts of meetings you host. It only reads.
 covers: connector:zoom
 code: connectors/zoom.py, meeting_notes.py, onboarding.py
-site: Connect Zoom, More sources, Remove
+site: Connect Zoom, More sources, Remove, Sign in with Zoom
 ---
 ## What it reads
 
@@ -27,6 +27,8 @@ On a hosted Machine:
 1. Open your setup page at app.themachine.computer/setup and go to **More sources**.
 2. Open Zoom, pick work or personal, and press **Connect Zoom**.
 3. Sign in to Zoom and allow The Machine. It is made by Salesflare.
+
+On your own computer, once it's [paired with your account](fleet.md): open **Connections**, then **+ Add**, pick Zoom and press **Sign in with Zoom**.
 
 ## Remove it
 

@@ -242,7 +242,7 @@ class Dashboard(unittest.TestCase):
         self.assertEqual(app.action('connect_signin', {'name': 'intercom'}, owner_dashboard=True),
                          {'url': app.fleet.relay.start_url, 'state': 'started'})
         self.assertEqual(app.action('connect_signin_state', {'name': 'intercom'}, owner_dashboard=True), {'state': 'started'})
-        for name in ('gmail', 'github', ''):
+        for name in ('github', 'slack', ''):  # Gmail signs in with Google: test_device_grants.py
             with self.assertRaises(ValueError):
                 app.action('connect_signin', {'name': name}, owner_dashboard=True)
 

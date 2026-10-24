@@ -4,7 +4,7 @@ area: connections
 summary: Your meetings, so you go in prepared and follow up. It only reads.
 covers: connector:calendar
 code: onboarding.py, google_api.py
-site: Connect Google, Mail and Calendar, Disconnect
+site: Connect Google, Mail and Calendar, Disconnect, Sign in with Google
 order: 11
 ---
 ## What it reads
@@ -19,7 +19,9 @@ Nothing in your calendar. It never creates, changes or answers an event.
 
 On a hosted Machine it connects together with Gmail: on your setup page, under **Mail and Calendar**, press **Connect Google**.
 
-On your own computer, run `assistant connect calendar`, or open **Connections**, then **+ Add**, and pick Google Calendar. It asks which calendar to read.
+On your own computer, once it's [paired with your account](fleet.md): open **Connections**, then **+ Add**, pick Google Calendar and press **Sign in with Google**. It connects together with Gmail.
+
+With your own app: run `assistant connect calendar`, or open **Use your own app** there. It asks which calendar to read.
 
 ## Remove it
 

@@ -497,7 +497,7 @@ class SourceError(Exception):
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
                    'connect_signin', 'connect_signin_state')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'edit_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -5067,6 +5067,25 @@ class Store:
                 db.execute("INSERT INTO rule_changes(at,kind,text,ref) VALUES(?,'draft_rule',?,?)", (now(), 'Removed draft rule: ' + row['text'], str(fact_id)))
         return {'removed': True}
 
+    def edit_fact(self, fact_id, text):
+        """The owner rewrites something learned in their own words: same fact or rule, new text."""
+        text = ' '.join(str(text or '').split())
+        if not 5 <= len(text) <= 240:
+            raise ValueError('Keep it to one short sentence (5-240 characters)')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT kind,text FROM facts WHERE id=? AND removed_at IS NULL', (int(fact_id),)).fetchone()
+            if not row:
+                raise ValueError('Unknown fact')
+            if row['text'] == text:
+                return {'id': int(fact_id), 'unchanged': True}
+            if db.execute('SELECT 1 FROM facts WHERE removed_at IS NULL AND kind=? AND lower(text)=lower(?) AND id!=?', (row['kind'], text, int(fact_id))).fetchone():
+                raise ValueError('That is already in what I’ve learned')
+            db.execute('UPDATE facts SET text=? WHERE id=?', (text, int(fact_id)))
+            if row['kind'] == 'draft':
+                db.execute("INSERT INTO rule_changes(at,kind,text,ref) VALUES(?,'draft_rule',?,?)", (now(), 'Edited draft rule: ' + text, str(fact_id)))
+        return {'id': int(fact_id), 'text': text}
+
     def facts(self):
         with self.connect() as db:
             return [dict(r) for r in db.execute('SELECT id,text,suggestion_id,created_at,kind FROM facts WHERE removed_at IS NULL ORDER BY created_at')]
@@ -8176,7 +8195,15 @@ def chat_items(messages, owner, results=None):
         if key not in runs:
             items.extend(dict(r) for r in saved)
     rank = {'source': 0, 'you': 1, 'event': 1, 'steps': 2}
-    return sorted(items, key=lambda i: (i['at'], rank.get(i['kind'], 3)))
+    items = sorted(items, key=lambda i: (i['at'], rank.get(i['kind'], 3)))
+    # What a run learned shows under its reply (the run saves it before it answers), unless the owner wrote in between
+    for learned in [i for i in items if i['kind'] == 'learned'][::-1]:
+        n = items.index(learned)
+        after = next((k for k in range(n + 1, len(items)) if items[k]['kind'] in ('reply', 'you')), None)
+        if after is not None and items[after]['kind'] == 'reply' and items[after]['at'] - learned['at'] <= 1800000:
+            items.insert(after, items.pop(n))
+            learned['at'] = max(learned['at'], items[after - 1]['at'])
+    return items
 
 
 def draft_saved(db, suggestion_id, action, at=None):
@@ -9654,7 +9681,7 @@ For this job:
 - Save the result with assistant_signals prepare args suggestion_id={sid}, job_id={j}, body=<short result>, next_actions=[...], outcome, and send_now:true only when the owner's latest message approves sending a draft they already saw on the card, unchanged (the service refuses any other). A draft you write or change in this turn is saved without send_now and shown to them: they read it and tap Send (outcome:'needs_you', needs:'check the draft and send it'), also when their note only says what to do ("email Sam now").
 - outcome:'done' only when the task itself is complete and nothing is left for the owner but to check it; outcome:'answered' when you only answered their question, explained or planned, and the task itself is still to do (the card then offers Do it again); outcome:'already_done' with no next_actions when it turns out to be done already or no longer needed; outcome:'your_step' with step:'submit' (or pay, book, sign, confirm, order, apply) when everything is ready but that final click is left for them, e.g. a form you filled in and didn't submit (the card says so and links to the page in this Machine's browser by itself; no link of your own needed); outcome:'needs_you' with needs:<the one thing they have to do, in a few words> otherwise (approve the send, sign in, choose); when that is a question for them, write needs as the question itself, ending in "?" (the card then leads with Answer). The card shows that status line itself, so the body doesn't repeat it. Finish what you can first: don't stop to ask about steps the rules already let you do.
 - When the card's title no longer says where things stand after this result (the situation changed, not just the wording), add title=<a new short title for now, under 90 characters>; otherwise leave title out.
-- When latest_feedback is a Change note, also give note_kind: style (how it was written), fact (something you didn't know), continue (keep going or finish the job) or new_ask (something else to do). A style note that holds beyond this card (how they write on a channel or with this kind of person: length, tone, greeting, sign-off, language, capitals, punctuation, links, formatting; "always…", "next time…", or what they asked on an earlier card) updates that channel's voice: assistant_signals remember_fact args kind=voice, channel=<the channel it is about: Email, Slack, WhatsApp, LinkedIn, X DM, another channel's name, or All when it holds everywhere>, text=<that channel's whole voice block (up to {VOICE_LINES} short lines, at most {VOICE_CHARS} characters): the current block with the note worked in, everything else kept, only what it contradicts dropped>, decision_id=<that note's decision>. {VOICE_PRECISE} How a kind of task is done (what to include, where things go) is a draft rule instead: remember_fact kind=draft, text=<the rule, general>. A fact note that holds beyond this card goes in remember_fact as a fact.
+- When latest_feedback is a Change note, also give note_kind: style (how it was written), fact (something you didn't know), continue (keep going or finish the job) or new_ask (something else to do). A style note that holds beyond this card (how they write on a channel or with this kind of person: length, tone, greeting, sign-off, language, capitals, punctuation, links, formatting; "always…", "next time…", or what they asked on an earlier card) updates that channel's voice: assistant_signals remember_fact args kind=voice, channel=<the channel it is about: Email, Slack, WhatsApp, LinkedIn, X DM, another channel's name, or All when it holds everywhere>, text=<that channel's whole voice block (up to {VOICE_LINES} short lines, at most {VOICE_CHARS} characters): the current block with the note worked in, everything else kept, only what it contradicts dropped>, decision_id=<that note's decision>. {VOICE_PRECISE} How a kind of task is done (what to include, where things go) is a draft rule instead: remember_fact kind=draft, text=<the rule, general>. A fact note that holds beyond this card goes in remember_fact as a fact. A note about how to do a kind of task next time ("next time keep it open for me") is a draft rule, also when it is not about writing. The card's chat shows what remember_fact saved, with Undo: the body never says you noted, saved or will remember something, and never claims it when nothing was saved.
 - When the owner's note means they want this task itself back later (remind me about it next week, later, on Tuesday), that is this card's snooze, not a reminder: save with outcome:'snoozed' and snooze_until:<their local date and time, e.g. 2026-10-27T09:00, or a date alone for their morning>, and a one-line body. The card leaves their list and comes back then. Do not also add an automation, cron job or reminder for it. A separate reminder about something else, or a recurring one, stays an automation. Their time zone is {getattr(local_tz(),'key','UTC')}; it is now {dt.datetime.fromisoformat(now()).astimezone(local_tz()).strftime('%a %Y-%m-%d %H:%M')} there.
 - A first message to someone who doesn't know about it yet says what it is about before it asks.
 - Or record a blocker with assistant_signals preparation_blocked args suggestion_id={sid}, job_id={j}, reason=<one plain sentence>, details=<technical specifics>. Block only on what you truly can't know (their first-hand notes, a fact only they have, a call with no sensible default); a minor judgment call with an obvious sensible default you make yourself and name in one line of the result. When only the owner can unblock it, also give questions=[{{question:<one short plain question>, options:[<2-4 short choices, only when it is a clear choice>]}}] (at most 3). Each question must make sense on its own to someone who hasn't seen your work: plain words, what it is about and why it matters, no jargon or internal terms, e.g. {{question:'What did you notice when you tried OnePageCRM? A few lines on what you tried and what stood out are enough.'}}. The card shows them with quick picks and an Answer box. No paths, IDs or tool names in reason or questions.''' + owner_details(config) + (f'''
@@ -11438,6 +11465,10 @@ class App:
             if not owner_dashboard:
                 raise ValueError('Only the owner can remove a fact, on the dashboard')
             return self.store.forget_fact(args['id'])
+        if name == 'edit_fact':
+            if not owner_dashboard:
+                raise ValueError('Only the owner can edit what was learned, on the dashboard')
+            return self.store.edit_fact(args.get('id'), args.get('text'))
         if name == 'preparation_blocked':
             return self.store.preparation_blocked(args['suggestion_id'],args['job_id'],args['reason'],args.get('details'),args.get('note_kind'),args.get('questions'))
         if name == 'refresh_card':
@@ -12729,12 +12760,13 @@ class App:
                 # Sign in with <provider> through The Machine's own app (fleet.py connect_start), once this Machine is
                 # paired with an account; pasting a token stays as the fallback
                 for source in found['sources']:
-                    if source['service'] in fleet.SIGNIN_SOURCES:
-                        source['signin'] = True
+                    if fleet.SIGNIN_OF.get(source['service']):
+                        source['signin'] = fleet.SIGNIN_OF[source['service']]
                 found['paired'], found['pair_url'] = getattr(self, 'fleet', None) is not None, fleet.PAIR_PAGE
             return found
         if name in ('connect_signin', 'connect_signin_state'):
             source = args.get('name') if isinstance(args.get('name'), str) else ''
+            source = fleet.SIGNIN_OF.get(onboarding.SERVICES.get(source, source), source)  # Gmail and Calendar: Google
             if hosted:
                 raise ValueError('Your account page signs this one in')
             if source not in fleet.SIGNIN_SOURCES:
@@ -12787,6 +12819,8 @@ class App:
                     onboarding.disconnect(self.config_path, account['id'])
                 except onboarding.SetupError as error:
                     raise ValueError(error.message) from None
+                if not hosted:
+                    self.forget_device_grant(account)
             LOG.info('connect removed account=%s', account['id'])
             return {'removed': account['id'], 'restarting': restart_self(3)}
         if name == 'connect_start':
@@ -12965,6 +12999,7 @@ class App:
                     continue
                 owner.append({'kind': 'event', 'text': ('Unsnoozed' if choice == 'unsnooze' else CHAT_OWNER_WORDS[choice]) + via + why,
                               'choice': choice, 'mine': True, 'at': at})
+        owner.extend(self.card_chat_learned(db, suggestion_id))
         for r in db.execute('SELECT payload,status,source,created_at FROM action_jobs WHERE suggestion_id=? ORDER BY created_at', (suggestion_id,)):
             try:
                 payload = json.loads(r['payload'])
@@ -13038,6 +13073,23 @@ class App:
         for i in owner:
             i.pop('choice', None)
         return owner, results
+
+    @staticmethod
+    def card_chat_learned(db, suggestion_id):
+        """What this card's notes taught, from the database itself (never from what a reply says): each fact or rule
+        saved from a note here (a channel voice shows as its own 'Saved to How you write' line). The chat shows them as
+        quiet lines that open the learning on What I've learned. A fact says where it stands now: saved, removed
+        (Undo), or condensed into another (`into`, that fact's id, or 0 when it went into a voice or a skill)."""
+        out = []
+        for r in db.execute("SELECT f.id,f.kind,f.text,f.created_at,f.removed_at,f.merged_into FROM facts f JOIN decisions d ON d.id=f.decision_id "
+                            "WHERE d.suggestion_id=? AND NOT EXISTS (SELECT 1 FROM facts o WHERE o.merged_into='fact:'||f.id) "
+                            "ORDER BY f.created_at,f.id", (suggestion_id,)):
+            into = str(r['merged_into'] or '')
+            state = 'merged' if into else 'removed' if r['removed_at'] else 'saved'
+            out.append({'kind': 'learned', 'what': 'draft' if r['kind'] == 'draft' else 'fact', 'id': r['id'], 'text': clamp(r['text'], 300),
+                        'state': state, **({'into': int(into[5:]) if into.startswith('fact:') and into[5:].isdigit() else 0} if into else {}),
+                        'at': chat_ms(r['created_at'])})
+        return out
 
     def agent_work(self, suggestion_id):
         """Work handed to Claude Code or Codex on this card (agent_jobs.card_work), as a block for its chat turn or
@@ -14263,6 +14315,29 @@ class App:
             result['restarting'] = restart_self(5)
         return result
 
+    def forget_device_grant(self, account):
+        """A Google, Microsoft or Zoom account signed in from this paired Machine's dashboard (onboarding.connect_grant),
+        disconnected: once no account on that sign-in is left, its refresh token is forgotten here (Google's revoked) and
+        the control plane forgets this Machine had it, so nothing refreshes it again."""
+        import mail_grants
+        provider = fleet.SIGNIN_OF.get(account.get('service'))
+        if account.get('transport') != 'broker' or provider not in ('google', 'microsoft', 'zoom'):
+            return
+        email = str(account.get('email') or '').lower()
+        services = {s for s, p in fleet.SIGNIN_OF.items() if p == provider}
+        if any(a.get('id') != account['id'] and a.get('service') in services and str(a.get('email', '')).lower() == email
+               for a in self.config.get('accounts', [])):
+            return
+        try:
+            mail_grants.forget(self.config, provider, email)
+        except (mail_grants.GrantError, OSError) as error:
+            LOG.warning('sign-in not forgotten provider=%s error=%s', provider, type(error).__name__)
+        if getattr(self, 'fleet', None) is not None:
+            try:
+                self.fleet.relay.call('POST', '/grant-forget', {'provider': provider, 'email': email}, timeout=30)
+            except Exception as error:  # noqa: BLE001 - its token is gone here: the control plane can refresh nothing
+                LOG.warning('grant forget not sent provider=%s error=%s', provider, type(error).__name__)
+
     def fleet_connect_delivered(self, body):
         """A sign-in sealed for this paired Machine (fleet.py connects_round): connected the way the dashboard's
         Connections, Add does (onboarding.connect_delivered), then a restart reads it. Only the `connect` command."""
@@ -14936,7 +15011,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')
