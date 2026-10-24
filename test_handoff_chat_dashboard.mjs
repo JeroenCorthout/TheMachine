@@ -12,17 +12,20 @@ const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8
 const hour=3600e3,t0=Date.now()-3*hour,iso=ms=>new Date(ms).toISOString();
 const BODY='Triage confirmed a cross-team exposure of user names and tag names. The account issue is tracked, but these two paths are not. I can hand this to Pat’s Machine to get the missing issue and fixes coordinated **today**.';
 const card=(id,title,extra)=>({id,title,body:BODY,status:'pending',event_ids:[1],scope:'work',created_at:iso(t0),next_actions:[],urgent:true,...extra});
-const waiting=card('a1a1a1a1a1a1a1a1','Confirmed contact owner and tag leaks need engineering follow-up',{fleet_handoff:{name:'Pat Lee',stage:'waiting for them'}});
+const ASKED='Triage confirmed contact owner and tag names leak across teams. Can you file the missing issue and get both fixes coordinated today? Source: Security triage (https://tracker.example/1)';
+const waiting=card('a1a1a1a1a1a1a1a1','Confirmed contact owner and tag leaks need engineering follow-up',{fleet_handoff:{name:'Pat Lee',stage:'waiting for them',asked:ASKED}});
 const declined=card('c1c1c1c1c1c1c1c1','Export leaks rows',{fleet_handoff:{name:'Pat Lee',stage:'declined',note:'Not my area',back:true}});
 const accepted=card('d1d1d1d1d1d1d1d1','Fix the export filter',{status:'completed',updated_at:iso(t0+2*hour),fleet_handoff:{name:'Pat Lee',stage:'accepted',note:'On it this week'}});
 // Another one with Pat, under Later until its check-in: an urgent card stays there too.
-const later=card('e1e1e1e1e1e1e1e1','Patch the tag search endpoint',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Pat'},fleet_handoff:{name:'Pat Lee',stage:'waiting for them'}});
+const later=card('e1e1e1e1e1e1e1e1','Patch the tag search endpoint',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Pat'},fleet_handoff:{name:'Pat Lee',stage:'waiting for them',asked:'Can you patch the tag search endpoint so it checks the team?'}});
+// Handed to this owner, then taken back by whoever sent it: the card it made goes, saying so
+const taken=card('a4a4a4a4a4a4a4a4','Send Sam the pricing',{status:'rejected',body:'Pat asks you to take this on: “Sam wants pricing.”',updated_at:iso(t0+2*hour)});
 // Handed to Pat, then the owner asked for Kim instead: the new handoff waits for review, Pat still has it until then.
-const redirect=card('f1f1f1f1f1f1f1f1','Frank needs help recovering his account',{status:'prepared',body:'A corrected handoff to Kim is ready for review.',
- fleet_handoff:{name:'Pat Lee',stage:'waiting for them'},next_actions:[{kind:'handoff',label:'Hand off to Kim',to_name:'Kim Doe',to_email:'kim@acme.example',body:'Can you pick up Frank’s account recovery on Monday?'}]});
+const redirect=card('f1f1f1f1f1f1f1f1','Lou needs help recovering their account',{status:'prepared',body:'A corrected handoff to Kim is ready for review.',
+ fleet_handoff:{name:'Pat Lee',stage:'waiting for them'},next_actions:[{kind:'handoff',label:'Hand off to Kim',to_name:'Kim Doe',to_email:'kim@acme.example',body:'Can you pick up Lou’s account recovery on Monday?'}]});
 // Sent to Kim instead: taken back from Pat. And one both have.
-const moved=card('a2a2a2a2a2a2a2a2','Reset the shared inbox rules',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Kim'},fleet_handoff:{name:'Kim Doe',stage:'asked'}});
-const both=card('a3a3a3a3a3a3a3a3','Plan the support rota',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Kim'},fleet_handoff:{name:'Kim Doe',stage:'waiting for them',also:['Pat']}});
+const moved=card('a2a2a2a2a2a2a2a2','Reset the shared inbox rules',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Kim'},fleet_handoff:{name:'Kim Doe',stage:'asked',asked:'Can you reset the shared inbox rules so billing mail goes to finance?'}});
+const both=card('a3a3a3a3a3a3a3a3','Plan the support rota',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Kim'},fleet_handoff:{name:'Kim Doe',stage:'waiting for them',also:['Pat'],asked:'Can you draft the support rota for next week?'}});
 const failed=card('b1b1b1b1b1b1b1b1','Rotate the shared webhook secret',{fleet_handoff_failed:{name:'Pat Lee',at:iso(t0+60e3)}});
 const source={kind:'source',from:'Alex Doe',via:'intercom',title:'Security triage',text:'Security triage\nVerdict: CONFIRMED\nConfidence: 90%',mine:false,at:t0-10*60e3};
 const items={
@@ -33,8 +36,10 @@ const items={
   {kind:'event',text:'Pat accepted it. Their note: “On it this week”',handoff:true,at:t0+2*hour}],
  [moved.id]:[source,{kind:'event',text:'Handed off to Pat’s Machine',mine:true,handoff:true,at:t0+60e3},
   {kind:'event',text:'Taken back from Pat',mine:true,handoff:true,at:t0+hour},{kind:'event',text:'Handed off to Kim’s Machine',mine:true,handoff:true,at:t0+hour}],
+ [taken.id]:[{kind:'source',from:'Pat Lee',via:'fleet',title:'Send Sam the pricing',text:'Pat asks you to take this on: “Sam wants pricing.”',mine:false,at:t0},
+  {kind:'event',text:'Taken back by Pat',choice:'reject',handoff:true,at:t0+2*hour}],
  [failed.id]:[source,{kind:'event',text:'Handoff didn’t go out to Pat’s Machine',handoff:true,retry_handoff:failed.id,at:t0+60e3}]};
-const state=()=>({suggestions:[waiting,declined,failed,redirect,later,moved,both,accepted],connectors:[],suggestion_counts:{pending:3,prepared:1,snoozed:3,completed:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
+const state=()=>({suggestions:[waiting,declined,failed,redirect,later,moved,both,accepted,taken],connectors:[],suggestion_counts:{pending:3,prepared:1,snoozed:3,completed:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
 const view={on:true,kinds:{},ask_meetings:false,fleets:[],waiting:[],asked:[],intro_offers:[],splits:[],log:[],notices:[]};
 const calls=[];
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;res.setHeader('Content-Type','application/json');
@@ -42,7 +47,7 @@ const server=createServer(async(req,res)=>{let body='';for await(const c of req)
  if(req.url==='/api/status'){res.end(JSON.stringify(state()));return}
  if(req.url==='/api/action'){const call=JSON.parse(body);calls.push(call);
   if(call.action==='card_chat'){res.end(JSON.stringify({session:false,active:false,status:null,cursor:null,items:items[call.args.suggestion_id]||[]}));return}
-  if(call.action==='fleet_handoff_draft'&&call.args.suggestion_id===redirect.id){res.end(JSON.stringify({suggestion_id:redirect.id,title:redirect.title,summary:'Can you pick up Frank’s account recovery on Monday?',contact:'',sources:[],
+  if(call.action==='fleet_handoff_draft'&&call.args.suggestion_id===redirect.id){res.end(JSON.stringify({suggestion_id:redirect.id,title:redirect.title,summary:'Can you pick up Lou’s account recovery on Monday?',contact:'',sources:[],
    fleets:[{id:'fl1',name:'Acme',members:[{member_id:'kim1',name:'Kim Doe'},{member_id:'pat1',name:'Pat Lee'}]}]}));return}
   if(call.action==='fleet_handoff_draft'){res.end(JSON.stringify({suggestion_id:call.args.suggestion_id,title:failed.title,summary:'Rotate the shared webhook secret today.',contact:'',sources:[],
    fleets:[{id:'fl1',name:'Acme',members:[{member_id:'pat1',name:'Pat Lee'}]}]}));return}
@@ -96,6 +101,9 @@ try{
   await page.goto('http://127.0.0.1:'+server.address().port+'/');
   const w=page.locator('#task-'+waiting.id);await w.waitFor();
   assert.equal((await w.locator('.note.fleet').textContent()).trim(),'No answer from Pat yet · Check in');
+  assert.equal((await w.locator('.body').textContent()).trim(),'Asked Pat: '+ASKED);  // what was asked, not the old suggestion
+  assert.ok((await w.locator('.body p').evaluate(p=>p.getBoundingClientRect().height/parseFloat(getComputedStyle(p).lineHeight)))<=2.1,'two lines at most');
+  assert.equal(await w.locator('.more').count(),0);
   assert.equal(await w.locator('.note.fleet a').getAttribute('href'),'#chat='+waiting.id);
   assert.equal(await w.locator('button',{hasText:/^Do it$/}).count(),0);
   assert.equal((await w.locator('.actions button.primary').first().textContent()).trim(),'Mark done');
@@ -127,14 +135,16 @@ try{
   await review.click();
   const f=r.locator('.fleet-handoff-form');await f.waitFor();
   assert.equal(await f.locator('input[name=to]:checked').getAttribute('value'),'fl1|kim1');
-  assert.equal(await f.locator('textarea[name=task]').inputValue(),'Can you pick up Frank’s account recovery on Monday?');
+  assert.doesNotMatch(await f.textContent(),/told/);  // their Machine is told now
+  assert.match(await r.locator('.body').textContent(),/corrected handoff to Kim/);  // the new suggestion, not what Pat was asked
+  assert.equal(await f.locator('textarea[name=task]').inputValue(),'Can you pick up Lou’s account recovery on Monday?');
   const take=f.locator('input[name=replace]');
   assert.ok(await take.isChecked());
   assert.equal((await f.locator('.handoff-back').textContent()).trim(),'Take it back from Pat');
   assert.equal(calls.filter(c=>c.action==='fleet_handoff').length,sent);  // nothing sent without the owner's Hand off
   if(dir){await f.scrollIntoViewIfNeeded();await f.screenshot({path:`${dir}/handoff-redirect-form-${width}.png`})}
   await f.locator('button.primary').click();await page.waitForTimeout(300);
-  assert.deepEqual(calls.filter(c=>c.action==='fleet_handoff').at(-1).args,{suggestion_id:redirect.id,fleet:'fl1',member_id:'kim1',title:redirect.title,summary:'Can you pick up Frank’s account recovery on Monday?',contact:'',sources:[],replace:true});
+  assert.deepEqual(calls.filter(c=>c.action==='fleet_handoff').at(-1).args,{suggestion_id:redirect.id,fleet:'fl1',member_id:'kim1',title:redirect.title,summary:'Can you pick up Lou’s account recovery on Monday?',contact:'',sources:[],replace:true});
   // Under Later: who has it now, both when both do
   const ll=page.locator('#later-list');if(!await ll.evaluate(d=>d.open))await ll.locator(':scope > summary').click();
   assert.equal((await ll.locator('#task-'+moved.id+' .note.fleet').textContent()).trim(),'With Kim · waiting');
@@ -144,6 +154,14 @@ try{
   assert.deepEqual((await page.locator('#chat-log .chat-event').allTextContents()).map(t=>t.replace(/ · \d\d:\d\d$/,'').trim()),
    ['Handed off to Pat’s Machine','Taken back from Pat','Handed off to Kim’s Machine']);
   if(dir)await page.screenshot({path:`${dir}/handoff-redirect-chat-${width}.png`});
+  // The original suggestion stays in the chat
+  await open(waiting.id);
+  assert.match(await page.locator('#chat-log').textContent(),/I can hand this to Pat’s Machine/);
+  // Taken back by whoever handed it: their line in the chat of the card it made
+  await open(taken.id);
+  assert.equal((await page.locator('#chat-log .chat-event').last().textContent()).trim(),'Taken back by Pat · '+hm(t0+2*hour));
+  await page.evaluate(()=>document.querySelector('#toast')?.classList.remove('show'));await page.waitForTimeout(500);  // the earlier Hand off's toast
+  if(dir)await page.screenshot({path:`${dir}/handoff-taken-back-chat-${width}.png`});
   assert.deepEqual(errors,[]);
   await context.close();
  }

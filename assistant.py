@@ -10989,7 +10989,9 @@ class App:
                                 'morning': lambda: WORK_HOURS['morning']}
             self.fleet.search = lambda accounts, query, limit: self.related(accounts, query=query, limit=limit)[0]
             self.fleet.card_task = card_task  # a handoff leads with what the teammate is asked to do, never a chat reply
-            self.fleet.drop_card = lambda card_id: self.store.decide(card_id, 'reject', 'Teammate not reached', 'fleet-silent-undo-' + secrets.token_hex(6), 'fleet')
+            # A card made for a request that goes again: a silent acceptance not told, or a handoff its sender took back
+            self.fleet.drop_card = lambda card_id, why='Teammate not reached', key=None: self.store.decide(
+                card_id, 'reject', why, key or 'fleet-silent-undo-' + secrets.token_hex(6), 'fleet')
             self.fleet.own_event = lambda event: own_or_joined(event, self.store.owner_user_ids)  # silent acceptance: only what the owner did
             self.fleet.notify_brief = self.fleet_notify_brief
             self.fleet.remove_work = self.fleet_remove_work
@@ -13668,6 +13670,8 @@ class App:
                 if r['source'] == 'fleet':
                     if r['choice'] == 'complete' and ' is on it · ' in (r['feedback'] or ''):  # a teammate took it on (silent acceptance)
                         owner.append({'kind': 'event', 'text': clamp(r['feedback'], 200), 'choice': 'complete', 'at': at})
+                    elif r['choice'] == 'reject' and r['id'].startswith('fleet-withdrawn-'):  # the teammate who handed it took it back
+                        owner.append({'kind': 'event', 'text': clamp(r['feedback'], 200), 'choice': 'reject', 'handoff': True, 'at': at})
                     continue
                 if was and r['choice'] == 'accept':
                     owner.append({'kind': 'event', 'text': 'Brought it back for a check-in' + via, 'choice': 'checkin', 'mine': True, 'at': at})

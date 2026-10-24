@@ -90,8 +90,9 @@ default, Always accept, Never), and nothing happens on your side until you accep
    To hand it to someone else while the first teammate still has it, say so in its chat: the new handoff text waits on
    the card ("Still with <teammate> until you send it to <other>", **Review handoff to <other>**), and nothing goes
    until your **Hand off**. **Take it back from <teammate>** (on by default) makes the new one the only one: the chat
-   says "Taken back from <teammate>", and their late answer no longer moves your card. Their Machine isn't told yet (the
-   relay can't withdraw a question), so tell them. Off, both have it ("With <other> and <teammate> · waiting").
+   says "Taken back from <teammate>", and their late answer no longer moves your card. Their Machine is told with a
+   `withdraw` sealed for it (only the sender can send one): the request there says "Taken back by <you>" and the card
+   it made goes (Not needed, with that line in its chat). Off, both have it ("With <other> and <teammate> · waiting").
 
    If you are already on a handoff before you answer it, it can become yours without a tap. Your Machine's review
    looks only at messages you sent and calls you joined after it came, and judges by what they are about whether you

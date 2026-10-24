@@ -24,7 +24,7 @@ If the handoff didn't go out, the card and its chat say so, with **Try again**.
 
 Say so in the card's chat ("this should go to Kim"). The new handoff waits on the card for you to read: "Still with Pat until you send it to Kim", with **Review handoff to** Kim. That opens the form with the text, on Kim.
 
-**Take it back from** Pat is on by default; turn it off to let both have it. Nothing goes out until you pick **Hand off**. Then the chat says "Taken back from Pat" and "Handed off to Kim's Machine". Pat's Machine isn't told yet, so let them know.
+**Take it back from** Pat is on by default; turn it off to let both have it. Nothing goes out until you pick **Hand off**. Then the chat says "Taken back from Pat" and "Handed off to Kim's Machine". Pat's Machine is told too, and the card it made for them goes.
 
 ## When they decline
 

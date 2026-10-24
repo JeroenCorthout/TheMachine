@@ -98,6 +98,8 @@ class Sealing:
             return self.inner.call(method, path, body, timeout=timeout)
         if route == '/answer' and method == 'POST':
             return self._answer(body, timeout)
+        if route == '/withdraw' and method == 'POST':
+            return self._withdraw(body, timeout)
         found = self.inner.call(method, path, body, timeout=timeout)
         if route == '/inbox':
             self._open_inbox(found)
@@ -233,6 +235,20 @@ class Sealing:
                                      {'p': 'answer', 'k': row['kind'], 'f': row['me'], 't': row['asker'], 'r': ask_id})
         return self.send_or_keep('POST', '/answer', body, 'answer:' + ask_id + ':' + str(body.get('status')), timeout)
 
+    def _withdraw(self, body, timeout):
+        """Take back a handoff this Machine sent: its id sealed for the Machine it went to, bound to that question, so
+        the relay can't make one up and only this sender's seal opens as one. Kept in the outbox while the Network is
+        away."""
+        body = dict(body or {})
+        ask_id, to, kind = str(body.get('id') or ''), str(body.get('to') or ''), str(body.get('kind') or 'handoff')
+        group = self._group(body.get('fleet'))
+        me = self._me(group)
+        keys = self._current_keys(group, to) or self._keys_of(to)
+        if not (self.private and me and ask_id and keys):
+            raise ValueError("Their Machine has no keys on The Machine Network, so it can't be told; nothing was sent.")
+        sealed = nc.seal({'id': ask_id}, self.private, keys, {'p': 'withdraw', 'k': kind, 'f': me, 't': to, 'r': ask_id})
+        return self.send_or_keep('POST', '/withdraw', {'id': ask_id, 'sealed': sealed}, 'withdraw:' + ask_id, timeout)
+
     def send_or_keep(self, method, path, body, key, timeout=40):
         """Commit intent before delivery. Keep the exact intent if delivery is uncertain."""
         import fleet as fleet_module
@@ -318,6 +334,24 @@ class Sealing:
             except nc.SealError as error:
                 LOG.warning('network answer dropped member=%s reason=%s', item.get('from'), error)
                 item['answer'], item['status'] = None, 'declined'
+        for item in (found or {}).get('withdrawn', []) or []:
+            # Taken back by whoever asked: only when it opens as theirs, names this question, and the question came
+            # from them. Anything else is acknowledged and dropped.
+            item['ok'] = False
+            if item.get('sealed') is None:
+                LOG.warning('network unsealed withdrawal dropped member=%s', item.get('from'))
+                continue
+            try:
+                said, _ = self._open(item.pop('sealed'), item, 'withdraw', item.get('id'))
+            except nc.SealError as error:
+                LOG.warning('network withdrawal dropped member=%s reason=%s', item.get('from'), error)
+                continue
+            with self.fleet.connect() as db:
+                asked = db.execute('SELECT asker,kind FROM network_sealed WHERE ask_id=?', (str(item.get('id')),)).fetchone()
+            if not isinstance(said, dict) or said.get('id') != item.get('id') or (asked and (asked['asker'], asked['kind']) != (item.get('from'), item.get('kind'))):
+                LOG.warning('network withdrawal does not match member=%s', item.get('from'))
+                continue
+            item['ok'] = True
 
     def _open(self, env, item, purpose, ref):
         """Opens what a teammate's Machine sealed, with the keys pinned for it; once per inbox, a fresh directory is

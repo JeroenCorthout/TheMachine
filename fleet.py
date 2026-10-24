@@ -186,7 +186,7 @@ HOME_AFTER = 300   # seconds on another node before the first endpoint is tried 
 TAP_TIMEOUT = 8   # seconds per Network endpoint for a Telegram tap: the bridge waits 30 for the whole answer
 # What the second node serves (the control plane's cloud/standby.py ROUTES); anything else is the main node's only, so
 # it never goes there (it would say 503: "on its standby node for a moment").
-STANDBY_ROUTES = {('GET', '/inbox'), ('POST', '/ask'), ('POST', '/answer'), ('POST', '/ack'), ('POST', '/delivery')}
+STANDBY_ROUTES = {('GET', '/inbox'), ('POST', '/ask'), ('POST', '/answer'), ('POST', '/ack'), ('POST', '/delivery'), ('POST', '/withdraw')}
 
 
 def reachable(url):
@@ -387,7 +387,7 @@ class NetworkClient:
         route = path.split('?', 1)[0]
         if self.url != self.home[0] and self.clock() - self.switched > HOME_AFTER:
             self.urls, self.url = list(self.home), self.home[0]  # back to the main node first: it may be back
-        if method == 'POST' and route == '/answer':
+        if method == 'POST' and route in ('/answer', '/withdraw'):  # to the node that has the question
             return self._wherever(method, path, body, timeout)
         if method == 'POST' and route == '/ack':
             return self._everywhere(method, path, body, timeout)
@@ -501,7 +501,7 @@ class NetworkClient:
             except Exception as error:  # that node is away (or says no): what waits there comes on a later look
                 LOG.info('network node not drained error=%s', type(error).__name__)
                 continue
-            for key in ('asks', 'answers', 'notices'):
+            for key in ('asks', 'answers', 'notices', 'withdrawn'):
                 have = {item.get('id') for item in found.get(key) or []}
                 extra = [item for item in more.get(key) or [] if item.get('id') not in have]
                 if extra:
@@ -1157,6 +1157,8 @@ def telegram_message(rows, root):
         if row['choice'] == 'silent':  # marked as theirs by what they did (silent acceptance); Not mine is on the card
             how = json.loads(_get(row, 'silent') or '{}').get('how')
             outcome = (fleet_requests.Requests.marked_line(how) if how else 'Marked as yours') + '. Not mine on the card undoes it.'
+        if row['status'] == 'withdrawn':  # their Machine took it back (fleet_requests.take_withdrawn)
+            outcome = fleet_requests.taken_line(row['name'])
         prefix = f'{n}. ' if many else ''
         if row['kind'] == 'anything':
             # Their words, quoted, then the draft built from your own accounts. Send this answer sends exactly that draft.
@@ -2740,7 +2742,15 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                         sealing.take(twin, canonical=ask['id'])
             except (ValueError, KeyError, TypeError) as error:
                 LOG.error('fleet ask error=%s', type(error).__name__)
-        acknowledged = {'answers': [], 'notices': []}
+        acknowledged = {'answers': [], 'notices': [], 'withdrawn': []}
+        for item in found.get('withdrawn', []) or []:  # a handoff its sender took back (network.py checked the seal)
+            try:
+                if item.get('ok'):
+                    self.take_withdrawn(item)
+                if item.get('id'):  # one that doesn't check out is dropped too, never acted on
+                    acknowledged['withdrawn'].append({'id': item['id']})
+            except (ValueError, KeyError, TypeError) as error:
+                LOG.error('fleet withdrawal error=%s', type(error).__name__)
         for item in found.get('answers', []):
             saved = self.take_answer(item)
             if saved and item.get('receipt'):

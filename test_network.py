@@ -68,7 +68,18 @@ class FakeRelay:
                 if r['from'] == self.me and r.get('answered') and not r.get('acked'):
                     answers.append({'id': r['id'], 'fleet': 'work', 'fleet_id': 'fl_' + '1' * 16, 'from': r['to'], 'kind': r['kind'], 'status': r['status'],
                                     'receipt': 'rc' + r['id'], **({'answer': None, 'sealed': r['answer_sealed']} if r.get('answer_sealed') else {'answer': r.get('answer')})})
-            return {'asks': asks, 'answers': answers, 'ack': True}
+            # a handoff its asker took back: what their Machine sealed for this one, until it acks
+            withdrawn = [{'id': r['id'], 'fleet': 'work', 'fleet_id': 'fl_' + '1' * 16, 'from': r['from'], 'name': NAMES[r['from']], 'kind': r['kind'],
+                          'sealed': r['withdrawn']} for r in self.net.asks.values() if r['to'] == self.me and r.get('withdrawn')]
+            return {'asks': asks, 'answers': answers, 'withdrawn': withdrawn, 'ack': True}
+        if route == '/withdraw':  # only the member who asked, sealed, and only a handoff (cloud/fleet.py withdraw)
+            r = self.net.asks.get(body.get('id'))
+            if not r or r['from'] != self.me or r['kind'] != 'handoff':
+                raise ValueError('no such handoff of yours')
+            if body.get('sealed') is None:
+                raise ValueError('sealed only')
+            r.update(status='withdrawn', withdrawn=body['sealed'] if r['status'] != 'queued' else None)
+            return {'ok': True}
         if route == '/answer':
             r = self.net.asks[body['id']]
             r.update(status=body['status'], answered=body['status'] != 'waiting', answer=body.get('answer'), answer_sealed=body.get('sealed'))
@@ -76,6 +87,9 @@ class FakeRelay:
         if route == '/ack':
             for item in body.get('answers', []):
                 self.net.asks[item['id']]['acked'] = True
+            for item in body.get('withdrawn', []):
+                if self.net.asks[item['id']]['to'] == self.me:
+                    self.net.asks[item['id']]['withdrawn'] = None
             return {'ok': True}
         if route == '/delivery':
             return {'delivery': {i: {'status': self.net.asks[i]['status'], 'delivered': self.net.asks[i]['status'] != 'queued'} for i in body['ids'] if i in self.net.asks}}
@@ -241,6 +255,53 @@ class Machines(unittest.TestCase):
         with self.pat.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM fleet_in').fetchone()[0], 1)
 
+    def handoff(self):
+        sent = self.me.ask('handoff', {'title': 'Send Sam the pricing', 'summary': 'Sam wants pricing.'}, context='handoff:c1', to=['pat1'])
+        ask_id = sent['ids']['pat1']
+        self.pat.step(wait=0)
+        with self.me.connect() as db:
+            row = dict(db.execute('SELECT * FROM fleet_out WHERE id=?', (ask_id,)).fetchone())
+        return ask_id, row
+
+    def test_a_handoff_taken_back_reaches_their_machine_sealed_and_only_from_the_sender(self):
+        ask_id, row = self.handoff()
+        with self.pat.connect() as db:
+            self.assertEqual(db.execute('SELECT status FROM fleet_in WHERE id=?', (ask_id,)).fetchone()[0], 'waiting')
+        self.assertTrue(self.me.withdraw(row))
+        withdraw = [b for _, p, b in self.me.raw.calls if p == '/withdraw'][-1]
+        self.assertEqual(sorted(withdraw), ['id', 'sealed'])  # nothing else travels, and nothing in the clear
+        self.assertNotIn('pricing', json.dumps(withdraw))
+        self.pat.step(wait=0)
+        with self.pat.connect() as db:
+            got = db.execute('SELECT status,choice FROM fleet_in WHERE id=?', (ask_id,)).fetchone()
+            stage = db.execute('SELECT stage FROM fleet_requests WHERE id=?', (ask_id,)).fetchone()[0]
+            log = db.execute("SELECT outcome FROM fleet_log WHERE direction='in' ORDER BY id DESC LIMIT 1").fetchone()[0]
+        self.assertEqual((tuple(got), stage, log), (('withdrawn', 'withdrawn'), 'withdrawn', 'taken back by Owner'))
+        self.assertIsNone(self.net.asks[ask_id]['withdrawn'])  # acknowledged: the Network keeps nothing of it
+        with self.pat.connect() as db:
+            rows = [dict(r) for r in db.execute('SELECT * FROM fleet_in')]
+        self.assertEqual(fleet.telegram_message(rows, 'https://machine.example/')['text'].count('Taken back by Owner'), 1)
+        with self.assertRaisesRegex(ValueError, 'answered or has expired'):  # nothing left to accept
+            self.pat.decide(ask_id, 'once')
+        # Pat's Machine can't take back what Owner asked, and the Network refuses it too
+        self.assertFalse(self.pat.withdraw({'id': ask_id, 'fleet': self.pat.ref('work'), 'member_id': 'me1'}))
+
+    def test_a_withdrawal_that_does_not_check_out_is_dropped(self):
+        ask_id, row = self.handoff()
+        other, _ = self.handoff()
+        self.me.withdraw({**row, 'id': other})  # sealed for the other question
+        sealed = self.net.asks[other]['withdrawn']
+        self.net.asks[other]['withdrawn'] = None
+        self.net.asks[ask_id].update(status='withdrawn', withdrawn=sealed)  # the relay moves it onto this one
+        self.pat.step(wait=0)
+        with self.pat.connect() as db:
+            self.assertEqual(db.execute('SELECT status FROM fleet_in WHERE id=?', (ask_id,)).fetchone()[0], 'waiting')
+        self.assertIsNone(self.net.asks[ask_id]['withdrawn'])  # dropped and acknowledged, never acted on
+        self.net.asks[ask_id]['withdrawn'] = {'v': 1, 'ct': 'plain'}  # unsealed or made up: dropped too
+        self.pat.step(wait=0)
+        with self.pat.connect() as db:
+            self.assertEqual(db.execute('SELECT status FROM fleet_in WHERE id=?', (ask_id,)).fetchone()[0], 'waiting')
+
     def test_not_delivered_yet_is_shown(self):
         sent = self.me.ask('relationships', {'about': 'client.example'})
         self.me.delivery_round()
@@ -274,6 +335,7 @@ class OlderNetwork(Machines):
     test_sealed_question_and_answer_end_to_end = test_key_change_is_warned_and_pinned = test_no_downgrade_when_keys_disappear = None
     test_tampered_or_unsealed_is_dropped = test_outbox_keeps_answers_while_the_network_is_away_and_never_acts_twice = None
     test_not_delivered_yet_is_shown = test_nothing_in_the_clear_to_or_from_a_machine_without_keys = None
+    test_a_handoff_taken_back_reaches_their_machine_sealed_and_only_from_the_sender = test_a_withdrawal_that_does_not_check_out_is_dropped = None
 
 
 class Failover(unittest.TestCase):

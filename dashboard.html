@@ -226,6 +226,7 @@ article h3{font-size:1.08rem;font-weight:650;letter-spacing:-.01em}
 .body{margin:8px 0 0}.body p{margin:0 0 .6em}.body p:last-child{margin-bottom:0}.body strong{color:var(--cream);font-weight:650}
 .body .lead-line{font-size:.86rem;font-weight:600;letter-spacing:.01em;color:var(--muted);margin-bottom:.35em}
 .body.clamp{max-height:calc(var(--lines)*1.55em);overflow:hidden;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
+.body.handoff-asked{max-height:none;-webkit-mask-image:none;mask-image:none}.body.handoff-asked p{margin:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
 .more{display:inline-block;margin:6px 0 0;padding:2px 0;min-height:0;border:0;background:none;box-shadow:none;color:var(--muted);font:inherit;font-size:.84rem;font-weight:600;cursor:pointer}.more:hover{color:var(--cream)}
 .card-foot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin-top:12px;font-size:.84rem;color:var(--muted)}
 .card-foot .source{margin:0;font-size:inherit}.card-foot .back-on{margin:0;padding:0;background:none;font-size:inherit}
@@ -2204,7 +2205,9 @@ const expandedBodies=new Set();
 // Only in plain text: never inside a tag or an existing link.
 const cardLinks=(html,s)=>(state.suggestions||[]).filter(o=>o.id!==s.id&&!closed(o)&&o.title.length>=12).sort((a,b)=>b.title.length-a.title.length).reduce((h,o)=>{const t=esc(o.title);return h.includes(t)?h.split(/(<a\b[\s\S]*?<\/a>|<[^>]*>)/).map((part,i)=>i%2?part:part.split(t).join(`<a class="card-link" href="#card=${esc(o.id)}">${t}</a>`)).join(''):h},html);
 // A confirmed step that didn't go through says so in one line instead of the earlier result (step_stopped in assistant.py).
-function cardBody(s,section){let text=s.step_stopped||resultBody(s),lead='';const m=text.match(/^\*\*([^*\n]+)\*\*\s*\n([\s\S]+)$/);if(m){lead=m[1];text=m[2].trim()}
+// Handed off and with them: the card's body is what was asked; the suggestion to hand it off stays in the chat.
+const askedBody=s=>{const h=s.fleet_handoff;return h?.asked&&!h.back&&['asked','waiting for them','accepted','accepted with a change'].includes(h.stage)&&!redirect(s)?`<div class="body clamp handoff-asked" style="--lines:2" title="${esc(h.asked)}"><p>Asked ${esc(firstName(h.name))}: ${esc(h.asked)}</p></div>`:''};
+function cardBody(s,section){const asked=section==='Chat'?'':askedBody(s);if(asked)return asked;let text=s.step_stopped||resultBody(s),lead='';const m=text.match(/^\*\*([^*\n]+)\*\*\s*\n([\s\S]+)$/);if(m){lead=m[1];text=m[2].trim()}
 const html=(lead?`<p class="lead-line">${esc(lead)}</p>`:'')+cardLinks(text.split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean).map(p=>`<p>${format(p).replace(/\n/g,'<br>')}</p>`).join(''),s);
 const proposal=s.skill_proposal?`<details class="skill-notes"><summary>Read skill instructions and ${s.skill_proposal.notes.length} notes</summary><p><strong>${esc(s.skill_proposal.name)}</strong></p><div>${format(s.skill_proposal.body).replace(/\n/g,'<br>')}</div><ul>${s.skill_proposal.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul></details>`:'';
 // Short by default: the status line says where it stands; the rest folds behind Show more.
@@ -4877,7 +4880,7 @@ function handoffEditor(s){const d=handingOff.get(s.id);if(!d||closed(s))return''
  const chips=mail?'':[...(d.contact&&d.with_contact!==false?[`<span class="agent-get"><i class="via-ico via-link" aria-hidden="true"></i>Contact: ${esc(d.contact)}${x(d.contact,'data-handoff-drop="contact"')}</span>`]:[]),
   ...(d.sources||[]).map((v,n)=>d.dropped?.includes(n)?'':`<span class="agent-get"><i class="via-ico via-${v.kind==='email'?'mail':'chat'}" aria-hidden="true"></i>${esc(v.label)}${x(v.label,`data-handoff-drop="${n}"`)}</span>`)].join('');
  const had=!mail&&['asked','waiting for them'].includes(s.fleet_handoff?.stage)&&(d.who.find(([f,m])=>f+'|'+m===d.to)||[])[2]!==s.fleet_handoff.name?[firstName(s.fleet_handoff.name),...(s.fleet_handoff.also||[])].join(' and '):'';
- const back=had?`<label class="handoff-back"><input type="checkbox" name="replace"${d.replace===false?'':' checked'}> Take it back from ${esc(had)}</label>${d.replace===false?'':`<p class="agent-what">Their Machine isn’t told yet, so let them know.</p>`}`:'';
+ const back=had?`<label class="handoff-back"><input type="checkbox" name="replace"${d.replace===false?'':' checked'}> Take it back from ${esc(had)}</label>`:'';
  return`<form class="fleet-handoff-form agent-sheet" data-card="${id}"><div class="agent-sheet-head"><span class="agent-sheet-title">Hand off to</span>${pick}</div><input type="hidden" name="title" value="${esc(d.title)}">
  ${mail?`<input name="email" type="email" class="handoff-email" maxlength="254" autocomplete="off" value="${esc(d.email||'')}" placeholder="Their email" aria-label="Their email" required><p class="agent-what">You get an email draft on this card to send yourself, with a link that brings the task to a Machine of their own.</p>`:''}
  <textarea name="task" class="agent-note handoff-task" rows="1" maxlength="1000" aria-label="What they are asked to do">${esc(d.task??d.summary)}</textarea>${chips?`<div class="agent-gets" aria-label="Goes along">${chips}</div>`:''}
