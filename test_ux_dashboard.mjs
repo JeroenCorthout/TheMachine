@@ -139,7 +139,7 @@ const running=page.locator('#task-'+ids[1]);assert.match(await running.locator('
 await running.locator('.steps li').getByText('Collect retention settings').waitFor({timeout:8000});await running.getByText('second try',{exact:false}).waitFor();
 // Waiting on the browser: without a viewer the tab comes to the front here, with one the link opens it.
 suggestions[1].preparation_browser={since:new Date(Date.now()-60000).toISOString(),page:'https://www.linkedin.com/feed/',link:null};await page.evaluate(()=>refresh());
-await running.getByRole('button',{name:'Open the browser'}).click();await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('browser'));assert.deepEqual(posts.at(-1),{page:'https://www.linkedin.com/feed/'});
+await running.getByRole('button',{name:'Open the browser'}).click();await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('browser'));assert.deepEqual(posts.at(-1),{suggestion_id:ids[1]});  // the task's own page, opened again when its tab is gone
 suggestions[1].preparation_browser.link='https://manage.example/open?to=browser';await page.evaluate(()=>refresh());
 assert.equal(await running.getByRole('link',{name:'Open the browser'}).getAttribute('href'),'https://manage.example/open?to=browser');
 // Waiting on a sign-in: Sign in opens the dialog for this task, so signing in there carries it on.

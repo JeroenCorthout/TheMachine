@@ -2395,7 +2395,7 @@ const steps=new Map(),openTech=new Set();
 const elapsed=v=>{const t=Math.max(0,Math.floor((Date.now()-new Date(v))/1000));return Math.floor(t/60)+':'+String(t%60).padStart(2,'0')};
 // A preparation that waits on the browser (a sign-in, a captcha, a code) offers it: the viewer when this install has one
 // (with the task's tab brought to the front there too), otherwise its tab brought to the front on this computer.
-const browserLink=(id,b)=>!b?'':`<button type="button" class="browser-link" data-signin data-task="${esc(id)}" data-page="${esc(b.page||'')}">${b.sign_in?'Sign in':'Sign in here'}</button> `+(b.link?`<a class="browser-link" href="${esc(b.link)}" target="_blank" rel="noopener" data-browser-focus="${esc(id)}"${b.sign_in?` data-task="${esc(id)}"`:''} data-page="${esc(b.page||'')}" data-quiet>Open the browser</a>`:`<button type="button" class="browser-link" data-browser-focus="${esc(id)}"${b.sign_in?` data-task="${esc(id)}"`:''} data-page="${esc(b.page||'')}">Open the browser</button>`);
+const browserLink=(id,b)=>!b?'':`<button type="button" class="browser-link" data-signin data-task="${esc(id)}" data-page="${esc(b.page||'')}">${b.sign_in?'Sign in':'Sign in here'}</button> `+(b.link?`<a class="browser-link" href="${esc(b.link)}" target="_blank" rel="noopener" data-browser-focus="${esc(id)}" data-task="${esc(id)}" data-page="${esc(b.page||'')}" data-quiet>Open the browser</a>`:`<button type="button" class="browser-link" data-browser-focus="${esc(id)}" data-task="${esc(id)}" data-page="${esc(b.page||'')}">Open the browser</button>`);
 // A run that stopped to ask: its questions as the Needs you line, each clear choice as quick picks that fill the answer box.
 function askLine(s,ask){const qs=s.preparation_questions||[];
  if(!qs.length)return `<p class="note status-line outcome">${esc('Needs you: '+sentence(ask))}</p>`;
@@ -3742,7 +3742,7 @@ function chatLog(s=chatOpen()){if(!chat)return '<p class="chat-note">Loading…<
  // The decision buttons go on the Machine's latest message when the card is waiting on one (a Send goes on its draft)
  const open=s&&!closed(s)&&s.status!=='snoozed'&&!chat.active&&!['queued','starting','running'].includes(s.preparation_status);
  const lastMachine=rows.findLastIndex(i=>i.kind==='reply'||i.kind==='card'||i.kind==='event'&&i.handoff);
- const tabAt=s&&!closed(s)?rows.findLastIndex(i=>i.kind==='reply'&&CHAT_TAB.test(i.text||'')):-1;
+ const tabAt=s&&!closed(s)&&s.browser_open?rows.findLastIndex(i=>i.kind==='reply'&&CHAT_TAB.test(i.text||'')):-1;
  // While a message goes out no other choice shows; they come back once it went or failed
  const options=(n,onDraft)=>open&&!p.going&&n===lastMachine&&p.options&&!(p.send&&onDraft)?`<div class="chat-options">${p.options}</div>`:'';
  const clamp=(k,html,long,more='More')=>long?`<div class="chat-clamp${chatOpenSet.has(k)?' open':''}">${html}</div><button type="button" class="link chat-more" data-unclamp="${k}">${chatOpenSet.has(k)?'Less':more}</button>`:html;
@@ -6356,7 +6356,8 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-task
 {const m=/^#signin(?:=([\w.@:-]{1,100}))?$/.exec(location.hash);if(m){history.replaceState(null,'',location.pathname);openSignin(m[1]?decodeURIComponent(m[1]):null,true)}}
 // Telegram's Sign in button on a card waiting on a sign-in: the same dialog, for that task.
 {const m=/^#signin-for=([a-f0-9]{16})$/.exec(location.hash);if(m){history.replaceState(null,'',location.pathname);openSignin(null,true,m[1])}}
-// View in browser: the task's page in front in the Machine's browser (reopened there when its tab is gone), and its viewer
+// View in browser: shown only while the task's page is open in the Machine's browser (browser_open); the click brings it
+// to the front there (reopened when it closed since the card was drawn, never a dead tab), and its viewer
 // opens in a new tab (the link itself). From Telegram the dashboard opens with #browser-for=<task> and goes on to the viewer.
 async function browserShow(id){return request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'browser_show',args:{suggestion_id:id}})})}
 const showNote=r=>r.shown?(r.opened?'Opened it again in your Machine’s browser.':'It’s in front in your Machine’s browser.'):r.unknown?'I don’t know which page this task used.':r.error||'I couldn’t reach the browser.';

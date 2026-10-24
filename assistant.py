@@ -6328,7 +6328,7 @@ class Store:
         if waiting:
             extra['preparation_browser']={**waiting,'link':browser_link(self.config)}
             if waiting.get('sign_in'):extra['preparation_browser']['signin_url']=signin_link(self.config,suggestion['id'])
-        if suggestion.get('status')=='prepared':self.browser_view(db,suggestion,extra)
+        if suggestion.get('status') in ('prepared','accepted','instructions'):self.browser_view(db,suggestion,extra)
         if self.accounts and suggestion.get('account_ids') is not None:
             extra['scope']=suggestion_scope(suggestion['account_ids'], self.accounts)
         wait=handoff_wait(db,suggestion)
@@ -6339,12 +6339,18 @@ class Store:
         """A ready card whose own run worked in the Machine's browser links to that page there, not in the owner's own
         browser (where the run's sign-in and filled-in form are missing): its link-out to that site becomes View in
         browser's (browser:true, the dashboard's #browser-for address), and with none, a run that changed a page there
-        (typed, clicked) gets one. Other links lose token-like query values. Read from the run's own browser steps."""
+        (typed, clicked) gets one. Other links lose token-like query values. Read from the run's own browser steps.
+
+        Only while that page is still open there (browser_open, also for the card's chat on an open card): a run that
+        closed its tab, or a tab that is gone since, gets no View in browser, and its links stay plain links. Reopening
+        the address would show a fresh page, not what the run left."""
         actions=extra.get('next_actions') or []
         for item in actions:
             if item.get('kind')=='open':item['url']=safe_link(item.get('url')) or ''
         page=self.task_pages(db,suggestion['id'])
-        if not page:return
+        if not page or not self.page_open(page):return
+        extra['browser_open']=True
+        if suggestion.get('status')!='prepared':return
         link=browser_view_link(self.config,suggestion['id'])
         site=browser_login.site(urllib.parse.urlsplit(page['url']).hostname)
         mine=[a for a in actions if a.get('kind')=='open' and same_site(urllib.parse.urlsplit(a.get('url') or '').hostname,page['url'])]
@@ -6354,6 +6360,22 @@ class Store:
         if not mine and page['worked']:
             extra['browser_view']={'label':'View in browser','site':site}
             if link:extra['next_actions']=[*actions,{'kind':'open','label':'View in browser','url':link,'browser':True,'site':site,'revision':'browser-view'}]
+
+    def page_open(self, page):
+        """Whether a task's page (task_page) is open in the Machine's browser now: its own tab (by DevTools ID, while the
+        run did not close it), else a tab on that same address. The open tabs are read at most every TAB_LOOK seconds,
+        for all cards at once; a browser that can't be reached has none open."""
+        base=(browser_login.endpoints(self.config) or [None])[0]
+        if not base:return False
+        look=self.__dict__.setdefault('tab_look',{'at':None,'base':None,'tabs':[]})
+        if look['at'] is None or look['base']!=base or time.monotonic()-look['at']>=TAB_LOOK:
+            try:
+                tabs=[{'id':t.get('id'),'url':t.get('url') or ''} for t in browser_login.browser_cdp._http(base,'/json/list',timeout=2) if t.get('type')=='page']
+            except (browser_login.browser_cdp.CdpError,OSError,TypeError,AttributeError,ValueError):
+                tabs=[]
+            look.update(at=time.monotonic(),base=base,tabs=tabs)
+        mine=page.get('target') and urllib.parse.urlsplit(base).port==page.get('port')
+        return any(mine and t['id']==page['target'] or t['url']==page['url'] for t in look['tabs'])
 
     def task_pages(self, db, suggestion_id):
         """task_page, kept per run and number of steps: a finished run's steps don't change, and every card refresh asks."""
@@ -7834,6 +7856,7 @@ def same_site(a, b):
     return a == b or a.endswith('.' + b) or b.endswith('.' + a) or a.split('.')[-2:] == b.split('.')[-2:]
 
 
+TAB_LOOK = 5  # seconds: how often the cards read which tabs the Machine's browser has open (View in browser)
 PEEK_EVERY = 2  # seconds: one look per task at most this often, however many dashboards watch
 PEEK_WIDTH = 800  # pixels across: enough for a thumbnail and its larger view, small to send
 
@@ -11890,9 +11913,10 @@ class App:
                 raise ValueError('Only the owner brings the browser to the front, from the dashboard')
             page = args.get('page') if isinstance(args.get('page'), str) else None
             if isinstance(args.get('suggestion_id'), str):  # a task's own tab, never another task's
-                page = self.signin_page(args['suggestion_id'])
+                page = self.signin_page(args['suggestion_id']) or self.preparing_page(args['suggestion_id'])
                 if not page:
                     return {'shown': False, 'unknown': True}
+                return self.task_front(page)
             shown = browser_viewer.focus(page, self.config.get('browser_cdp_url') or browser_viewer.CDP_URL)
             return {'shown': shown is not None}
         if name == 'browser_show':
@@ -13934,6 +13958,32 @@ class App:
         except (ValueError, OSError):
             shown = False
         return {'shown': shown, 'opened': opened, 'site': site, 'view': view}
+
+    def preparing_page(self, suggestion_id):
+        """The address a task's running (or stuck, not on a sign-in) preparation left off at in the browser (task_page), or None."""
+        with self.store.connect() as db:
+            job = db.execute("SELECT job_id,status,reason FROM preparations WHERE suggestion_id=? AND status IN ('starting','running','blocked')",
+                             (suggestion_id,)).fetchone()
+            if not job or (job['status'] == 'blocked' and signin_handoff(job['reason'])):
+                return None
+            return (task_page(db, suggestion_id) or {}).get('url')
+
+    def task_front(self, page):
+        """Open the browser for a preparing card: the tab on the task's page (same site) in front in the Machine's
+        browser, and when the run's tab is gone, that page opened again there, so the owner never lands on a closed or
+        unrelated tab. Returns {shown, opened}."""
+        base = browser_login.endpoints(self.config)[0]
+        opened = None
+        try:
+            if not any(same_site(t['url'], page) for t in self.signin_tabs()):
+                opened = browser_login.browser_cdp.open_tab(base, page)
+        except (browser_login.browser_cdp.CdpError, OSError, TypeError, AttributeError, ValueError):
+            pass  # can't read the tabs: bring what there is to the front, as before
+        try:
+            shown = browser_viewer.focus(page, base, target=opened)
+        except (ValueError, OSError):
+            shown = None
+        return {'shown': shown is not None, 'opened': bool(opened)}
 
     def signin_page(self, suggestion_id):
         """The address a task's blocked sign-in waits on, from its own run steps (run_page), or None."""

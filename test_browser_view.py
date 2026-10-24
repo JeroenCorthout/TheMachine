@@ -24,7 +24,7 @@ def answer(**found):
 OPENED = answer(targetId=TAB, url='https://portal.example.org/login', wsUrl=f'ws://127.0.0.1:18800/devtools/page/{TAB}', label='report')
 
 
-class BrowserView(unittest.TestCase):
+class Fixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -41,6 +41,16 @@ class BrowserView(unittest.TestCase):
             db.execute("UPDATE deliveries SET status='sent',message_id='100' WHERE suggestion_id=?", (self.sid,))
         self.store.decide(self.sid, 'accept', '', 'click', 'telegram')
         self.app.preparation_step(lambda req: {'status': 'admitted'})
+        # The Machine's browser, as DevTools lists it: the run's tab is still open unless a test says otherwise
+        self.tabs = [{'id': TAB, 'type': 'page', 'url': PAGE}]
+        def listed(base, path, **kw):
+            if self.tabs is None:
+                raise OSError('connection refused')
+            assert (base, path) == ('http://127.0.0.1:18800', '/json/list')
+            return self.tabs
+        patcher = patch.object(a.browser_login.browser_cdp, '_http', side_effect=listed)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def job(self):
         with self.store.connect() as db:
@@ -65,11 +75,14 @@ class BrowserView(unittest.TestCase):
                                     'next_actions': next_actions, 'note_kind': None, **outcome})
 
     def row(self):
+        self.store.__dict__.pop('tab_look', None)  # a fresh look at the tabs
         with self.store.connect() as db:
             row = dict(db.execute(a.EDIT_ROWS + ' AND s.id=?', (self.sid,)).fetchone())
             row.update(self.store.suggestion_result(row, db))
         return row
 
+
+class BrowserView(Fixture):
     def test_a_page_the_run_worked_on_gets_view_in_browser(self):
         self.fill_in()
         self.save(outcome='your_step', step='submit')
@@ -88,6 +101,42 @@ class BrowserView(unittest.TestCase):
 
     def status(self, row):
         return next(line for line in a.card(row).split('\n') if line.startswith(('Ready', 'Finished', 'Needs')))
+
+    def test_a_tab_the_run_closed_gets_no_view_in_browser(self):
+        # The run read and clicked on the page, then closed its own tab: nothing to view there any more
+        self.steps(('browser', {'action': 'open', 'url': 'https://portal.example.org/login'}, OPENED),
+                   ('browser', {'action': 'act', 'targetId': 'report', 'kind': 'click'}, answer(ok=True, targetId=TAB, url=PAGE)),
+                   ('browser', {'action': 'close', 'targetId': 'report'}, None))
+        self.save([{'kind': 'open', 'label': 'Open draft report', 'url': PAGE}], outcome='done')
+        self.tabs = []
+        row = self.row()
+        self.assertNotIn('browser_view', row)
+        self.assertNotIn('browser_open', row)
+        (link,) = row['next_actions']
+        self.assertEqual((link['url'], link.get('browser')), (PAGE, None))  # a plain link again
+        self.assertNotIn('View in browser', json.dumps(a.controls(row)))
+
+    def test_view_in_browser_goes_when_the_tab_does(self):
+        self.fill_in()
+        self.save(outcome='your_step', step='submit')
+        self.assertEqual(self.row()['browser_view']['label'], 'View in browser')
+        self.assertTrue(self.row()['browser_open'])
+        self.tabs = [{'id': 'OTHER', 'type': 'page', 'url': 'https://portal.example.org/home'}]  # closed by hand, or the browser restarted
+        self.assertNotIn('browser_view', self.row())
+        self.tabs = None  # the browser can't be reached
+        self.assertNotIn('browser_view', self.row())
+        self.tabs = [{'id': 'NEW', 'type': 'page', 'url': PAGE + '?session=s3cr3t&tab=2'}]  # the same page, open again
+        self.assertEqual(self.row()['browser_view']['label'], 'View in browser')
+
+    def test_the_tabs_are_read_once_for_all_cards(self):
+        self.fill_in()
+        self.save(outcome='your_step', step='submit')
+        self.row()
+        with self.store.connect() as db:
+            row = dict(db.execute(a.EDIT_ROWS + ' AND s.id=?', (self.sid,)).fetchone())
+            for _ in range(3):
+                self.store.suggestion_result(row, db)
+        self.assertEqual(a.browser_login.browser_cdp._http.call_count, 1)
 
     def test_task_page_follows_the_tab_the_run_used(self):
         self.fill_in()
@@ -157,6 +206,42 @@ class BrowserView(unittest.TestCase):
             self.app.action('browser_show', {'suggestion_id': self.sid})
         shown, open_tab, focus = self.show([])
         self.assertEqual(shown, {'shown': False, 'unknown': True, 'view': 'https://app.example/open?to=browser'})
+        open_tab.assert_not_called()
+
+
+class OpenTheBrowser(Fixture):
+    """A preparing card's Open the browser: the task's own page in front, opened again when its tab is gone."""
+
+    def front(self, tabs):
+        self.tabs = [{**t, 'type': 'page'} for t in tabs]
+        with patch.object(a.browser_login.browser_cdp, 'open_tab', return_value='NEWTAB') as open_tab, \
+                patch.object(a.browser_viewer, 'focus', return_value='https://x') as focus:
+            shown = self.app.action('browser_focus', {'suggestion_id': self.sid}, owner_dashboard=True)
+        return shown, open_tab, focus
+
+    def setUp(self):
+        super().setUp()
+        self.fill_in()
+        with self.store.connect() as db:
+            db.execute("UPDATE preparations SET status='running' WHERE suggestion_id=?", (self.sid,))
+
+    def test_the_tab_still_open_comes_to_the_front(self):
+        shown, open_tab, focus = self.front([{'id': TAB, 'url': PAGE}])
+        self.assertEqual(shown, {'shown': True, 'opened': False})
+        open_tab.assert_not_called()
+        self.assertEqual(focus.call_args[0][0], PAGE + '?session=s3cr3t&tab=2')
+
+    def test_a_closed_tab_opens_the_page_again(self):
+        shown, open_tab, focus = self.front([{'id': 'OTHER', 'url': 'https://news.example.com/'}])
+        self.assertEqual(shown, {'shown': True, 'opened': True})
+        open_tab.assert_called_once_with('http://127.0.0.1:18800', PAGE + '?session=s3cr3t&tab=2')
+        self.assertEqual(focus.call_args.kwargs['target'], 'NEWTAB')
+
+    def test_a_finished_run_has_nothing_to_open(self):
+        with self.store.connect() as db:
+            db.execute("UPDATE preparations SET status='done' WHERE suggestion_id=?", (self.sid,))
+        shown, open_tab, focus = self.front([])
+        self.assertEqual(shown, {'shown': False, 'unknown': True})
         open_tab.assert_not_called()
 
 
