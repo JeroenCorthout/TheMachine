@@ -202,6 +202,8 @@ def ensure(db):
     for table in ('projects', 'board_suggestions'):  # who sees it (2026-10-24): a project's own (NULL: its board's), a suggestion's default
         if 'visibility' not in {r[1] for r in db.execute(f'PRAGMA table_info({table})')}:
             db.execute(f'ALTER TABLE {table} ADD COLUMN visibility TEXT')
+    import crm  # owners, organisations with several websites (2026-10-24)
+    crm.ensure(db)
 
 
 class Owner:
@@ -1197,6 +1199,8 @@ def _build(db, config, now):
             info.setdefault('relations', []).append({'a': a, 'a_name': nodes[by_node[a]][2], 'relation': relation, 'b': b, 'b_name': nodes[by_node[b]][2], 'by': by})
             row[9] = json.dumps(info)
             nodes[by_node[node]] = tuple(row)
+    from crm import decorate  # organisations folded into the one they are part of, and who owns each record
+    nodes, links = decorate(db, nodes, links)
     kept |= {n[0] for n in nodes}
     event_rows = []
     for node, items in [(n, [(at, e, 0) for at, e in v]) for n, v in node_events.items()] + [('project:' + str(p), v) for p, v in project_events.items()]:
@@ -1263,6 +1267,10 @@ def node_view(row, links=None):
     elif row['kind'] == 'project':
         view.update(trend=row['trend'], state=project_state(row), closed=bool(info.get('closed_at')), probable_signals=info.get('probable', 0),
                     next_meeting=info.get('next_meeting'))
+    if info.get('owner'):  # someone in the owner's Work Fleet owns it; none: the owner here
+        view.update(owner=info['owner'], owner_name=info.get('owner_name'))
+    if row['kind'] == 'org' and info.get('domains'):
+        view.update(domains=info['domains'], aliases=info.get('aliases', []))
     if links is not None:
         view['links'] = links
     return view
@@ -1465,12 +1473,20 @@ SORTS = {'closest': 'strength DESC', 'last': 'last_at DESC', 'name': 'name COLLA
 DEFAULT_SORT = {'projects': 'last', 'projects_done': 'last'}
 
 
-def page(db, name, sort='', cursor=0, limit=30):
-    """One page of a Graph tab's list in the chosen order (closest, last contact, name, or a project's stage); the
-    cursor is where the page starts, next the cursor of the page after it, or None at the end."""
+def page(db, name, sort='', cursor=0, limit=30, filters=None):
+    """One page of a Graph tab's list in the chosen order (closest, last contact, name, a project's stage, value or
+    expected close); the cursor is where the page starts, next the cursor of the page after it, or None at the end.
+    filters (crm.FILTERS: owner, board, stage, organisation, value and close date) narrow it, and total counts
+    what is left."""
+    import crm
     if name not in PAGED and name != 'warmup':
         raise ValueError('list is one of ' + ', '.join([*PAGED, 'warmup']))
-    sort = sort if sort in SORTS and (sort != 'stage' or name.startswith('projects')) else DEFAULT_SORT.get(name, 'closest')
+    filters = crm.clean_filters(filters) if name != 'warmup' else {}
+    if sort in crm.SORTS and name != 'warmup':
+        extra_where, extra_args, extra_order = crm.list_query(db, name, filters, sort)
+    else:
+        sort = sort if sort in SORTS and (sort != 'stage' or name.startswith('projects')) else DEFAULT_SORT.get(name, 'closest')
+        extra_where, extra_args, extra_order = crm.list_query(db, name, filters, sort) if filters else (None, (), None)
     offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit), 50))
     if name == 'warmup':
         order = 'coalesce(name,domain) COLLATE NOCASE,domain' if sort == 'name' else 'created_at DESC,domain'
@@ -1479,7 +1495,11 @@ def page(db, name, sort='', cursor=0, limit=30):
         items = rows[:limit]
     else:
         where, args = _paged_where(db, name)
-        rows = db.execute(f'SELECT * FROM graph_nodes WHERE {where} ORDER BY {SORTS[sort]},id LIMIT ? OFFSET ?', (*args, limit + 1, offset)).fetchall()
+        if extra_where:
+            where, args = f'({where}) AND {extra_where}', (*args, *extra_args)
+        order = extra_order or SORTS[sort]
+        rows = db.execute(f'SELECT * FROM graph_nodes WHERE {where} ORDER BY {order},id LIMIT ? OFFSET ?', (*args, limit + 1, offset)).fetchall()
+        total = db.execute(f'SELECT COUNT(*) FROM graph_nodes WHERE {where}', args).fetchone()[0] if extra_where else None
         items = [node_view(r) for r in rows[:limit]]
         orgs = {v.get('org') for v in items if v.get('kind') == 'person' and v.get('org')}
         if orgs:  # the organization's name, not only its id
@@ -1496,7 +1516,10 @@ def page(db, name, sort='', cursor=0, limit=30):
                                  (int(pid) if pid.isdigit() else -1,)).fetchone()
                 if crm:
                     project.update({k: crm[k] for k in ('board', 'stage', 'value', 'close_date')}, org_domain=crm['org'])
-    return {'items': items, 'sort': sort, 'next': str(offset + limit) if len(rows) > limit else None, 'total': list_counts(db)[name]}
+    found = {'items': items, 'sort': sort, 'next': str(offset + limit) if len(rows) > limit else None, 'total': list_counts(db)[name]}
+    if name != 'warmup' and extra_where:
+        found.update(total=total, filters=filters)
+    return found
 
 
 def list_counts(db):
@@ -1574,6 +1597,10 @@ def detail(db, node_id, events=12):
             view['project'] = project_card(db, node_id)
         except ValueError:
             view['project'] = None
+    import crm
+    view['changes'] = crm.changes(db, row)  # owner changes, organisations merged in or split off
+    if row['kind'] == 'org':
+        view['doubles'] = crm.org_doubles(db, 5, node_id)
     if row['kind'] == 'org':
         view['people_roles'] = [{'id': r['id'], 'name': r['name'], 'role': json.loads(r['info']).get('role')} for r in db.execute(
             "SELECT n.id,n.name,n.info FROM graph_links l JOIN graph_nodes n ON n.id=l.a WHERE l.b=? AND l.kind='member' ORDER BY n.strength DESC LIMIT 12", (node_id,))]
@@ -2930,7 +2957,8 @@ def save_project(db, args, now):
             if not found:
                 raise ValueError('Organization: its website, like "example.com", or the name of one in your Graph')
             domain = found['domain']
-        db.execute('UPDATE projects SET org=? WHERE id=?', (domain or None, pid))
+        import crm
+        db.execute('UPDATE projects SET org=? WHERE id=?', (crm.canonical_domain(db, domain) or None, pid))
     if 'value' in args:
         raw = str(args.get('value') if args.get('value') is not None else '').replace(',', '').replace(' ', '').lstrip('€$£')
         try:
@@ -3533,7 +3561,9 @@ MESSAGE_KINDS = ('gmail.message', 'salesflare.email', 'linkedin.message', 'slack
 
 
 def org_card(db, domain):
-    """An organization's name and logo for a tile: the owner's edits over the enrichment service's profile."""
+    """An organisation's name and logo for a tile: the owner's edits over the enrichment service's profile."""
+    import crm
+    domain = crm.canonical_domain(db, domain)  # a website of an organisation with several
     found = db.execute("SELECT name,info FROM graph_nodes WHERE id=?", ('org:' + domain,)).fetchone()
     info = json.loads(found['info'] or '{}') if found else {}
     profile = info.get('profile')
@@ -3586,13 +3616,19 @@ def boards(db, now):
                           'org': org_card(db, domain) if domain else None, 'card': {'id': card['id'], 'title': card['title']} if card else None,
                           **({'last_at': last['occurred_at'], 'last_event_id': last['id']} if last else {}),
                           **({'value': p['value']} if p['value'] is not None else {}), **({'close_date': p['close_date']} if p['close_date'] else {}),
-                          **({'outcome': p['outcome']} if p['outcome'] else {})})
+                          **({'outcome': p['outcome']} if p['outcome'] else {}), **owner_of(db, node)})
         out.append({'id': b['id'], 'name': b['name'], 'about': b['about'], 'side': bool(b['side']), 'visibility': b['visibility'] or 'team',
                     'stages': json.loads(b['stages']) + ([{'name': STALLED, 'side': True}] if b['side'] else []), 'projects': items,
                     'stuck': sum(1 for i in items if (i['no_reply_days'] or 0) >= STUCK_DAYS and i['stage'] != STALLED),
                     'sorting': sum(1 for i in items if i['sorting']), 'default': bool(b['is_default']), 'maybes': board_maybes(db, b['id'])})
         out[-1]['backfill'] = backfill_view(db, b['id'], now, out[-1]['maybes'])
     return out
+
+
+def owner_of(db, node_id):
+    """{'owner', 'owner_name'} when someone in the owner's Work Fleet owns the record, else {}."""
+    row = db.execute("SELECT json_extract(info,'$.owner') owner,json_extract(info,'$.owner_name') name FROM graph_nodes WHERE id=?", (node_id,)).fetchone()
+    return {'owner': row['owner'], 'owner_name': row['name']} if row and row['owner'] else {}
 
 
 def project_moves(db, node_id, limit=8):

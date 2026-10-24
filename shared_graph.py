@@ -55,6 +55,7 @@ MAX_BODY = 20000            # characters of one message
 TIMELINE = 12               # lines per record
 MAIL_KINDS = ('gmail.message', 'ms_graph.message', 'outlook.message', 'salesflare.email', 'intercom.conversation')
 HEX = re.compile(r'[a-f0-9]{32}')
+MEMBER_ID = re.compile(r'[A-Za-z0-9_.:@-]{1,80}')  # a Fleet member's id, as crm.MEMBER
 ADDRESS = re.compile(r'[^@\s<>",;]+@[^@\s<>",;]+\.[^@\s<>",;]+')
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS share_threads(thread TEXT PRIMARY KEY,verdict TEXT,hand TEXT,hand_at TEXT,event_id INTEGER,at TEXT NOT NULL);
@@ -475,7 +476,7 @@ def collect(db, scope, key, secret, today=None):
                       'org': {'name': org['name'], **({'d': keyed(key, 'domain:' + org_domain)} if org_domain else {})} if org else None,
                       'org_hand': info.get('org_by') == 'owner', 'ids': people[row['id']], 'd': [h for d in domains for h in every('domain:' + d)],
                       'score': round(row['strength'], 3), 'last': (last or row['last_at'] or '')[:10], 'timeline': timeline(row['id']),
-                      'threads': thread_tags(row['id'])}
+                      'threads': thread_tags(row['id']), **owner_pick(info)}
     shared_orgs = {json.loads(db.execute('SELECT info FROM graph_nodes WHERE id=?', (p,)).fetchone()['info']).get('org') for p in people}
     for row in db.execute("SELECT * FROM graph_nodes WHERE kind='org'"):
         info = json.loads(row['info'] or '{}')
@@ -485,7 +486,7 @@ def collect(db, scope, key, secret, today=None):
         r = rid(row['id'])
         records[r] = {'r': r, 't': 'org', 'name': row['name'], 'name_hand': 'name' in (info.get('edited') or []), 'role': info.get('role'),
                       'role_hand': info.get('role_by') == 'owner', 'd': every('domain:' + domain), 'score': round(row['strength'], 3),
-                      'last': (row['last_at'] or '')[:10]}
+                      'last': (row['last_at'] or '')[:10], **owner_pick(info)}
     tiles = {t['id']: t for b in graph.boards(db, today.isoformat()) for t in b['projects']}
     team_boards = graph.team_board_ids(db)
     for row in db.execute("SELECT n.*,p.id pid,b.id bid,p.stage,p.stage_by,p.stage_at,p.stage_reason,p.next_step,p.org porg,b.name board,b.stages stages,b.side side "
@@ -513,7 +514,8 @@ def collect(db, scope, key, secret, today=None):
                       'stage': row['stage'] if row['board'] else None, 'stage_hand': row['stage_by'] == 'owner', 'stage_at': row['stage_at'],
                       'why': row['stage_reason'], 'next': row['next_step'],
                       'org': {'name': org['name'], 'd': keyed(key, 'domain:' + domain)} if org else None,
-                      'people': sorted({h for p in linked for h in people.get(p, [])}), 'timeline': timeline(row['id']), 'threads': thread_tags(row['id'])}
+                      'people': sorted({h for p in linked for h in people.get(p, [])}), 'timeline': timeline(row['id']), 'threads': thread_tags(row['id']),
+                      **owner_pick(json.loads(row['info'] or '{}'))}
     week = (today - dt.timedelta(days=7)).isoformat()
     recent = {}
     for thread, items in threads.items():
@@ -524,6 +526,13 @@ def collect(db, scope, key, secret, today=None):
              'people': sum(1 for r in records.values() if r['t'] == 'person'), 'orgs': sum(1 for r in records.values() if r['t'] == 'org'),
              'projects': sum(1 for r in records.values() if r['t'] == 'project')}
     return records, out_threads, stats, files
+
+
+def owner_pick(info):
+    """The owner of a record the owner picked from their Work Fleet (crm.set_owner), with the record it is on: only
+    that member's id, which the Fleet's members know already."""
+    pick = str(info.get('owner') or '')
+    return {'owner_pick': pick} if MEMBER_ID.fullmatch(pick) else {}
 
 
 def unjudged(db, scope, limit, skip=()):
@@ -1609,6 +1618,11 @@ def resolve(entry, local=None):
     owner = max(cands, key=lambda c: c['score']) if cands else None
     out['owner'] = (owner['who'] or {}).get('member') if owner else None
     out['owner_name'] = _first_name((owner['who'] or {}).get('name')) if owner and owner['who'] else None
+    picked = max((c for c in cands if c['who'] and c['record'].get('owner_pick')), key=lambda c: c['score'], default=None)
+    if picked:  # someone picked who owns it: that wins over the closest
+        member = picked['record']['owner_pick']
+        named = next((c['who'] for c in cands if c['who'] and c['who'].get('member') == member), None)
+        out.update(owner=member, owner_name=_first_name(named.get('name')) if named else None, owner_hand=True)
     out['score'] = max((c['score'] for c in cands), default=0)
     out['last'] = max((str(c['record'].get('last') or '') for c in cands), default='') or None
     return out
@@ -1626,6 +1640,7 @@ def _clean_record(r):
     out = {'r': r['r'], 't': r['t'], 'name': text('name', 100) or '?', 'name_hand': r.get('name_hand') is True, 'role': text('role', 80),
            'role_hand': r.get('role_hand') is True, 'score': float(r['score']) if isinstance(r.get('score'), (int, float)) else 0.0,
            'last': text('last', 10), 'kv': text('kv', 16),
+           **({'owner_pick': r['owner_pick']} if isinstance(r.get('owner_pick'), str) and MEMBER_ID.fullmatch(r['owner_pick']) else {}),
            'timeline': [{'at': _clean_text(x.get('at'), 25), 'line': _clean_text(x.get('line'), 160), **({'private': True} if x.get('private') else {}),
                          **({'tag': x['tag']} if HEX.fullmatch(str(x.get('tag'))) else {})}
                         for x in (r.get('timeline') or [])[:TIMELINE] if isinstance(x, dict) and _clean_text(x.get('line'), 160)]}

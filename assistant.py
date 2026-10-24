@@ -44,6 +44,8 @@ import uuid
 from zoneinfo import ZoneInfo
 import embeddings
 import graph
+import crm
+import crm_import
 import mail_attachments
 import message_seal
 import enrichment
@@ -542,7 +544,11 @@ OWNER_ACTIONS |= AGENT_ACTIONS
 # own, from their dashboard only. Nothing is sent without their Send on exactly what they saw.
 LEARNING_ACTIONS = {'learnings_share', 'learnings_later', 'learnings_never', 'set_learnings_offer'}
 OWNER_ACTIONS |= LEARNING_ACTIONS
-UPLOAD_ACTIONS, UPLOAD_REQUEST_BYTES = {'skill_import_upload', 'skill_import_report', 'skills_found'}, 9 * 1024 * 1024
+# The Graph as a CRM (crm.py, crm_import.py): who owns a record, one organisation with several websites, and a
+# spreadsheet imported; the owner's own, from their dashboard only.
+CRM_ACTIONS = {'graph_owner', 'graph_org_merge', 'graph_org_split', 'graph_org_apart', 'graph_import_preview', 'graph_import_run', 'graph_import_undo'}
+OWNER_ACTIONS |= CRM_ACTIONS
+UPLOAD_ACTIONS, UPLOAD_REQUEST_BYTES = {'skill_import_upload', 'skill_import_report', 'skills_found', 'graph_import_preview', 'graph_import_run'}, 9 * 1024 * 1024
 # A merged fix to The Machine can be undone this long; one it merged by itself undoes itself when
 # its code version records an error within AUTO_UNDO_NEW, or the fault it fixed comes back.
 UNDO_MERGE = dt.timedelta(hours=24)
@@ -11754,6 +11760,10 @@ class App:
             if done.get('created') or done.get('deleted'):
                 self.graph_build()
             return done
+        if name in CRM_ACTIONS:
+            if not owner_dashboard:
+                raise ValueError('Only the owner changes owners, merges organisations and imports, on the dashboard')
+            return self.crm_action(name, args)
         if name == 'graph_person_edit':
             # One Save for a person's page: their name, what they are to the owner and where they work go where those
             # live (graph_names, person_roles, person_orgs, as the owner's word); the rest is person_edits.
@@ -15091,9 +15101,45 @@ class App:
             found = [graph.node_view(r, graph.neighbours(db, r['id'], 6)) for r in hits[offset:offset + limit]]
             return graph.with_fleet(db, {'found': found, 'next': str(offset + limit) if len(hits) > offset + limit else None}, marks)
 
-    def graph_list(self, name, sort='', cursor=0, limit=30):
+    def graph_list(self, name, sort='', cursor=0, limit=30, filters=None):
         with self.store.connect() as db:
-            return graph.with_fleet(db, graph.page(db, name, sort, cursor, limit), self.graph_fleet_marks(db))
+            return graph.with_fleet(db, graph.page(db, name, sort, cursor, limit, filters), self.graph_fleet_marks(db))
+
+    def owner_choices(self):
+        """Who can own a record: the members of the owner's Work Fleets (crm.owner_choices); none without a Fleet."""
+        if not getattr(self, 'fleet', None):
+            return []
+        try:
+            return crm.owner_choices(self.fleet.fleets())
+        except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, fleet.Off):
+            return []
+
+    def crm_action(self, name, args):
+        """The owner's CRM changes on the dashboard: a record's owner, organisations merged or split, an import."""
+        if name == 'graph_import_preview':
+            with self.store.connect() as db:
+                return crm_import.preview(db, str(args.get('kind') or ''), args.get('text'), args.get('mapping'))
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if name == 'graph_owner':
+                owner = str(args.get('owner') or crm.ME)
+                picked = next((m for m in self.owner_choices() if m['id'] == owner), None)
+                if owner != crm.ME and not picked:
+                    raise ValueError('Pick an owner from your Work Fleet')
+                done = crm.set_owner(db, args.get('node_id'), owner, picked['name'] if picked else None, now())
+            elif name == 'graph_org_merge':
+                done = crm.merge_orgs(db, args.get('node_id'), into=args.get('into'), website=args.get('website'), now=now())
+            elif name == 'graph_org_split':
+                done = crm.split_org(db, args.get('alias'), now())
+            elif name == 'graph_org_apart':
+                done = crm.keep_apart(db, args.get('a'), args.get('b'), now())
+            elif name == 'graph_import_run':
+                done = crm_import.run(db, str(args.get('kind') or ''), args.get('text'), args.get('mapping'), now(), args.get('name'))
+            else:
+                done = crm_import.undo(db, args.get('import_id'), now())
+        if name != 'graph_org_apart' and not done.get('kept'):
+            self.graph_build()
+        return done
 
     def graph_timeline(self, node, source='', cursor=0, limit=40):
         """A page of a person's, organization's or project's timeline for the owner's dashboard (graph.timeline), each
@@ -15477,7 +15523,8 @@ class App:
                         if path.path == '/api/cards/done':
                             self.output(200, app.store.done_page(args.get('cursor') or 0, args.get('limit') or 30, args.get('q', ''), args.get('scope', '')))
                         else:
-                            self.output(200, app.graph_list(args.get('list', ''), args.get('sort', ''), args.get('cursor') or 0, args.get('limit') or 30))
+                            self.output(200, app.graph_list(args.get('list', ''), args.get('sort', ''), args.get('cursor') or 0, args.get('limit') or 30,
+                                                            {k: args[k] for k in crm.FILTERS if k in args}))
                     except (ValueError, sqlite3.OperationalError):
                         self.output(400, {'error': 'Not a list'})
                 elif path.path == '/api/graph/timeline':  # a person's or organization's timeline, a page and a source at a time
@@ -15514,6 +15561,7 @@ class App:
                             self.output(200, app.graph_find(query, urllib.parse.parse_qs(path.query).get('cursor', ['0'])[0] or 0))
                         elif node:
                             found = app.graph_action({'node_id': node, 'limit': 10, 'events': 120})  # a run of chat messages is one row
+                            found['owners'] = app.owner_choices()
                             rows = app.store.events([a['id'] for a in app.config['accounts']], event_ids=[int(line.split(' ', 1)[0]) for line in found['recent']])
                             # The timeline: every source, newest first, a page at a time (/api/graph/timeline for the next)
                             found['timeline'] = app.graph_timeline(found['id'])
@@ -15537,11 +15585,14 @@ class App:
                                     'SELECT id,name,board_id FROM projects WHERE closed_at IS NULL ORDER BY name COLLATE NOCASE LIMIT 2000')]  # the board editor's picker
                                 found['person_names'] = [{'id': r['id'], 'name': r['name']} for r in db.execute(
                                     "SELECT id,name FROM graph_nodes WHERE kind='person' AND name<>'' ORDER BY strength DESC LIMIT 1500")]  # the project dialog's people picker
+                                found['org_doubles'] = crm.org_doubles(db, 12)  # "Same organisation?"
+                                found['last_import'] = crm_import.last(db)  # "Undo last import"
                                 if app.fleet:
                                     try:
                                         found['sharing'] = app.fleet.sharing()  # the Shared Graph: Mine or Team, and when sharing starts
                                     except (sqlite3.Error, ValueError, KeyError, TypeError):
                                         pass
+                            found['owners'] = app.owner_choices()  # who can own a record: the Work Fleet
                             self.output(200, found)
                     except (ValueError, sqlite3.OperationalError):
                         self.output(404, {'error': 'Not in the graph'})
@@ -15722,7 +15773,7 @@ class App:
                     return
                 try:
                     size = int(self.headers.get('Content-Length', '0'))
-                    upload = self.headers.get('X-Upload') == 'skill-import'
+                    upload = self.headers.get('X-Upload') in ('skill-import', 'graph-import')
                     if not 0 < size <= (UPLOAD_REQUEST_BYTES if upload else 65536):
                         raise ValueError('Invalid request size')
                     try:
@@ -15732,7 +15783,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_new','graph_org_delete','graph_same','graph_same_all','set_people_lookup','security_level','security_setting','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in CRM_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_new','graph_org_delete','graph_same','graph_same_all','set_people_lookup','security_level','security_setting','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

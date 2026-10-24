@@ -3,7 +3,7 @@ title: The Graph
 area: graph
 summary: The people, organizations and projects in your messages, kept up to date by themselves.
 covers: tab:people
-code: graph.py, enrichment.py, dashboard.html
+code: graph.py, crm.py, crm_import.py, enrichment.py, dashboard.html
 order: 1
 ---
 Your Machine builds a map of who you deal with and what's going on, from your messages, meetings and decisions. Nothing to set up, and it stays on your Machine.
@@ -26,7 +26,23 @@ Every person and organization page has one, newest first: email, meetings and th
 
 An organization's timeline has its people's messages and the Intercom conversations from its domain. Your timelines are yours: the team's Graph shows only what your sharing rules allow.
 
-## Add someone or an organization
+## Filter and sort
+
+**Filter**, next to the tabs on People, Organisations and Projects, narrows the list by owner, board, stage, organisation, value and expected close date. People and organisations match through their open projects. The filters you picked show above the list, with **Clear**. The order menu also sorts by **Value** and **Close date**. Your Machine does the filtering, so long lists stay fast. On a phone the filters open as a sheet.
+
+## Owner
+
+In a Work Fleet, each person, organisation and project has an owner: **Owner** under About you on its page. It's you, unless you pick someone from your Work Fleet. **Mine**, next to Filter and on a board, shows only yours. A board card shows its owner's name. Each change shows in its timeline. A record shared with your team carries its owner with it, under the same sharing rules as the rest.
+
+## Import a spreadsheet
+
+**Import CSV…**, under the order menu of People, Organisations or Projects, adds a spreadsheet saved as CSV. Your Machine guesses which column is which; change any of them. The preview shows each row as new, matching one already in your Graph, or skipped, with why. A match is the same email for a person (else the same name at the same organisation), the same website or name for an organisation, and the same name for a project. **Import** adds the new ones and fills in the matches; an empty cell changes nothing. **Undo** right after, or **Undo last import** under the order menu, takes the last import back. The file stays on your Machine.
+
+## One organisation, several websites
+
+**⋯**, **Same organisation as…** on an organisation's page makes it part of another one, with its people, projects and notes. **Add a website…** adds one more of its websites, like its .io next to its .com: people with an address there join it, and its details are looked up for every website. They're listed under **Websites**, each with **Split off** to undo it. Organisations that look like doubles show under **Same organisation?**: **Merge** or **Not the same**.
+
+## Add someone or an organisation
 
 **New person** at the top of People, **New organization** at the top of Organizations, or **+** in the top bar on a phone. Give a name, and for a person an email and organization if you have them; for an organization, its website. When someone like it is already in your Graph, the form shows them first, so you can open that one instead. **Add** opens the new page.
 

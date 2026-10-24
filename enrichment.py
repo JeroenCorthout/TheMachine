@@ -228,9 +228,11 @@ def due(db, now, limit):
     current = dt.datetime.fromisoformat(now)
     fresh = (current - dt.timedelta(days=REFRESH_DAYS)).isoformat()
     retry = (current - dt.timedelta(hours=RETRY_HOURS)).isoformat()
-    rows = db.execute("SELECT n.id,json_extract(n.info,'$.domain') domain,n.strength,json_extract(n.info,'$.paying') paying FROM graph_nodes n "
-                      "LEFT JOIN org_profiles p ON p.domain=json_extract(n.info,'$.domain') "
-                      "WHERE n.kind='org' AND json_extract(n.info,'$.domain') IS NOT NULL AND (p.domain IS NULL OR (p.status NOT IN ('error','wrong') AND p.fetched_at<?) OR (p.status='error' AND p.fetched_at<?))",
+    # every website of an organisation with several (crm: "Same organisation as…")
+    rows = db.execute("SELECT n.id,d.value domain,n.strength,json_extract(n.info,'$.paying') paying FROM graph_nodes n,"
+                      "json_each(coalesce(json_extract(n.info,'$.domains'),json_array(json_extract(n.info,'$.domain')))) d "
+                      "LEFT JOIN org_profiles p ON p.domain=d.value "
+                      "WHERE n.kind='org' AND d.value IS NOT NULL AND (p.domain IS NULL OR (p.status NOT IN ('error','wrong') AND p.fetched_at<?) OR (p.status='error' AND p.fetched_at<?))",
                       (fresh, retry)).fetchall()
     if not rows or limit <= 0:
         return []

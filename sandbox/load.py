@@ -163,8 +163,20 @@ def load(directory, states, port=8870, network_port=8871, fixture_path=HERE / 'f
             load_skills(db, states, fixture, base)
             if 'fleet' in states:
                 load_share(db)
+                load_owners(db, fixture, base)
         load_logins(directory, fixture)
     return config, config_path
+
+
+def load_owners(db, fixture, base):
+    """Graph: a few projects owned by a teammate, picked by hand (crm.set_owner), so boards and Mine show the split."""
+    import crm
+    team = fixture['network']['work']['team']
+    for name, m in (('Gullwing Clinics onboarding', 0), ('Halyard sync delay', 1), ('Fernwave', 2)):
+        row = db.execute('SELECT id FROM projects WHERE name=?', (name,)).fetchone()
+        if row:
+            crm.set_owner(db, f'project:{row[0]}', team[m]['member_id'], team[m]['name'], stamp(2 * 24 * 60, base))
+    db.commit()
 
 
 def load_share(db):

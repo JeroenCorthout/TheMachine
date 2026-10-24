@@ -38,7 +38,10 @@ Records are shared by default when they are Work:
 | Timeline | One short line per message or meeting, written by the review | Yes, for client threads; the neutral line for sensitive ones |
 | Raw mail | The email itself and its attachments | Client threads (above). Nothing else, ever |
 
-**Keep private** on a person, organization or project shares nothing about it: no record, no timeline, none of their
+The record's owner is the one picked by hand on it (`owner_pick`, a Work Fleet member id; `crm.py`), and otherwise
+whoever in the team is closest to them. It travels only with a record that is shared anyway.
+
+**Keep private** on a person, organisation or project shares nothing about it: no record, no timeline, none of their
 threads. It needs nobody's OK. Colleagues (people at the Fleet's own domains) are never shared as records. A person whose reviewed threads
 are all sensitive is held back too.
 
