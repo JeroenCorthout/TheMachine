@@ -128,7 +128,8 @@ try{
   await page.locator('#cal-f-where-sug button').nth(2).click();
   assert.equal(await page.locator('#cal-f-where').inputValue(),'Café Labath, Oude Houtlei 1, 9000 Gent, Belgium');assert.ok(await page.locator('#cal-f-where-sug').isHidden());
   // Free text still works: type, no pick
-  await page.locator('#cal-f-where').fill('At the office');await page.waitForTimeout(450);await page.keyboard.press('Escape');
+  await page.locator('#cal-f-where').fill('At the office');await page.locator('#cal-f-where-sug button').first().waitFor();await page.keyboard.press('Escape');
+  assert.ok(await page.locator('#cal-f-where-sug').isHidden());assert.equal(await page.locator('#cal-f-where').inputValue(),'At the office');
   assert.ok(await page.locator('#cal-dialog').isVisible(),'Escape closes the suggestions, not the form');
   // Invite: people from the Graph and a typed address, as chips; the button says how many and the list is above it
   await page.locator('#cal-f-invite').pressSequentially('sam',{delay:30});await page.locator('#cal-f-invite-sug button').first().waitFor();
