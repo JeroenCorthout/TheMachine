@@ -47,17 +47,20 @@ try{
   // Organisation: view, then edit (New project goes; only Cancel and Save)
   await page.evaluate(()=>people('org:umicore.example'));await page.locator('#people-view .org-page').waitFor();
   const org='#people-view .org-page>.name-row h3';
+  assert.equal(await page.locator('#page-head .page-title').textContent(),'Organisations',`an organisation opened from Projects is under Organisations ${tag}`);
   m=await measure(page,org);check(m,`org view ${tag}`,{whole});assert.deepEqual(m.acts,['New project','Edit','⋯'],`org view actions ${tag}`);await shot(page,`org-view-${tag}`);
   await page.locator('#people-view [data-org-edit]').click();await page.locator('#people-view .org-editing').waitFor();
   m=await measure(page,org);check(m,`org edit ${tag}`,{whole});assert.deepEqual(m.acts,['Cancel','Save'],`org edit: only Cancel and Save ${tag}`);await shot(page,`org-edit-${tag}`);
   // Person: view, then edit
   await page.evaluate(()=>people('person:a'));await page.locator('#people-view .person-page:not(.org-page)').waitFor();
   const per='#people-view .person-page>.name-row h3';
+  assert.equal(await page.locator('#page-head .page-title').textContent(),'People',`person title ${tag}`);
   m=await measure(page,per);check(m,`person view ${tag}`,{whole});assert.deepEqual(m.acts,['Edit','⋯'],`person view actions ${tag}`);await shot(page,`person-view-${tag}`);
   await page.locator('#people-view [data-org-edit]').click();await page.locator('#people-view .org-editing').waitFor();
   m=await measure(page,per);check(m,`person edit ${tag}`,{whole});assert.deepEqual(m.acts,['Cancel','Save'],`person edit: only Cancel and Save ${tag}`);await shot(page,`person-edit-${tag}`);
   // Project page (edits in a dialog, whose title is not the name)
   await page.evaluate(()=>people('project:1'));await page.locator('#people-view .graph-detail [data-proj-edit]').first().waitFor();
+  assert.equal(await page.locator('#page-head .page-title').textContent(),'Projects',`project title ${tag}`);
   m=await measure(page,'#people-view .graph-detail>.name-row h3');check(m,`project view ${tag}`,{whole});assert.deepEqual(m.acts,['Edit','⋯'],`project actions ${tag}`);await shot(page,`project-view-${tag}`);
   await page.locator('#people-view .graph-detail>.name-row [data-proj-edit]').click();await page.locator('#project-dialog[open]').waitFor();await shot(page,`project-edit-${tag}`);
   await page.keyboard.press('Escape');await page.locator('#project-dialog[open]').waitFor({state:'detached'});

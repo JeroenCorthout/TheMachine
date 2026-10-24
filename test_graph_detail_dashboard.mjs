@@ -162,7 +162,7 @@ try{
  const fresh=await context.newPage();fresh.on('pageerror',e=>errors.push(e.message));
  await fresh.goto(base+'#graph/wa%3A3247000001');
  await fresh.locator('.graph-crumbs').waitFor();
- assert.ok(await fresh.locator('nav [data-tab="people"].active').count()===1&&await fresh.locator('#page-head .page-title',{hasText:'Graph'}).isVisible());
+ assert.ok(await fresh.locator('nav [data-tab="people"].active').count()===1&&await fresh.locator('#page-head .page-title',{hasText:'People'}).isVisible(),'a link to a person opens under People, as its breadcrumb says');
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({days,dialogs:dialogs.length,actions:calls.length,page_errors:errors}));
 }finally{if(browser)await browser.close();await new Promise(r=>server.close(r))}
