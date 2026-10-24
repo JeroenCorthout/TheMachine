@@ -101,7 +101,7 @@ try{
   const first=await page.evaluate(()=>{const box=(tops,now)=>{const d=document.createElement('div');d.innerHTML=tops.map(h=>`<a class="cal-blk" style="top:${h*CAL_HOUR}px"></a>`).join('')+(now==null?'':`<i class="cal-now" style="top:${now*CAL_HOUR}px"></i>`);return d};
    return [calFirstHour(box([9,14])),calFirstHour(box([6.5,9])),calFirstHour(box([])),calFirstHour(box([9],3)),calFirstHour(box([9],11)),calFirstHour(box([9],20)),calFirstHour(box([9],23.5),8)]});
   assert.deepEqual(first,[7.5,6,7.5,7.5,7.5,16,16]);
-  assert.equal(await range(page),'19 – 25 Oct 2026');
+  assert.equal(await range(page),'Oct 19 – 25, 2026');
   const tops=await page.evaluate(()=>[['2026-10-24','Saturday run'],['2026-10-25','Sunday walk']].map(([k,t])=>{const b=[...document.querySelectorAll(`.cal-tg-col[data-col="${k}"] .cal-blk`)].find(b=>b.textContent.includes(t));return [parseFloat(b.style.top),parseFloat(b.style.height)]}));
   assert.deepEqual(tops,[[476,66],[476,66]],'an hour at 07:00 on both sides of the change');
   // This week: seven columns from Monday, today marked with the now line, overlaps side by side, All day on top

@@ -61,7 +61,7 @@ try{
   // Shift+Enter is a new line; the chips are optional: Work, Due, a person and an email
   await page.locator('#nc-text').type('Send Pat the signed contract');await page.keyboard.press('Shift+Enter');await page.keyboard.type('and the deck');
   await page.locator('[data-nc="work"]').click();assert.equal(await page.locator('[data-nc="work"]').getAttribute('aria-pressed'),'true');
-  await page.locator('[data-nc="due"]').click();await page.locator('#nc-find').fill('friday');assert.match(await page.locator('#nc-read').textContent(),/^Fri \d+ \w{3}$/);
+  await page.locator('[data-nc="due"]').click();await page.locator('#nc-find').fill('friday');assert.match(await page.locator('#nc-read').textContent(),/^Fri, \w{3} \d+$/);
   await page.locator('#nc-find').fill('whenever');assert.equal(await page.locator('#nc-read').textContent(),'I can’t read that date yet');
   await page.locator('#nc-find').fill('friday');await page.locator('#nc-find').press('Enter');assert.match(await page.locator('#nc-chips').textContent(),/Due Fri/);
   await page.locator('[data-nc="about"]').click();await page.locator('#nc-find').fill('Pat');await page.locator('[data-nc-hit="0"]').waitFor();await page.locator('[data-nc-hit="0"]').click();

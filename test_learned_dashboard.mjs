@@ -52,7 +52,7 @@ try{
   assert.deepEqual(await learned.locator('.learn-group').evaluateAll(g=>g.map(x=>x.dataset.group)),['voices','facts','rules','skills']);
   assert.deepEqual(await learned.locator('.learn-head h3').allTextContents(),['How you write 5','Facts 8','How to do things 1','Moved into skills 1']);
   assert.equal(await learned.locator('.learn-group > .list').count(),4);
-  assert.match(await learned.locator('.learn-note').textContent(),/^Condensed 4 notes on Tue 20 Oct( 2026)?\.$/);
+  assert.match(await learned.locator('.learn-note').textContent(),/^Condensed 4 notes on Tue, Oct 20(, 2026)?\.$/);
   assert.equal(await learned.locator('.learn-head h3').first().evaluate(e=>getComputedStyle(e).fontFamily.includes('Serif')),true);
   if(shots){await page.evaluate(()=>document.fonts.ready);await learned.screenshot({path:`${shots}/learned-${width}-${scheme}.png`})}
   const gap=await learned.locator('.learn-group').evaluateAll(g=>g[1].getBoundingClientRect().top-g[0].getBoundingClientRect().bottom);

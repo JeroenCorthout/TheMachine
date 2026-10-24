@@ -102,13 +102,13 @@ class DashboardSnoozedLine(unittest.TestCase):
     def test_dashboard_says_until_when(self):
         html = Path(__file__).with_name('dashboard.html').read_text()
         self.assertIn("return line('Snoozed until '+snoozedUntil(s.snoozed_until))", html)
-        script = ("const snoozedUntil=" + html.split('const snoozedUntil=', 1)[1].split('\n', 1)[0]
+        script = ("const DL='en-US';const snoozedUntil=" + html.split('const snoozedUntil=', 1)[1].split('\n', 1)[0]
                   + "\nconsole.log(snoozedUntil('2026-10-27T08:00:00+00:00'))")
         node = shutil.which('node')
         if not node:
             self.skipTest('node is not installed')
         out = subprocess.run([node, '-e', script], capture_output=True, text=True, env={**os.environ, 'TZ': 'Europe/Brussels'})
-        self.assertEqual(out.stdout.strip(), 'Tue 27 Oct, 09:00')
+        self.assertEqual(out.stdout.strip(), 'Tue, Oct 27 at 09:00')
 
 
 if __name__ == '__main__':

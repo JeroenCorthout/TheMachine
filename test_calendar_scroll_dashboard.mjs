@@ -54,10 +54,10 @@ try{
   assert.equal(r.sun,'2026-10-19','a Sunday belongs to the week that started on Monday');assert.equal(r.mon,'2026-10-26');
   assert.deepEqual(r.next,['2026-10-26',0],'a week on from Monday 19 October is Monday 26 October, at midnight, over the clock change');
   assert.deepEqual(r.days,['2026-10-19','2026-10-20','2026-10-21','2026-10-22','2026-10-23','2026-10-24','2026-10-25'],'seven days, Sunday 25 once');
-  assert.deepEqual(r.spans,['26 Oct – 1 Nov 2026','2 – 8 Nov 2026','28 Dec 2026 – 3 Jan 2027','28 Sept – 4 Oct 2026']);
+  assert.deepEqual(r.spans,['Oct 26 – Nov 1, 2026','Nov 2 – 8, 2026','Dec 28, 2026 – Jan 3, 2027','Sep 28 – Oct 4, 2026']);
   // A shared link to that week opens it in Week: one ask, Monday midnight in summer time to Monday midnight in winter time
   asks=[];await page.evaluate(()=>{location.hash='#calendar?view=week&date=2026-10-21'});await page.locator('.cal-tg').waitFor();
-  const v=await view(page);assert.equal(v.range,'19 – 25 Oct 2026');assert.deepEqual(v.days,r.days);
+  const v=await view(page);assert.equal(v.range,'Oct 19 – 25, 2026');assert.deepEqual(v.days,r.days);
   assert.ok(asks.some(([a,b])=>a.toISOString()==='2026-10-18T22:00:00.000Z'&&b.toISOString()==='2026-10-25T23:00:00.000Z'),JSON.stringify(asks));
   await context.close()}
  {const {context,page}=await open(1440,900);await toCal(page);
