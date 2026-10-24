@@ -51,7 +51,7 @@ Installed from their own package sources only when you use the feature that need
 | Node.js | runs OpenClaw and the plugin | MIT |
 | Python | runs the service | PSF License |
 | Tailscale | private dashboard access | BSD-3-Clause |
-| [`wacli`](https://github.com/openclaw/wacli) | local WhatsApp store and owner-approved WhatsApp sends | MIT, Copyright (c) 2026 Peter Steinberger |
+| [`wacli`](https://github.com/openclaw/wacli), installed from the [Salesflare/wacli](https://github.com/Salesflare/wacli) fork (upstream plus read-only profile picture lookups) | local WhatsApp store, owner-approved WhatsApp sends and profile pictures | MIT, Copyright (c) 2026 Peter Steinberger |
 
 ## Source Serif 4
 

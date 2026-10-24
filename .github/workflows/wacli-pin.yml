@@ -1,0 +1,56 @@
+name: wacli pin
+
+# Daily: when the wacli fork (Salesflare/wacli) has a newer release, pin it in wacli-pin.json through a pull request.
+# Every archive is checked against the release's checksums.txt and its build provenance attestation first.
+
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wacli-pin
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Pin the newest fork release
+        run: python3 scripts/wacli_pin.py bump --verify
+      - name: Open a pull request
+        run: |
+          set -euo pipefail
+          git diff --quiet -- wacli-pin.json && { echo "pin is current"; exit 0; }
+          tag=$(python3 -c 'import json; print(json.load(open("wacli-pin.json"))["tag"])')
+          branch="wacli-pin/$tag"
+          if gh pr list --head "$branch" --state open --json number --jq length | grep -qv '^0$'; then
+            echo "a pull request for $tag is already open"; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git commit -m "wacli: pin $tag" -- wacli-pin.json
+          git push --force origin "$branch"
+          body="Pins wacli $tag from https://github.com/Salesflare/wacli/releases/tag/$tag. Every archive matched the release's checksums.txt and its build provenance attestation. Merge, then cut a release so Machines install it."
+          if ! gh pr create --base main --head "$branch" --title "wacli: pin $tag" --body "$body"; then
+            # This repository may not let Actions open pull requests: leave one issue with the link instead.
+            title="wacli: pin $tag"
+            open=$(gh issue list --state open --search "\"$title\" in:title" --json title --jq "map(select(.title == \"$title\")) | length")
+            [ "$open" != "0" ] || gh issue create --title "$title" \
+              --body "$body Open the pull request: https://github.com/${GITHUB_REPOSITORY}/compare/main...$branch?expand=1"
+          fi

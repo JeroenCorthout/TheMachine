@@ -24,7 +24,11 @@ On a hosted Machine:
 2. Press **Link WhatsApp**.
 3. On your phone, in WhatsApp, open Settings, Linked devices, Link a device, and scan the code. A pairing code by phone number works too.
 
-On your own computer, run `assistant connect whatsapp` and scan the code it shows in the terminal.
+On your own computer, run `assistant connect whatsapp` and scan the code it shows in the terminal. Without wacli, it offers to install the pinned build from [Salesflare/wacli](https://github.com/Salesflare/wacli), checked against its checksum.
+
+## Pictures
+
+The Machine asks WhatsApp for the profile pictures of people in your graph who have none, at most 50 a day, through the sync that keeps WhatsApp up to date. Nothing is sent to them. Someone who hides their picture from you stays without one.
 
 ## Remove it
 

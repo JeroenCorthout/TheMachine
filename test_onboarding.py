@@ -834,6 +834,42 @@ class WhatsAppSyncTest(unittest.TestCase):
         self.assertFalse(unit.exists())
         self.assertIn('another wacli already keeps this store synced', ui.text())
 
+    def test_the_sync_asks_for_pictures_only_when_wacli_offers_them(self):
+        store = self.home / 'wa'
+        store.mkdir()
+        account = {'id': 'personal-whatsapp', 'service': 'whatsapp', 'store': str(store)}
+        unit = self.home / '.config/systemd/user/the-machine-wacli-personal-whatsapp.service'
+        linked = 'print(json.dumps({"success": True, "data": {"authenticated": True, "linked_jid": "1@s.whatsapp.net"}}))'
+        older = self.stub('wacli', linked)
+        onboarding.step_whatsapp({'wacli': older}, account, FakeUI(answers=[str(store)]))
+        self.assertNotIn('--profile-picture-budget', unit.read_text())  # an older wacli would refuse the flag and never sync
+        pinned = self.stub('wacli', 'print("  --profile-picture-budget N  answer read-only profile picture-info") if args[-2:] == ["sync", "--help"] else ' + linked)
+        onboarding.step_whatsapp({'wacli': pinned}, account, FakeUI(answers=[str(store)]))
+        self.assertIn(f'ExecStart={pinned} --store {store} sync --follow', unit.read_text())
+        self.assertIn('--profile-picture-budget 50\n', unit.read_text())
+        self.assertNotIn('read-only', unit.read_text())
+
+    def test_without_wacli_it_offers_the_pinned_build(self):
+        store = self.home / 'wa'
+        store.mkdir()
+        account = {'id': 'personal-whatsapp', 'service': 'whatsapp', 'store': str(store)}
+        installed = self.stub('wacli-pinned', 'print(json.dumps({"success": True, "data": {"authenticated": True, "linked_jid": "1@s.whatsapp.net"}}))')
+        config = {'database': str(self.data / 'events.sqlite')}
+        with mock.patch.object(onboarding, 'tool', return_value=None), \
+                mock.patch.object(onboarding.wacli_release, 'platform_key', return_value='linux_amd64'), \
+                mock.patch.object(onboarding.wacli_release, 'install', return_value=Path(installed)) as install:
+            ui = FakeUI(answers=[str(store)])
+            onboarding.step_whatsapp(config, account, ui)
+        install.assert_called_once_with(self.data / 'bin')
+        self.assertEqual(config['wacli'], installed)
+        self.assertIn('Install wacli', ui.text())
+        self.assertIn('checked against its pinned checksum', ui.text())
+        with mock.patch.object(onboarding, 'tool', return_value=None), \
+                mock.patch.object(onboarding.wacli_release, 'install') as install:
+            with self.assertRaises(onboarding.SetupError):  # declined: nothing is downloaded
+                onboarding.step_whatsapp({}, account, FakeUI(answers=[str(store)], yes=[False]))
+        install.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

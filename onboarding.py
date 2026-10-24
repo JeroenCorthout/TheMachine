@@ -32,6 +32,7 @@ from pathlib import Path
 import message_seal
 import portable
 import service
+import wacli_release
 
 ROOT = Path(__file__).resolve().parent
 UNIT_NAME = service.UNIT_NAME
@@ -1282,7 +1283,7 @@ def step_salesflare(config, account, ui):
 
 
 def step_whatsapp(config, account, ui):
-    wacli = tool(config, 'wacli')
+    wacli = tool(config, 'wacli') or install_wacli(config, ui)
     if not wacli:
         raise SetupError('wacli is not installed', 'install wacli (https://wacli.sh), then run: assistant connect whatsapp')
     config['wacli'] = config.get('wacli') if config.get('wacli') not in (None, 'wacli') else wacli
@@ -1303,6 +1304,24 @@ def step_whatsapp(config, account, ui):
     account['identity_sha256'] = hashlib.sha256(linked.encode()).hexdigest()
     ui.say('  WhatsApp: linked')
     whatsapp_sync(wacli, account, ui)
+
+
+def install_wacli(config, ui):
+    """The pinned wacli build (github.com/Salesflare/wacli: wacli plus profile pictures through the sync), checked
+    against its pinned checksum, into the data directory. None when declined or it can't be installed here."""
+    data = wacli_release.pin()
+    if not wacli_release.platform_key() or not ui.yes(
+            f'wacli is not installed. Install wacli {wacli_release.version(data)} (github.com/{data["repository"]}, checked against its pinned checksum)?', True):
+        return None
+    base = data_dir(config) if config.get('database') else home() / '.local/share/personal-assistant'
+    try:
+        path = wacli_release.install(base / 'bin')
+    except (OSError, RuntimeError, KeyError) as error:
+        ui.say(f'  WhatsApp: could not install wacli ({str(error)[:200]})')
+        return None
+    config['wacli'] = str(path)
+    ui.say(f'  WhatsApp: installed wacli {wacli_release.version(data)}')
+    return str(path)
 
 
 def store_busy(store):
@@ -1333,6 +1352,9 @@ def whatsapp_sync(wacli, account, ui):
         return
     parts = (wacli, '--store', account['store'], 'sync', '--follow', '--presence-mode', 'quiet',
              '--max-messages', '0', '--max-db-size', '2GB', '--max-reconnect', '10m')
+    if wacli_release.supports_pictures(run([wacli, 'sync', '--help'], timeout=30).stdout):
+        # People's profile pictures for the graph, asked read-only through this sync, at most 50 a day.
+        parts += (wacli_release.PICTURE_FLAG, str(wacli_release.PICTURES_PER_DAY))
     unit.parent.mkdir(parents=True, exist_ok=True)
     if service.manager() == 'launchd':
         unit.write_text(service.plist_text(parts, unit=name, base=home(), throttle=30))
