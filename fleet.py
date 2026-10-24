@@ -1753,18 +1753,22 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
     def fleet_accounts(self, fleet):
         """The work accounts a Fleet may hear about. An account with an address at a domain none of the Fleet's members
         work at (another company of the owner's) never goes to it; an address at a free mail domain only when it is a
-        member's own. In several Work Fleets, an account without an address only when its work: boundary is named like
+        teammate's or the one the owner joined with. In several Work Fleets, an account without an address only when its work: boundary is named like
         the Fleet, so one Fleet never hears about another's customers; none match, nothing is shared."""
         work = work_accounts(self.config)
         found = self.fleets().get(self.ref(fleet)) or {}
         name = str(found.get('name') or '').strip().casefold()
-        members = {str(e).strip().lower() for m in found.get('members') or () for e in m.get('emails') or () if '@' in str(e)}
-        domains = {e.rsplit('@', 1)[1] for e in members} - graph.FREEMAIL
+        # The Fleet's domains: where the teammates work, and the address the owner joined with. Not every address the
+        # owner's own member entry lists: that one names their other companies too.
+        joined = {str(m.get('account_email') or '').strip().lower() for m in found.get('members') or () if m.get('me')} - {''}
+        members = {str(e).strip().lower() for m in found.get('members') or () if not m.get('me') for e in m.get('emails') or () if '@' in str(e)}
+        members |= joined
+        domains = {e.rsplit('@', 1)[1] for e in members if '@' in e} - graph.FREEMAIL
         several = len(self.work_fleets()) > 1
 
         def fits(account):
             address = str(account.get('email') or '').strip().lower()
-            if '@' in address:
+            if graph.EMAIL.fullmatch(address):  # not a handle like @name
                 return address.rsplit('@', 1)[1] in domains or address in members
             return not several or (name and str(account.get('boundary') or '').casefold() == 'work:' + name)
         return [a['id'] for a in self.config.get('accounts', []) if a['id'] in work and fits(a)]

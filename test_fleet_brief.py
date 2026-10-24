@@ -346,13 +346,15 @@ class OtherCompanyAccount(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         side = {'id': 'side', 'email': 'owner@sideco.example', 'service': 'gmail', 'boundary': 'work:Sideco'}
         loose = {'id': 'crm', 'email': '', 'service': 'salesflare', 'boundary': 'work:Acme'}
-        config = {**CONFIG, 'accounts': CONFIG['accounts'] + [side, loose]}
+        handle = {'id': 'x', 'email': '@acme', 'service': 'x', 'boundary': 'work:Acme'}
+        config = {**CONFIG, 'accounts': CONFIG['accounts'] + [side, loose, handle]}
         relay = FakeRelay()
         relay.directory = {'fleets': [{'id': 'fl_' + 'a' * 16, 'kind': 'work', 'name': 'Acme', 'secret': SECRET, 'members': [
-            {'member_id': 'me1', 'name': 'Owner', 'me': True, 'emails': ['owner@acme.example']}, {'member_id': 'pat1', 'name': 'Pat', 'emails': [TEAM]}]}]}
+            {'member_id': 'me1', 'name': 'Owner', 'me': True, 'account_email': 'owner@acme.example', 'emails': ['owner@acme.example', 'owner@sideco.example']},
+            {'member_id': 'pat1', 'name': 'Pat', 'emails': [TEAM]}]}]}  # the owner's own entry lists every address of theirs
         machine = fleet.Fleet(a.Store(Path(temp.name) / 'events.sqlite').connect, config, lambda: 'token', relay=relay)
         machine.directory(refresh=True)
-        self.assertEqual(machine.fleet_accounts('fl_' + 'a' * 16), ['work', 'crm'])
+        self.assertEqual(machine.fleet_accounts('fl_' + 'a' * 16), ['work', 'crm', 'x'])
 
 
 class SeveralFleets(unittest.TestCase):
