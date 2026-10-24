@@ -277,6 +277,7 @@ class SharedGraph(unittest.TestCase):
         self.rounds(1)
         self.assertTrue(self.team(self.mem))
         self.assertIsNone(self.own.meta('graph_start:' + FLEET))
+        self.assertGreaterEqual(self.own.sharing()[0]['teammates'], 1)  # the Team page says Work is shared only now
 
     # -- all the Work history, a batch at a time
     def client_threads(self, box, n, days):

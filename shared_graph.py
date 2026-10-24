@@ -1339,7 +1339,8 @@ class SharedGraph:
             prompts = [{k: p.get(k) for k in ('id', 'name', 'email', 'fp')} for p in self._prompts() if p['kind'] == 'member' and p['fleet'] == group['id']]
             out.append({'fleet': group['id'], 'name': str(group.get('name') or '')[:80], 'confirmed': me['member_id'] in found,
                         'off': self.graph_off(group, trusted), 'week': self.meta('graph_week:' + group['id']),
-                        'waiting': len([m for m in waiting if m != me['member_id']]), 'admin': me['member_id'] in trusted, 'prompts': prompts})
+                        'waiting': len([m for m in waiting if m != me['member_id']]), 'admin': me['member_id'] in trusted, 'prompts': prompts,
+                        'teammates': len(set(found) - {me['member_id']})})  # 0: nothing goes until an admin OKs a teammate's Machine
         return out
 
     def _mine_shared(self, db):

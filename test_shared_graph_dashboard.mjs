@@ -11,7 +11,8 @@ const {chromium}=await import(process.env.PLAYWRIGHT_CORE||OPENCLAW+'/node_modul
 // thread with its attachments (one to open, one too large to share). No sideways scroll at 390 and 1440.
 const dashboard=await readFile(new URL('./dashboard.html',import.meta.url),'utf8');
 const FL='fl_'+'c'.repeat(16),day=new Date().toISOString().slice(0,10),at=new Date().toISOString();
-const sharing=[{fleet:FL,name:'Acme',admin:true,confirmed:true,prompts:[],off:null,waiting:0,week:null}];
+const sharing=[{fleet:FL,name:'Acme',admin:true,confirmed:true,prompts:[],off:null,waiting:0,week:null,teammates:1}];
+let noTeam=false;  // nobody OK'd yet: nothing from the team, and nothing goes
 const TID=FL+':m_ada:'+'e'.repeat(32),FILE='f'.repeat(32);
 const thread={subject:'Rollout timeline',at,via:'Ada',messages:[{at,from:'Ada <ada@acme.example>',body:'Here is the plan.',attachments:[{name:'rollout-plan.pdf',size:182000,file:FILE},{name:'all-hands.mp4',size:48000000,too_large:true}]}]};
 const lee={id:'email:lee@client.example',kind:'person',name:'Lee Client',strength:3,closeness:'close',last_at:day,signals:2,ids:['lee@client.example'],via:'via Ada'};
@@ -33,7 +34,7 @@ const server=createServer(async(req,res)=>{const url=new URL(req.url,'http://fix
   if(url.searchParams.get('node'))return res.end(JSON.stringify(detail()));
   if(url.searchParams.get('thread')===TID)return res.end(JSON.stringify(thread));
   const team=url.searchParams.get('view')==='team';
-  return res.end(JSON.stringify({projects:[],quiet:[],new:[],orgs:[],boards:[],sharing,people:team?[lee,robin]:[{...lee,via:undefined}],...(team?{team:true,held:[]}:{})}))}
+  return res.end(JSON.stringify({projects:[],quiet:[],new:[],orgs:[],boards:[],sharing,people:team?(noTeam?[]:[lee,robin]):[{...lee,via:undefined}],...(team?{team:true,held:[]}:{})}))}
  if(url.pathname==='/api/fleet')return res.end(JSON.stringify(fleet));
  if(url.pathname==='/api/action'){let body='';for await(const b of req)body+=b;const call=JSON.parse(body);calls.push(call);
   if(call.action==='graph_share')share={share:call.args.share,fixed:false,why:'By hand'};
@@ -43,6 +44,24 @@ const server=createServer(async(req,res)=>{const url=new URL(req.url,'http://fix
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 try{
+ // Before an admin OKs a teammate's Machine: Team says nothing came yet and when sharing starts, not that it already does
+ for(const width of [390,1440]){
+  noTeam=true;sharing[0].teammates=0;
+  const context=await browser.newContext({viewport:{width,height:900}});
+  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('http://127.0.0.1:'+server.address().port+'/#graph=people');
+  await page.locator('[data-graph-team="team"]').click();
+  await page.locator('.empty',{hasText:'Nothing from the team yet.'}).waitFor();
+  assert.match(await page.locator('.share-note').innerText(),/^Sharing starts once you OK a teammate's Machine\. Personal never\.$/);
+  await page.goto('http://127.0.0.1:'+server.address().port+'/#fleet');
+  await page.locator('.graph-own').waitFor({state:'attached'});
+  assert.match(await page.locator('.graph-own').textContent(),/Your Work goes to the team once you OK a teammate's Machine\./);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  assert.deepEqual(errors,[]);
+  await context.close();
+  noTeam=false;sharing[0].teammates=1;
+ }
  for(const width of [390,1440]){
   share={share:'team',fixed:false,why:'Client'};calls.length=0;sharing[0].off=null;
   const context=await browser.newContext({viewport:{width,height:900}});

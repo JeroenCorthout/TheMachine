@@ -240,7 +240,7 @@ signs it.
 1. Machines on this version publish their root (owner) and their keys, as with shared connectors.
 2. An admin's Machine asks once per member: "Share the team's Graph with <name>'s Machine?". Until then nothing goes
    to them.
-3. Sharing starts as soon as a Machine is confirmed. The Team view says "Work is shared with <Fleet>. Personal never."
+3. Sharing starts as soon as a Machine is confirmed and an admin has OK'd a teammate's Machine. Until then the Team view says "Sharing starts once you OK a teammate's Machine." (or "once an admin OKs") and "Nothing from the team yet."; after, "Work is shared with <Fleet>. Personal never."
 4. Past threads: all the Work history the Machine has, judged by the history pass, in batches (above).
 5. Machines that haven't updated publish nothing and get nothing; "who knows someone" keeps working.
 6. Nothing is imported from or written to another CRM.
