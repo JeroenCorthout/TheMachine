@@ -1482,11 +1482,9 @@ def page(db, name, sort='', cursor=0, limit=30, filters=None):
     if name not in PAGED and name != 'warmup':
         raise ValueError('list is one of ' + ', '.join([*PAGED, 'warmup']))
     filters = crm.clean_filters(filters) if name != 'warmup' else {}
-    if sort in crm.SORTS and name != 'warmup':
-        extra_where, extra_args, extra_order = crm.list_query(db, name, filters, sort)
-    else:
+    if sort not in crm.SORTS or name == 'warmup':
         sort = sort if sort in SORTS and (sort != 'stage' or name.startswith('projects')) else DEFAULT_SORT.get(name, 'closest')
-        extra_where, extra_args, extra_order = crm.list_query(db, name, filters, sort) if filters else (None, (), None)
+    by_crm = bool(filters) or sort in crm.SORTS  # filtered, or in a CRM order (value, close date)
     offset, limit = max(0, int(cursor or 0)), max(1, min(int(limit), 50))
     if name == 'warmup':
         order = 'coalesce(name,domain) COLLATE NOCASE,domain' if sort == 'name' else 'created_at DESC,domain'
@@ -1496,8 +1494,8 @@ def page(db, name, sort='', cursor=0, limit=30, filters=None):
     else:
         where, args = _paged_where(db, name)
         total = None
-        if extra_where or extra_order:  # filtered or in a CRM order (crm.list_query: fixed fragments, values as parameters)
-            rows, total = crm.page_rows(db, where, args, extra_where, extra_args, extra_order or SORTS[sort], limit + 1, offset)
+        if by_crm:
+            rows, total = crm.page_rows(db, name, filters, sort, limit + 1, offset)
         else:
             rows = db.execute(f'SELECT * FROM graph_nodes WHERE {where} ORDER BY {SORTS[sort]},id LIMIT ? OFFSET ?', (*args, limit + 1, offset)).fetchall()
         items = [node_view(r) for r in rows[:limit]]
@@ -1517,7 +1515,7 @@ def page(db, name, sort='', cursor=0, limit=30, filters=None):
                 if crm:
                     project.update({k: crm[k] for k in ('board', 'stage', 'value', 'close_date')}, org_domain=crm['org'])
     found = {'items': items, 'sort': sort, 'next': str(offset + limit) if len(rows) > limit else None, 'total': list_counts(db)[name]}
-    if name != 'warmup' and extra_where:
+    if name != 'warmup' and filters:
         found.update(total=total, filters=filters)
     return found
 

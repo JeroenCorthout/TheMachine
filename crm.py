@@ -519,9 +519,12 @@ def _project_where(filters, closed_too):
     return ' AND '.join(where) or '1', args
 
 
-def page_rows(db, where, args, extra_where, extra_args, order, limit, offset):
-    """A page of a Graph list with a filter or a CRM order: (rows, how many match). where, extra_where and order are
-    fixed fragments from graph and list_query; every value goes as a parameter."""
+def page_rows(db, name, filters, sort, limit, offset):
+    """A page of a Graph list with filters or in a CRM order: (rows, how many match). The query is made of graph's
+    fixed fragments for the list and list_query's for the filters; every value goes as a parameter."""
+    where, args = graph._paged_where(db, name)
+    extra_where, extra_args, extra_order = list_query(db, name, filters, sort)
+    order = extra_order or graph.SORTS[sort]
     if extra_where:
         where, args = '(' + where + ') AND ' + extra_where, (*args, *extra_args)
     rows = db.execute('SELECT * FROM graph_nodes WHERE ' + where + ' ORDER BY ' + order + ',id LIMIT ? OFFSET ?', (*args, limit, offset)).fetchall()
