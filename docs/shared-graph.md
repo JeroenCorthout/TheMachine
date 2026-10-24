@@ -39,7 +39,8 @@ are all sensitive is held back too.
 
 **Only-you boards.** A board set to Only you (`boards.visibility`), and every project on it, is held back like Keep
 private: no board, no record, no timeline, none of its threads, and a teammate's Team view never shows it. A project
-can differ from its board (`projects.visibility`; empty follows the board). Switching a board or project from Team to
+can differ from its board (`projects.visibility`; empty follows the board). Projects in an Only-you board suggestion
+are held back already while it waits to be saved. Switching a board or project from Team to
 Only you takes back what was shared at the next publish, as Keep private does. Code that shares anything asks
 `graph.visible_to_team(db, node_id)` (False for an Only-you project) or `graph.hidden_project_ids(db)` (the set of
 Only-you project ids).

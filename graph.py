@@ -2254,10 +2254,12 @@ def clean_visibility(value, allow_none=False):
 
 
 def hidden_project_ids(db):
-    """Projects only the owner sees: their own visibility, else their board's, is 'only_you'. They, their board and
-    their timelines never go to the Team Graph. A stable hook for the sharing code."""
+    """Projects only the owner sees: their own visibility, else their board's, is 'only_you'. A project on no board in
+    an open Only-you suggestion (an M&A board not saved yet) is held back too. They, their board and their timelines
+    never go to the Team Graph. A stable hook for the sharing code."""
     return {r[0] for r in db.execute("SELECT p.id FROM projects p LEFT JOIN boards b ON b.id=p.board_id "
-                                     "WHERE coalesce(p.visibility,b.visibility,'team')='only_you'")}
+                                     "WHERE coalesce(p.visibility,b.visibility,'team')='only_you' OR (p.board_id IS NULL AND p.visibility IS NULL "
+                                     "AND p.id IN (SELECT j.value FROM board_suggestions s,json_each(s.projects) j WHERE s.state='open' AND s.visibility='only_you'))")}
 
 
 def hidden_event_ids(db):

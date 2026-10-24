@@ -1016,6 +1016,9 @@ class Boards(unittest.TestCase):
         with self.store.connect() as db:
             got = {x['name']: x['visibility'] for x in graph.board_suggestions(db)}
             self.assertEqual(got, {'M&A': 'only_you', 'CRM listings': 'team', 'Hiring': 'only_you'})
+            # Held back while suggested: the buyers and the hires, not the listings
+            self.assertEqual({db.execute('SELECT name FROM projects WHERE id=?', (i,)).fetchone()[0].split(':')[0] for i in graph.hidden_project_ids(db)}, {'Buyer', 'Hire'})
+            self.assertEqual(len(graph.hidden_project_ids(db)), 6)
         self.app.graph_build = lambda *a, **k: None
         self.assertEqual(self.store.boards_text('run2'), '')  # three open: no new check
         self.app.action('board_dismiss', {'suggestion_id': 3}, owner_dashboard=True)
