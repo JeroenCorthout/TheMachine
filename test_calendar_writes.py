@@ -230,6 +230,15 @@ class Store(unittest.TestCase):
         self.assertEqual((found[ids['party']]['start'], found[ids['party']]['end'], found[ids['party']]['guests']), ('2026-10-29', '2026-10-29', 1))
 
 
+    def test_marked_with_the_name_its_config_gives(self):
+        self.assertEqual(a.calendar_account_owner(KID), 'Kid')
+        self.assertEqual(a.calendar_account_owner({'display_name': "Sam's calendar"}), 'Sam')
+        self.assertEqual(a.calendar_account_owner({'display_name': 'Family', 'calendar_owner': 'Robin'}), 'Robin')
+        self.assertIsNone(a.calendar_account_owner({'display_name': 'Family'}))
+        rows = self.store.calendar(['kid-cal', 'partner-cal'], *self.window, {'owner@example.com'}, (), {'kid-cal': 'Kid'})
+        self.assertEqual({r['title']: r['shared'] for r in rows}, {'Swimming': 'Kid', 'Party': 'Kid', 'Away': 'Partner'})
+
+
 class CalendarForm(unittest.TestCase):
     """The Calendar's New event and edit form: the owner's tap in the dashboard, run once."""
 

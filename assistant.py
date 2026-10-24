@@ -2091,6 +2091,15 @@ def calendar_owned(metadata, owner=()):
                for a in metadata.get('attendees') or [])
 
 
+def calendar_account_owner(account):
+    """Whose a shared calendar is, from its config: calendar_owner, or the name in a display_name like "Sam’s calendar"."""
+    name = str(account.get('calendar_owner') or '').strip()
+    if not name:
+        match = re.fullmatch(r"\s*(\S+?)[’']s calendar\s*", str(account.get('display_name') or ''), re.I)
+        name = match[1] if match else ''
+    return name[:40] or None
+
+
 def calendar_owner_name(metadata):
     """The first name of whoever a shared calendar belongs to, for a quiet first-name label."""
     organizer = metadata.get('organizer') or {}
@@ -3242,7 +3251,7 @@ class Store:
                 row['metadata']['app_name'] = android_app_name(row['metadata'].get('package_name', 'Unknown app'))
         return rows
 
-    def calendar(self, account_ids, start, end, owner=(), writable=()):
+    def calendar(self, account_ids, start, end, owner=(), writable=(), names=None):
         """Meetings that overlap [start, end), for the dashboard's Calendar: slim rows, soonest first.
         One that is on someone else's calendar shared with the owner, and that they aren't on, carries that
         person's first name (shared); one on both calendars shows once, as the owner's. One on a calendar the owner
@@ -3278,7 +3287,7 @@ class Store:
                 'id': r['id'], 'account_id': r['account_id'], 'title': str(r['title'])[:300], 'start': r['occurred_at'],
                 'end': m.get('end_at') or r['occurred_at'], 'all_day': bool(m.get('all_day')),
                 'location': str(m.get('location') or '')[:200], 'guests': sum(1 for a in attendees if a is not me),
-                'people': list(dict.fromkeys(people))[:20], 'shared': calendar_owner_name(m) if theirs else None,
+                'people': list(dict.fromkeys(people))[:20], 'shared': ((names or {}).get(r['account_id']) or calendar_owner_name(m)) if theirs else None,
                 'url': url if isinstance(url, str) and urllib.parse.urlsplit(url).scheme == 'https' else None,
                 **({'edit': dict(zip(('start', 'end', 'all_day'), calendar_edit_times(m)))}
                    if r['account_id'] in writable and not calendar_guests(m, owner) else {})}))
@@ -14886,7 +14895,8 @@ class App:
                         writable = writable_calendars(app.config)
                         self.output(200, {'meetings': app.store.calendar([a['id'] for a in app.config['accounts']],
                                                                          args.get('from', [''])[0], args.get('to', [''])[0], owner,
-                                                                         {c['id'] for c in writable}),
+                                                                         {c['id'] for c in writable},
+                                                                         {a['id']: n for a in app.config['accounts'] if (n := calendar_account_owner(a))}),
                                           'calendars': writable})
                     except (ValueError, sqlite3.OperationalError):
                         self.output(400, {'error': 'Ask for a window of at most 15 days'})
