@@ -49,8 +49,8 @@ KEY_FILE = 'learnings-keys.json'
 OPEN = ('ready',)
 # The Machine team's key, pinned here: learnings are sealed only for the key with this fingerprint (network_crypto.
 # fingerprint, as `python -m cloud.learnings keygen` prints it on the control plane). Any other key sends nothing.
-# Until it is filled in, no Machine is asked at all.
-TEAM_KEY_FINGERPRINT = ''  # placeholder: the team key's fingerprint goes here once it is made
+# Without it (empty), no Machine is asked at all.
+TEAM_KEY_FINGERPRINT = '5d88 e86c 9a8c 9d3f eae3 e82e'  # made on the control plane 2026-10-24
 
 
 def ensure(db):
