@@ -55,12 +55,12 @@ try{
   assert.equal(await contacted.locator('.tile').count(),8);assert.equal((await contacted.locator('.lane-more').textContent()).trim(),'Show 6 more');
   await contacted.locator('.lane-more').click();assert.equal(await contacted.locator('.tile').count(),14);
   // The tile: next step, why it moved with the date, and the no-reply chip with its card
-  const t=await page.locator('.tile[data-node="project:1"]').textContent();assert.match(t,/Wait for their reply/);assert.match(t,/Added: they asked for a listing · \w{3} \d{1,2} \w{3}/);
+  const t=await page.locator('.tile[data-node="project:1"]').textContent();assert.match(t,/Wait for their reply/);assert.match(t,/Added: they asked for a listing · \w{3}, \w{3} \d{1,2}/);
   const stuck=page.locator('.tile[data-node="project:2"]');assert.match(await stuck.textContent(),/No reply in 14 days/);assert.equal(await stuck.locator('a[href="#card=0123456789abcdef"]').count(),1);
   assert.match(await page.locator('.tile[data-node="project:21"]').textContent(),/Moved to Live by hand/);
   // A project waiting to be sorted says so; one a review couldn't place says why with its latest message; a failed sort shows
   assert.match(await page.locator('.tile[data-node="project:23"] .tile-why').textContent(),/^Sorting from its messages…$/);
-  assert.match(await page.locator('.tile[data-node="project:24"] .tile-why').textContent(),/^Not sorted: only an intro call so far · \w{3} \d{1,2} \w{3}$/);
+  assert.match(await page.locator('.tile[data-node="project:24"] .tile-why').textContent(),/^Not sorted: only an intro call so far · \w{3}, \w{3} \d{1,2}$/);
   assert.equal(await page.locator('.tile[data-node="project:24"] .tile-why [data-quote-event="124"]').count(),1);
   assert.match(await page.locator('.tile[data-node="project:25"] .tile-why.failed').textContent(),/^Sorting failed, trying again · /);
   assert.match(await page.locator('.board-sub').textContent(),/17 projects · 1 waiting on a reply · sorting 1 · a review moves them as your messages come in/);
