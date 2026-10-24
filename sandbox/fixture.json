@@ -8848,6 +8848,7 @@
       "name": "Hired"
      }
     ],
+    "visibility": "only_you",
     "projects": [
      {
       "name": "Hire: support lead",

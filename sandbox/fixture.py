@@ -247,7 +247,7 @@ BOARDS = [
 
 BY_HAND = {'Moorhen Data': ('Live', 1)}  # the owner dragged it there, a day ago
 # Projects on no board yet that are one kind of work: a review suggested a board for them ("Start a board for Hiring?")
-SUGGESTED = {'name': 'Hiring', 'about': 'Roles we are hiring for, one project per role',
+SUGGESTED = {'name': 'Hiring', 'visibility': 'only_you', 'about': 'Roles we are hiring for, one project per role',
              'reason': 'Three open roles, each with candidates writing in',
              'stages': [{'name': 'Sourced', 'hint': 'Candidates found or applied'}, {'name': 'Screening'}, {'name': 'Interviews'}, {'name': 'Offer'}, {'name': 'Hired'}],
              'projects': [('Hire: support lead', 'tallowcrest.example', 'Imogen Hale', [(6, False, 'Applying for the support lead role, CV attached'), (4, True, 'Thanks, can we talk Thursday')]),
@@ -278,7 +278,7 @@ def board_data():
                                       'events': keys, 'moves': [{'stage': st, 'reason': why, 'event': keys[i]} for st, why, i in moves], 'next': step,
                                       **({'by_hand': {'stage': BY_HAND[name][0], 'days_ago': BY_HAND[name][1]}} if name in BY_HAND else {})})
         boards.append(board)
-    suggestion = {k: SUGGESTED[k] for k in ('name', 'about', 'reason', 'stages')}
+    suggestion = {k: SUGGESTED[k] for k in ('name', 'about', 'reason', 'stages', 'visibility')}
     suggestion['projects'] = []
     for name, domain, contact, msgs in SUGGESTED['projects']:
         first, key, keys = contact.split()[0], slug(name), []
