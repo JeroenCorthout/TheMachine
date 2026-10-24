@@ -75,11 +75,14 @@ default, Always accept, Never), and nothing happens on your side until you accep
    from the same contact), your handoff joins that card, sources included, instead of making a second one. Your card says "Handed off to <teammate>" and how it went. The Fleet tab
    lists your handoffs in their own **Handoffs** box, both ways: open ones first (waiting, declined, or one waiting for
    you), accepted and done ones after them, with **Open** to go to the card. While it waits for them
-   it leaves Ready and sits under Later, with nothing to send again, saying when it comes back to check in if they
-   haven't answered ("Check in with <teammate> Mon 09:00 if no answer"), with **Check in now**, **Change time** and
-   **Not needed**. That time follows the card's own urgency and deadline: about 3 hours later (within your hours, else
-   the next morning) when it is urgent or due today, the morning of the work day before a nearer deadline, and
-   otherwise three days later, on a work day. Once they accept (or mark it done), it is marked done for you, still saying to whom (Undo
+   it leaves Ready and sits under Later ("With <teammate> · waiting"), with nothing to send again, saying when it comes
+   back to check in if they haven't answered ("Check in with <teammate> Mon 09:00 if no answer"), with **Check in now**,
+   **Change time** and **Not needed**. Only a real deadline brings it back sooner than three work days, by the card's
+   own `due` and `urgent` fields: about 3 hours later (within your hours, else the next morning) when it is due today,
+   the morning of the work day before a nearer deadline, and the next work morning for an urgent card without a date
+   (its day has passed). Urgency alone never brings it back the same day. Back on top it says "No answer from
+   <teammate> yet · Check in", which opens its chat. A card that came back early by the older rule goes back to Later
+   by itself while they still haven't answered. Once they accept (or mark it done), it is marked done for you, still saying to whom (Undo
    brings it back); if they decline, it is back in Ready, saying "<teammate> declined: <their reason>", with **Do it
    myself**, **Hand to someone else** and **Mark done**. Decline asks "Why? (optional)" with quick picks (Not mine,
    Already done, No time this week); **Accept with a note** (under More) adds a short note too. Only the sender sees it,

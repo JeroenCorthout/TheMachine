@@ -20,13 +20,23 @@ class CheckInTime(unittest.TestCase):
         with patch.object(a, 'now', return_value=current):
             return a.handoff_checkin(**card)
 
-    def test_urgent_or_due_today_checks_in_the_same_day(self):
-        self.assertEqual(self.checkin(at(2026, 10, 23, 10), urgent=True), at(2026, 10, 23, 13))  # Friday, 3 hours later
-        self.assertEqual(self.checkin(at(2026, 10, 23, 10), due='2026-10-23'), at(2026, 10, 23, 13))
+    def test_due_today_checks_in_the_same_day(self):
+        self.assertEqual(self.checkin(at(2026, 10, 23, 10), due='2026-10-23'), at(2026, 10, 23, 13))  # Friday, 3 hours later
         self.assertEqual(self.checkin(at(2026, 10, 23, 10), due='2026-10-20'), at(2026, 10, 23, 13))  # overdue too
-        # Late in the evening: the next morning, not past midnight and not after the weekend.
-        self.assertEqual(self.checkin(at(2026, 10, 23, 21, 30), urgent=True), at(2026, 10, 24, 9))
-        self.assertEqual(self.checkin(at(2026, 10, 23, 6), urgent=True), at(2026, 10, 23, 9))  # before hours: that morning
+        # Late in the evening: the next morning, not past midnight.
+        self.assertEqual(self.checkin(at(2026, 10, 22, 21, 30), due='2026-10-22'), at(2026, 10, 23, 9))
+
+    def test_urgency_alone_waits_until_its_day_has_passed(self):
+        # Urgent, no date: the next work morning, never a few hours later (that pulled it back to the top too soon).
+        self.assertEqual(self.checkin(at(2026, 10, 22, 10), urgent=True), at(2026, 10, 23, 9))  # Thursday: Friday
+        self.assertEqual(self.checkin(at(2026, 10, 23, 10), urgent=True), at(2026, 10, 26, 9))  # Friday: Monday
+        self.assertEqual(self.checkin(at(2026, 10, 24, 14), urgent=True), at(2026, 10, 26, 9))  # Saturday: Monday
+        # A real deadline still wins: urgent and due today is 3 hours later.
+        self.assertEqual(self.checkin(at(2026, 10, 22, 10), urgent=True, due='2026-10-22'), at(2026, 10, 22, 13))
+
+    def test_from_when_it_was_handed_off(self):
+        self.assertEqual(a.handoff_checkin(True, None, start=at(2026, 10, 22, 10)), at(2026, 10, 23, 9))
+        self.assertEqual(a.handoff_checkin(False, None, start=at(2026, 10, 20, 10)), at(2026, 10, 23, 9))
 
     def test_a_near_deadline_checks_in_a_work_day_before_it(self):
         self.assertEqual(self.checkin(at(2026, 10, 26, 10), due='2026-10-28'), at(2026, 10, 27, 9))  # due Wed: Tue morning
@@ -44,8 +54,8 @@ class CheckInTime(unittest.TestCase):
 
 class CheckInCard(unittest.TestCase):
     setUp, handed_card, card_row = tr.Requests.setUp, tr.Requests.handed_card, tr.Requests.card_row
-    def handed(self, urgent=False, due='2026-11-03'):
-        card = self.handed_card()
+    def handed(self, urgent=False, due='2026-11-03', key=None):
+        card = self.handed_card(key=key) if key else self.handed_card()
         with self.store.connect() as db:
             db.execute('UPDATE suggestions SET urgent=?,due=? WHERE id=?', (int(urgent), due, card))
         self.fleet.wait_card = lambda card_id, why, key, expected: self.store.wait_handoff(card_id, why, key, expected)
@@ -58,10 +68,50 @@ class CheckInCard(unittest.TestCase):
             row.update(self.store.suggestion_result(row, db))
         return row
 
-    def test_an_urgent_handoff_comes_back_the_same_day(self):
-        with patch.object(a, 'now', return_value=at(2026, 10, 23, 10)):
+    def test_an_urgent_handoff_stays_with_them_until_the_next_work_morning(self):
+        with patch.object(a, 'now', return_value=at(2026, 10, 22, 10)):
             card = self.handed(urgent=True, due=None)
-            self.assertEqual(self.card_row(card)['snoozed_until'], at(2026, 10, 23, 13))
+            self.assertEqual(self.card_row(card)['snoozed_until'], at(2026, 10, 23, 9))
+        with patch.object(a, 'now', return_value=at(2026, 10, 22, 13, 30)):  # the old 3-hour check-in: still under Later
+            self.store.wake_snoozed()
+            self.assertEqual(self.card_row(card)['status'], 'snoozed')
+        with patch.object(a, 'now', return_value=at(2026, 10, 23, 9, 1)):  # its day has passed: back on top
+            self.store.wake_snoozed()
+            self.assertEqual(self.card_row(card)['status'], 'pending')
+
+    def woke_early(self, key=None):
+        """An urgent card handed off Thursday 10:00 that the old rule brought back at 13:00, still with no answer."""
+        with patch.object(a, 'now', return_value=at(2026, 10, 22, 10)):
+            card = self.handed(urgent=True, due=None, key=key)
+        with self.store.connect() as db:
+            db.execute("UPDATE suggestions SET status='pending',snoozed_until=NULL,resume_status=NULL WHERE id=?", (card,))
+        return card
+
+    def test_a_card_the_old_rule_brought_back_goes_back_to_later(self):
+        card = self.woke_early()
+        with patch.object(a, 'now', return_value=at(2026, 10, 22, 15)):
+            self.store.wake_snoozed()
+            row = self.card_row(card)
+            self.assertEqual((row['status'], row['snoozed_until']), ('snoozed', at(2026, 10, 23, 9)))
+        with patch.object(a, 'now', return_value=at(2026, 10, 23, 9, 1)):
+            self.store.wake_snoozed()
+            self.assertEqual(self.card_row(card)['status'], 'pending')  # its check-in came: it stays on top
+            self.store.wake_snoozed()
+            self.assertEqual(self.card_row(card)['status'], 'pending')
+
+    def test_an_answer_or_the_owners_own_choice_keeps_it_on_top(self):
+        card = self.woke_early()
+        with self.store.connect() as db:
+            db.execute("UPDATE fleet_out SET status='answered',answer='{\"stage\":\"declined\"}' WHERE kind='handoff'")
+        with patch.object(a, 'now', return_value=at(2026, 10, 22, 15)):
+            self.store.wake_snoozed()
+            self.assertEqual(self.card_row(card)['status'], 'pending')
+        other = self.woke_early(key='k-other')
+        self.assertNotEqual(other, card)
+        self.store.decide(other, 'other', 'Ask Pat about it', 'dashboard:c1', 'dashboard')
+        with patch.object(a, 'now', return_value=at(2026, 10, 22, 15)):
+            self.store.wake_snoozed()
+            self.assertNotEqual(self.card_row(other)['status'], 'snoozed')
 
     def test_the_card_says_it_is_a_check_in_not_a_snooze(self):
         with patch.object(a, 'now', return_value=at(2026, 10, 23, 10)):  # Friday; due 3 Nov is far: Monday

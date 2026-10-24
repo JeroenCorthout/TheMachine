@@ -229,8 +229,8 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
 
-def snooze_time(option=None, explicit=None, hours=24, work=False):
-    current = dt.datetime.fromisoformat(now())
+def snooze_time(option=None, explicit=None, hours=24, work=False, start=None):
+    current = dt.datetime.fromisoformat(start or now())
     if explicit:
         try:
             due = dt.datetime.fromisoformat(explicit)
@@ -259,13 +259,14 @@ def snooze_time(option=None, explicit=None, hours=24, work=False):
     return due.isoformat()
 
 
-def handoff_checkin(urgent=False, due=None):
-    """When a card handed to a teammate comes back to check in if they haven't answered. It follows the card's own
-    urgency and deadline (its `urgent` and `due` fields, as the review set them), never words in its text:
-    urgent or due today (or overdue): about 3 hours later within the owner's hours, else the next morning;
+def handoff_checkin(urgent=False, due=None, start=None):
+    """When a card handed to a teammate comes back to check in if they haven't answered. Only a real deadline brings it
+    back sooner than the usual 3 work days, by the card's own `urgent` and `due` fields, never words in its text:
+    due today (or overdue): about 3 hours later within the owner's hours, else the next morning;
     a deadline sooner than the usual wait: the morning of the work day before it (the same day if that has passed);
-    otherwise the usual 3 days, on a work day."""
-    current = dt.datetime.fromisoformat(now())
+    urgent without a date: its day has passed, so the next work morning, not a few hours later.
+    `start` is when it was handed off (now by default)."""
+    current = dt.datetime.fromisoformat(start or now())
     local = current.astimezone(local_tz())
     hour, minute = clock(WORK_HOURS['morning'])
 
@@ -282,9 +283,11 @@ def handoff_checkin(urgent=False, due=None):
         deadline = dt.date.fromisoformat(str(due)[:10]) if due else None
     except ValueError:
         deadline = None
-    if urgent or (deadline and deadline <= local.date()):
+    if deadline and deadline <= local.date():
         return soon()
-    usual = snooze_time('3d', work=True)
+    usual = snooze_time('3d', work=True, start=current.isoformat())
+    if urgent:
+        usual = min(usual, snooze_time('tomorrow', work=True, start=current.isoformat()))
     if not deadline:
         return usual
     day = deadline - dt.timedelta(days=1)
@@ -5740,7 +5743,7 @@ class Store:
             if (latest['id'] if latest else None) != expected_decision:
                 return {'skipped': True, 'reason': 'newer_card_choice'}
             card = db.execute('SELECT urgent,due FROM suggestions WHERE id=?', (suggestion_id,)).fetchone()
-            # Back to check in if they haven't answered: as soon as the card's own urgency or deadline needs.
+            # Back to check in if they haven't answered: by the card's own deadline, else in 3 work days (handoff_checkin).
             until = handoff_checkin(bool(card['urgent']), card['due']) if card else None
             return self._decide(db, suggestion_id, 'snooze', feedback, decision_id, 'fleet', snoozed_until=until, work=True)
 
@@ -5922,7 +5925,31 @@ class Store:
                 # Exactly one new outbox intent per elapsed snooze. An unknown
                 # previous send must be reconciled, not blindly retried.
                 db.execute("UPDATE deliveries SET status='queued',reminder=1,needs_edit=1 WHERE suggestion_id=? AND status IN ('sent','uncertain')",(row['id'],))
+            self.rewait_handoffs(db)
             return len(rows)
+
+    def rewait_handoffs(self, db):
+        """A card that came back early from a teammate's handoff, by an older check-in rule (an urgent card after 3 hours),
+        while they still haven't answered and nothing else happened on it: back to Later until its check-in now."""
+        try:
+            rows = db.execute("SELECT s.id,s.urgent,s.due,d.created_at FROM suggestions s JOIN decisions d ON d.rowid="
+                              "(SELECT MAX(rowid) FROM decisions WHERE suggestion_id=s.id) WHERE s.status='pending' "
+                              "AND d.source='fleet' AND d.choice='snooze' AND d.id LIKE 'fleet-handoff-wait-%'").fetchall()
+        except sqlite3.OperationalError:
+            return 0
+        moved = 0
+        for row in rows:
+            if not handoff_wait(db, {'id': row['id'], 'status': 'snoozed'}):
+                continue  # answered, declined or gone: it is back for a reason
+            try:
+                until = handoff_checkin(bool(row['urgent']), row['due'], start=row['created_at'])
+            except ValueError:
+                continue
+            if until > now():
+                db.execute("UPDATE suggestions SET status='snoozed',snoozed_until=?,resume_status='pending' WHERE id=? AND status='pending'",
+                           (until, row['id']))
+                moved += 1
+        return moved
 
     def request_feedback(self, suggestion_id, request_id, after_message_id=None, card_message_id=None, managed=False, kind='change'):
         # kind 'dismiss': the next reply is the reason for dismissing, and dismisses the item.
@@ -10913,7 +10940,8 @@ class App:
             # A handoff the teammate accepted is theirs now: the owner's card is done, saying to whom (Undo brings it back).
             self.fleet.close_card = lambda card_id, why, key: self.store.decide_handoff(card_id, 'complete', why, key, key.removeprefix('fleet-handoff-'))
             # Handed off and not answered yet: the card waits under Later and comes back to check in if their Machine stays
-            # quiet: within hours when urgent or due today, before a near deadline, else in 3 work days (handoff_checkin);
+            # quiet: within hours when due today, before a near deadline, the next work morning when urgent, else in 3 work
+            # days (handoff_checkin); an answer, a decline or a done brings it back at once;
             # a decline brings it back to Ready, also when the owner closed it after handing it off.
             self.fleet.wait_card = lambda card_id, why, key, expected: self.store.wait_handoff(card_id, why, key, expected)
             self.fleet.wake_card = lambda card_id, key, handed_at: self.store.handoff_back(card_id, key, key.removeprefix('fleet-handoff-back-'), handed_at)

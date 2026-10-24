@@ -15,6 +15,8 @@ const card=(id,title,extra)=>({id,title,body:BODY,status:'pending',event_ids:[1]
 const waiting=card('a1a1a1a1a1a1a1a1','Confirmed contact owner and tag leaks need engineering follow-up',{fleet_handoff:{name:'Pat Lee',stage:'waiting for them'}});
 const declined=card('c1c1c1c1c1c1c1c1','Export leaks rows',{fleet_handoff:{name:'Pat Lee',stage:'declined',note:'Not my area',back:true}});
 const accepted=card('d1d1d1d1d1d1d1d1','Fix the export filter',{status:'completed',updated_at:iso(t0+2*hour),fleet_handoff:{name:'Pat Lee',stage:'accepted',note:'On it this week'}});
+// Another one with Pat, under Later until its check-in: an urgent card stays there too.
+const later=card('e1e1e1e1e1e1e1e1','Patch the tag search endpoint',{status:'snoozed',snoozed_until:iso(Date.now()+40*hour),handoff_wait:{name:'Pat'},fleet_handoff:{name:'Pat Lee',stage:'waiting for them'}});
 const failed=card('b1b1b1b1b1b1b1b1','Rotate the shared webhook secret',{fleet_handoff_failed:{name:'Pat Lee',at:iso(t0+60e3)}});
 const source={kind:'source',from:'Alex Doe',via:'intercom',title:'Security triage',text:'Security triage\nVerdict: CONFIRMED\nConfidence: 90%',mine:false,at:t0-10*60e3};
 const items={
@@ -24,7 +26,7 @@ const items={
  [accepted.id]:[source,{kind:'event',text:'Handed off to Pat’s Machine',mine:true,handoff:true,at:t0+60e3},
   {kind:'event',text:'Pat accepted it. Their note: “On it this week”',handoff:true,at:t0+2*hour}],
  [failed.id]:[source,{kind:'event',text:'Handoff didn’t go out to Pat’s Machine',handoff:true,retry_handoff:failed.id,at:t0+60e3}]};
-const state=()=>({suggestions:[waiting,declined,failed,accepted],connectors:[],suggestion_counts:{pending:3,completed:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
+const state=()=>({suggestions:[waiting,declined,failed,later,accepted],connectors:[],suggestion_counts:{pending:3,snoozed:1,completed:1},decisions:[],analyses:[],deliveries:[],review_health:{},review_runs:[],fleet:{on:true,waiting:0}});
 const view={on:true,kinds:{},ask_meetings:false,fleets:[],waiting:[],asked:[],intro_offers:[],splits:[],log:[],notices:[]};
 const calls=[];
 const server=createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;res.setHeader('Content-Type','application/json');
@@ -80,11 +82,25 @@ try{
   await page.locator('.chat-panel .fleet-handoff-form').waitFor();
   assert.deepEqual(calls.filter(c=>c.action==='fleet_handoff_draft').at(-1).args,{suggestion_id:failed.id});
   if(dir)await page.screenshot({path:`${dir}/handoff-retry-form-${width}.png`});
-  // The card in the list: no Do it while Pat has it
+  // The card in the list, back on top with no answer: it asks for a check-in, Mark done first, no Do it
   await page.goto('http://127.0.0.1:'+server.address().port+'/');
   const w=page.locator('#task-'+waiting.id);await w.waitFor();
+  assert.equal((await w.locator('.note.fleet').textContent()).trim(),'No answer from Pat yet · Check in');
+  assert.equal(await w.locator('.note.fleet a').getAttribute('href'),'#chat='+waiting.id);
   assert.equal(await w.locator('button',{hasText:/^Do it$/}).count(),0);
+  assert.equal((await w.locator('.actions button.primary').first().textContent()).trim(),'Mark done');
   if(dir){await w.scrollIntoViewIfNeeded();await w.screenshot({path:`${dir}/handoff-waiting-card-${width}.png`})}
+  // Still with Pat: under Coming back later, "With Pat · waiting" and when it checks in
+  const lat=page.locator('#later-list');
+  if(!await lat.evaluate(d=>d.open))await lat.locator(':scope > summary').click();
+  const l=lat.locator('#task-'+later.id);await l.waitFor();
+  assert.equal((await l.locator('.note.fleet').textContent()).trim(),'With Pat · waiting');
+  assert.match(await l.locator('.checkin-line').textContent(),/^Check in with Pat .+ if no answer$/);
+  assert.equal(await page.locator('#suggestions > .card#task-'+later.id).count(),0);
+  if(dir){await lat.scrollIntoViewIfNeeded();await lat.screenshot({path:`${dir}/handoff-later-${width}.png`})}
+  await w.locator('.note.fleet a').scrollIntoViewIfNeeded();await page.waitForTimeout(300);  // a tap, not the end of a scroll
+  await w.locator('.note.fleet a').click();
+  await page.locator('#chat-log .chat-handoff-wait').waitFor();
   // The card itself says it too
   await page.goto('http://127.0.0.1:'+server.address().port+'/');
   const c=page.locator('#task-'+failed.id);await c.waitFor();

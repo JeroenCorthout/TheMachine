@@ -53,7 +53,7 @@ try{
  assert.deepEqual(await form.locator('.agent-get').allTextContents(),['Contact: sam@client.example×']);
  assert.equal(await form.locator('textarea[name=task]').inputValue(),'Sam wants pricing for 40 seats.');  // kept through the re-render
  await form.locator('button.primary').click();
- await page.getByText('Handed off to Pat, waiting for an answer').waitFor();
+ await page.getByText('No answer from Pat yet · Check in').waitFor();  // this fake keeps it on top; the service puts it under Later
  assert.equal(await page.getByText('is on it').count(),0);  // a claim without a teammate's name says nothing
  assert.deepEqual(calls.at(-1),{action:'fleet_handoff',args:{suggestion_id:'c1',fleet:FL,member_id:'p',title:'Send Sam the pricing',summary:'Sam wants pricing for 40 seats. He is a big account.',contact:'sam@client.example',sources:[]}});
  // Requests wait as cards under Suggestions (tagged Fleet, Work) with Accept, their words shown as text; the Suggestions

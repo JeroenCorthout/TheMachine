@@ -49,7 +49,7 @@ try{
  // Handed off: under Later, saying to whom, with nothing to send again.
  await page.locator('#later-list>summary').click();
  const later=page.locator('#later-list #task-c1');await later.waitFor();
- assert.match(await later.innerText(),/Handed off to Kim, waiting for an answer/);
+ assert.match(await later.innerText(),/With Kim · waiting/);
  assert.doesNotMatch(await later.innerText(),/Review and send|Hand off to Kim/);
  assert.equal(await page.locator('#task-c1').count(),1);
  // Later here is when it comes back to check in with them, not a snooze: its line and buttons say so.

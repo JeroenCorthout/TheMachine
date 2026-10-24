@@ -12,7 +12,9 @@ order: 3
 2. Choose who, check what goes along (leave any part out with ×), and add a note. The text starts with the task and why it matters, from the card, and where it came from (its link). Nothing from a Personal account or another company's goes along.
 3. Send it. Their Machine shows it to them as a card.
 
-While you wait, the card sits under **Coming back later** with a check-in date. **Check in now** asks how it's going; **Change time** moves the check-in.
+While you wait, the card sits under **Coming back later**, "With Pat · waiting", with a check-in date. **Check in now** asks how it's going; **Change time** moves the check-in.
+
+It comes back on top only when there is something to decide: Pat answered, declined or marked it done, the handoff failed, or a deadline came. A card due today checks in a few hours later, one due soon the work day before, an urgent one without a date the next work morning, and any other in 3 work days. Then it says "No answer from Pat yet · Check in", which opens the chat.
 
 The card chat shows when it went ("Handed off to Pat's Machine · 14:02") and what came back: accepted, declined (with their note) or done. Back for a check-in with no answer yet, "No answer from Pat yet" sits under that line, with **Mark done**, **Snooze** and **Not needed** (no Do it: they have it). To nudge them or take it back, say so in the chat.
 
