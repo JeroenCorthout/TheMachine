@@ -442,6 +442,34 @@ class ReviewRegressions(unittest.TestCase):
         self.assertIn('retry-edit', ids)
         self.assertTrue(any(x.startswith('condense:') for x in ids))
 
+    def test_habits_are_recorded_and_followed_exactly_and_a_saved_one_shows_on_its_card(self):
+        # "No caps in chat" meant sentence starts: every prompt that writes a block asks for the exact habit, and a draft
+        # follows the lines as written, on their own channel only.
+        self.assertIn(a.VOICE_PRECISE, a.VOICE_TEXT)
+        self.assertIn('names', a.VOICE_PRECISE)
+        self.assertIn(a.VOICE_PRECISE, a.voices_prompt('r1', {'WhatsApp': 5}, 1))
+        self.assertNotIn('lowercase bursts', a.profile_prompt('r1', {'WhatsApp': 5}))
+        prompt = a.preparation_prompt({'job_id': 'j' * 16, 'suggestion_id': self.chat_sid}, '', None, '', '', '')
+        self.assertIn(a.VOICE_PRECISE, prompt)
+        self.app.action('set_voice', {'channel': 'WhatsApp', 'text': 'Sentences start lowercase, names keep their capitals.'}, owner_dashboard=True)
+        style = self.store.style_text(self.sid)
+        self.assertIn('no broader', style)
+        self.assertIn("one channel's habits stay on that channel", style)
+        # Learned from a note on this card: its chat says so, with the channel, and only on that card
+        text = 'Sentences start lowercase, names keep their capitals; no full stop.'
+        self.app.action('remember_fact', {'kind': 'voice', 'channel': 'whatsapp', 'text': text, 'decision_id': self.note_id()})
+        self.app.config['owner_name'] = 'Owner'
+        with self.store.connect() as db:
+            owner, _ = self.app.card_chat_service(db, self.chat_sid)
+            other, _ = self.app.card_chat_service(db, self.sid)
+        saved = [i for i in owner if i.get('voice')]
+        self.assertEqual([(i['kind'], i['text'], i['voice']) for i in saved], [('event', 'Saved to How you write: WhatsApp', 'WhatsApp')])
+        self.assertFalse(any(i.get('voice') for i in other))
+        # The owner's own edit in Settings is not a card's line
+        self.app.action('set_voice', {'channel': 'All', 'text': 'Natural dates.'}, owner_dashboard=True)
+        with self.store.connect() as db:
+            self.assertEqual(len([i for i in self.app.card_chat_service(db, self.chat_sid)[0] if i.get('voice')]), 1)
+
 
 if __name__ == '__main__':
     unittest.main()
