@@ -2078,7 +2078,7 @@ def calendar_owned(metadata, owner=()):
 
 
 def calendar_owner_name(metadata):
-    """The first name of whoever a shared calendar belongs to, for a quiet "Juliana's" label."""
+    """The first name of whoever a shared calendar belongs to, for a quiet first-name label."""
     organizer = metadata.get('organizer') or {}
     name = str(organizer.get('displayName') or '').split() if organizer.get('self') else []
     if name:
