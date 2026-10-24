@@ -17,6 +17,8 @@ try{if(localStorage.getItem('side')==='collapsed')root.dataset.side='collapsed'}
 <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
 <meta name="apple-mobile-web-app-title" content="The Machine">
 <style>
+/* The page keeps its place itself (see placeKeep), the same in every browser: the browser's own anchoring would move it a second time */
+html,body{overflow-anchor:none}
 /* design-tokens:start. One design system for the dashboard, the control plane and the website: this block is
    identical in the-machine dashboard.html and themachine-cloud static/app.css (a test keeps them equal); the
    reasoning is in docs/design.md. Warm paper and ink, mint used sparingly, hairlines instead of shadows, a serif
@@ -1979,6 +1981,66 @@ const csrf='__CSRF__',UI_VERSION='__UI_VERSION__';let state={};let trendView=loc
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=v=>v?new Date(v).toLocaleString():'Not yet';
+// The page stays where the reader is. A refresh that draws a list anew, a late picture, a banner or a fitted header
+// above the part on screen would push it down or pull it up (also in browsers without scroll anchoring, and where a
+// list drawn anew takes the browser's anchor away): what sits under the top bar is noted while the page is still and
+// put back in its place after any change, before the next paint. A page the change made too short keeps its height a
+// moment, so the rows that load next come back where they were. Anything that scrolled meanwhile (the reader, a link,
+// Back, the app opening a card) wins and is noted instead; so does content hidden on purpose (another tab, a fold).
+// At the very top nothing is held, so a new card or a banner shows.
+const place={mark:null,hold:0,holdEnd:0,touch:false,lifted:0,glide:0,opened:0};
+const placeScroll=window.scrollTo.bind(window);
+const placeShown=n=>n.isConnected&&n.getClientRects().length>0;
+const placeTop=()=>{const t=document.querySelector('.topbar'),r=t?.getBoundingClientRect();return r&&r.height&&r.bottom>0&&getComputedStyle(t).position!=='static'?r.bottom:0};
+const placeSig=n=>[...n.attributes].filter(a=>!/^(class|style|hidden|open|tabindex|aria-|data-fit)/.test(a.name)).map(a=>a.name+'='+a.value).join(' ');
+const placeText=n=>n.textContent.trim().slice(0,160);
+function placeNote(){const y=placeTop()+1,levels=[];let el=document.body;
+ for(let d=0;d<40;d++){let next=null,i=0;
+  for(const k of el.children){const r=k.getBoundingClientRect();if(r.height>0&&r.bottom>y&&!['SCRIPT','STYLE','DIALOG'].includes(k.tagName)){const p=getComputedStyle(k).position;if(p!=='fixed'&&p!=='sticky'){next=k;break}}i++}
+  if(!next)break;levels.push({node:next,id:next.id,idx:i,tag:next.tagName,sig:placeSig(next),top:next.getBoundingClientRect().top});el=next;if(next.getBoundingClientRect().top>=y)break}
+ for(const l of levels.slice(-6))l.text=placeText(l.node);
+ place.mark=levels.length?{y:scrollY,levels}:null}
+// The same element, or the one drawn in its place: by id, else the same attributes and words, else the same attributes nearest its old spot
+function placeChild(el,l){if(l.id){const k=document.getElementById(l.id);return k?.parentElement===el?k:null}
+ const same=[...el.children].map((k,i)=>[k,i]).filter(([k])=>k.tagName===l.tag&&placeSig(k)===l.sig);if(!same.length)return null;
+ const worded=l.text!=null&&same.filter(([k])=>placeText(k)===l.text);const pool=worded&&worded.length?worded:same;
+ return pool.reduce((a,b)=>Math.abs(b[1]-l.idx)<Math.abs(a[1]-l.idx)?b:a)[0]}
+function placeFind(levels){let at=-1;for(let i=levels.length-1;i>=0;i--)if(levels[i].node.isConnected){at=i;break}
+ if(at>=0&&!placeShown(levels[at].node))return null;  // hidden on purpose: another tab, a fold
+ let el=at>=0?levels[at].node:document.body;
+ for(let j=at+1;j<levels.length;j++){const k=placeChild(el,levels[j]);if(!k||!placeShown(k))break;el=k;at=j}
+ return at>0&&at>=levels.length-3?{el,top:levels[at].top}:null}  // only the same content, drawn anew: a different view (another pane) is a move
+function placeKeep(){const m=place.mark;if(!m||m.y<1||Date.now()<place.glide)return placeNote();
+ const max=document.documentElement.scrollHeight-innerHeight,clamped=scrollY<m.y-.5&&scrollY>=max-1&&Date.now()>place.opened;  // a page just opened may be shorter
+ if(Math.abs(scrollY-m.y)>=1&&!clamped)return placeNote();  // someone scrolled: the reader, a link, the app
+ const f=placeFind(m.levels);if(!f)return placeNote();
+ const d=f.el.getBoundingClientRect().top-f.top;
+ if(Math.abs(d)>=1){const want=Math.max(0,scrollY+d);
+  if(want>document.documentElement.scrollHeight-innerHeight){document.body.style.minHeight=Math.ceil(want+innerHeight)+'px';place.holdEnd=Date.now()+8000;placeLetGo()}
+  placeScroll(scrollX,want)}
+ placeNote()}
+// The held height goes once the page has been still a moment (the rows came back), and after a few seconds at most
+function placeLetGo(){clearTimeout(place.hold);place.hold=setTimeout(()=>{document.body.style.minHeight=''},Math.max(0,Math.min(1500,place.holdEnd-Date.now())))}
+let placeQueued=false;
+addEventListener('scroll',()=>{if(placeQueued)return;placeQueued=true;requestAnimationFrame(()=>{placeQueued=false;placeNote()})},{passive:true});
+addEventListener('resize',()=>requestAnimationFrame(placeNote));
+new MutationObserver(rows=>{if(rows.some(r=>!(r.target===document.body&&r.attributeName==='style'))){placeKeep();if(document.body.style.minHeight)placeLetGo()}}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','open','style','src']});
+document.addEventListener('load',e=>{if(e.target.tagName==='IMG')placeKeep()},true);
+document.fonts?.addEventListener?.('loadingdone',()=>placeKeep());
+// A finger on the glass or a page still gliding: a background refresh waits for it to settle
+addEventListener('touchstart',()=>{place.touch=true},{passive:true,capture:true});
+for(const t of ['touchend','touchcancel'])addEventListener(t,e=>{if(!e.touches.length){place.touch=false;place.lifted=Date.now()}},{passive:true,capture:true});
+// The app's own moves (a scroll call, scrollIntoView, focus, a link, Back) are the new place, never undone; a smooth one is let glide
+const placeMoved=(f,self,a)=>{const y=scrollY,r=f.apply(self,a);if(a.some(o=>o?.behavior==='smooth'))place.glide=Date.now()+1200;if(Math.abs(scrollY-y)>=1)placeNote();return r};
+for(const [o,n] of [[window,'scrollTo'],[window,'scroll'],[window,'scrollBy'],[Element.prototype,'scrollIntoView'],[HTMLElement.prototype,'focus']]){const f=o[n];o[n]=function(...a){return placeMoved(f,this,a)}}
+for(const t of ['hashchange','popstate'])addEventListener(t,()=>{place.opened=Date.now()+5000},true);
+for(const t of ['touchstart','wheel','keydown','mousedown'])addEventListener(t,()=>{place.opened=0},{passive:true,capture:true});
+const placeBusy=()=>place.touch||Date.now()-place.lifted<1000;
+// Folds the reader opened themselves (a diff, a card's details, a history) stay open when a refresh draws their list anew
+document.addEventListener('click',e=>{const s=e.isTrusted&&e.target.closest?.('summary'),d=s?.parentElement;if(d?.tagName==='DETAILS')d._mine=!d.open},true);
+function foldsKeep(box){const key=d=>{const a=d.parentElement?.closest('[id]');return a&&box.contains(a)?[a.id,a.className,a.dataset.status,d.className,d.querySelector(':scope>summary')?.textContent.trim()].join('|'):null};  // the same fold in the same card, while the card is in the same state
+ const open=new Set([...box.querySelectorAll('details[open]')].filter(d=>d._mine&&!d.matches('.more-actions')&&!d.querySelector('[role=menu]')).map(key).filter(Boolean));
+ return ()=>{if(open.size)for(const d of box.querySelectorAll('details:not([open])'))if(open.has(key(d))){d.open=true;d._mine=true}}}
 // The AI sign-in's own limits (ChatGPT: 5 hours and weekly), as OpenClaw reports them; reset times in this browser's time zone.
 // The model in Settings: which one, the plan's windows with when each starts over, a reached limit, and the
 // usage limit resets (ChatGPT). Readings are cached on the server, never a model call by themselves.
@@ -2219,7 +2281,7 @@ const viewIn=s.browser_view&&!smart.some(a=>a.browser)?[{kind:'open',browser:tru
 const smartButtons=s.status==='prepared'?[...smart,...viewIn].map(a=>a.kind==='handoff'?(canHandoff(s)?`<button class="primary" data-fleet-handoff="${esc(s.id)}">${esc(a.label||'Hand off')}</button>`:''):a.kind==='open'&&a.browser?`<a class="open${finalStep(s)?' primary':''}" href="${esc(state.browser_link||'#')}" target="_blank" rel="noopener" data-browser-show="${esc(s.id)}"${a.site?` title="${esc(a.site)}, in your Machine’s browser"`:''}>${esc(a.label)} ↗</a>`:a.kind==='open'?`<a class="open" href="${esc(safeURL(a.url))}" target="_blank" rel="noreferrer">${esc(a.label)} ↗</a>`:!(a.kind==='finish'&&(a.state||s.action_status)?.status==='done')&&!sendBusy(a.state||s.action_status)?`<button class="primary" data-id="${s.id}" data-smart="${a.revision}">${esc(sendLabel(a)||(a.kind==='prepare'?'Prepare next step':'Review and send'))}</button>`:'').join(''):'';
 // A merged fix stays reversible for a day.
 const unmerge=['prepared','completed'].includes(s.status)&&smart.some(a=>a.kind==='merge'&&Date.parse((a.state||s.action_status)?.undo_until||'')>Date.now())?`<button data-id="${s.id}" data-unmerge="1">Undo merge</button>`:'';
-return `<article id="task-${s.id}" class="card t-${tone(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${s.origin==='owner'?'<span class="added-by">Added by you</span>':''}${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${mergeOffer(s)}${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>Your note</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.action.kind==='intercom'?{...x.state,as_name:x.action.as_name}:x.state,x.action.kind,x.action))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
+return `<article id="task-${s.id}" class="card t-${tone(s.status)}" data-status="${esc(s.status)}"><div class="meta"><div class="card-badges">${status!==section?chip(status,tone(s.status)):''}${dueChip(s)}${s.scope?`<span class="chip scope">${s.scope==='work'?'Work':'Personal'}</span>`:''}${s.status==='pending'&&s.deliver_after&&new Date(s.deliver_after)>new Date()?chip(deliveryLabel(s.deliver_after),'muted'):''}</div><span class="meta-side">${s.origin==='owner'?'<span class="added-by">Added by you</span>':''}${time(s.created_at,true)}${section==='Chat'?'':chatLink(s)}</span></div><h3>${section==='Chat'?esc(s.title):`<a class="title-link" href="#chat=${s.id}" title="Open the chat">${esc(s.title)}</a>`}</h3>${mergeOffer(s)}${statusLine}${tpSent&&s.task_page.lead?`<p class="tp-lead">${esc(s.task_page.lead)}</p>`:cardBody(s,section)}${handedNote(s)}${skillHintNote(s)}${fleetNote(s)}${agentBlock(s)}${s.status==='prepared'?drafts.map(a=>draftBox(s,a,drafts.length>1?a.label:'')).join(''):''}${tpSent?taskPageSentLine(s,tpSent):''}${taskPageBlock(s)}${s.latest_feedback?`<div class="saved-feedback" data-chat-open="${s.id}" title="Open the chat"><div class="row"><strong>Your note</strong>${time(s.latest_feedback.created_at,true)}<a class="see-chat" href="#chat=${s.id}">See in chat ›</a></div><blockquote>${format(s.latest_feedback.feedback)}</blockquote></div>`:''}${['queued','starting','running','blocked'].includes(s.preparation_status)&&!closed(s)&&s.status!=='snoozed'?preparationNote(s,ask):''}${s.change_prompt?.status==='uncertain'&&!closed(s)&&s.status!=='snoozed'?'<p class="note">I couldn’t confirm the Change prompt. If it arrived, reply to it; otherwise use Change here.</p>':''}${s.status==='prepared'||s.status==='completed'?notes.filter(x=>s.status==='prepared'||x.state?.status==='sent').map(x=>{const st=x.state?.status;return `<p class="note${st==='sent'?' sent-ok':''}">${smart.length>1?esc(x.action.label)+': ':''}${esc(actionNote(x.action.kind==='intercom'?{...x.state,as_name:x.action.as_name}:x.state,x.action.kind,x.action))}</p>${['queued','sending'].includes(st)?'<div class="send-progress" aria-hidden="true"><i></i></div>':''}`}).join(''):''}${foot}${closed(s)?`<div class="actions">${undo&&s.status!=='completed'?`<button class="ghost" data-id="${s.id}" data-choice="undo">Undo Not needed</button>`:''}${s.status==='completed'?`<button class="ghost" data-id="${s.id}" data-choice="reopen">Reopen</button>`:''}</div>`:`${changing.has(s.id)?`<div class="change-editor${ask?' answer-editor':''}"><label for="feedback-${s.id}">${ask?'Your answer':'What would you like instead?'}</label><textarea id="feedback-${s.id}" placeholder="${ask?'Type it here (Ctrl+Enter sends)':'Tell me what to change (Ctrl+Enter saves)'}"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="other"${ask?' data-answer="1"':''}>${ask?'Send answer':'Save changes'}</button><button class="ghost" data-id="${s.id}" data-choice="cancel-change">Cancel</button></div></div>`:''}${handoffEditor(s)}${agentEditor(s)}${agentAskEditor(s)}${dismissing.has(s.id)?`<div class="change-editor dismiss-editor"><p class="dismiss-q" id="dismiss-q-${s.id}">Why isn’t this needed? <small>Optional</small></p><div class="reason-chips" role="group" aria-labelledby="dismiss-q-${s.id}">${['Not relevant','Wrong facts','Already handled'].map(r=>`<button type="button" class="reason" aria-pressed="false" data-id="${s.id}" data-choice="dismiss-pick" data-reason="${r}">${r}</button>`).join('')}</div><textarea id="dismiss-${s.id}" rows="1" aria-label="Note (optional)" placeholder="Add a note (optional)"></textarea><div class="actions"><button class="primary" data-id="${s.id}" data-choice="dismiss-typed">Confirm not needed</button><button class="ghost" data-id="${s.id}" data-choice="cancel-dismiss">Cancel</button></div></div>`:''}${changing.has(s.id)||dismissing.has(s.id)||handingOff.has(s.id)||agentEditing.has(s.id)||agentAsking.has(s.id)||pageApprove.has(s.id)?'':s.fleet_handoff?.back&&s.status!=='snoozed'&&!ask?handoffBackActions(s):cardActions(s,choices,smartButtons,unmerge,hint,smart)}`}</article>`;
 }
 // Success notices clear themselves after a few seconds; errors stay until the next notice.
 let noticeTimer;const notice=(text,error=false)=>{const n=$('#notice');n.textContent=text;n.className=error?'error':'';clearTimeout(noticeTimer);if(text&&!error)noticeTimer=setTimeout(()=>{if(n.textContent===text)n.textContent=''},4500)};
@@ -2793,9 +2855,9 @@ function renderHealthTabs(){const cs=state.connectors||[],bad=g=>cs.filter(c=>he
  panes.push({id:'add',label:'+ Add'});
  if(savedLoginCount||healthPicked&&healthPane==='signins')panes.push({id:'signins',label:'Sign-ins',badge:savedLoginCount});panes.push({id:'reviews',label:'Reviews'});
  const ids=panes.map(p=>p.id),current=healthPicked&&ids.includes(healthPane)?healthPane:panes.find(p=>p.badge&&p.warn)?.id||(ids.includes(healthPane)?healthPane:ids[0]);
- healthPane=current;const row=$('#health-tabs');row.innerHTML=subTabs('Connections','data-health-pane',panes,current);tabsShow(row.firstChild);
+ healthPane=current;const row=$('#health-tabs');row.innerHTML=subTabs('Connections','data-health-pane',panes,current);
  for(const el of document.querySelectorAll('#health [data-health-for]'))el.hidden=!el.dataset.healthFor.split(' ').includes(current);
- for(const a of document.querySelectorAll('#connectors>article'))a.hidden=a.dataset.group!==current;if(current==='add')connectAdd()}
+ for(const a of document.querySelectorAll('#connectors>article'))a.hidden=a.dataset.group!==current;tabsShow(row.firstChild);if(current==='add')connectAdd()}  // measured once the other panes are hidden, never with every source shown at once
 // Connections, Add: every source this install can add, set up right here with the same steps as `assistant connect`;
 // its questions show one at a time. On a hosted machine Google and Microsoft are signed in on the account page, and a
 // source with its own sign-in there (Intercom) links to that page, which also offers pasting its token. On a self-hosted
@@ -3073,7 +3135,7 @@ function pagerMount(root=document){for(const el of root.querySelectorAll('[data-
  if(!el.firstChild){el.innerHTML=`<div class="pager-rows ${esc(el.dataset.rows||'')}">${p.html}</div><div class="pager-foot"></div>`;pagerSeen.observe(el.querySelector('.pager-foot'))}pagerFootPaint(el,p)}}
 const pagerNear=el=>{const f=el.querySelector('.pager-foot');if(!f||!el.offsetParent)return false;const r=f.getBoundingClientRect(),box=el.closest('.side-cards,.chat-side');return r.top<innerHeight+600&&r.bottom>-600&&!box};
 function pagerMore(key){const p=pagers.get(key);if(!p||p.next==null&&!p.busy)return Promise.resolve();if(p.busy)return p.pending;return p.pending=pagerLoad(key,p)}
-async function pagerLoad(key,p){p.busy=true;p.failed=false;const els=()=>[...document.querySelectorAll('[data-pager]')].filter(e=>e.dataset.pager===key);
+async function pagerLoad(key,p,paint=true){p.busy=true;p.failed=false;const els=()=>paint?[...document.querySelectorAll('[data-pager]')].filter(e=>e.dataset.pager===key):[];
  for(const el of els())pagerFootPaint(el,p);let fresh='';
  try{const r=await p.load(p.next);if(pagers.get(key)!==p)return;const have=new Set(p.items.map(x=>x?.id).filter(Boolean));r.items=r.items.filter(x=>!x?.id||!have.has(x.id));p.items.push(...r.items);fresh=r.items.map(x=>p.row(x)).join('');p.html+=fresh;p.next=r.next??null;p.total=r.total??p.total;p.onload?.(r.items)}catch{p.failed=true}finally{p.busy=false}
  for(const el of els()){el.querySelector('.pager-rows')?.insertAdjacentHTML('beforeend',fresh);pagerFootPaint(el,p)}
@@ -3190,13 +3252,14 @@ $('#badge-inbox').textContent=(outstanding.length+(fleetData?fleetCards.length:s
 // "All clear" only when the Machine itself just said so: a copy from the device keeps the loading outline instead
 if(!shownCached)try{localStorage.setItem('skeleton-cards',String(Math.min(4,outstanding.length+fleetCards.length)))}catch{}
 const loading=shownCached&&!outstanding.length&&!fleetCards.length;$('#suggestions').toggleAttribute('aria-busy',loading);
+const foldsBack=foldsKeep($('#suggestions'));
 if(!chatOpen())$('#suggestions').innerHTML=(outstanding.length||fleetCards.length?'':loading?SKELETON:firstLookEmpty(firstLookInfo(state.review_live||{}))||`<div class="empty all-clear"><button class="poke" type="button" aria-label="Poke the robot" title="Poke me"><img class="sleepy" src="brand/${pokeAwake?'wave':'sleepy'}.webp" alt="The Machine resting"></button><div><strong>All clear.</strong><span class="poke-line">${esc(pokeLine||'I’ll add something when it’s useful.')}</span></div>${pokes>=PLAY_AFTER?PLAY_BUTTON:''}</div>`)+[[ready,'Ready for you','ready'],[needs,'Needs your decision','needs'],[preparing,'Preparing','preparing']].filter(([items])=>items.length).map(([items,title,key])=>`<div class="section-head" id="section-${key}" data-fold="${key}" role="button" tabindex="0" aria-expanded="${!folded.has(key)}"><h2>${title}</h2><span class="count">${items.length}</span></div>${folded.has(key)?'':items.map(s=>typeof s==='string'?s:suggestionCard(s,title)).join('')}`).join('')
 // Snoozed cards are out of the way by choice: folded by default, open state kept across refreshes.
 +(later.length?`<details id="later-list" ${laterOpen?'open':''}><summary><span>Coming back later</span><span class="count">${later.length}</span></summary>${laterCards(later)}</details>`:'')+promisesList(promisesOpen)+`<details id="finished-list" ${finishedOpen?'open':''}><summary><span>Done / dismissed</span><span class="count">${doneTotal}</span></summary>${(()=>{const l=recent.find(s=>s.id===linkedCardId);return l&&!pagers.get(doneKey())?.items.some(x=>x.id===l.id)?suggestionCard(l):''})()}${pagerSlot(doneKey(),'Nothing finished or dismissed yet.')}</details>`;if(!chatOpen())pagerMount($('#suggestions'));
 sideCounts={ready:ready.length,needs:needs.length,preparing:preparing.length,later:later.length,promises:(state.promises||[]).filter(p=>['open','card'].includes(p.state)).length};sideCards([[ready,'Ready','ready'],[needs.filter(x=>typeof x!=='string'),'To decide','needs'],[preparing,'Preparing','preparing'],[later,'Later','later'],[recent,'Done','done']]);
 {const c=chatOpen();document.body.classList.toggle('chat-open',!!c);if(c)chatMount(c.id,chatView(c,[[ready,'Ready','ready'],[needs.filter(x=>typeof x!=='string'),'To decide','needs'],[preparing,'Preparing','preparing'],[later,'Later','later'],[recent,'Done','done']]))}pageHead();
 for(const[id,v]of Object.entries(drafts)){const t=document.getElementById(id);if(t&&t.value!==v){t.value=v;t.classList.add('filled')}}
-for(const id of moreOpen){const menu=document.getElementById(id)?.querySelector('.more-actions');if(menu)menu.open=true}
+for(const id of moreOpen){const menu=document.getElementById(id)?.querySelector('.more-actions');if(menu)menu.open=true}foldsBack();
 fleetSync();
 const choiceTone={accept:'mint',complete:'mint',reject:'muted',snooze:'lavender',other:'amber',reopen:'lavender',undo:'lavender',retry:'lavender',update:'lavender'};
 {const q=state.quality;const pct=v=>v==null?'–':`${v}%`;const was=(v,prev)=>prev==null||v==null?'':`<small>${v>prev?'up':v<prev?'down':'same'} from ${prev}%</small>`;
@@ -3831,7 +3894,11 @@ function sideCards(groups){if(groups)sideGroups=groups;const q=$('#side-find').v
  const parts=sideGroups.map(([items,title,key])=>{const open=!!q||!sideFolded.has(key),cut=q?{list:sideAll(items,key,q),more:false}:sideList(items,key),count=q?cut.list.length:cut.count;if(!count)return'';
   return `<div class="side-group${key==='done'||key==='later'?' quiet':''}"><button type="button" class="side-head" data-side-fold="${key}" aria-expanded="${open}">${CHEVRON}<span>${title}</span><span class="count">${count}</span></button>${open?cut.list.map(x=>`<a href="#chat=${x.id}" title="${esc(x.title)}"${x.id===chatId?' aria-current="page"':''}>${esc(x.title)}</a>`).join('')+(cut.more?sideMoreRow(key):''):''}</div>`}).join('');
  const html=`<div class="side-label"><span>Cards</span>${[['all','All'],['work','Work'],['personal','Personal']].map(([v,t])=>`<button type="button" data-scope="${v}" aria-pressed="${scopeFilter===v}">${t}</button>`).join('')}</div>${parts||`<p class="side-empty">${q?'No cards match.':'No cards yet.'}</p>`}`;
- if(html!==sideHTML){sideHTML=html;box.innerHTML=html;requestAnimationFrame(chatFades)}}
+ if(html!==sideHTML){sideHTML=html;const back=sideKeep(box);box.innerHTML=html;back();requestAnimationFrame(chatFades)}}
+// The card list scrolls in its own box (the computer's sidebar, the phone's drawer): a new card above keeps the rows in view where they were
+function sideKeep(box){const sc=[box,box.closest('.app-side')].find(x=>x&&x.scrollTop>0);if(!sc)return()=>{};const edge=sc.getBoundingClientRect().top,key=n=>n.getAttribute('href')||n.dataset.sideFold||n.dataset.sideMore;
+ const row=[...box.querySelectorAll('a[href],[data-side-fold],[data-side-more]')].find(n=>n.getBoundingClientRect().bottom>edge);if(!row)return()=>{};const k=key(row),top=row.getBoundingClientRect().top;
+ return()=>{const n=[...box.querySelectorAll('a[href],[data-side-fold],[data-side-more]')].find(x=>key(x)===k);if(n){const d=n.getBoundingClientRect().top-top;if(Math.abs(d)>=1)sc.scrollTop+=d}}}
 $('#side-find').addEventListener('input',()=>sideCards());
 $('#side-find').addEventListener('keydown',e=>{if(e.key==='Escape'){e.target.value='';sideCards()}if(e.key==='Enter'){const a=$('#side-cards a');if(a)a.click()}});
 $('#side-cards').addEventListener('click',e=>{const f=e.target.closest('[data-side-fold]');
@@ -4481,9 +4548,8 @@ const agentLink=j=>j.url&&/^(https:\/\/|codex:\/\/threads\/)/.test(j.url)?`<a cl
 const agentHeadWraps=h=>{const a=h.querySelector('a.agent-app'),n=h.firstElementChild;return !!a&&a!==n&&a.getBoundingClientRect().top>=n.getBoundingClientRect().bottom-1};
 function agentHeadSize(h,width){if(width!==undefined&&h._fitW!==width){h._fitW=width;h.classList.remove('tight')}if(!h.classList.contains('tight')&&agentHeadWraps(h))h.classList.add('tight')}
 const agentHeadFit=new ResizeObserver(rows=>{for(const {target:h,contentRect:r} of rows)agentHeadSize(h,r.width)});
-let agentHeadsQueued=false;
-new MutationObserver(()=>{if(agentHeadsQueued)return;agentHeadsQueued=true;requestAnimationFrame(()=>{agentHeadsQueued=false;
- for(const h of document.querySelectorAll('.agent-result .agent-head:not([data-fit])')){h.dataset.fit='';agentHeadFit.observe(h)}})}).observe(document.body,{childList:true,subtree:true});
+// A header drawn anew is fitted before it is painted, so a refresh never shows it wrapped first and then pulls the card up
+new MutationObserver(()=>{for(const h of document.querySelectorAll('.agent-result .agent-head:not([data-fit])')){h.dataset.fit='';agentHeadSize(h);agentHeadFit.observe(h)}}).observe(document.body,{childList:true,subtree:true});
 const agentHeadsFit=()=>{for(const h of document.querySelectorAll('.agent-result .agent-head[data-fit]'))agentHeadSize(h)};
 document.fonts?.ready.then(agentHeadsFit);document.fonts?.addEventListener?.('loadingdone',agentHeadsFit);
 // A job's follow-up goes to the same session: the card's Change asks the agent while its result is open.
@@ -5325,7 +5391,7 @@ new MutationObserver(()=>document.querySelectorAll(':is(.fleet-tabs,.sub-tabs):n
 const GRAPH_PANES=['people','roles','projects','orgs'];
 function showGraphPane(id){graphPane=id;localStorage.setItem('graph-pane',id);graphShown=id;graphHashSync();graphSubSync();const view=$('#people-view');if(!view.querySelector(`[data-graph-panel="${CSS.escape(id)}"]`)){if(!graphNode&&!$('#people-query').value.trim())return;$('#people-query').value='';people('');return}
  for(const b of view.querySelectorAll('[data-graph-pane]'))b.setAttribute('aria-selected',b.dataset.graphPane===id);for(const p of view.querySelectorAll('[data-graph-panel]'))p.hidden=p.dataset.graphPanel!==id;tabsShow(view.querySelector('.sub-tabs'));tabsShow(view.querySelector(`[data-graph-panel="${CSS.escape(id)}"] .sub-tabs`))}
-async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=(html,mode='list')=>{if(version!==graphRequest||quiet&&([...view.querySelectorAll('form:not([hidden])')].some(f=>f.checkVisibility())||view.querySelector('.team-thread[open],.tile-menu[open],.board-menu[open]')))return;  /* a refresh never closes what the owner is typing or reading */const scroll=window.scrollY;view.innerHTML=html;view.dataset.mode=mode;if(quiet)window.scrollTo(0,scroll)};  /* where the owner is now, also when they scrolled while it loaded */try{
+async function people(node=graphNode,quiet=false){graphNode=node;const version=++graphRequest,view=$('#people-view'),oldHtml=view.innerHTML;const draw=(html,mode='list')=>{if(version!==graphRequest||quiet&&([...view.querySelectorAll('form:not([hidden])')].some(f=>f.checkVisibility())||view.querySelector('.team-thread[open],.tile-menu[open],.board-menu[open]')))return;  /* a refresh never closes what the owner is typing or reading */const back=quiet&&foldsKeep(view);view.innerHTML=html;view.dataset.mode=mode;pagerMount(view);if(back)back()};  /* the rows a list already loaded come with it, so the page keeps its height and the reader keeps their place (placeKeep) */try{
  if(node&&/^promise:\d+$/.test(node)){const html=await promisePage(node.slice(8));draw(html,'node');if(version!==graphRequest)return;graphKept=null;$('#people').classList.add('graph-on-node');pageHead();if(!quiet)scrollTo({top:0});return}
  if(node){const n=await request('api/graph?node='+encodeURIComponent(node));const group=k=>n.links.filter(l=>l.kind===k&&l.id!==n.org);
   if(n.team_only){draw(teamDetail(n));if(version!==graphRequest)return;$('#people').classList.add('graph-on-node');if(!quiet)scrollTo({top:0});return}
@@ -5349,6 +5415,7 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
  if(forTeam!==graphTeam)return;  // Mine or Team changed while this loaded: the newer load draws
  const team=!!g.team&&(graphTeam||graphPane==='held'),waiting=g.waiting??g.whos_who?.length??0;$('#badge-people').textContent=waiting||'';const start=team?shareNote(g.sharing):'';
  const back=graphScroll;  /* back from a person: a quiet refresh that wins the race restores it too */const lc=!team&&g.list_counts||Object.fromEntries(['people','quiet','new','orgs','warmup','projects','projects_done'].map(k=>[k,(g[k]||[]).length]));graphLocal=!team&&g.list_counts?null:g;  /* the team's lists come whole */
+ const had=quiet&&new Map([...pagers].filter(([k,p])=>k.startsWith('graph:')&&p.items.length).map(([k,p])=>[k,p.items.length]));
  if(team||graphListsTeam||JSON.stringify(lc)!==JSON.stringify(graphLists)||!g.list_counts){pagerDrop('graph');graphLists=lc}graphListsTeam=team;
  const panes=team?[{id:'people',label:'People',html:start+(graphSection('Closest to the team','Everyone your team shares, the closest first.',g.people)||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing from the team yet.</strong></div></div>')},
   {id:'projects',label:'Projects',html:projectsPane(g)},
@@ -5360,6 +5427,9 @@ async function people(node=graphNode,quiet=false){graphNode=node;const version=+
   {id:'orgs',label:'Organisations',html:graphTabs('orgs')},
   {id:'roles',label:'Who’s who',badge:waiting,html:whosWho(g.whos_who,waiting)}].filter(p=>p.html);
  const current=(panes.find(p=>p.id===graphPane)||panes.find(p=>p.id==='people')||panes[0])?.id;graphCountsSet(g.counts);if(version===graphRequest){graphShown=current||'';graphHashSync();graphSubSync()}
+ // A refresh that starts the lists over loads as many rows as were there before it draws, so the page keeps its height
+ if(had)for(const [k,n] of had){const p=pagers.get(k);if(!p||p.items.length||p.busy)continue;for(let i=0;i<10&&p.items.length<n&&p.next!=null&&!p.failed;i++){p.pending=pagerLoad(k,p,false);await p.pending}}
+ if(version!==graphRequest)return;
  rolesRow(panes.some(p=>p.id==='roles'),waiting);draw((panes.length?panes.map(p=>`<div class="sub-pane" role="tabpanel" data-graph-panel="${p.id}"${p.id===current?'':' hidden'}>${p.html}</div>`).join(''):'')
   ||'<div class="empty all-clear"><img class="sticker" src="brand/thinking.webp" alt=""><div><strong>Nothing mapped yet.</strong>People appear as messages and meetings come in.</div></div>');
  if(version===graphRequest){pagerMount(view);if(back!=null&&version===graphRequest){graphScroll=null;scrollTo(0,back)}}if(!quiet)notice('')}catch(e){if(version===graphRequest&&(!quiet||!oldHtml))notice(e.message,true)}}
@@ -5606,7 +5676,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-brow
 {const m=/^#browser-for=([a-f0-9]{16})$/.exec(location.hash);if(m){history.replaceState(null,'',location.pathname);browserShow(m[1]).then(r=>{if(r.view&&r.shown)location.assign(r.view);else toast(showNote(r),!r.shown)},err=>toast(err.message,true))}}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-browser-focus]');if(!b)return;b.disabled=true;try{const r=await request('api/action',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'browser_focus',args:b.dataset.task?{suggestion_id:b.dataset.task}:{page:b.dataset.page||null}})});if(!('quiet' in b.dataset)||!r.shown)toast(r.shown?'The browser is in front now.':r.unknown?'I don’t know which tab this task uses; find it in the browser.':'I couldn’t reach the browser on this computer.',!r.shown)}catch(err){if(!('quiet' in b.dataset))toast(err.message,true)}finally{b.disabled=false}});
 const canRefresh=()=>!document.hidden&&!document.querySelector('textarea:focus')&&!$('#snooze-dialog').open&&!$('#result-dialog').open&&!$('#email-dialog').open&&!$('#send-dialog').open;
-const refreshWhenReady=()=>{if(canRefresh()&&!refreshes)refresh()};
+const refreshWhenReady=()=>{if(placeBusy()){clearTimeout(refreshWhenReady.t);refreshWhenReady.t=setTimeout(refreshWhenReady,800);return}if(canRefresh()&&!refreshes)refresh()};  // not under a moving finger
 // Return from another app, a suspended phone tab or an outage: update connection warnings immediately.
 document.addEventListener('visibilitychange',refreshWhenReady);
 addEventListener('pageshow',refreshWhenReady);addEventListener('online',refreshWhenReady);
