@@ -158,6 +158,35 @@ class Grants(unittest.TestCase):
         self.assertEqual(mail_grants.forget(self.config, 'google', 'alex@acme.test'), 'not_revoked')
         self.assertIsNone(mail_grants.get(self.config, 'google', 'alex@acme.test'))
 
+    def test_a_revoke_google_did_not_confirm_stays_pending_and_is_tried_again_until_it_is(self):
+        mail_grants.put(self.config, 'google', 'alex@acme.test', 'g-secret')
+        mail_grants.put(self.config, 'microsoft', 'sam@contoso.test', 'm-secret')
+        self.fake.revoke_status = 503
+        self.assertEqual(mail_grants.forget(self.config, 'google', 'alex@acme.test'), 'not_revoked')
+        mail_grants.forget(self.config, 'microsoft', 'sam@contoso.test')
+        self.assertEqual(mail_grants.held(self.config), [])  # never used again for anything but the revoke
+        self.assertNotIn('g-secret', mail_grants.path(self.config).read_text())
+        self.assertEqual([(r['provider'], r['email'], r['state']) for r in mail_grants.receipts(self.config)],
+                         [('microsoft', 'sam@contoso.test', 'removed'), ('google', 'alex@acme.test', 'pending')])
+        self.assertNotIn('secret', mail_grants._receipts_path(self.config).read_text())
+        self.assertEqual(mail_grants.retry(self.config, due_only=True), 1)  # tried a moment ago: not yet
+        self.assertEqual(len(self.fake.calls), 1)
+        self.assertEqual(mail_grants.retry(self.config), 1)  # Google still away
+        self.fake.revoke_status = 200
+        self.assertEqual(mail_grants.forget(self.config, 'google', 'alex@acme.test'), 'revoked')  # the control plane asks again
+        self.assertEqual(self.fake.calls[-1], ('revoke', 'token=g-secret'))
+        self.assertEqual(mail_grants.retry(self.config), 0)
+        self.assertEqual({r['email']: r['state'] for r in mail_grants.receipts(self.config)},
+                         {'alex@acme.test': 'removed', 'sam@contoso.test': 'removed'})
+        self.assertEqual(mail_grants._read(self.config), {})
+        mail_grants.put(self.config, 'google', 'alex@acme.test', 'new-secret')  # connected again: no receipt
+        self.assertEqual([r['email'] for r in mail_grants.receipts(self.config)], ['sam@contoso.test'])
+
+    def test_internal_cleanup_leaves_no_receipt(self):
+        mail_grants.put(self.config, 'google', 'alex@acme.test', 'g-secret')
+        mail_grants.forget(self.config, 'google', 'alex@acme.test', revoke=False)
+        self.assertEqual(mail_grants.receipts(self.config), [])
+
     def test_no_database_in_the_config_keeps_nothing(self):
         self.assertIsNone(mail_grants.get({}, 'google', 'alex@acme.test'))
         with self.assertRaises(mail_grants.GrantError):

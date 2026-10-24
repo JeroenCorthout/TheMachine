@@ -14,6 +14,7 @@ order: 1
 - Not used to train AI: we have no AI of our own. Your provider works under your account and their terms.
 - Learnings for the team only with your OK: now and then it asks to send a few general tips, nothing personal. See [Share learnings](share-learnings.md).
 - Take it with you, or delete it: export everything in one file, or delete your server and its backups with one button.
+- Our access is logged: every time our team signs in to your hosted server or reads its report. Fleet owners and admins see it under **Activity**. See [Fleets](fleet.md).
 
 ## Sign-in
 

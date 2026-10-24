@@ -295,6 +295,7 @@ class SharedConnectors:
             return
         groups = self._work_groups()
         self._drop_unshared(groups)
+        self._ack_drops()
         for group in groups:
             me = self._me_in(group)
             if not me:
@@ -423,6 +424,11 @@ class SharedConnectors:
                 gone.append(a)
         if gone:
             self.drop_shared([a['id'] for a in gone])
+            # Told to the control plane (op dropped), so the Fleet's admins see "Removed, confirmed" after a stop
+            acks = self.meta('shared_drop_acks', []) or []
+            acks += [{'fleet': a['shared']['fleet'], 'service': a.get('service'), 'grant': a['shared'].get('grant'), 'at': _now()}
+                     for a in gone if a['shared'].get('fleet') in by_id and a['shared'].get('grant')]
+            self.set_meta('shared_drop_acks', acks[-20:])
         for a in self.config.get('accounts', []):  # an origin account of a Fleet that stopped sharing is plain again
             shared = a.get('shared')
             if isinstance(shared, dict) and shared.get('origin'):
@@ -430,6 +436,21 @@ class SharedConnectors:
                 share = group and self._share_of(group, a.get('service'))
                 if group and not share:
                     self._save(lambda config, aid=a['id']: self._mark(config, aid, None))
+
+    def _ack_drops(self):
+        """Says which shared tokens this Machine deleted; one that doesn't reach the control plane goes again next
+        round, for a week at most."""
+        left = []
+        for ack in self.meta('shared_drop_acks', []) or []:
+            if _age(ack.get('at')) > 7 * 86400:
+                continue
+            try:
+                self.relay.call('POST', '/shared', {'op': 'dropped', 'fleet': ack['fleet'], 'service': ack['service'], 'grant': ack['grant']}, timeout=30)
+            except Exception as error:  # noqa: BLE001 - away, or a Network from before: next round
+                if isinstance(error, OSError) or type(error).__name__ == 'NetworkUnavailable':
+                    left.append(ack)  # a refusal (a Network from before, not in the Fleet any more) is not tried again
+                LOG.warning('shared drop not confirmed fleet=%s error=%s', ack.get('fleet'), type(error).__name__)
+        self.set_meta('shared_drop_acks', left)
 
     def drop_received(self):
         """The shared accounts this Machine was sent (not one it shares itself), all of them: no Fleet to hold them for."""

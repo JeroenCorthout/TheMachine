@@ -288,6 +288,12 @@ class Shared(unittest.TestCase):
         self.assertIsNone(self.held(self.mem))
         self.assertFalse(path.exists())
         self.refused(self.own, self.forge(self.own, 'mem3', grant=secrets.token_hex(16)))
+        # The Machine says it deleted it (op dropped), once, so the Fleet page can say "Removed, confirmed"
+        grant = next(c[3]['grant'] for c in self.net.calls if c[0] == 'own1' and c[2] == '/shared' and c[3]['op'] == 'set')
+        dropped = [c for c in self.net.calls if c[2] == '/shared' and c[3]['op'] == 'dropped']
+        self.assertEqual(sorted((c[0], c[3]['service'], c[3]['grant']) for c in dropped), [('adm2', 'intercom', grant), ('mem3', 'intercom', grant)])
+        self.everyone_sees()
+        self.assertEqual(len([c for c in self.net.calls if c[2] == '/shared' and c[3]['op'] == 'dropped']), 2)
 
     def test_a_stop_reaches_a_member_at_once_not_at_their_next_directory(self):
         """The inbox says the shared connectors changed: the Machine looks again right away and drops the token."""

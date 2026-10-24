@@ -6493,6 +6493,11 @@ class Store:
                 result['graph_waiting'] = graph.waiting(db)
             except sqlite3.Error:
                 result['graph_waiting'] = 0
+            try:  # Connections, Disconnected lately (mail_grants.py receipts): confirmed or pending, with no token
+                import mail_grants
+                result['disconnected'] = mail_grants.receipts(self.config) if self.config.get('database') else []
+            except Exception:  # noqa: BLE001 - never costs the status
+                result['disconnected'] = []
             result['connectors'] = []
             for account in accounts:
                 row = db.execute('SELECT * FROM checkpoints WHERE account_id=?', (account['id'],)).fetchone()
@@ -14621,6 +14626,11 @@ class App:
         """Once a day at a quiet hour: old sync history and preparation logs go, the space goes back to the disk and
         local copies of the database rotate (retention.py). Checks every ten minutes; never stops the service."""
         while not self.stop.wait(600):
+            try:  # Google sign-outs Google didn't confirm yet: again, every hour (mail_grants.retry)
+                import mail_grants
+                mail_grants.retry(self.config, due_only=True)
+            except Exception as error:  # noqa: BLE001 - tried again in ten minutes
+                LOG.warning('sign-out retry error=%s', type(error).__name__)
             try:
                 if retention.due(self.store.connect, dt.datetime.now(dt.timezone.utc), local_tz()):
                     report = retention.run(self.store.connect, str(self.store.path), local_tz=local_tz())

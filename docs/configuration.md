@@ -28,7 +28,7 @@
 | `openclaw_package_dir` | `<node prefix>/lib/node_modules/openclaw` | Installed OpenClaw package (Gateway SDK) |
 | `openclaw_state`, `agent_db` | OpenClaw defaults | OpenClaw state and agent transcript databases (read-only: Telegram receipts, progress steps) |
 | `gog`, `wacli` | `gog`, `wacli` | Binaries for Google and WhatsApp |
-| `google_broker` | — | `url` of a Google token broker, for accounts with `"transport": "broker"` (below). Their refresh tokens stay on this machine, in `mail-grants.json` next to the database, sealed with the message key (docs/sources.md) |
+| `google_broker` | — | `url` of a Google token broker, for accounts with `"transport": "broker"` (below). Their refresh tokens stay on this machine, in `mail-grants.json` next to the database, sealed with the message key (docs/sources.md). Disconnecting revokes a Google one at Google; one Google doesn't confirm is kept sealed only to try again (hourly, and when the control plane asks), and `revocations.json` keeps a receipt per disconnect (no token) for Connections |
 | `microsoft_broker` | — | `url` of a Microsoft token broker, for Outlook accounts with `"transport": "broker"` |
 | `zoom_broker` | — | `url` of a Zoom token broker, for Zoom accounts (meeting notes, [sources](sources.md)) |
 | `zoom_transcripts` | `true` | Also store Zoom transcripts, next to the summaries |

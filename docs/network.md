@@ -71,6 +71,9 @@ never has it, and never needs it.
   Machine drops it when the Fleet stops showing it or is off. The remaining admins' Machines then show "<name> left
   <Fleet>. Replace the Intercom token so it stops working on their Machine." with a field for the new one; any admin can replace it, the new token goes
   to who stays, and every Machine drops the old one. Stop sharing on an admin's Fleet tab does the same for everyone.
+- **Confirmed removal.** After a stop, each Machine that had the token says it deleted it (`op: dropped`, retried
+  for a week). The Fleet page on the account says "Removed, confirmed" once all have; someone removed counts as
+  confirmed once their Machine removed the work data and the token they had was replaced.
 - **Limits.** A Machine that joins after the owner changed trusts the first root it sees. A stopped or replaced share
   reaches the Machines at once: their Network inbox answers as soon as the shared connectors change, and they look
   again (it carries no secret and no say: what they keep is still checked). A Machine that was away sees it at its
