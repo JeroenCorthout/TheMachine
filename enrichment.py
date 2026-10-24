@@ -26,6 +26,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import security_levels
+
 REFRESH_DAYS = 90
 RETRY_HOURS = 24        # after an error (timeout, rate limit)
 PER_PASS = 5
@@ -354,12 +356,8 @@ LINKEDIN = re.compile(r'https://(?:[a-z]{2,3}\.)?linkedin\.com/in/[A-Za-z0-9_%-]
 
 
 def people_on(db):
-    """The owner's Settings switch, Look up work contacts: on unless turned off."""
-    try:
-        row = db.execute("SELECT value FROM enrich_prefs WHERE key='people'").fetchone()
-    except Exception:
-        return True
-    return not row or row[0] != 'off'
+    """The owner's Settings switch, Look up work contacts: on unless turned off, and never in a Careful Work Fleet."""
+    return security_levels.people_lookup(db)
 
 
 def set_people(db, on):

@@ -222,6 +222,17 @@ to the Fleet's Machines):
   own chat. Never is only on the dashboard. A prompt in an email can't change who gets told what.
 - **A log** in the Fleet tab shows every question asked or answered, both ways.
 
+## Security level
+
+A Work Fleet is **Standard** (the defaults above) or **Careful**, picked by its owner or an admin on the account page.
+The control plane carries it in the directory (`security: {level}`); each Machine applies it as a floor
+(`security_levels.py`): no Always (rules count as Ask me first, requests wait for the owner), Without names, only people
+from work accounts, no attachments in the Shared Graph, no card text in phone notifications for work cards, and no
+contact lookups. A member's own stricter choice stays, and their looser stored choice comes back if the Fleet goes back
+to Standard. The control plane also makes sign-in sessions 7 days and binds invite links to their email. Sends still
+need the owner's own Send in both levels. A Machine's own level (Settings, Security) is the same idea for the owner, for
+this Machine, Family and Friends: see [Security levels](help/security-levels.md).
+
 ## What happens in your Fleet
 
 If you own a Fleet, your Machine also tells you what happens in it: someone asks the Fleet for a server, someone

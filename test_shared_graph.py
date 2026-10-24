@@ -50,7 +50,8 @@ class FakeNetwork:
         members = [{'member_id': m, 'name': n, 'label': n, 'role': r, 'account_email': m + '@acme.example', 'emails': [m + '@acme.example'],
                     'keys': self.keys.get(m), **({'me': True} if m == me else {})} for m, (n, r) in self.people.items()]
         group = {'id': FLEET, 'kind': 'work', 'name': 'Acme', 'asks': ['relationships'], 'trust': copy.deepcopy(self.trust),
-                 'members': members + copy.deepcopy(self.extra_members), 'shared': []}
+                 'members': members + copy.deepcopy(self.extra_members), 'shared': [],
+                 **({'security': {'level': self.level}} if getattr(self, 'level', None) else {})}
         return {'fleets': [group]}
 
     def graph_get(self, me, after):
@@ -456,6 +457,20 @@ class SharedGraph(unittest.TestCase):
         self.assertEqual(files, 2)  # one per message that has it
         self.rounds()
         self.assertEqual(len(self.mail_puts(self.own, 'file')), files)  # once, not every round
+
+    def test_a_careful_fleet_shares_client_threads_without_their_attachments(self):
+        self.net.level = 'careful'  # the Fleet's security level (security_levels.py)
+        self.olive_mail()
+        asked = self.files(self.own)
+        self.rounds()
+        self.assertFalse([p for _, p in asked if p])  # no attachment is even read
+        self.assertEqual(self.mail_puts(self.own, 'file'), [])
+        with self.mem.store.connect() as db:
+            rows = db.execute('SELECT fleet,member,tag,body FROM team_mail').fetchall()
+            tid = next(f"{r['fleet']}:{r['member']}:{r['tag']}" for r in rows if not json.loads(r['body']).get('private'))
+            listed = self.mem.team_thread(db, tid)['messages'][0]['attachments']
+        self.assertEqual([(x['name'], bool(x.get('file')), bool(x.get('not_shared'))) for x in listed],
+                         [('quote.pdf', False, True), ('all-hands.mp4', False, True)])
 
     # -- stopping takes an admin's OK, like in any CRM
     def test_stopping_needs_an_admins_ok_and_what_went_before_stays(self):

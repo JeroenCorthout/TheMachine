@@ -75,7 +75,7 @@ try{
    await page.locator('#toast',{hasText:'I won’t ask again. Turn it back on in Settings.'}).waitFor({state:'attached'});
    assert.deepEqual(posts.map(p=>p.action),['learnings_never']);
    // Settings shows the switch off; turning it back on asks again another week
-   await navClick(page.locator('#open-settings'));await page.locator('#settings-tabs [data-settings-tab="general"]').click();
+   await navClick(page.locator('#open-settings'));await page.locator('#settings-tabs [data-settings-tab="security"]').click();
    const sw=page.locator('#share-offer');await sw.waitFor();
    assert.equal(await sw.getAttribute('aria-checked'),'false');
    await sw.click();await page.locator('#share-offer[aria-checked="true"]').waitFor();

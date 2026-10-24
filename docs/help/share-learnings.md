@@ -23,4 +23,4 @@ On Feedback a card asks "Share 3 learnings with The Machine team?" Tap **Review*
 
 It's sealed for the team and comes from a made-up name, unless you tick **Add my email so the team can reply**.
 
-To stop being asked, turn off **Offer to share learnings** in [Settings](settings.md). It needs [The Machine Network](/network).
+To stop being asked, turn off **Offer to share learnings** in Settings, Security. See [Security levels](security-levels.md). It needs [The Machine Network](/network).

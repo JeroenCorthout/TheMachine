@@ -54,7 +54,7 @@ To join two people yourself, open one of them, then **⋯**, **Same person as…
 
 ## Job title and photo
 
-People with a company address get a job title, photo, LinkedIn and city, looked up like [organisation details](organisation-data.md). Only their name and company domain are sent on a hosted Machine. Turn it off in **Settings**, under Graph: **Look up work contacts**.
+People with a company address get a job title, photo, LinkedIn and city, looked up like [organisation details](organisation-data.md). Only their name and company domain are sent on a hosted Machine. Turn it off in **Settings**, under Security: **Look up work contacts**.
 
 Your connections fill in more as they run, with what they already read and nothing extra asked: a title, phone and time zone from Slack, a bio, place and website from X, a headline and photo from LinkedIn, and job titles from Google contacts and Salesflare. What someone says about themselves comes first. Hover over the line under their name to see where it came from. It all stays on your Machine.
 

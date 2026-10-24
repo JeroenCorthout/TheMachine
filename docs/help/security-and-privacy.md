@@ -16,6 +16,10 @@ order: 1
 - Take it with you, or delete it: export everything in one file, or delete your server and its backups with one button.
 - Our access is logged: every time our team signs in to your hosted server or reads its report. Fleet owners and admins see it under **Activity**. See [Fleets](fleet.md).
 
+## Security levels
+
+**Standard** keeps today's defaults. **Careful** shows no text in notifications, saves no sign-ins and keeps less. A Work Fleet's admin can make the Fleet Careful. See [Security levels](security-levels.md).
+
 ## Sign-in
 
 The dashboard needs Google or Microsoft sign-in plus an authenticator code or a passkey.

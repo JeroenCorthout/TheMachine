@@ -5,9 +5,9 @@ run), the service:
 
 - deletes sync history (`sync_activity`) older than 30 days, after adding it to per-source daily counts
   (`sync_daily`: syncs, failed, signals), which stay;
-- deletes the tool calls of preparations (`preparation_calls`) older than 90 days, except those of a run that hasn't
+- deletes the tool calls of preparations (`preparation_calls`) older than 90 days (30 at the Careful security level), except those of a run that hasn't
   ended and those of a card that is still open (not done or dismissed);
-- clears the evidence a profile or learnings run read (`profile_runs.evidence`) 90 days after it ended (the run, its
+- clears the evidence a profile or learnings run read (`profile_runs.evidence`) 90 days (Careful: 30) after it ended (the run, its
   times and its result stay);
 - gives the freed space back: the first time with one VACUUM, which also switches the database to incremental
   vacuuming, then each night `PRAGMA incremental_vacuum` in small steps. The VACUUM only runs when no review,
@@ -107,10 +107,21 @@ def prune_sync(connect, now):
     return _batches(connect, 'SELECT rowid FROM sync_activity WHERE at<?', (cutoff,), work)
 
 
+def _keep_days(connect, default):
+    """Days a Do it run's tool calls and a run's evidence are kept: the default, or fewer at the Careful level
+    (security_levels.py, keep_days)."""
+    with connect() as db:
+        try:
+            row = db.execute("SELECT value FROM security_prefs WHERE key='keep_days'").fetchone()
+        except sqlite3.Error:
+            return default
+    return min(default, int(row[0])) if row and str(row[0]).isdigit() and int(row[0]) > 0 else default
+
+
 def prune_preparations(connect, now):
     """Tool calls of preparations older than PREPARATION_DAYS go, unless their run is still going or their card is
     still open."""
-    cutoff = _iso(now - dt.timedelta(days=PREPARATION_DAYS))
+    cutoff = _iso(now - dt.timedelta(days=_keep_days(connect, PREPARATION_DAYS)))
     with connect() as db:
         if not {'preparation_calls', 'preparation_runs'} <= _tables(db):
             return 0
@@ -130,7 +141,7 @@ def prune_preparations(connect, now):
 
 def prune_profile_evidence(connect, now):
     """What a profile or learnings run read is cleared PROFILE_EVIDENCE_DAYS after it ended; the run stays."""
-    cutoff = _iso(now - dt.timedelta(days=PROFILE_EVIDENCE_DAYS))
+    cutoff = _iso(now - dt.timedelta(days=_keep_days(connect, PROFILE_EVIDENCE_DAYS)))
     with connect() as db:
         if 'evidence' not in {r[1] for r in db.execute('PRAGMA table_info(profile_runs)')}:
             return 0

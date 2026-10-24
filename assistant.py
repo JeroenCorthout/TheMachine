@@ -53,6 +53,7 @@ import agent_jobs
 import mimetypes
 import work_removal
 import retention
+import security_levels
 import skills
 import task_invites
 import task_pages
@@ -502,7 +503,7 @@ class SourceError(Exception):
 # authenticated dashboard may record them; never the local CLI the agent can run.
 CONNECT_ACTIONS = ('connect_sources', 'connect_start', 'connect_poll', 'connect_answer', 'connect_cancel', 'connect_remove', 'connect_scope',
                    'connect_signin', 'connect_signin_state')
-OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'edit_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_visibility', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_new', 'graph_org_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
+OWNER_ACTIONS = {*CONNECT_ACTIONS, 'browser_focus', 'browser_login_open', 'browser_login_pages', 'browser_login_fill', 'browser_login_choose', 'browser_logins', 'browser_login_forget', 'decide', 'feedback_reply', 'request_feedback', 'bind_feedback_prompt', 'confirm_action', 'undo_merge', 'revise_draft', 'forget_fact', 'edit_fact', 'promise_close', 'promise_due', 'graph_role', 'graph_fact_unlink', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit', 'graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_visibility', 'graph_relation', 'graph_person_org', 'graph_warmup', 'graph_org_edit', 'graph_org_wrong', 'graph_person_edit', 'graph_person_delete', 'graph_new', 'graph_org_delete', 'graph_same', 'graph_same_all', 'set_people_lookup', 'security_level', 'security_setting', 'fleet_ask', 'fleet_decide', 'fleet_notice_decide', 'fleet_rule', 'fleet_take', 'fleet_meetings', 'set_work_hours', 'fleet_free', 'fleet_brief', 'fleet_brief_hide', 'model_usage_refresh', 'model_reset', 'set_signature', 'detect_signature', 'set_voice', 'unmerge_fact', 'card_chat', 'recap_decide'}
 # Warm intros, handoffs and shared follow-ups (fleet_requests.py): the owner's own, from their dashboard only.
 FLEET_REQUEST_ACTIONS = {'fleet_intro', 'fleet_handoff_draft', 'fleet_handoff', 'fleet_handoff_email', 'fleet_handoff_mine', 'fleet_handoff_not_mine', 'fleet_split', 'fleet_split_dismiss',
                          'fleet_split_adjust', 'task_import', *task_pages.ACTIONS}
@@ -9551,16 +9552,24 @@ def push_notify(store, config, row, sender=None):
     if not subscriptions or not config.get('dashboard_host'):
         return []
     root = 'https://' + config['dashboard_host'] + config.get('dashboard_path', '/')
+    try:
+        ids = json.loads(row.get('account_ids') or '[]')
+    except (TypeError, ValueError):
+        ids = []
+    work = any(a['id'] in ids and str(a.get('boundary') or '').startswith('work:') for a in config.get('accounts', []))
+    with store.connect() as db:
+        text = security_levels.notify_text(db, work)  # Careful: no card text on a lock screen
     if row.get('_result_notice'):
         ready = row['status'] == 'prepared'
         signin = not ready and (row.get('preparation_browser') or {}).get('signin_url')
         # A run the service stopped (a timeout, two failures) asks nothing: Stuck, as on the card
-        payload = {'title': ('Ready: ' if ready else 'Needs you to sign in: ' if signin else 'Stuck: ' if row.get('preparation_error') else 'Needs your help: ') + row['title'],
-                   'body': plain(strip_result_links(row['body']) if ready else row.get('preparation_reason') or ''),
+        lead = 'Ready' if ready else 'Needs you to sign in' if signin else 'Stuck' if row.get('preparation_error') else 'Needs your help'
+        payload = {'title': lead + ': ' + row['title'] if text else lead,
+                   'body': plain(strip_result_links(row['body']) if ready else row.get('preparation_reason') or '') if text else '',
                    'url': signin or root + '#chat=' + row['id']}
     else:
-        payload = {'title': ('Reminder: ' if row.get('reminder') else '') + row['title'],
-                   'body': plain(row['body']), 'url': root + '#chat=' + row['id']}
+        payload = {'title': (('Reminder: ' if row.get('reminder') else '') + row['title']) if text else 'Reminder' if row.get('reminder') else 'New card',
+                   'body': plain(row['body']) if text else '', 'url': root + '#chat=' + row['id']}
     payload['tag'] = row['id']  # a newer notification for the same card replaces the older one
     if row.get('_silent'):
         payload['silent'] = True  # later cards of a batch still reach the phone, without a second buzz
@@ -11322,6 +11331,7 @@ class App:
             result['signatures'] = self.signature_view()
             result['lookups'] = self.lookups_view()
             result['team_learnings'] = self.learnings_view()
+            result['security'] = self.security_view()
             # Read only the existing heartbeat's runtime facts, never conversation
             # content or scheduler configuration. Missing evidence stays unknown.
             try:
@@ -11812,8 +11822,15 @@ class App:
                     return {'pages': found, 'task_site': browser_login.site(urllib.parse.urlsplit(page).hostname) if page else None}
                 return {'pages': found}
             if name == 'browser_logins':
-                return {'logins': logins.list()}
+                store = getattr(self, 'store', None)
+                if store is None:
+                    return {'logins': logins.list()}
+                with store.connect() as db:
+                    offer = security_levels.save_logins(db)
+                return {'logins': logins.list(), 'save': offer}
             if name == 'browser_login_forget':
+                if args.get('all') is True:  # Settings, Security: Forget all saved sign-ins
+                    return {'forgotten': sum(1 for x in logins.list() if logins.forget(x['site']))}
                 return {'forgotten': logins.forget(args.get('site'))}
             host = args.get('host') if isinstance(args.get('host'), str) else ''
             if name == 'browser_login_choose':  # the page's own "use another method" or "resend": a click, nothing typed
@@ -11826,7 +11843,11 @@ class App:
                 username, password = username or saved.get('username'), saved.get('password')
             code = args.get('code') if isinstance(args.get('code'), str) else None
             done = browser_login.fill(self.config, args.get('page'), host, username, password, code)
-            if args.get('save') is True and args.get('use_saved') is not True and done['result'] != 'still_here' and (username or password):
+            may_save = True
+            if getattr(self, 'store', None) is not None:
+                with self.store.connect() as db:
+                    may_save = security_levels.save_logins(db)  # Careful: Save for next time isn't offered
+            if may_save and args.get('save') is True and args.get('use_saved') is not True and done['result'] != 'still_here' and (username or password):
                 logins.save(host, username, password)
             if done['result'] == 'done':  # no sign-in form left: the task that waited on it carries on
                 task = args.get('suggestion_id') if isinstance(args.get('suggestion_id'), str) else None
@@ -11872,6 +11893,19 @@ class App:
                 else:
                     team_learnings.set_offer(db, args.get('on') is not False)
             return {'team_learnings': self.learnings_view()}
+        if name in ('security_level', 'security_setting'):  # Settings, Security (security_levels.py)
+            if not owner_dashboard:
+                raise ValueError('Only the owner changes security settings, in Settings on the dashboard')
+            with self.store.connect() as db:
+                if name == 'security_level':
+                    rules = security_levels.apply(db, str(args.get('level') or ''))
+                else:
+                    rules = []
+                    security_levels.set_pref(db, str(args.get('key') or ''), str(args.get('value') or ''))
+            for ref, kind, rule in rules:
+                if ref and self.fleet:
+                    self.fleet.set_rule(ref, security_levels.ALL, kind, rule)
+            return {'security': self.security_view(), 'lookups': self.lookups_view(), 'team_learnings': self.learnings_view()}
         if name == 'set_people_lookup':
             if not owner_dashboard:
                 raise ValueError('Only the owner turns Look up work contacts on or off, in Settings')
@@ -15134,6 +15168,14 @@ class App:
         self.graph_build()
         return {**done, 'notes': notes}
 
+    def security_view(self):
+        """Settings, Security: the owner's level (Standard, Careful or Custom) and each Work Fleet's."""
+        try:
+            with self.store.connect() as db:
+                return security_levels.view(db)
+        except sqlite3.Error:
+            return None
+
     def lookups_view(self):
         """Settings, Look up work contacts: whether this Machine can look people up, and whether the owner has it on."""
         available = enrichment.people_available(self.config)
@@ -15142,7 +15184,12 @@ class App:
                 on = enrichment.people_on(db)
         except sqlite3.Error:
             on = True
-        return {'people_available': available, 'people': on}
+        try:
+            with self.store.connect() as db:
+                required = bool(security_levels.careful_fleets(db))
+        except sqlite3.Error:
+            required = False
+        return {'people_available': available, 'people': on, **({'required_off': True} if required else {})}
 
     def learnings_view(self):
         """Feedback, Share learnings with The Machine team, and its Settings switch (team_learnings.py)."""
@@ -15677,7 +15724,7 @@ class App:
                         return
                     if upload and request.get('action') not in UPLOAD_ACTIONS:
                         raise ValueError('Invalid request size')
-                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_new','graph_org_delete','graph_same','graph_same_all','set_people_lookup','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
+                    if self.path != '/api/action' or (not internal and request['action'] not in FLEET_REQUEST_ACTIONS and request['action'] not in SHARE_ACTIONS and request['action'] not in GRAPH_SHARE_ACTIONS and request['action'] not in FRIEND_ACTIONS and request['action'] not in FAMILY_ACTIONS and request['action'] not in LEARNING_ACTIONS and request['action'] not in CARD_ACTIONS and request['action'] not in SKILL_ACTIONS and request['action'] not in CONNECT_ACTIONS and request['action'] not in AGENT_ACTIONS and request['action'] not in ('decide','confirm_action','undo_merge','card_chat','revise_draft','forget_fact','edit_fact','promise_close','promise_due','graph_role','graph_fact_unlink','graph_rename', 'graph_stage', 'board_save', 'board_delete', 'board_dismiss', 'project_save', 'project_outcome', 'project_archive', 'project_delete', 'board_default', 'board_fit','project_visibility','graph_relation','graph_person_org','graph_warmup','graph_org_edit','graph_org_wrong','graph_person_edit','graph_person_delete','graph_new','graph_org_delete','graph_same','graph_same_all','set_people_lookup','security_level','security_setting','fleet_ask','fleet_decide','fleet_notice_decide','fleet_rule','fleet_take','fleet_meetings','fleet_free','fleet_brief','fleet_brief_hide','push_subscribe','push_unsubscribe','push_test','browser_focus','browser_login_open','browser_login_pages','browser_login_fill','browser_login_choose','browser_logins','browser_login_forget','model_usage_refresh','model_reset','set_work_hours','set_signature','detect_signature','set_voice','unmerge_fact','calendar_write')):
                         self.output(403, {'error': 'Operation is not available here'})
                         return
                     owner_key = getattr(app, 'owner_token', '')

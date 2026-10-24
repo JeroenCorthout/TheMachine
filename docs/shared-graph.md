@@ -271,7 +271,7 @@ signs it.
 
 1. No admin escrow. When someone leaves, the Fleet keeps exactly what they shared, nothing more.
 2. Stopping takes an admin's OK, like in any CRM. Keep private on a record needs none.
-3. Attachments go with a shared client thread, sealed the same way, up to 2.5 MB each.
+3. Attachments go with a shared client thread, sealed the same way, up to 2.5 MB each. In a Careful Fleet (security level) they don't: the thread lists them as not shared.
 4. History: as far back as the Machine has Work mail, through the same labels, in resumable batches.
 5. No look-first delay: sharing starts once a Machine is confirmed.
 6. Everything stays on the Machines. The CP is a mailbox: a blob goes once every Machine took it, or after 30 days.

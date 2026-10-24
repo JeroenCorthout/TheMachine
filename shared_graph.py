@@ -32,6 +32,7 @@ import time
 import fleet_trust as ft
 import graph
 import network_crypto as nc
+import security_levels
 
 LOG = logging.getLogger('personal-assistant')
 TAG = b'tm-shared-graph/1\n'
@@ -915,6 +916,9 @@ class SharedGraph:
                 if not isinstance(a, dict) or a.get('inline') or a.get('kind', 'file') != 'file' or not a.get('id'):
                     continue
                 entry = {'name': str(a.get('name') or 'attachment')[:120], 'size': int(a.get('size') or 0), 'mime': str(a.get('mime') or '')[:100]}
+                if security_levels.fleet_level(group) == 'careful':  # a Careful Fleet shares no attachments
+                    out.append({**entry, 'not_shared': True})
+                    continue
                 if entry['size'] > MAX_FILE:
                     out.append({**entry, 'too_large': True})
                     continue
@@ -1655,6 +1659,6 @@ def _clean_mail(body, tag):
             messages.append({'at': _clean_text(m.get('at'), 25), 'from': _clean_text(m.get('from'), 200), 'to': _clean_text(m.get('to'), 500),
                              'cc': _clean_text(m.get('cc'), 500), 'body': str(m.get('body') or '')[:MAX_BODY],
                              'attachments': [{'name': _clean_text(a.get('name'), 120) or 'attachment', 'size': a.get('size') if isinstance(a.get('size'), int) else None,
-                                              **({'file': a['file']} if HEX.fullmatch(str(a.get('file'))) else {'too_large': True} if a.get('too_large') else {})}
+                                              **({'file': a['file']} if HEX.fullmatch(str(a.get('file'))) else {'too_large': True} if a.get('too_large') else {'not_shared': True} if a.get('not_shared') else {})}
                                              for a in (m.get('attachments') or [])[:20] if isinstance(a, dict)]})
     return {'tag': tag, 'subject': _clean_text(body.get('subject'), 200), 'at': _clean_text(body.get('at'), 25), 'messages': messages}

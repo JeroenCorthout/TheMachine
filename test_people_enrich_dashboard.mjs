@@ -113,8 +113,8 @@ try{
  await page.waitForFunction(()=>!document.querySelector('.graph-detail')&&document.querySelector('#people-view article[data-node]'));
  assert.deepEqual(calls.at(-1),{action:'graph_person_delete',args:{node_id:'email:lee@globex.example'}});
  assert.equal(await page.locator('#people-view article[data-node="email:lee@globex.example"]').count(),0);
- // Settings: the switch, on by default, saves at once.
- await navClick(page.locator('#open-settings'));
+ // Settings, Security: the switch, on by default, saves at once.
+ await navClick(page.locator('#open-settings'));await page.locator('#settings-tabs [data-settings-tab="security"]').click();
  const sw=page.locator('#lookup-people');
  await sw.waitFor();
  assert.equal(await sw.getAttribute('aria-checked'),'true');

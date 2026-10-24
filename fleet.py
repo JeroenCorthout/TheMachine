@@ -58,6 +58,7 @@ import family
 import friends
 import discovery
 import network
+import security_levels
 import shared_connectors
 import shared_graph
 import skills
@@ -1671,21 +1672,28 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         mine = {e for ref in self.work_fleets() for m in self.fleets()[ref].get('members', []) if m.get('me') for e in m.get('emails', [])}
         return mine | {str(a.get('email') or '').lower() for a in self.config.get('accounts', []) if a.get('email')}
 
-    def rule(self, db, fleet, member_id, kind):
-        """A teammate's rule for a kind of question: their exception if they have one, else the Fleet's rule (member ALL)."""
+    def rule(self, db, fleet, member_id, kind, raw=False):
+        """A teammate's rule for a kind of question: their exception if they have one, else the Fleet's rule (member ALL).
+        In a Careful Work Fleet it applies without Always and without names (security_levels.py); raw is as stored."""
         row = (db.execute('SELECT rule,details FROM fleet_rules WHERE fleet=? AND member_id=? AND kind=?', (fleet, member_id, kind)).fetchone()
                or db.execute('SELECT rule,details FROM fleet_rules WHERE fleet=? AND member_id=? AND kind=?', (fleet, ALL, kind)).fetchone())
         found = (row['rule'], bool(row['details'])) if row else (self.default_rule(fleet, kind), False)
-        return ('ask', found[1]) if found[0] not in KIND_RULES.get(kind, RULES) else found
+        found = ('ask', found[1]) if found[0] not in KIND_RULES.get(kind, RULES) else found
+        return found if raw else security_levels.clamp(self.level(fleet), *found)
+
+    def level(self, fleet):
+        """A Fleet's security level, from the directory: Standard or Careful (Work Fleets only)."""
+        return security_levels.fleet_level(self.fleets().get(self.ref(fleet)))
 
     def default_rule(self, fleet, kind):
         """Ask me first, except in a Family: free/busy is answered by itself (busy blocks only), to-dos and plans wait."""
         return family.DEFAULT_RULES.get(kind, 'ask') if self.kind_of(fleet) == family.KIND else 'ask'
 
-    def scope(self, db, fleet, member_id, kind):
+    def scope(self, db, fleet, member_id, kind, raw=False):
         row = (db.execute('SELECT scope FROM fleet_scopes WHERE fleet=? AND member_id=? AND kind=?', (fleet, member_id, kind)).fetchone()
                or db.execute('SELECT scope FROM fleet_scopes WHERE fleet=? AND member_id=? AND kind=?', (fleet, ALL, kind)).fetchone())
-        return scope_of(row['scope'] if row else None)
+        found = scope_of(row['scope'] if row else None)
+        return {**found, 'work_only': True} if not raw and self.level(fleet) == 'careful' else found
 
     def fold_rules(self):
         """Rules were per teammate (and per friend, per family member); now there is one per kind of question for each
@@ -1702,9 +1710,9 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                 for kind in RULE_KINDS.get(self.kind_of(ref), ()):
                     if db.execute('SELECT 1 FROM fleet_rules WHERE fleet=? AND member_id=? AND kind=?', (ref, ALL, kind)).fetchone():
                         continue
-                    had = {m: self.rule(db, ref, m, kind) for m in mates}
+                    had = {m: self.rule(db, ref, m, kind, raw=True) for m in mates}
                     scoped = kind in SCOPED
-                    had_scope = {m: json.dumps(self.scope(db, ref, m, kind), sort_keys=True) for m in mates} if scoped else {}
+                    had_scope = {m: json.dumps(self.scope(db, ref, m, kind, raw=True), sort_keys=True) for m in mates} if scoped else {}
                     common = collections.Counter(had.values()).most_common()
                     wide = common[0][0] if len(common) == 1 or common[0][1] > common[1][1] else ('ask', False)
                     db.execute('INSERT OR REPLACE INTO fleet_rules(fleet,member_id,kind,rule,details,updated_at) VALUES(?,?,?,?,?,?)',
@@ -2130,7 +2138,7 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
                 db.execute('DELETE FROM fleet_scopes WHERE fleet=? AND member_id=? AND kind=?', (fleet, member_id, kind))
                 rule, details = self.rule(db, fleet, member_id, kind)
                 return {'rule': rule, 'details': details, 'scope': self.scope(db, fleet, member_id, kind)}
-            current, current_details = self.rule(db, fleet, member_id, kind)
+            current, current_details = self.rule(db, fleet, member_id, kind, raw=True)
             rule = current if rule is None else rule
             if rule not in KIND_RULES.get(kind, RULES):
                 raise ValueError('A rule is ' + ' or '.join(KIND_RULES.get(kind, RULES)))
@@ -3005,6 +3013,7 @@ class Fleet(fleet_requests.Requests, friends.Friends, discovery.Discovery, famil
         for ref, found in fleets.items():
             kind = found['kind']
             out.append({'id': ref, 'kind': kind, 'label': FLEET_NAMES.get(kind, kind), 'name': found.get('name'), 'asks': list(ASKS.get(kind, ())),
+                        'security': security_levels.fleet_level(found),  # Careful: no Always, no names (security_levels.py)
                         'joined_at': found.get('joined_at'),  # when the owner joined or made it: the Fleet tab's order
                         'people': [person(m) for m in found.get('members', [])], **self.rules_view(ref, kind, rules, scopes),
                         'members': [{'member_id': m['member_id'], 'name': label(m), 'machine': m.get('machine'),
