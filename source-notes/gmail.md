@@ -1,0 +1,1 @@
+- **Gmail.** Per-account `excluded_terms` (for example a mail-warmup tag) are never stored; never apply one account's exclusions to another. Expired Gmail history can leave old deletion gaps; disclose them when they matter.

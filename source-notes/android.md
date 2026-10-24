@@ -1,0 +1,4 @@
+- **Android.** This isn't a complete phone history: notifications cleared during a gap are lost.
+  - Repeated updates to one notification are merged into one episode with the latest text. Don't match notifications by title or app name.
+  - One-time codes are omitted, and the OpenClaw app and routine background status are ignored.
+  - Never open, dismiss or reply to notifications, or change phone permissions.

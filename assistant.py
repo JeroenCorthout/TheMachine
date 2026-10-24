@@ -67,6 +67,9 @@ import service
 ROOT = Path(__file__).resolve().parent
 # How reviews and Do it work; edits show as markers on the hit-rate chart.
 RULE_FILES = (ROOT / 'AGENTS.md', ROOT / 'PREPARATION.md')
+# How to read each connector (source-notes/<service>.md): a review or Do it gets only the notes for sources it has.
+SOURCE_NOTES = ROOT / 'source-notes'
+SOURCE_NOTE_ALIASES = {'outlook_calendar': 'calendar'}
 # The OpenClaw agent workspace (memory/, data/, USER.md). Override with OPENCLAW_WORKSPACE.
 WORKSPACE = Path(os.environ.get('OPENCLAW_WORKSPACE') or Path.home() / '.openclaw/workspace').expanduser()
 BROWSER_LEASE = WORKSPACE / 'data/browser-lease/lease.json'
@@ -10146,7 +10149,27 @@ Goal: record where people work when one of their sources says it, so the Graph t
 Do not set roles, send messages, change files or do anything else. End with exactly NO_REPLY.'''
 
 
-def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting=''):
+def source_notes(services):
+    """The reading notes for these connected services only, one file each, in a fixed order; '' when none has notes."""
+    names = sorted({SOURCE_NOTE_ALIASES.get(s, s) for s in services if isinstance(s, str) and re.fullmatch(r'[a-z0-9_]+', s)})
+    notes = []
+    for name in names:
+        try:
+            text = (SOURCE_NOTES / f'{name}.md').read_text().strip()
+        except OSError:
+            continue
+        if text:
+            notes.append(text)
+    return ('\n\nReading the connected sources (on top of AGENTS.md, "Reading each source"):\n' + '\n'.join(notes)) if notes else ''
+
+
+def account_services(config, account_ids=None):
+    """The services of the configured accounts, or of only these account IDs."""
+    wanted = None if account_ids is None else set(account_ids)
+    return [a.get('service') for a in config.get('accounts', []) if wanted is None or a.get('id') in wanted]
+
+
+def review_prompt(run_id, accounts, preferences='', facts='', slipped='', promises='', unnamed='', roles='', notes='', handoffs='', splits='', boards='', sorting='', sources=''):
     return f'''This is a signal review started by the personal-assistant service (review run {run_id}). It is not a chat with the owner and not a preparation task.
 ''' + (f'''Boards to sort, before anything else (separate from the batch: these projects need no new message). The owner put these projects on a board and their tiles say "Sorting" until you place them. For each, read its messages with events (its event_ids below, all accounts) and judge where it stands now from what they mean between these people, never their wording. Place it with graph {{"project": its node_id, "board", "stage", "event_id": the message that shows it, "reason": one short clause that reads after "Moved to <stage>:" (like "Demo held on Thu, they asked for pricing"), "next": the owner's next step in a few words}}. When nothing has moved it past the first stage, place it in the first stage the same way, with the message and why. Only when none of its messages shows where it stands, add it to finish_analysis sorted ([{{"project": its node_id, "why": a few words}}]). finish_analysis refuses until each one is placed or in sorted.
 {sorting}
@@ -10165,7 +10188,7 @@ Before suggesting, check it isn't already handled: search related signals (same 
 When a note the owner wrote on a suggestion (decisions with source telegram or dashboard) states something that stays true beyond that card, save it once with remember_fact (text, decision_id); skip one-off wording requests. A fact is about its subject, never about whoever sent the message it came up in: when it is about a specific person, organisation or project, add about=[their graph node_ids]; one about the owner (their own habits, preferences, home or accounts) or about the world gets no about.
 Meeting notes (a Zoom summary or transcript) are that meeting's own record: use them for follow-ups on it, its next steps and who took them on, with the notes and the calendar event as evidence.
 Promises: when a message in this batch commits the owner to doing something for someone, or someone to doing something for the owner, record it with promise (direction, event_id, who, what, due when a date was said). Judge what a message means between these people in its conversation, not its wording: most commitments are never spelled out (agreeing to a request, taking on something the owner asked, accepting a plan), and the same reply can commit one person and be politeness from another, depending on language, habits and the relationship. Read earlier_in_conversation for what was asked. It is not a card; the service checks it when due. When a signal shows an open promise below kept, cancelled or moved, update it with promise and its id.
-Messages are disabled in this turn. Do not work on anything else. End with exactly NO_REPLY.''' + (f'''
+Messages are disabled in this turn. Do not work on anything else. End with exactly NO_REPLY.''' + sources + (f'''
 
 Facts the owner told you earlier (true unless newer evidence says otherwise):
 {facts}''' if facts else '') + (f'''
@@ -12506,6 +12529,12 @@ class App:
                 known=embeddings.settings(self.config)  # what was learned that this card needs, not all of it
                 request['message']=preparation_prompt(job,self.store.facts_for(job['suggestion_id'],'fact',known),self.config,'' if style else self.store.draft_edits_text(),
                                                       self.store.facts_for(job['suggestion_id'],'draft',known),style)
+                try:  # how to read the card's own sources (its accounts' notes only)
+                    with self.store.connect() as db:
+                        row=db.execute('SELECT account_ids FROM suggestions WHERE id=?',(job['suggestion_id'],)).fetchone()
+                    lines=source_notes(account_services(self.config,json.loads(row['account_ids'] or '[]') if row else []))
+                    if lines and len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
+                except Exception as error:LOG.error('source notes error=%s',type(error).__name__)
                 try:
                     lines=self.graph_lines(job['suggestion_id'])
                     if len(request['message'])+len(lines)<PROMPT_LIMIT-1000:request['message']+=lines
@@ -13327,7 +13356,7 @@ class App:
                                                self.store.slipped(run['run_id']), self.store.promises_text(),
                                                self.store.unnamed_text(run['run_id']), self.store.role_text(run['run_id']), self.store.notes_to_learn(),
                                                self.waiting_handoffs_text(), self.split_notes_text(), self.store.boards_text(run['run_id']),
-                                               self.store.sort_text(run['run_id']))
+                                               self.store.sort_text(run['run_id']), source_notes(account_services(self.config)))
             try:  # drafts the owner rewrote, or answered themselves instead: lasting habits go into that channel's voice
                 lines = self.store.edits_to_learn()
                 if lines:

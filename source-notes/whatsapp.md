@@ -1,0 +1,1 @@
+- **WhatsApp.** Read-only from the existing local store. A linked-account auth flag doesn't prove the phone is live-syncing; check `source_latest_message`. Outgoing messages have **You** as sender, and the title is the conversation, not the author. Don't infer group senders from placeholders or merge phone-number and LID aliases without proof.

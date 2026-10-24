@@ -1,0 +1,1 @@
+- **Intercom** (the `intercom` connector). Up to 500 parts per conversation, cuts flagged, no attachments. The collector only reads; that is no ban on Intercom work the owner accepts (`PREPARATION.md`; replies go out as an `intercom` Send button).

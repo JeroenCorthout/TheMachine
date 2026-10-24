@@ -99,6 +99,7 @@ When an item changes, send it again with the same `source_id`: the service store
 - The account appears under Sources with its health, last read and errors. It gets a generic icon unless you add one to `ICONS` in `dashboard.html`.
 - `exclude` rules (`senders`, `titles`, `text`) work on plugin events too. See Noise rules in the README.
 - Every event opens in the dashboard's reader with its title, sender (`sender_display` or `from`, "You" when `from_me`) and body, so a readable plain-text `body` is all it needs.
+- To tell reviews how to read your source (what is noise, when it needs the owner, how a reply goes out), add `source-notes/<service>.md`: one bullet like the others there. Reviews and Do it runs get it only on Machines that have that source connected; `AGENTS.md` keeps the rules for every source.
 - To put the people in your events on the Graph tab, add a branch for your `kind` to `touches()` in [`graph.py`](../graph.py): it returns who took part, with a stable identifier (`email:`, `wa:`, or your own prefix), a name and their role (you wrote to them, they wrote to you, a meeting, or just present). Without it the source works as before; it just adds no people.
 
 ## 6. Tests
@@ -121,3 +122,4 @@ After fixture tests, the owner can run `assistant connect <service>`: setup veri
 - [ ] Failures raise `SourceError` with a content-free label.
 - [ ] Fixture tests for parsing, replays, expired cursors and errors.
 - [ ] `SETUP` with what `assistant connect` should ask, plus a supported read-only setup check.
+- [ ] Reading notes in `source-notes/<service>.md` when reviews need to know more than the event says.

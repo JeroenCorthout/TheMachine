@@ -35,6 +35,7 @@ Do it → isolated preparation turn of the same agent → result, draft + Send, 
 | `browser_login.py` | The sign-in dialog: fills a sign-in page in the assistant's browser with what you type on the dashboard, and keeps saved sign-ins encrypted |
 | `integrations/browser_cdp.py` | Talks to a browser's DevTools address directly, for the LinkedIn and X readers when one is set |
 | `AGENTS.md`, `PREPARATION.md` | Instructions the plugin gives the agent for reviews and for Do it runs (templates; see below) |
+| `source-notes/` | How to read each connector, one file per service; a review or Do it run gets only the notes for the sources this Machine has connected |
 | `install.sh`, `installer.py` | Install, upgrade and uninstall |
 | `config.example.json` | Every configuration key with example values |
 | `embeddings.py` | Optional related signals by meaning, through a local embedding server |
